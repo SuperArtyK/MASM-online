@@ -3,7 +3,7 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 15 source execution export parses optional `.data`, initializes
+ * Milestone 16 source execution export parses optional `.data`, initializes
  * simulated memory, runs the currently supported `.code` subset including TYPE,
  * LENGTHOF, SIZEOF, packed character literals, and explicit unsupported-feature diagnostics, and reports a
  * compact JSON result for the UI.
@@ -34,13 +34,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 15 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 16 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 15 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 16 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 15 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 16 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -61,7 +61,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 15 JSON response.
+/// Bytes available for the returned Milestone 16 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -122,7 +122,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 15 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 16 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -258,7 +258,7 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
     }
 }
 
-/// Appends one simulator message object to a JSON writer.
+/// Appends one simulator message object to a JSON writer with optional source span metadata.
 ///
 /// @param writer Writer to mutate.
 /// @param kind Diagnostic category string.
@@ -266,14 +266,20 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
 /// @param message Human-readable diagnostic summary.
 /// @param line One-based source line, or 0 when not available.
 /// @param column One-based source column, or 0 when not available.
+/// @param byte_offset Zero-based source byte offset when @p has_source_span is true.
+/// @param span_length Source span length in bytes when @p has_source_span is true.
+/// @param has_source_span Whether byte-offset and span-length fields should be emitted.
 /// @return true when the message fit without overflowing the buffer.
-static bool masm32_sim_json_append_message(
+static bool masm32_sim_json_append_message_with_span(
     Masm32SimJsonWriter *writer,
     const char *kind,
     const char *code,
     const char *message,
     uint32_t line,
-    uint32_t column
+    uint32_t column,
+    size_t byte_offset,
+    size_t span_length,
+    bool has_source_span
 ) {
     if (!masm32_sim_json_append(writer, "{\"kind\":")) {
         return false;
@@ -303,11 +309,39 @@ static bool masm32_sim_json_append_message(
             return false;
         }
     }
+    if (has_source_span) {
+        if (!masm32_sim_json_append(writer, ",\"byteOffset\":%llu", (unsigned long long)byte_offset)) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"spanLength\":%llu", (unsigned long long)span_length)) {
+            return false;
+        }
+    }
 
     return masm32_sim_json_append(writer, "}");
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 15 UI.
+/// Appends one simulator message object to a JSON writer without source span metadata.
+///
+/// @param writer Writer to mutate.
+/// @param kind Diagnostic category string.
+/// @param code Stable diagnostic code string.
+/// @param message Human-readable diagnostic summary.
+/// @param line One-based source line, or 0 when not available.
+/// @param column One-based source column, or 0 when not available.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_message(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const char *code,
+    const char *message,
+    uint32_t line,
+    uint32_t column
+) {
+    return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
+}
+
+/// Appends the canonical 32-bit register object used by the Milestone 16 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -755,13 +789,16 @@ static bool masm32_sim_json_append_parser_messages(
         if (index > 0U && !masm32_sim_json_append(writer, ",")) {
             return false;
         }
-        if (!masm32_sim_json_append_message(
+        if (!masm32_sim_json_append_message_with_span(
                 writer,
                 masm32_sim_wasm_parser_diagnostic_kind(diagnostic->code),
                 code_name != NULL ? code_name : "parser-diagnostic",
                 diagnostic->message != NULL ? diagnostic->message : "Parser diagnostic.",
                 diagnostic->location.line,
-                diagnostic->location.column
+                diagnostic->location.column,
+                diagnostic->location.offset,
+                diagnostic->lexeme_length,
+                diagnostic->location.line > 0U
             )) {
             return false;
         }
@@ -821,7 +858,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":15,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":16,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -860,7 +897,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":15,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":16,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

@@ -1,13 +1,13 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 15.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 16.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
  * full MASM expression parsing remain later milestones. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
- * unsupported-feature diagnostics.
+ * unsupported-feature diagnostics and surfaces lexer diagnostics without generic umbrella errors.
  */
 
 #include "parser.h"
@@ -93,6 +93,16 @@ static bool vm_parser_add_diagnostic(
     VmParserDiagnosticCode code,
     const VmLexerToken *token,
     const char *message
+);
+
+static bool vm_parser_add_lexer_diagnostic(
+    VmParserState *state,
+    const VmLexerDiagnostic *diagnostic
+);
+
+static bool vm_parser_add_lexer_status_diagnostic(
+    VmParserState *state,
+    VmLexerStatus status
 );
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
@@ -436,6 +446,132 @@ static bool vm_parser_add_diagnostic(
         diagnostic->lexeme_length = token->lexeme_length;
     }
     diagnostic->message = message;
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Maps one lexer diagnostic code to the parser diagnostic namespace.
+///
+/// @param code Lexer diagnostic code produced before parsing.
+/// @return Parser diagnostic code that preserves the lexer-specific reason.
+static VmParserDiagnosticCode vm_parser_diagnostic_code_from_lexer(VmLexerDiagnosticCode code) {
+    switch (code) {
+        case VM_LEXER_DIAGNOSTIC_INVALID_ARGUMENT:
+            return VM_PARSER_DIAGNOSTIC_LEXER_INVALID_ARGUMENT;
+        case VM_LEXER_DIAGNOSTIC_TOKEN_CAPACITY_EXCEEDED:
+            return VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED;
+        case VM_LEXER_DIAGNOSTIC_DIAGNOSTIC_CAPACITY_EXCEEDED:
+            return VM_PARSER_DIAGNOSTIC_LEXER_DIAGNOSTIC_CAPACITY_EXCEEDED;
+        case VM_LEXER_DIAGNOSTIC_UNEXPECTED_CHARACTER:
+            return VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER;
+        case VM_LEXER_DIAGNOSTIC_UNTERMINATED_STRING:
+            return VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_STRING;
+        case VM_LEXER_DIAGNOSTIC_UNTERMINATED_CHARACTER:
+            return VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_CHARACTER;
+        case VM_LEXER_DIAGNOSTIC_NUMBER_OVERFLOW:
+            return VM_PARSER_DIAGNOSTIC_LEXER_NUMBER_OVERFLOW;
+        case VM_LEXER_DIAGNOSTIC_INVALID_HEX_LITERAL:
+            return VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL;
+        case VM_LEXER_DIAGNOSTIC_NONE:
+        default:
+            return VM_PARSER_DIAGNOSTIC_LEXER_FAILED;
+    }
+}
+
+/// Maps a fatal lexer status to a parser diagnostic when no lexer diagnostic exists.
+///
+/// @param status Lexer status returned by tokenization.
+/// @return Parser diagnostic code that preserves capacity and infrastructure failure kind.
+static VmParserDiagnosticCode vm_parser_diagnostic_code_from_lexer_status(VmLexerStatus status) {
+    switch (status) {
+        case VM_LEXER_STATUS_INVALID_ARGUMENT:
+            return VM_PARSER_DIAGNOSTIC_LEXER_INVALID_ARGUMENT;
+        case VM_LEXER_STATUS_TOKEN_CAPACITY_EXCEEDED:
+            return VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED;
+        case VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED:
+            return VM_PARSER_DIAGNOSTIC_LEXER_DIAGNOSTIC_CAPACITY_EXCEEDED;
+        case VM_LEXER_STATUS_OK:
+        case VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS:
+        default:
+            return VM_PARSER_DIAGNOSTIC_LEXER_FAILED;
+    }
+}
+
+/// Returns a user-facing message for one fatal lexer status.
+///
+/// @param status Lexer status returned by tokenization.
+/// @return Static diagnostic message explaining the fatal lexer status.
+static const char *vm_parser_message_from_lexer_status(VmLexerStatus status) {
+    switch (status) {
+        case VM_LEXER_STATUS_INVALID_ARGUMENT:
+            return "Lexer received invalid input or output buffers.";
+        case VM_LEXER_STATUS_TOKEN_CAPACITY_EXCEEDED:
+            return "Lexer token capacity exhausted before parsing could proceed.";
+        case VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED:
+            return "Lexer diagnostic capacity exhausted before all diagnostics could be preserved.";
+        case VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS:
+            return "Lexer produced diagnostics before parsing could proceed.";
+        case VM_LEXER_STATUS_OK:
+        default:
+            return "Lexer failed before parsing could proceed.";
+    }
+}
+
+/// Copies one lexer diagnostic into the parser diagnostic stream.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param source_diagnostic Lexer diagnostic to preserve.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_lexer_diagnostic(
+    VmParserState *state,
+    const VmLexerDiagnostic *source_diagnostic
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || source_diagnostic == NULL) {
+        return false;
+    }
+
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = vm_parser_diagnostic_code_from_lexer(source_diagnostic->code);
+    diagnostic->location = source_diagnostic->location;
+    diagnostic->lexeme = source_diagnostic->lexeme;
+    diagnostic->lexeme_length = source_diagnostic->lexeme_length;
+    diagnostic->message = source_diagnostic->message;
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Adds a parser diagnostic for a lexer failure that produced no diagnostic entry.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param status Lexer status returned by tokenization.
+/// @return true when the status diagnostic was recorded.
+static bool vm_parser_add_lexer_status_diagnostic(
+    VmParserState *state,
+    VmLexerStatus status
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+
+    if (state == NULL || state->config == NULL || state->result == NULL) {
+        return false;
+    }
+
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = vm_parser_diagnostic_code_from_lexer_status(status);
+    diagnostic->message = vm_parser_message_from_lexer_status(status);
     state->result->diagnostic_count += 1U;
     return true;
 }
@@ -2998,7 +3134,18 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     out_result->lexer_diagnostic_count = state.lexer_result.diagnostic_count;
 
     if (lexer_status != VM_LEXER_STATUS_OK) {
-        vm_parser_add_diagnostic(&state, VM_PARSER_DIAGNOSTIC_LEXER_FAILED, config->tokens, "Lexer failed or produced diagnostics before parsing.");
+        size_t diagnostic_index = 0U;
+
+        for (diagnostic_index = 0U; diagnostic_index < state.lexer_result.diagnostic_count; diagnostic_index += 1U) {
+            (void)vm_parser_add_lexer_diagnostic(&state, &config->lexer_diagnostics[diagnostic_index]);
+        }
+
+        if (state.lexer_result.diagnostic_count == 0U) {
+            (void)vm_parser_add_lexer_status_diagnostic(&state, lexer_status);
+        } else if (lexer_status == VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED) {
+            (void)vm_parser_add_lexer_status_diagnostic(&state, lexer_status);
+        }
+
         out_result->status = state.diagnostic_overflowed ? VM_PARSER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED : VM_PARSER_STATUS_LEXER_FAILED;
         return out_result->status;
     }
@@ -3080,6 +3227,22 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-argument";
         case VM_PARSER_DIAGNOSTIC_LEXER_FAILED:
             return "lexer-failed";
+        case VM_PARSER_DIAGNOSTIC_LEXER_INVALID_ARGUMENT:
+            return "lexer-invalid-argument";
+        case VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED:
+            return "token-capacity-exceeded";
+        case VM_PARSER_DIAGNOSTIC_LEXER_DIAGNOSTIC_CAPACITY_EXCEEDED:
+            return "diagnostic-capacity-exceeded";
+        case VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER:
+            return "unexpected-character";
+        case VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_STRING:
+            return "unterminated-string";
+        case VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_CHARACTER:
+            return "unterminated-character";
+        case VM_PARSER_DIAGNOSTIC_LEXER_NUMBER_OVERFLOW:
+            return "number-overflow";
+        case VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL:
+            return "invalid-hex-literal";
         case VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE:
             return "expected-code-directive";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION:

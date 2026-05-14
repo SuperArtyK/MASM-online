@@ -350,7 +350,7 @@ static int test_error_path_diagnostics(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "out-of-range immediate diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".code\nmain PROC\nmov eax, 184467440737095516160\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_LEXER_FAILED, "lexer numeric overflow should stop parser");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_FAILED, "lexer overflow diagnostic should be surfaced by parser");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_NUMBER_OVERFLOW, "lexer overflow diagnostic should be surfaced by parser");
 
     return failures;
 }
@@ -533,7 +533,7 @@ static int test_capacity_and_invalid_arguments(void) {
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
     failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_LEXER_FAILED, "small token buffer should surface lexer failure");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_FAILED, "small token buffer should surface lexer diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED, "small token buffer should surface lexer diagnostic");
 
     memset(&buffers, 0, sizeof(buffers));
     memset(&config, 0, sizeof(config));
@@ -585,6 +585,90 @@ static int test_capacity_and_invalid_arguments(void) {
     return failures;
 }
 
+
+/// Verifies lexer diagnostics are preserved as specific parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lexer_diagnostics_are_preserved_by_parser(void) {
+    typedef struct LexerDiagnosticCase {
+        /// Source expected to fail before parsing because of a lexer diagnostic.
+        const char *source;
+        /// Parser diagnostic code expected after lexer diagnostic promotion.
+        VmParserDiagnosticCode expected_code;
+        /// Expected diagnostic line.
+        uint32_t expected_line;
+        /// Expected diagnostic column.
+        uint32_t expected_column;
+        /// Expected zero-based byte offset.
+        size_t expected_offset;
+        /// Expected source span length.
+        size_t expected_span_length;
+        /// Fragment expected in the user-facing message.
+        const char *expected_message_fragment;
+    } LexerDiagnosticCase;
+
+    static const LexerDiagnosticCase cases[] = {
+        {"#", VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER, 1U, 1U, 0U, 1U, "unexpected character"},
+        {".code\nmain PROC\n    mov eax, 0xZZ\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL, 3U, 14U, 29U, 2U, "hex literal"},
+        {".data\nmsg BYTE \"Hello\n.code\nmain PROC\nEND main\n", VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_STRING, 2U, 10U, 15U, 6U, "unterminated string"},
+        {"'A\n", VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_CHARACTER, 1U, 1U, 0U, 2U, "unterminated character"},
+        {"184467440737095516160", VM_PARSER_DIAGNOSTIC_LEXER_NUMBER_OVERFLOW, 1U, 1U, 0U, 21U, "does not fit"},
+        {"123abc", VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER, 1U, 1U, 0U, 6U, "invalid decimal literal suffix"}
+    };
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        VmParserStatus status = parse_for_test(cases[index].source, &buffers, &result);
+
+        failures += expect_parser_status(status, VM_PARSER_STATUS_LEXER_FAILED, "lexer diagnostic should stop parsing before execution");
+        failures += expect_size(result.lexer_diagnostic_count, 1U, "lexer diagnostic count should be preserved in parser result");
+        failures += expect_size(result.diagnostic_count, 1U, "one parser diagnostic should be produced from the lexer diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].expected_code, "parser diagnostic code should preserve lexer reason");
+        failures += expect_u32(buffers.diagnostics[0].location.line, cases[index].expected_line, "lexer diagnostic line should be preserved");
+        failures += expect_u32(buffers.diagnostics[0].location.column, cases[index].expected_column, "lexer diagnostic column should be preserved");
+        failures += expect_size(buffers.diagnostics[0].location.offset, cases[index].expected_offset, "lexer diagnostic byte offset should be preserved");
+        failures += expect_size(buffers.diagnostics[0].lexeme_length, cases[index].expected_span_length, "lexer diagnostic source span length should be preserved");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].expected_message_fragment, "lexer diagnostic message should be preserved");
+    }
+
+    return failures;
+}
+
+/// Verifies fatal lexer capacity failures remain distinguishable from ordinary lexer diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lexer_capacity_failure_is_distinct(void) {
+    ParserTestBuffers buffers;
+    VmParserConfig config;
+    VmParserResult result;
+    int failures = 0;
+
+    memset(&buffers, 0, sizeof(buffers));
+    memset(&config, 0, sizeof(config));
+    memset(&result, 0, sizeof(result));
+    config.source = ".code\nmain PROC\n    mov eax, 1\nmain ENDP\nEND main\n";
+    config.tokens = buffers.tokens;
+    config.token_capacity = 1U;
+    config.lexer_diagnostics = buffers.lexer_diagnostics;
+    config.lexer_diagnostic_capacity = TEST_LEXER_DIAGNOSTIC_CAPACITY;
+    config.instructions = buffers.instructions;
+    config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
+    config.source_text_storage = buffers.source_text;
+    config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.diagnostics = buffers.diagnostics;
+    config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
+
+    failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_LEXER_FAILED, "lexer token capacity should stop parsing");
+    failures += expect_size(result.diagnostic_count, 1U, "lexer token capacity should produce one parser diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED, "lexer token capacity diagnostic should remain distinct");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "token buffer capacity", "lexer token capacity message should be preserved");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -599,6 +683,9 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE), "unsupported-feature") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported-feature");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL), "invalid-hex-literal") != 0) {
+        failures += record_failure("parser diagnostic helper should name surfaced lexer invalid hex diagnostics");
     }
     if (vm_parser_status_name((VmParserStatus)999) != NULL) {
         failures += record_failure("invalid parser status name should be NULL");
@@ -629,6 +716,8 @@ int main(void) {
     failures += test_negative_immediate_range_matches_destination_width();
     failures += test_immediate_range_covers_register_alias_families();
     failures += test_capacity_and_invalid_arguments();
+    failures += test_lexer_diagnostics_are_preserved_by_parser();
+    failures += test_lexer_capacity_failure_is_distinct();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

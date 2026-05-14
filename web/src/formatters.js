@@ -1,6 +1,6 @@
 /*
  * @file formatters.js
- * @brief Pure UI formatting helpers for Milestone 15 browser output.
+ * @brief Pure UI formatting helpers for Milestone 16 browser output.
  *
  * These helpers format final register state, simulator diagnostics, and
  * symbol-aware memory changes returned by the worker. They are isolated from
@@ -10,14 +10,14 @@
 
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
-/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number}} SimulatorMessage */
+/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
-/** Canonical MASM32 register display order for the Milestone 15 final-state panel. */
+/** Canonical MASM32 register display order for the Milestone 16 final-state panel. */
 const CANONICAL_REGISTER_DISPLAY_ORDER = ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"];
 
 /**
- * Formats one register value for the Milestone 15 final-register panel.
+ * Formats one register value for the Milestone 16 final-register panel.
  *
  * @param {string} name Register display name.
  * @param {RegisterValue} value Register value object.
@@ -56,7 +56,10 @@ export function formatSimulatorMessages(messages) {
   }
 
   return messages.map((message) => {
-    const location = message.line ? ` line ${message.line}${message.column ? `, column ${message.column}` : ""}` : "";
+    const sourceSpan = Number.isFinite(message.byteOffset)
+      ? `, byte offset ${message.byteOffset}${Number.isFinite(message.spanLength) ? `, span length ${message.spanLength}` : ""}`
+      : "";
+    const location = message.line ? ` line ${message.line}${message.column ? `, column ${message.column}` : ""}${sourceSpan}` : "";
     return `[${message.kind || "message"}] ${message.code || "unknown"}${location}: ${message.message || ""}`;
   }).join("\n");
 }

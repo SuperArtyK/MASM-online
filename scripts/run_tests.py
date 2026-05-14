@@ -308,7 +308,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies TYPE symbol emits declared element-size immediates")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies LENGTHOF symbol emits element-count immediates")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 15")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 16")
     assert_text_contains("web/src/formatters.js", "Formats final canonical registers")
     assert_text_contains("tests/web/test_formatters.mjs", "/*\n * @file test_formatters.mjs")
     print("Milestone structure tests passed.")

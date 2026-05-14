@@ -1,6 +1,6 @@
 /*
  * @file test_formatters.mjs
- * @brief Unit tests for Milestone 15 UI formatting helpers.
+ * @brief Unit tests for Milestone 16 UI formatting helpers.
  *
  * These tests cover pure formatting behavior without importing the browser entry
  * point, which would create DOM and Worker side effects.
@@ -47,6 +47,20 @@ test("formats simulator messages with line and column", () => {
       message: "Unsupported section."
     }
   ]), "[assembly-error] unsupported-section line 3, column 1: Unsupported section.");
+});
+
+test("formats simulator messages with byte offset and span length", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "assembly-error",
+      code: "invalid-hex-literal",
+      line: 3,
+      column: 14,
+      byteOffset: 29,
+      spanLength: 2,
+      message: "Invalid hexadecimal literal."
+    }
+  ]), "[assembly-error] invalid-hex-literal line 3, column 14, byte offset 29, span length 2: Invalid hexadecimal literal.");
 });
 
 test("formats empty simulator messages", () => {

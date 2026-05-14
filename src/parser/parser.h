@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 15.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 16.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
@@ -8,7 +8,8 @@
  * memory operands, constant symbol-offset memory operands, PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, and explicit unsupported-feature
- * diagnostics for recognized MASM textbook constructs.
+ * diagnostics for recognized MASM textbook constructs, and surfaced lexer
+ * diagnostics without collapsing them into umbrella parse errors.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -51,6 +52,22 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_ARGUMENT,
     /// The lexer reported a diagnostic or failed before parsing could proceed.
     VM_PARSER_DIAGNOSTIC_LEXER_FAILED,
+    /// The lexer rejected invalid caller arguments before parsing could proceed.
+    VM_PARSER_DIAGNOSTIC_LEXER_INVALID_ARGUMENT,
+    /// The lexer token buffer was exhausted before parsing could proceed.
+    VM_PARSER_DIAGNOSTIC_LEXER_TOKEN_CAPACITY_EXCEEDED,
+    /// The lexer diagnostic buffer was exhausted before parsing could proceed.
+    VM_PARSER_DIAGNOSTIC_LEXER_DIAGNOSTIC_CAPACITY_EXCEEDED,
+    /// The lexer found a byte outside the supported token set or a malformed numeric suffix.
+    VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER,
+    /// The lexer found a string literal without a terminating double quote.
+    VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_STRING,
+    /// The lexer found a character literal without a terminating single quote.
+    VM_PARSER_DIAGNOSTIC_LEXER_UNTERMINATED_CHARACTER,
+    /// The lexer found a numeric literal that does not fit in uint64_t.
+    VM_PARSER_DIAGNOSTIC_LEXER_NUMBER_OVERFLOW,
+    /// The lexer found a hexadecimal literal without required hex digits.
+    VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL,
     /// The source did not contain the required .code directive.
     VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE,
     /// The parser found a directive outside the implemented milestone scope.

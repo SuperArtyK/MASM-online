@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 15 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 16 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -95,7 +95,7 @@ static int test_zero_instruction_program_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 register-indirect source-run acceptance program.
+/// Verifies the Milestone 16 register-indirect source-run acceptance program.
 ///
 /// @return Number of failures.
 static int test_register_indirect_source_run_succeeds(void) {
@@ -112,7 +112,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -122,7 +122,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 TYPE acceptance program through the source-run API.
+/// Verifies the Milestone 16 TYPE acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_type_operator_source_run_acceptance_program(void) {
@@ -137,7 +137,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -173,7 +173,7 @@ static int test_type_operator_source_run_element_sizes(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 LENGTHOF acceptance program through the source-run API.
+/// Verifies the Milestone 16 LENGTHOF acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_lengthof_operator_source_run_acceptance_program(void) {
@@ -190,7 +190,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -227,7 +227,7 @@ static int test_lengthof_operator_source_run_element_counts(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 SIZEOF and character-literal acceptance program through the source-run API.
+/// Verifies the Milestone 16 SIZEOF and character-literal acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_sizeof_operator_source_run_acceptance_program(void) {
@@ -248,7 +248,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
@@ -471,7 +471,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 15 constant symbol-offset acceptance program.
+/// Verifies the Milestone 16 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -487,7 +487,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
+    failures += expect_json_contains(json, "\"phase\":16", "response should identify Milestone 16");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -637,6 +637,95 @@ static int test_negative_immediate_overflow_returns_parse_error(void) {
 
     failures += expect_json_contains(json, "\"ok\":false", "negative AL overflow should fail source run");
     failures += expect_json_contains(json, "immediate-out-of-range", "negative AL overflow should expose immediate range diagnostic");
+
+    return failures;
+}
+
+
+/// Verifies lexer diagnostics surface through source-run without generic lexer-failed replacement.
+///
+/// @return Number of failures.
+static int test_source_run_invalid_hex_reports_specific_lexer_diagnostic(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0xZZ\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "invalid hex source should fail source run");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "invalid hex source should report parse-error");
+    failures += expect_json_contains(json, "\"kind\":\"assembly-error\"", "invalid hex should be an assembly error");
+    failures += expect_json_contains(json, "\"code\":\"invalid-hex-literal\"", "invalid hex should expose the lexer diagnostic code");
+    failures += expect_json_contains(json, "hex literal", "invalid hex message should be specific");
+    failures += expect_json_contains(json, "\"line\":3", "invalid hex should preserve source line");
+    failures += expect_json_contains(json, "\"column\":14", "invalid hex should preserve source column");
+    failures += expect_json_contains(json, "\"byteOffset\":29", "invalid hex should preserve byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":2", "invalid hex should preserve source span length");
+    failures += expect_json_not_contains(json, "lexer-failed", "invalid hex should not collapse into lexer-failed");
+    failures += expect_json_not_contains(json, "\"ok\":true", "invalid hex source should not execute");
+
+    return failures;
+}
+
+/// Verifies unterminated strings surface the original lexer diagnostic through source-run.
+///
+/// @return Number of failures.
+static int test_source_run_unterminated_string_reports_specific_lexer_diagnostic(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "msg BYTE \"Hello\n"
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "unterminated string source should fail source run");
+    failures += expect_json_contains(json, "\"code\":\"unterminated-string\"", "unterminated string should expose the lexer diagnostic code");
+    failures += expect_json_contains(json, "unterminated string literal", "unterminated string message should be specific");
+    failures += expect_json_contains(json, "\"line\":2", "unterminated string should preserve source line");
+    failures += expect_json_contains(json, "\"column\":10", "unterminated string should preserve source column");
+    failures += expect_json_contains(json, "\"byteOffset\":15", "unterminated string should preserve byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":6", "unterminated string should preserve source span length");
+    failures += expect_json_not_contains(json, "lexer-failed", "unterminated string should not collapse into lexer-failed");
+
+    return failures;
+}
+
+/// Verifies remaining Phase 16 lexer error cases surface as specific source-run diagnostics.
+///
+/// @return Number of failures.
+static int test_source_run_other_lexer_diagnostics_are_specific(void) {
+    char invalid_character_json[1024];
+    char unterminated_character_json[1024];
+    char overflow_json[1024];
+    char malformed_numeric_json[1024];
+    int failures = 0;
+
+    (void)snprintf(invalid_character_json, sizeof(invalid_character_json), "%s", masm32_sim_wasm_run_source_json("#"));
+    (void)snprintf(unterminated_character_json, sizeof(unterminated_character_json), "%s", masm32_sim_wasm_run_source_json("'A\n"));
+    (void)snprintf(overflow_json, sizeof(overflow_json), "%s", masm32_sim_wasm_run_source_json("184467440737095516160"));
+    (void)snprintf(malformed_numeric_json, sizeof(malformed_numeric_json), "%s", masm32_sim_wasm_run_source_json("123abc"));
+
+    failures += expect_json_contains(invalid_character_json, "\"code\":\"unexpected-character\"", "invalid character should expose unexpected-character");
+    failures += expect_json_contains(invalid_character_json, "\"byteOffset\":0", "invalid character should expose byte offset zero");
+    failures += expect_json_not_contains(invalid_character_json, "lexer-failed", "invalid character should not collapse into lexer-failed");
+
+    failures += expect_json_contains(unterminated_character_json, "\"code\":\"unterminated-character\"", "unterminated character should expose lexer diagnostic code");
+    failures += expect_json_contains(unterminated_character_json, "unterminated character literal", "unterminated character message should be specific");
+    failures += expect_json_not_contains(unterminated_character_json, "lexer-failed", "unterminated character should not collapse into lexer-failed");
+
+    failures += expect_json_contains(overflow_json, "\"code\":\"number-overflow\"", "numeric overflow should expose number-overflow");
+    failures += expect_json_contains(overflow_json, "does not fit in uint64_t", "numeric overflow message should be specific");
+    failures += expect_json_not_contains(overflow_json, "lexer-failed", "numeric overflow should not collapse into lexer-failed");
+
+    failures += expect_json_contains(malformed_numeric_json, "\"code\":\"unexpected-character\"", "malformed numeric text should expose lexer diagnostic code");
+    failures += expect_json_contains(malformed_numeric_json, "invalid decimal literal suffix", "malformed numeric message should be specific");
+    failures += expect_json_contains(malformed_numeric_json, "\"spanLength\":6", "malformed numeric diagnostic should expose source span length");
+    failures += expect_json_not_contains(malformed_numeric_json, "lexer-failed", "malformed numeric should not collapse into lexer-failed");
 
     return failures;
 }
@@ -819,6 +908,9 @@ int main(void) {
     failures += test_minimal_source_runs_to_eax_42();
     failures += test_zero_instruction_program_succeeds();
     failures += test_parse_error_returns_structured_message();
+    failures += test_source_run_invalid_hex_reports_specific_lexer_diagnostic();
+    failures += test_source_run_unterminated_string_reports_specific_lexer_diagnostic();
+    failures += test_source_run_other_lexer_diagnostics_are_specific();
     failures += test_narrow_register_immediate_overflow_returns_parse_error();
     failures += test_negative_immediate_source_run_succeeds();
     failures += test_negative_immediate_overflow_returns_parse_error();
@@ -850,6 +942,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 15 source execution tests passed.");
+    puts("Milestone 16 source execution tests passed.");
     return 0;
 }
