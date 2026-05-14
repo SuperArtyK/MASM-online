@@ -1,11 +1,11 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 10.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 11.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
  * remains limited to implemented data declarations, OFFSET, direct symbol
- * memory operands, and constant symbol-offset memory operands, and PTR width overrides for mov/add/sub.
+ * memory operands, constant symbol-offset memory operands, PTR width overrides, and register-indirect memory operands for mov/add/sub.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -96,6 +96,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE,
     /// A PTR width override is recognized but cannot execute in the current MASM32 subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH,
+    /// A scaled-index addressing form was recognized but is not implemented yet.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX,
     /// A DUP initializer was malformed or unsupported.
     VM_PARSER_DIAGNOSTIC_INVALID_DUP,
     /// Number of parser diagnostic codes.
@@ -175,10 +177,10 @@ typedef struct VmParserResult {
 /// The parser accepts optional .data declarations before .code, emits data-symbol
 /// metadata and a deterministic .data image, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
-/// `OFFSET symbol`, constant symbol-offset memory operands, or PTR width
-/// overrides on symbol-relative memory operands; destination operands may use
-/// registers, direct symbols, constant symbol-offset memory operands, or PTR
-/// width overrides on symbol-relative memory operands.
+/// `OFFSET symbol`, constant symbol-offset memory operands, register-indirect memory operands, or PTR width
+/// overrides on supported memory operands; destination operands may use
+/// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or PTR
+/// width overrides on supported memory operands.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

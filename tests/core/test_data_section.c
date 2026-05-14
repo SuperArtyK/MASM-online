@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 10 .data declarations, symbols, OFFSET, and memory changes.
+ * @brief Tests for Milestone 11 .data declarations, symbols, PTR, and register-indirect memory operands.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 10 parser test.
+/// Number of lexer tokens available to each Milestone 11 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 10 parser test.
+/// Number of lexer diagnostics available to each Milestone 11 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 10 parser test.
+/// Number of parser diagnostics available to each Milestone 11 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 10 parser test.
+/// Number of IR instructions available to each Milestone 11 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 10 parser test.
+/// Number of source-text bytes available to each Milestone 11 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 10 parser test.
+/// Number of data symbols available to each Milestone 11 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 10 parser test.
+/// Number of data image bytes available to each Milestone 11 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 10 test.
+/// Holds all caller-owned parser buffers for one Milestone 11 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 10 buffers.
+/// Parses source with full Milestone 11 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 10 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 11 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -350,7 +350,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 10 acceptance program executes through parser and VM.
+/// Verifies the Milestone 11 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -370,7 +370,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 10 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 11 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -464,7 +464,7 @@ static int test_data_type_aliases_and_mixed_case(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 10 error paths.
+/// Verifies parser diagnostics for new Milestone 11 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -646,7 +646,7 @@ static int test_ptr_width_overrides_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 10 acceptance program executes explicit-width writes.
+/// Verifies the Milestone 11 acceptance program executes explicit-width writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_ptr_width_overrides_execute_acceptance_program(void) {
@@ -722,6 +722,178 @@ static int test_ptr_width_overrides_source_reads_execute(void) {
     return failures;
 }
 
+/// Verifies register-indirect memory operands parse to runtime-address IR operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_indirect_operands_parse_to_ir(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET nums\n"
+        "    mov DWORD PTR [esi + 8], 100\n"
+        "    mov eax, DWORD PTR [esi + 8]\n"
+        "    mov [ebx], al\n"
+        "    mov eax, [esi]\n"
+        "    mov nums[esi], eax\n"
+        "    mov eax, [nums + esi]\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "register-indirect sample should parse");
+    failures += expect_size(result.instruction_count, 7U, "register-indirect sample should emit seven instructions");
+    failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "DWORD PTR [esi + 8] should emit register memory destination");
+    failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_ESI, "DWORD PTR [esi + 8] should use ESI base");
+    failures += expect_u32(buffers.instructions[1].destination.address, 0U, "plain [esi + 8] should not include a static symbol base");
+    failures += expect_u32(buffers.instructions[1].destination.immediate, 8U, "DWORD PTR [esi + 8] should store byte displacement 8");
+    failures += expect_u32(buffers.instructions[1].destination.width_bits, 32U, "DWORD PTR [esi + 8] should use explicit DWORD width");
+    failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "DWORD PTR [esi + 8] source should emit register memory source");
+    failures += expect_u32(buffers.instructions[3].destination.width_bits, 8U, "mov [ebx], al should infer BYTE destination width from AL");
+    failures += expect_u32(buffers.instructions[4].source.width_bits, 32U, "mov eax, [esi] should infer DWORD source width from EAX");
+    failures += expect_u32(buffers.instructions[5].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "nums[esi] should include nums symbol base");
+    failures += expect_u32(buffers.instructions[5].destination.reg, VM_REGISTER_ESI, "nums[esi] should use ESI as runtime byte offset");
+    failures += expect_u32(buffers.instructions[6].source.address, VM_MEMORY_DEFAULT_DATA_BASE, "[nums + esi] should include nums symbol base");
+
+    return failures;
+}
+
+/// Verifies the Milestone 11 register-indirect acceptance program executes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_indirect_acceptance_program_executes(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET nums\n"
+        "    mov DWORD PTR [esi + 8], 100\n"
+        "    mov eax, DWORD PTR [esi + 8]\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t dword_value = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "register-indirect acceptance program should parse");
+    failures += expect_u32(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for register-indirect acceptance program");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load for register-indirect acceptance program");
+    failures += expect_u32(vm_load_program(&vm, buffers.instructions, result.instruction_count), VM_EXEC_STATUS_OK, "register-indirect acceptance program should load");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "OFFSET load should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "register-indirect write should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "register-indirect read should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after register-indirect program");
+    failures += expect_u32(eax, 100U, "register-indirect acceptance program should set EAX to 100");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 8U, &dword_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("register-indirect DWORD memory read should succeed");
+    failures += expect_u32(dword_value, 100U, "register-indirect write should update nums + 8");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies symbol/register addressing forms execute with byte-offset semantics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_symbol_register_memory_forms_execute(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, 8\n"
+        "    mov DWORD PTR nums[esi], 100\n"
+        "    mov eax, DWORD PTR [nums + esi]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
+    failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
+    failures += expect_json_contains(json, "\"elementIndex\":2", "symbol/register write should report aligned element index 2");
+
+    return failures;
+}
+
+/// Verifies register-indirect diagnostics for unsupported and invalid forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_indirect_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, DWORD PTR [esi * 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "scaled-index register-indirect form should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX, "scaled-index diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, DWORD PTR [eax]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported base register should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "unsupported base register diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov QWORD PTR [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "QWORD PTR register-indirect should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "QWORD PTR register-indirect diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nmov [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "immediate to register-indirect memory without PTR should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "ambiguous immediate-to-memory diagnostic should match");
+
+    return failures;
+}
+
+/// Verifies register-indirect runtime memory errors are structured.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_indirect_runtime_error_path(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, 0\n"
+        "    mov eax, DWORD PTR [esi]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "invalid register-indirect read should fail");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "invalid register-indirect read should be execution-error");
+    failures += expect_json_contains(json, "memory-error", "invalid register-indirect read should include memory diagnostic");
+
+    return failures;
+}
+
+/// Verifies unaligned register-indirect accesses execute with warnings.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_unaligned_register_indirect_reports_warning(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET nums\n"
+        "    mov DWORD PTR [esi + 9], 100\n"
+        "    mov eax, DWORD PTR [esi + 9]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "unaligned register-indirect source should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "unaligned register-indirect read should set EAX = 100");
+    failures += expect_json_contains(json, "\"byteOffset\":9", "unaligned register-indirect change should report byte offset 9");
+    failures += expect_json_contains(json, "\"code\":\"unaligned-memory-access\"", "unaligned register-indirect access should produce warning");
+    failures += expect_json_contains(json, "Unaligned DWORD memory access", "unaligned warning should name DWORD width");
+
+    return failures;
+}
+
 /// Verifies malformed or unsupported PTR width override diagnostics.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -751,8 +923,7 @@ static int test_ptr_width_override_error_paths(void) {
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, BYTE PTR nums[3]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "BYTE PTR source to EAX should fail width validation");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "PTR source width mismatch diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov DWORD PTR [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "future register-indirect PTR form should remain unsupported");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "register-indirect PTR diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov DWORD PTR [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "register-indirect PTR form should now be supported");
 
     return failures;
 }
@@ -773,7 +944,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -798,7 +969,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -811,7 +982,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 10 tests pass.
+/// @return Zero when all Milestone 11 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -830,6 +1001,12 @@ int main(void) {
     failures += test_ptr_width_overrides_parse_to_ir();
     failures += test_ptr_width_overrides_execute_acceptance_program();
     failures += test_ptr_width_overrides_source_reads_execute();
+    failures += test_register_indirect_operands_parse_to_ir();
+    failures += test_register_indirect_acceptance_program_executes();
+    failures += test_symbol_register_memory_forms_execute();
+    failures += test_register_indirect_error_paths();
+    failures += test_register_indirect_runtime_error_path();
+    failures += test_unaligned_register_indirect_reports_warning();
     failures += test_ptr_width_override_error_paths();
     failures += test_wasm_json_reports_ptr_width_memory_changes();
     failures += test_wasm_json_reports_symbolic_memory_change();
@@ -838,6 +1015,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 10 data section and symbol tests passed.");
+    puts("Milestone 11 data section and register-indirect tests passed.");
     return 0;
 }

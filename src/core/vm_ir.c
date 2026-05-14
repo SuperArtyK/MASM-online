@@ -1,6 +1,6 @@
 /*
  * @file vm_ir.c
- * @brief Constructors and metadata helpers for the minimal Milestone 4 IR.
+ * @brief Constructors and metadata helpers for implemented IR operands.
  *
  * The helpers in this file keep hardcoded IR program construction consistent
  * while parser support is intentionally deferred to later milestones.
@@ -48,6 +48,18 @@ VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits) {
     operand.kind = VM_IR_OPERAND_MEMORY_ADDRESS;
     operand.width_bits = width_bits;
     operand.address = address;
+
+    return operand;
+}
+
+VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t displacement, uint32_t static_address, uint8_t width_bits) {
+    VmIrOperand operand = vm_ir_operand_none();
+
+    operand.kind = VM_IR_OPERAND_MEMORY_REGISTER;
+    operand.width_bits = width_bits;
+    operand.immediate = (uint32_t)displacement;
+    operand.reg = base_register;
+    operand.address = static_address;
 
     return operand;
 }

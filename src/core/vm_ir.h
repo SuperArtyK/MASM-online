@@ -1,11 +1,11 @@
 /*
  * @file vm_ir.h
- * @brief Minimal internal IR instruction and operand types for Milestone 4.
+ * @brief Internal IR instruction and operand types for the MASM32 simulator.
  *
- * This module defines the smallest executable instruction representation used
- * by the MASM32 educational simulator core before a parser exists. Each IR
- * instruction preserves source metadata so later diagnostics and debugger
- * panels can report where hardcoded or parsed instructions originated.
+ * This module defines the executable instruction representation used by the
+ * MASM32 educational simulator core. Each IR instruction preserves source
+ * metadata so diagnostics and debugger panels can report where hardcoded or
+ * parsed instructions originated.
  */
 
 #ifndef MASM32_SIM_VM_IR_H
@@ -16,7 +16,7 @@
 
 #include "vm_cpu.h"
 
-/// Identifies the minimal Milestone 4 IR operation code.
+/// Identifies the currently implemented IR operation code.
 typedef enum VmIrOpcode {
     /// Move a value from source operand to destination operand.
     VM_IR_OPCODE_MOV = 0,
@@ -24,7 +24,7 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ADD,
     /// Subtract source operand from destination operand and update arithmetic flags.
     VM_IR_OPCODE_SUB,
-    /// Number of supported Milestone 4 operation codes.
+    /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;
 
@@ -37,7 +37,9 @@ typedef enum VmIrOperandKind {
     /// CPU register or register alias operand.
     VM_IR_OPERAND_REGISTER,
     /// Absolute simulated memory address operand.
-    VM_IR_OPERAND_MEMORY_ADDRESS
+    VM_IR_OPERAND_MEMORY_ADDRESS,
+    /// Runtime memory address computed from an optional static base, a base register, and displacement.
+    VM_IR_OPERAND_MEMORY_REGISTER
 } VmIrOperandKind;
 
 /// Describes one minimal IR operand.
@@ -46,11 +48,11 @@ typedef struct VmIrOperand {
     VmIrOperandKind kind;
     /// Operand width in bits when known; valid execution widths are 8, 16, and 32.
     uint8_t width_bits;
-    /// Immediate value used when @ref kind is VM_IR_OPERAND_IMMEDIATE.
+    /// Immediate value for VM_IR_OPERAND_IMMEDIATE, or signed displacement bits for VM_IR_OPERAND_MEMORY_REGISTER.
     uint32_t immediate;
-    /// Register identifier used when @ref kind is VM_IR_OPERAND_REGISTER.
+    /// Register identifier used when @ref kind is VM_IR_OPERAND_REGISTER or VM_IR_OPERAND_MEMORY_REGISTER.
     VmRegister reg;
-    /// Absolute simulated address used when @ref kind is VM_IR_OPERAND_MEMORY_ADDRESS.
+    /// Absolute address for VM_IR_OPERAND_MEMORY_ADDRESS, or static base address for VM_IR_OPERAND_MEMORY_REGISTER.
     uint32_t address;
 } VmIrOperand;
 
@@ -100,6 +102,18 @@ VmIrOperand vm_ir_operand_register(VmRegister reg, uint8_t width_bits);
 /// @return Memory-address operand descriptor.
 VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits);
 
+/// Returns a runtime register-indirect memory operand.
+///
+/// The effective address is computed during execution as static base address
+/// plus the current base register value plus signed byte displacement.
+///
+/// @param base_register Register that contributes the runtime byte address or offset.
+/// @param displacement Signed byte displacement added to the runtime address.
+/// @param static_address Static base address, normally zero or a data-symbol base.
+/// @param width_bits Operand width in bits, or zero when parser validation will infer it.
+/// @return Register-indirect memory operand descriptor.
+VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t displacement, uint32_t static_address, uint8_t width_bits);
+
 /// Returns an IR instruction with preserved source metadata.
 ///
 /// @param opcode Operation code to execute.
@@ -126,7 +140,7 @@ VmIrInstruction vm_ir_instruction(
 /// @return Static opcode name, or NULL for invalid values.
 const char *vm_ir_opcode_name(VmIrOpcode opcode);
 
-/// Returns whether an operand width is supported by Milestone 4 execution.
+/// Returns whether an operand width is supported by the current MASM32 execution subset.
 ///
 /// @param width_bits Width in bits to inspect.
 /// @return true for 8, 16, and 32 bits.

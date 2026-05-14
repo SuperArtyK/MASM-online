@@ -1,11 +1,11 @@
 /*
  * @file vm_exec.h
- * @brief Minimal Milestone 4 IR executor for the MASM32 educational VM core.
+ * @brief IR executor for the MASM32 educational VM core.
  *
- * This module executes a hardcoded or caller-provided array of minimal IR
- * instructions. It supports only mov, add, and sub over immediate, register,
- * and absolute memory-address operands. Parser, control flow, stack behavior,
- * Irvine32 routines, and browser integration are intentionally deferred.
+ * This module executes caller-provided IR instruction arrays. It supports the
+ * currently implemented mov, add, and sub forms over immediate, register,
+ * absolute memory, and register-indirect memory operands. Control flow, stack
+ * behavior, Irvine32 routines, and resource watchdogs remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -19,14 +19,17 @@
 #include "vm_ir.h"
 #include "vm_memory.h"
 
-/// Maximum canonical register changes retained in one Milestone 4 step delta.
+/// Maximum canonical register changes retained in one step delta.
 #define VM_EXEC_MAX_REGISTER_CHANGES 9U
 
-/// Maximum named flag changes retained in one Milestone 4 step delta.
+/// Maximum named flag changes retained in one step delta.
 #define VM_EXEC_MAX_FLAG_CHANGES 4U
 
-/// Maximum raw byte memory changes retained in one Milestone 4 step delta.
+/// Maximum raw byte memory changes retained in one step delta.
 #define VM_EXEC_MAX_MEMORY_CHANGES 64U
+
+/// Maximum checked memory accesses retained in one step delta.
+#define VM_EXEC_MAX_MEMORY_ACCESSES 4U
 
 /// Describes the result of one executor operation.
 typedef enum VmExecStatus {
@@ -38,11 +41,32 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_ARGUMENT,
     /// Operation failed because an opcode or instruction descriptor was invalid.
     VM_EXEC_STATUS_INVALID_INSTRUCTION,
-    /// Operation failed because the operand combination is not supported in Milestone 4.
+    /// Operation failed because the operand combination is not supported by the current execution subset.
     VM_EXEC_STATUS_UNSUPPORTED_OPERAND,
     /// Operation failed because a checked memory access failed.
     VM_EXEC_STATUS_MEMORY_ERROR
 } VmExecStatus;
+
+
+/// Identifies whether one checked memory access read or wrote memory.
+typedef enum VmExecMemoryAccessKind {
+    /// Memory access read bytes from a checked region.
+    VM_EXEC_MEMORY_ACCESS_READ = 0,
+    /// Memory access wrote bytes to a checked region.
+    VM_EXEC_MEMORY_ACCESS_WRITE
+} VmExecMemoryAccessKind;
+
+/// Describes one checked memory access attempted by an executed instruction.
+typedef struct VmExecMemoryAccess {
+    /// Whether the access was a read or write.
+    VmExecMemoryAccessKind kind;
+    /// Effective simulated address used by the access.
+    uint32_t address;
+    /// Access width in bits.
+    uint8_t width_bits;
+    /// Status returned by the checked memory helper.
+    VmMemoryStatus status;
+} VmExecMemoryAccess;
 
 /// Describes one canonical register value change produced by a step.
 typedef struct VmExecRegisterChange {
@@ -64,7 +88,7 @@ typedef struct VmExecFlagChange {
     bool new_is_set;
 } VmExecFlagChange;
 
-/// Captures the observable effects of the last executed Milestone 4 instruction.
+/// Captures the observable effects of the last executed instruction.
 typedef struct VmExecDelta {
     /// Whether @ref instruction contains an executed instruction.
     bool has_instruction;
@@ -84,6 +108,10 @@ typedef struct VmExecDelta {
     size_t memory_change_count;
     /// Whether additional memory changes were dropped from the fixed delta buffer.
     bool memory_change_overflowed;
+    /// Checked memory accesses attempted by the instruction.
+    VmExecMemoryAccess memory_accesses[VM_EXEC_MAX_MEMORY_ACCESSES];
+    /// Number of valid entries in @ref memory_accesses.
+    size_t memory_access_count;
     /// Total executed instruction count after the step completed.
     uint64_t instruction_count;
 } VmExecDelta;
@@ -104,7 +132,7 @@ typedef struct VmExecDiagnostic {
     VmMemoryDiagnostic memory_diagnostic;
 } VmExecDiagnostic;
 
-/// Owns Milestone 4 CPU, memory, loaded IR program, and last-step diagnostics.
+/// Owns CPU, memory, loaded IR program, and last-step diagnostics for VM execution.
 typedef struct Vm {
     /// CPU register and flag state.
     VmCpu cpu;
@@ -126,7 +154,7 @@ typedef struct Vm {
     VmExecDiagnostic last_diagnostic;
 } Vm;
 
-/// Initializes a Milestone 4 VM instance.
+/// Initializes a VM instance for the currently implemented execution subset.
 ///
 /// @param vm VM instance to initialize.
 /// @param memory_config Optional memory-size configuration; NULL uses defaults.

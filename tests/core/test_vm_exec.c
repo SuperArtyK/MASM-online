@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the Milestone 4 minimal IR executor.
+ * @brief Unit tests for the VM executor through Milestone 11.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -288,6 +288,63 @@ static int test_memory_operands_and_delta(void) {
     return failures;
 }
 
+/// Verifies register-indirect memory operands and access-status recording.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_indirect_memory_operand_and_access_delta(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t stored = 0U;
+    const VmExecDelta *delta = NULL;
+    const uint32_t unaligned_address = VM_MEMORY_DEFAULT_DATA_BASE + 1U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ESI, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, unaligned_address, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov esi, OFFSET data + 1", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_REGISTER, 32U, 0U, VM_REGISTER_ESI, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xAABBCCDDU, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "mov DWORD PTR [esi], 0AABBCCDDh", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_MEMORY_REGISTER, 32U, 0U, VM_REGISTER_ESI, 0U}, "main.asm", 3U, "mov eax, DWORD PTR [esi]", 2U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for register-indirect memory test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "register-indirect program load should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ESI setup should execute");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "register-indirect DWORD write should execute");
+    failures += (vm_memory_read_u32(&vm.memory, unaligned_address, &stored, NULL) == VM_MEMORY_STATUS_OK_UNALIGNED ? 0 : record_failure("unaligned stored DWORD read should report an unaligned status"));
+    failures += expect_u32(stored, 0xAABBCCDDU, "register-indirect write should store the DWORD value");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 0U, 4U, "register-indirect write should record four byte changes");
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "register-indirect write should record one memory access");
+    if (delta != NULL && delta->memory_access_count >= 1U) {
+        failures += expect_u32(delta->memory_accesses[0].address, unaligned_address, "write access address should use ESI");
+        failures += expect_u32((uint32_t)delta->memory_accesses[0].width_bits, 32U, "write access width should be DWORD");
+        if (delta->memory_accesses[0].kind != VM_EXEC_MEMORY_ACCESS_WRITE) {
+            failures += record_failure("write access should be marked as a write");
+        }
+        if (delta->memory_accesses[0].status != VM_MEMORY_STATUS_OK_UNALIGNED) {
+            failures += record_failure("write access should preserve unaligned status");
+        }
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "register-indirect DWORD read should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after register-indirect load"));
+    failures += expect_u32(eax, 0xAABBCCDDU, "register-indirect read should load EAX");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "register-indirect read should record one memory access");
+    if (delta != NULL && delta->memory_access_count >= 1U) {
+        failures += expect_u32(delta->memory_accesses[0].address, unaligned_address, "read access address should use ESI");
+        if (delta->memory_accesses[0].kind != VM_EXEC_MEMORY_ACCESS_READ) {
+            failures += record_failure("read access should be marked as a read");
+        }
+        if (delta->memory_accesses[0].status != VM_MEMORY_STATUS_OK_UNALIGNED) {
+            failures += record_failure("read access should preserve unaligned status");
+        }
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies 8-bit register alias execution and flag width handling.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -423,7 +480,7 @@ static int test_metadata_helpers(void) {
         failures += record_failure("8/16/32-bit widths should be supported");
     }
     if (vm_ir_width_is_supported(64U)) {
-        failures += record_failure("64-bit execution width should not be supported in Milestone 4");
+        failures += record_failure("64-bit execution width should not be supported by the current MASM32 execution subset");
     }
     if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_OK), "ok") != 0) {
         failures += record_failure("executor OK status name should be stable");
@@ -435,7 +492,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all Milestone 4 executor tests.
+/// Runs all executor tests through Milestone 11.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -445,16 +502,17 @@ int main(void) {
     failures += test_step_mov_add_register_delta();
     failures += test_sub_underflow_flags_and_delta();
     failures += test_memory_operands_and_delta();
+    failures += test_register_indirect_memory_operand_and_access_delta();
     failures += test_alias_width_edge_case();
     failures += test_zero_length_program_halts();
     failures += test_error_paths_and_diagnostics();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
-        fprintf(stderr, "%d Milestone 4 executor test failure(s).\n", failures);
+        fprintf(stderr, "%d executor test failure(s).\n", failures);
         return 1;
     }
 
-    puts("Milestone 4 minimal IR executor tests passed.");
+    puts("Executor tests through Milestone 11 passed.");
     return 0;
 }

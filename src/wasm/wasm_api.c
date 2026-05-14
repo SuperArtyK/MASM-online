@@ -3,8 +3,8 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 10 source execution export parses optional `.data`, initializes
- * simulated memory, runs the currently supported minimal `.code` subset, and
+ * Milestone 11 source execution export parses optional `.data`, initializes
+ * simulated memory, runs the currently supported `.code` subset, and
  * reports a compact JSON result for the UI.
  */
 
@@ -33,13 +33,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 10 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 11 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 10 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 11 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 10 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 11 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -60,7 +60,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 10 JSON response.
+/// Bytes available for the returned Milestone 11 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -121,7 +121,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 10 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 11 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -306,7 +306,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append(writer, "}");
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 10 UI.
+/// Appends the canonical 32-bit register object used by the Milestone 11 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -504,6 +504,29 @@ static uint32_t masm32_sim_wasm_decode_u32(const uint8_t *bytes, uint8_t size) {
     return value;
 }
 
+/// Finds the effective address of the logical memory write in a step delta.
+///
+/// @param delta Step delta to inspect.
+/// @param out_address Receives the effective write address.
+/// @return true when a write access was recorded.
+static bool masm32_sim_wasm_delta_write_address(const VmExecDelta *delta, uint32_t *out_address) {
+    size_t index = 0U;
+
+    if (delta == NULL || out_address == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        const VmExecMemoryAccess *access = &delta->memory_accesses[index];
+        if (access->kind == VM_EXEC_MEMORY_ACCESS_WRITE && vm_memory_status_succeeded(access->status)) {
+            *out_address = access->address;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /// Collects one symbol-aware logical memory write from the last-step delta.
 ///
 /// @param storage Source-run storage to mutate.
@@ -513,6 +536,7 @@ static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *stora
     const VmExecDelta *delta = NULL;
     const VmIrOperand *destination = NULL;
     const VmSymbol *symbol = NULL;
+    uint32_t destination_address = 0U;
     uint8_t width_bytes = 0U;
     uint8_t old_bytes[4] = {0U, 0U, 0U, 0U};
     uint8_t new_bytes[4] = {0U, 0U, 0U, 0U};
@@ -530,27 +554,32 @@ static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *stora
     }
 
     destination = &delta->instruction.destination;
-    if (destination->kind != VM_IR_OPERAND_MEMORY_ADDRESS || (destination->width_bits != 8U && destination->width_bits != 16U && destination->width_bits != 32U)) {
+    if ((destination->kind != VM_IR_OPERAND_MEMORY_ADDRESS && destination->kind != VM_IR_OPERAND_MEMORY_REGISTER) ||
+        (destination->width_bits != 8U && destination->width_bits != 16U && destination->width_bits != 32U)) {
+        return;
+    }
+
+    if (!masm32_sim_wasm_delta_write_address(delta, &destination_address)) {
         return;
     }
 
     width_bytes = (uint8_t)(destination->width_bits / 8U);
-    symbol = vm_symbol_find_by_address(storage->symbols, parser_result->symbol_count, destination->address);
-    if (symbol == NULL || destination->address + width_bytes > symbol->address + symbol->size_bytes) {
+    symbol = vm_symbol_find_by_address(storage->symbols, parser_result->symbol_count, destination_address);
+    if (symbol == NULL || destination_address + width_bytes > symbol->address + symbol->size_bytes) {
         return;
     }
 
     for (byte_index = 0U; byte_index < width_bytes; byte_index += 1U) {
         uint8_t current_byte = 0U;
-        (void)vm_memory_read_u8(&vm->memory, destination->address + byte_index, &current_byte, NULL);
+        (void)vm_memory_read_u8(&vm->memory, destination_address + byte_index, &current_byte, NULL);
         old_bytes[byte_index] = current_byte;
         new_bytes[byte_index] = current_byte;
     }
 
     for (change_index = 0U; change_index < delta->memory_change_count; change_index += 1U) {
         const VmMemoryByteChange *byte_change = &delta->memory_changes[change_index];
-        if (byte_change->address >= destination->address && byte_change->address < destination->address + width_bytes) {
-            uint8_t relative = (uint8_t)(byte_change->address - destination->address);
+        if (byte_change->address >= destination_address && byte_change->address < destination_address + width_bytes) {
+            uint8_t relative = (uint8_t)(byte_change->address - destination_address);
             old_bytes[relative] = byte_change->old_value;
             new_bytes[relative] = byte_change->new_value;
             has_changed_byte = true;
@@ -561,8 +590,8 @@ static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *stora
         Masm32SimSymbolicMemoryChange *change = &storage->memory_changes[storage->memory_change_count];
         change->symbol_name = symbol->name;
         change->data_type_name = destination->width_bits == 8U ? "BYTE" : (destination->width_bits == 16U ? "WORD" : "DWORD");
-        change->address = destination->address;
-        change->byte_offset = destination->address - symbol->address;
+        change->address = destination_address;
+        change->byte_offset = destination_address - symbol->address;
         change->has_element_index = symbol->element_size_bytes != 0U && (change->byte_offset % (uint32_t)symbol->element_size_bytes) == 0U;
         change->element_index = change->has_element_index ? change->byte_offset / (uint32_t)symbol->element_size_bytes : 0U;
         change->width_bits = destination->width_bits;
@@ -589,44 +618,37 @@ static const char *masm32_sim_wasm_width_name(uint8_t width_bits) {
     return "memory";
 }
 
-/// Returns whether a memory operand address is unaligned for its width.
+/// Returns whether a checked memory access was successful and unaligned.
 ///
-/// @param operand Operand to inspect.
-/// @return true when the operand is a multi-byte unaligned memory access.
-static bool masm32_sim_wasm_memory_operand_is_unaligned(const VmIrOperand *operand) {
-    uint8_t width_bytes = 0U;
-
-    if (operand == NULL || operand->kind != VM_IR_OPERAND_MEMORY_ADDRESS || operand->width_bits <= 8U) {
-        return false;
-    }
-
-    width_bytes = (uint8_t)(operand->width_bits / 8U);
-    return width_bytes > 1U && (operand->address % (uint32_t)width_bytes) != 0U;
+/// @param access Checked memory access to inspect.
+/// @return true when the memory module reported an unaligned successful access.
+static bool masm32_sim_wasm_access_is_unaligned(const VmExecMemoryAccess *access) {
+    return access != NULL && access->status == VM_MEMORY_STATUS_OK_UNALIGNED;
 }
 
 /// Records one unaligned memory warning when capacity allows it.
 ///
 /// @param storage Source-run storage to mutate.
 /// @param instruction Instruction associated with the warning.
-/// @param operand Memory operand that triggered the warning.
-static void masm32_sim_wasm_collect_unaligned_warning_for_operand(
+/// @param access Checked memory access that triggered the warning.
+static void masm32_sim_wasm_collect_unaligned_warning_for_access(
     Masm32SimWasmRunStorage *storage,
     const VmIrInstruction *instruction,
-    const VmIrOperand *operand
+    const VmExecMemoryAccess *access
 ) {
     Masm32SimWasmUnalignedWarning *warning = NULL;
 
-    if (storage == NULL || instruction == NULL || operand == NULL || storage->warning_count >= (size_t)MASM32_SIM_WASM_MAX_RUN_WARNINGS) {
+    if (storage == NULL || instruction == NULL || access == NULL || storage->warning_count >= (size_t)MASM32_SIM_WASM_MAX_RUN_WARNINGS) {
         return;
     }
 
-    if (!masm32_sim_wasm_memory_operand_is_unaligned(operand)) {
+    if (!masm32_sim_wasm_access_is_unaligned(access)) {
         return;
     }
 
     warning = &storage->warnings[storage->warning_count];
-    warning->address = operand->address;
-    warning->width_bits = operand->width_bits;
+    warning->address = access->address;
+    warning->width_bits = access->width_bits;
     warning->source_line = instruction->source_line;
     storage->warning_count += 1U;
 }
@@ -637,6 +659,7 @@ static void masm32_sim_wasm_collect_unaligned_warning_for_operand(
 /// @param vm VM whose last delta should be inspected.
 static void masm32_sim_wasm_collect_unaligned_warnings(Masm32SimWasmRunStorage *storage, const Vm *vm) {
     const VmExecDelta *delta = NULL;
+    size_t index = 0U;
 
     if (storage == NULL || vm == NULL) {
         return;
@@ -647,10 +670,8 @@ static void masm32_sim_wasm_collect_unaligned_warnings(Masm32SimWasmRunStorage *
         return;
     }
 
-    masm32_sim_wasm_collect_unaligned_warning_for_operand(storage, &delta->instruction, &delta->instruction.destination);
-    if (delta->instruction.source.kind == VM_IR_OPERAND_MEMORY_ADDRESS &&
-        (delta->instruction.destination.kind != VM_IR_OPERAND_MEMORY_ADDRESS || delta->instruction.source.address != delta->instruction.destination.address)) {
-        masm32_sim_wasm_collect_unaligned_warning_for_operand(storage, &delta->instruction, &delta->instruction.source);
+    for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        masm32_sim_wasm_collect_unaligned_warning_for_access(storage, &delta->instruction, &delta->memory_accesses[index]);
     }
 }
 
@@ -693,6 +714,19 @@ static bool masm32_sim_json_append_warnings(
     return true;
 }
 
+/// Returns the simulator-message category for one parser diagnostic.
+///
+/// @param code Parser diagnostic code to classify.
+/// @return Stable simulator-message kind string.
+static const char *masm32_sim_wasm_parser_diagnostic_kind(VmParserDiagnosticCode code) {
+    if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH) {
+        return "unsupported-feature";
+    }
+
+    return "assembly-error";
+}
+
 /// Appends parser diagnostics to the simulatorMessages array.
 ///
 /// @param writer Writer to mutate.
@@ -718,7 +752,7 @@ static bool masm32_sim_json_append_parser_messages(
         }
         if (!masm32_sim_json_append_message(
                 writer,
-                "assembly-error",
+                masm32_sim_wasm_parser_diagnostic_kind(diagnostic->code),
                 code_name != NULL ? code_name : "parser-diagnostic",
                 diagnostic->message != NULL ? diagnostic->message : "Parser diagnostic.",
                 diagnostic->location.line,
@@ -782,7 +816,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":10,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":11,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -821,7 +855,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":10,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":11,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

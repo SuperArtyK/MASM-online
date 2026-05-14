@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 10 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 11 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -91,6 +91,57 @@ static int test_zero_instruction_program_succeeds(void) {
     failures += expect_json_contains(json, "\"ok\":true", "zero-instruction program should succeed");
     failures += expect_json_contains(json, "\"instructionCount\":0", "zero-instruction program should execute no instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "zero-instruction program should expose zero EAX");
+
+    return failures;
+}
+
+/// Verifies the Milestone 11 register-indirect source-run acceptance program.
+///
+/// @return Number of failures.
+static int test_register_indirect_source_run_succeeds(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET nums\n"
+        "    mov DWORD PTR [esi + 8], 100\n"
+        "    mov eax, DWORD PTR [esi + 8]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
+    failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "register-indirect memory change should resolve to nums + 8");
+    failures += expect_json_contains(json, "\"elementIndex\":2", "register-indirect memory change should include element index 2");
+
+    return failures;
+}
+
+/// Verifies scaled-index source-run diagnostics are explicit unsupported-feature messages.
+///
+/// @return Number of failures.
+static int test_scaled_index_source_run_returns_unsupported_feature(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, DWORD PTR [esi * 4]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "scaled-index form should fail source run");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "scaled-index form should be a parse error");
+    failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "scaled-index diagnostic should be categorized as unsupported-feature");
+    failures += expect_json_contains(json, "unsupported-scaled-index", "scaled-index diagnostic should expose stable code");
+    failures += expect_json_contains(json, "Scaled-index memory operands are not supported yet.", "scaled-index diagnostic should be user-readable");
 
     return failures;
 }
@@ -137,7 +188,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 10 constant symbol-offset acceptance program.
+/// Verifies the Milestone 11 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -153,7 +204,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
+    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -269,9 +320,6 @@ static int test_constant_symbol_offset_out_of_bounds_returns_parse_error(void) {
     return failures;
 }
 
-/// Verifies that NULL source is rejected as a structured source error.
-///
-/// @return Number of failures.
 /// Verifies negative immediates execute through the Wasm source-run API.
 ///
 /// @return Number of failures.
@@ -310,6 +358,9 @@ static int test_negative_immediate_overflow_returns_parse_error(void) {
     return failures;
 }
 
+/// Verifies that NULL source is rejected as a structured source error.
+///
+/// @return Number of failures.
 static int test_null_source_returns_invalid_argument_json(void) {
     const char *json = masm32_sim_wasm_run_source_json(NULL);
     int failures = 0;
@@ -374,6 +425,8 @@ int main(void) {
     failures += test_narrow_register_immediate_overflow_returns_parse_error();
     failures += test_negative_immediate_source_run_succeeds();
     failures += test_negative_immediate_overflow_returns_parse_error();
+    failures += test_register_indirect_source_run_succeeds();
+    failures += test_scaled_index_source_run_returns_unsupported_feature();
     failures += test_constant_symbol_offset_source_run_succeeds();
     failures += test_unaligned_constant_symbol_offset_reports_warning();
     failures += test_negative_symbol_offset_inside_data_image_succeeds();
@@ -387,6 +440,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 10 source execution tests passed.");
+    puts("Milestone 11 source execution tests passed.");
     return 0;
 }

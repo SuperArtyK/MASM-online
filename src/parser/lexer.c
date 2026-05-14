@@ -4,7 +4,7 @@
  *
  * The lexer recognizes the token set needed by the current parser: identifiers,
  * MASM32 registers, signed decimal and hexadecimal numbers, strings, commas,
- * square brackets, parentheses, question marks, plus and minus signs, colons,
+ * square brackets, parentheses, question marks, plus, minus, asterisk signs, colons,
  * comments, directives, and line endings.
  */
 
@@ -670,6 +670,8 @@ VmLexerStatus vm_lexer_tokenize(
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_PLUS);
         } else if (ch == '-') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_MINUS);
+        } else if (ch == '*') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_ASTERISK);
         } else if (ch == ':') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_COLON);
         } else {
@@ -722,6 +724,7 @@ const char *vm_lexer_token_kind_name(VmLexerTokenKind kind) {
         "QUESTION",
         "PLUS",
         "MINUS",
+        "ASTERISK",
         "COLON"
     };
 

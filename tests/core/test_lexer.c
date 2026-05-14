@@ -296,7 +296,7 @@ static int test_brackets_and_commas(void) {
 /// @return Zero on success, otherwise a positive failure count.
 static int test_symbol_offset_operator_tokens(void) {
     int failures = 0;
-    const char *source = "[nums + 8] nums-label";
+    const char *source = "[nums + 8] nums-label [esi * 4]";
     VmLexerToken tokens[16];
     VmLexerDiagnostic diagnostics[4];
     VmLexerResult result;
@@ -307,6 +307,7 @@ static int test_symbol_offset_operator_tokens(void) {
     failures += expect_token_kind(tokens[5].kind, VM_LEXER_TOKEN_IDENTIFIER, "nums should tokenize before standalone minus");
     failures += expect_token_kind(tokens[6].kind, VM_LEXER_TOKEN_MINUS, "standalone - should tokenize as MINUS");
     failures += expect_token_kind(tokens[7].kind, VM_LEXER_TOKEN_IDENTIFIER, "label should tokenize after standalone minus");
+    failures += expect_token_kind(tokens[10].kind, VM_LEXER_TOKEN_ASTERISK, "* should tokenize as ASTERISK for scaled-index diagnostics");
 
     return failures;
 }

@@ -1,9 +1,9 @@
 /*
  * @file vm_exec.c
- * @brief Minimal Milestone 4 executor for hardcoded IR programs.
+ * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a tiny vertical slice: mov, add,
- * and sub over immediate, register, and absolute memory-address operands. It
+ * and sub over immediate, register, absolute memory, and supported register-indirect memory operands. It
  * records last-step deltas by snapshotting CPU state and copying memory-module
  * byte changes after each successful step.
  */
@@ -12,7 +12,7 @@
 
 #include <string.h>
 
-/// Canonical registers captured for Milestone 4 register deltas.
+/// Canonical registers captured for register deltas.
 static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_MAX_REGISTER_CHANGES] = {
     VM_REGISTER_EAX,
     VM_REGISTER_EBX,
@@ -25,7 +25,7 @@ static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_MAX_REGISTER_C
     VM_REGISTER_EIP
 };
 
-/// Named flags captured for Milestone 4 flag deltas.
+/// Named flags captured for flag deltas.
 static const VmFlag VM_EXEC_DELTA_FLAGS[VM_EXEC_MAX_FLAG_CHANGES] = {
     VM_FLAG_CF,
     VM_FLAG_ZF,
@@ -161,6 +161,82 @@ static bool vm_exec_operand_width(const VmIrOperand *operand, uint8_t *out_width
     return true;
 }
 
+/// Returns whether an operand is any implemented memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true for absolute and register-indirect memory operands.
+static bool vm_exec_operand_is_memory(const VmIrOperand *operand) {
+    return operand != NULL &&
+           (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER);
+}
+
+/// Resolves an implemented memory operand to an effective 32-bit address.
+///
+/// Register-indirect addresses use 32-bit wrapping arithmetic, matching the
+/// educational MASM32 flat address model. Bounds and permissions remain owned
+/// by the checked memory module.
+///
+/// @param vm VM whose CPU state supplies runtime register values.
+/// @param operand Memory operand to resolve.
+/// @param out_address Receives the effective address.
+/// @return true when the operand was a supported memory operand.
+static bool vm_exec_resolve_memory_address(const Vm *vm, const VmIrOperand *operand, uint32_t *out_address) {
+    uint32_t base_value = 0U;
+    uint32_t address = 0U;
+
+    if (vm == NULL || operand == NULL || out_address == NULL) {
+        return false;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+        *out_address = operand->address;
+        return true;
+    }
+
+    if (operand->kind != VM_IR_OPERAND_MEMORY_REGISTER || !vm_cpu_read_register(&vm->cpu, operand->reg, &base_value)) {
+        return false;
+    }
+
+    address = operand->address + base_value;
+    if ((int32_t)operand->immediate < 0) {
+        uint32_t magnitude = (uint32_t)(-(int64_t)(int32_t)operand->immediate);
+        address -= magnitude;
+    } else {
+        address += (uint32_t)(int32_t)operand->immediate;
+    }
+
+    *out_address = address;
+    return true;
+}
+
+/// Records a checked memory access in the last-step delta when capacity allows it.
+///
+/// @param vm VM whose delta should receive the memory-access record.
+/// @param kind Read or write access kind.
+/// @param address Effective simulated address.
+/// @param width_bits Access width in bits.
+/// @param status Status returned by the checked memory helper.
+static void vm_exec_record_memory_access(
+    Vm *vm,
+    VmExecMemoryAccessKind kind,
+    uint32_t address,
+    uint8_t width_bits,
+    VmMemoryStatus status
+) {
+    VmExecMemoryAccess *access = NULL;
+
+    if (vm == NULL || vm->last_delta.memory_access_count >= (size_t)VM_EXEC_MAX_MEMORY_ACCESSES) {
+        return;
+    }
+
+    access = &vm->last_delta.memory_accesses[vm->last_delta.memory_access_count];
+    access->kind = kind;
+    access->address = address;
+    access->width_bits = width_bits;
+    access->status = status;
+    vm->last_delta.memory_access_count += 1U;
+}
+
 /// Reads an operand value through CPU or memory helpers.
 ///
 /// @param vm VM instance to inspect.
@@ -198,22 +274,29 @@ static VmExecStatus vm_exec_read_operand(
             *out_value = value32 & mask;
             return VM_EXEC_STATUS_OK;
         case VM_IR_OPERAND_MEMORY_ADDRESS:
+        case VM_IR_OPERAND_MEMORY_REGISTER: {
+            uint32_t effective_address = 0U;
+            if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
             memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
             if (width_bits == 8U) {
-                memory_status = vm_memory_read_u8(&vm->memory, operand->address, &value8, &memory_diagnostic);
+                memory_status = vm_memory_read_u8(&vm->memory, effective_address, &value8, &memory_diagnostic);
                 value32 = (uint32_t)value8;
             } else if (width_bits == 16U) {
-                memory_status = vm_memory_read_u16(&vm->memory, operand->address, &value16, &memory_diagnostic);
+                memory_status = vm_memory_read_u16(&vm->memory, effective_address, &value16, &memory_diagnostic);
                 value32 = (uint32_t)value16;
             } else {
-                memory_status = vm_memory_read_u32(&vm->memory, operand->address, &value32, &memory_diagnostic);
+                memory_status = vm_memory_read_u32(&vm->memory, effective_address, &value32, &memory_diagnostic);
             }
+            vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, effective_address, width_bits, memory_status);
             if (!vm_memory_status_succeeded(memory_status)) {
                 vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
                 return VM_EXEC_STATUS_MEMORY_ERROR;
             }
             *out_value = value32 & mask;
             return VM_EXEC_STATUS_OK;
+        }
         default:
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
@@ -251,25 +334,32 @@ static VmExecStatus vm_exec_write_operand(
             }
             return VM_EXEC_STATUS_OK;
         case VM_IR_OPERAND_MEMORY_ADDRESS:
+        case VM_IR_OPERAND_MEMORY_REGISTER: {
+            uint32_t effective_address = 0U;
+            if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
             memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
             if (width_bits == 8U) {
-                memory_status = vm_memory_write_u8(&vm->memory, operand->address, (uint8_t)masked_value, &memory_diagnostic);
+                memory_status = vm_memory_write_u8(&vm->memory, effective_address, (uint8_t)masked_value, &memory_diagnostic);
             } else if (width_bits == 16U) {
-                memory_status = vm_memory_write_u16(&vm->memory, operand->address, (uint16_t)masked_value, &memory_diagnostic);
+                memory_status = vm_memory_write_u16(&vm->memory, effective_address, (uint16_t)masked_value, &memory_diagnostic);
             } else {
-                memory_status = vm_memory_write_u32(&vm->memory, operand->address, masked_value, &memory_diagnostic);
+                memory_status = vm_memory_write_u32(&vm->memory, effective_address, masked_value, &memory_diagnostic);
             }
+            vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_WRITE, effective_address, width_bits, memory_status);
             if (!vm_memory_status_succeeded(memory_status)) {
                 vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
                 return VM_EXEC_STATUS_MEMORY_ERROR;
             }
             return VM_EXEC_STATUS_OK;
+        }
         default:
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
 }
 
-/// Returns whether an operand can be used as a Milestone 4 destination.
+/// Returns whether an operand can be used as a destination by the current execution subset.
 ///
 /// @param operand Operand to inspect.
 /// @return true for register and memory-address operands.
@@ -278,10 +368,10 @@ static bool vm_exec_operand_is_destination(const VmIrOperand *operand) {
         return false;
     }
 
-    return operand->kind == VM_IR_OPERAND_REGISTER || operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS;
+    return operand->kind == VM_IR_OPERAND_REGISTER || vm_exec_operand_is_memory(operand);
 }
 
-/// Returns whether a source/destination pair is supported by Milestone 4.
+/// Returns whether a source/destination pair is supported by the current execution subset.
 ///
 /// @param destination Destination operand to inspect.
 /// @param source Source operand to inspect.
@@ -291,11 +381,11 @@ static bool vm_exec_operands_are_supported(const VmIrOperand *destination, const
         return false;
     }
 
-    if (source->kind != VM_IR_OPERAND_IMMEDIATE && source->kind != VM_IR_OPERAND_REGISTER && source->kind != VM_IR_OPERAND_MEMORY_ADDRESS) {
+    if (source->kind != VM_IR_OPERAND_IMMEDIATE && source->kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(source)) {
         return false;
     }
 
-    if (destination->kind == VM_IR_OPERAND_MEMORY_ADDRESS && source->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+    if (vm_exec_operand_is_memory(destination) && vm_exec_operand_is_memory(source)) {
         return false;
     }
 

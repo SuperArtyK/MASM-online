@@ -1,10 +1,10 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 10.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 11.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
- * executor. Control flow, stack behavior, register-indirect operands, Irvine32 routines,
+ * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
  * and full MASM expression parsing remain later milestones.
  */
 
@@ -918,6 +918,319 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
     return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
+/// Returns whether a register is allowed as a Milestone 11 memory base.
+///
+/// @param token Register token to inspect.
+/// @return true for ESI, EDI, EBX, and EBP.
+static bool vm_parser_token_is_register_indirect_base(const VmLexerToken *token) {
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_REGISTER) {
+        return false;
+    }
+
+    return token->register_id == VM_REGISTER_ESI ||
+           token->register_id == VM_REGISTER_EDI ||
+           token->register_id == VM_REGISTER_EBX ||
+           token->register_id == VM_REGISTER_EBP;
+}
+
+/// Records the stable diagnostic for unsupported scaled-index memory syntax.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param token Token associated with the scaled-index operator.
+static void vm_parser_add_scaled_index_diagnostic(VmParserState *state, const VmLexerToken *token) {
+    vm_parser_add_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX,
+        token,
+        "Scaled-index memory operands are not supported yet."
+    );
+}
+
+/// Creates a register-indirect memory operand with optional symbol base.
+///
+/// When @p symbol_token is present, its symbol address contributes the static
+/// base and the symbol declaration supplies the default width when no PTR width
+/// was provided. When no symbol is present, the width may remain zero so later
+/// parser validation can infer it from the opposite operand.
+///
+/// @param state Parser state to inspect.
+/// @param base_token Register token used as the runtime base.
+/// @param displacement Signed byte displacement added to the effective address.
+/// @param symbol_token Optional data symbol that contributes a static base address.
+/// @param explicit_width_bits Optional PTR width override in bits, or zero.
+/// @param width_token Optional PTR width token used for diagnostics.
+/// @param out_operand Receives the register-indirect memory operand.
+/// @return true when the operand was parsed and width metadata is acceptable.
+static bool vm_parser_build_register_memory_operand(
+    VmParserState *state,
+    const VmLexerToken *base_token,
+    int32_t displacement,
+    const VmLexerToken *symbol_token,
+    uint8_t explicit_width_bits,
+    const VmLexerToken *width_token,
+    VmIrOperand *out_operand
+) {
+    const VmSymbol *symbol = NULL;
+    uint32_t static_address = 0U;
+    uint8_t width_bits = explicit_width_bits;
+
+    if (state == NULL || base_token == NULL || out_operand == NULL || !vm_parser_token_is_register_indirect_base(base_token)) {
+        return false;
+    }
+
+    if (explicit_width_bits == 64U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : base_token, "QWORD PTR execution is deferred until Extended 32-bit Mode.");
+        return false;
+    }
+
+    if (symbol_token != NULL) {
+        symbol = vm_parser_resolve_symbol(state, symbol_token);
+        if (symbol == NULL) {
+            return false;
+        }
+        if (width_bits == 0U) {
+            if (symbol->element_size_bytes > 4U) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
+                return false;
+            }
+            width_bits = (uint8_t)(symbol->element_size_bytes * 8U);
+        }
+        static_address = symbol->address;
+    }
+
+    if (width_bits != 0U && !vm_ir_width_is_supported(width_bits)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : base_token, "PTR width override is not executable in the current MASM32 subset.");
+        return false;
+    }
+
+    *out_operand = vm_ir_operand_memory_register(base_token->register_id, displacement, static_address, width_bits);
+    return true;
+}
+
+/// Parses an optional displacement after a bracketed register base.
+///
+/// Supported forms are no displacement, `+ number`, and `- number`. Scaled
+/// forms using `*` are rejected with an explicit unsupported-feature diagnostic.
+///
+/// @param state Parser state positioned after the register token.
+/// @param out_displacement Receives the signed byte displacement.
+/// @return true when a valid suffix was parsed and the current token is `]`.
+static bool vm_parser_parse_register_displacement_suffix(VmParserState *state, int32_t *out_displacement) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (state == NULL || out_displacement == NULL) {
+        return false;
+    }
+
+    *out_displacement = 0;
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        return true;
+    }
+
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_ASTERISK) {
+        vm_parser_add_scaled_index_diagnostic(state, token);
+        return false;
+    }
+
+    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
+        const VmLexerToken *operator_token = token;
+        const VmLexerToken *number_token = NULL;
+        int32_t magnitude = 0;
+
+        vm_parser_advance(state);
+        number_token = vm_parser_current_token(state);
+        if (number_token == NULL || number_token->kind != VM_LEXER_TOKEN_NUMBER || number_token->number_is_negative) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, number_token != NULL ? number_token : operator_token, "Expected a non-negative numeric displacement after + or -.");
+            return false;
+        }
+        if (!vm_parser_number_to_i32_offset(number_token, &magnitude)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, number_token, "Register displacement is outside the supported signed 32-bit range.");
+            return false;
+        }
+        *out_displacement = operator_token->kind == VM_LEXER_TOKEN_MINUS ? -magnitude : magnitude;
+        vm_parser_advance(state);
+        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+            vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+            return false;
+        }
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected ], + displacement, or - displacement after register memory base.");
+    return false;
+}
+
+/// Parses `[reg]`, `[reg + constant]`, and `[reg - constant]` memory operands.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param width Optional PTR width metadata, or NULL when no PTR prefix was present.
+/// @param out_operand Receives the register-indirect memory operand.
+/// @return true when a supported register-indirect operand was parsed.
+static bool vm_parser_parse_bracketed_register_memory_operand(
+    VmParserState *state,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *base_token = NULL;
+    int32_t displacement = 0;
+
+    if (state == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    base_token = vm_parser_current_token(state);
+    if (base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, base_token != NULL ? base_token : left_token, "Expected a register memory base after '['.");
+        return false;
+    }
+    if (!vm_parser_token_is_register_indirect_base(base_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register-indirect base register. Use ESI, EDI, EBX, or EBP.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    if (!vm_parser_parse_register_displacement_suffix(state, &displacement)) {
+        return false;
+    }
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after register-indirect memory operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_register_memory_operand(
+            state,
+            base_token,
+            displacement,
+            NULL,
+            width != NULL ? width->width_bits : 0U,
+            width != NULL ? width->width_token : NULL,
+            out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `symbol[reg]` memory operands.
+///
+/// @param state Parser state positioned at the symbol token.
+/// @param width Optional PTR width metadata, or NULL when no PTR prefix was present.
+/// @param out_operand Receives the symbol-plus-register memory operand.
+/// @return true when the operand was parsed.
+static bool vm_parser_parse_symbol_register_index_memory_operand(
+    VmParserState *state,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    const VmLexerToken *symbol_token = vm_parser_current_token(state);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *base_token = NULL;
+
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    base_token = vm_parser_current_token(state);
+    if (base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, base_token != NULL ? base_token : left_token, "Expected a register inside symbol brackets.");
+        return false;
+    }
+    if (!vm_parser_token_is_register_indirect_base(base_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use ESI, EDI, EBX, or EBP.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+        vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+        return false;
+    }
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol register operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_register_memory_operand(
+            state,
+            base_token,
+            0,
+            symbol_token,
+            width != NULL ? width->width_bits : 0U,
+            width != NULL ? width->width_token : NULL,
+            out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `[symbol + reg]` memory operands.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param width Optional PTR width metadata, or NULL when no PTR prefix was present.
+/// @param out_operand Receives the symbol-plus-register memory operand.
+/// @return true when the operand was parsed.
+static bool vm_parser_parse_bracketed_symbol_register_memory_operand(
+    VmParserState *state,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = NULL;
+    const VmLexerToken *plus_token = NULL;
+    const VmLexerToken *base_token = NULL;
+
+    if (state == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    symbol_token = vm_parser_current_token(state);
+    plus_token = vm_parser_peek_token(state, 1U);
+    base_token = vm_parser_peek_token(state, 2U);
+    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || plus_token == NULL || plus_token->kind != VM_LEXER_TOKEN_PLUS || base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected [symbol + register] memory operand.");
+        return false;
+    }
+    if (!vm_parser_token_is_register_indirect_base(base_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use ESI, EDI, EBX, or EBP.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+        vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+        return false;
+    }
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol register operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_register_memory_operand(
+            state,
+            base_token,
+            0,
+            symbol_token,
+            width != NULL ? width->width_bits : 0U,
+            width != NULL ? width->width_token : NULL,
+            out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
 /// Parses an optional signed offset after a bracketed symbol token.
 ///
 /// Supported forms are empty offset-zero brackets, `+ number`, `- number`,
@@ -1269,10 +1582,6 @@ static bool vm_parser_parse_symbol_index_memory_operand_with_width(
 
 /// Parses a memory operand following a WIDTH PTR prefix.
 ///
-/// Register-indirect addressing is intentionally not accepted here; Milestone 11
-/// can extend this switch to parse register-based memory forms while reusing the
-/// already parsed width metadata.
-///
 /// @param state Parser state positioned after WIDTH PTR.
 /// @param width Parsed PTR width metadata.
 /// @param out_operand Receives the parsed memory operand.
@@ -1290,10 +1599,22 @@ static bool vm_parser_parse_ptr_memory_operand(VmParserState *state, const VmPar
     }
 
     if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *third_token = vm_parser_peek_token(state, 3U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_register_memory_operand(state, width, out_operand);
+        }
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_IDENTIFIER && third_token != NULL && third_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_symbol_register_memory_operand(state, width, out_operand);
+        }
         return vm_parser_parse_bracketed_symbol_offset_memory_operand_with_width(state, width, out_operand);
     }
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 2U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_symbol_register_index_memory_operand(state, width, out_operand);
+        }
         return vm_parser_parse_symbol_index_memory_operand_with_width(state, width, out_operand);
     }
 
@@ -1347,10 +1668,22 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
     }
 
     if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *third_token = vm_parser_peek_token(state, 3U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_register_memory_operand(state, NULL, out_operand);
+        }
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_IDENTIFIER && third_token != NULL && third_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_symbol_register_memory_operand(state, NULL, out_operand);
+        }
         return vm_parser_parse_bracketed_symbol_offset_memory_operand(state, out_operand);
     }
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 2U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_symbol_register_index_memory_operand(state, NULL, out_operand);
+        }
         return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
     }
 
@@ -1362,7 +1695,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, data symbol, or constant symbol-offset destination operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, data symbol, constant symbol-offset, or register-indirect destination operand.");
     return false;
 }
 
@@ -1404,10 +1737,22 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     }
 
     if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *third_token = vm_parser_peek_token(state, 3U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_register_memory_operand(state, NULL, out_operand);
+        }
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_IDENTIFIER && third_token != NULL && third_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_symbol_register_memory_operand(state, NULL, out_operand);
+        }
         return vm_parser_parse_bracketed_symbol_offset_memory_operand(state, out_operand);
     }
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 2U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_symbol_register_index_memory_operand(state, NULL, out_operand);
+        }
         return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
     }
 
@@ -1448,7 +1793,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, or OFFSET source operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, register-indirect, or OFFSET source operand.");
     return false;
 }
 
@@ -1466,7 +1811,7 @@ static bool vm_parser_resolve_operand_width(const VmIrOperand *operand, uint8_t 
 
     if (operand->kind == VM_IR_OPERAND_REGISTER) {
         width_bits = operand->width_bits != 0U ? operand->width_bits : vm_cpu_register_width_bits(operand->reg);
-    } else if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+    } else if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER) {
         width_bits = operand->width_bits;
     } else {
         return false;
@@ -1478,6 +1823,43 @@ static bool vm_parser_resolve_operand_width(const VmIrOperand *operand, uint8_t 
 
     *out_width_bits = width_bits;
     return true;
+}
+
+/// Returns whether an operand is any parser-supported memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true for absolute and register-indirect memory operands.
+static bool vm_parser_operand_is_memory(const VmIrOperand *operand) {
+    return operand != NULL &&
+           (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER);
+}
+
+/// Infers missing register-indirect memory widths from the opposite operand.
+///
+/// Register-only memory operands such as `[esi]` have no declaration width.
+/// This helper keeps them usable in textbook forms such as `mov eax, [esi]`
+/// and `mov [edi], al` without allowing ambiguous immediate-to-memory writes.
+///
+/// @param destination Destination operand to update if its width is inferable.
+/// @param source Source operand to update if its width is inferable.
+static void vm_parser_infer_register_memory_widths(VmIrOperand *destination, VmIrOperand *source) {
+    uint8_t opposite_width = 0U;
+
+    if (destination == NULL || source == NULL) {
+        return;
+    }
+
+    if (destination->kind == VM_IR_OPERAND_MEMORY_REGISTER && destination->width_bits == 0U) {
+        if (vm_parser_resolve_operand_width(source, &opposite_width)) {
+            destination->width_bits = opposite_width;
+        }
+    }
+
+    if (source->kind == VM_IR_OPERAND_MEMORY_REGISTER && source->width_bits == 0U) {
+        if (vm_parser_resolve_operand_width(destination, &opposite_width)) {
+            source->width_bits = opposite_width;
+        }
+    }
 }
 
 /// Returns the largest unsigned immediate value accepted for a destination width.
@@ -1608,7 +1990,7 @@ static bool vm_parser_validate_source_width(
         return true;
     }
 
-    if (source->kind == VM_IR_OPERAND_REGISTER || source->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+    if (source->kind == VM_IR_OPERAND_REGISTER || vm_parser_operand_is_memory(source)) {
         if (!vm_parser_resolve_operand_width(source, &source_width) || source_width != destination_width) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Source operand width does not match the destination operand width.");
             return false;
@@ -1616,7 +1998,7 @@ static bool vm_parser_validate_source_width(
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, source_token, "Expected a register, immediate, data symbol, or OFFSET source operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, source_token, "Expected a register, immediate, data symbol, register-indirect memory operand, or OFFSET source operand.");
     return false;
 }
 
@@ -1729,6 +2111,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     if (!vm_parser_parse_source_operand(state, &source)) {
         return false;
     }
+    vm_parser_infer_register_memory_widths(&destination, &source);
     if (!vm_parser_validate_source_width(state, &destination, &source, source_token)) {
         return false;
     }
@@ -2175,6 +2558,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "symbol-offset-out-of-range";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH:
             return "unsupported-ptr-width";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX:
+            return "unsupported-scaled-index";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:

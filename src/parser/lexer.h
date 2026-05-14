@@ -49,6 +49,8 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_PLUS,
     /// Minus sign used by constant symbol-offset memory operands when not part of a signed number.
     VM_LEXER_TOKEN_MINUS,
+    /// Asterisk used to recognize and reject unsupported scaled-index operands.
+    VM_LEXER_TOKEN_ASTERISK,
     /// Colon used by labels.
     VM_LEXER_TOKEN_COLON,
     /// Number of lexer token kinds.
