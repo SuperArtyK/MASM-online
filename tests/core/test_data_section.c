@@ -1429,7 +1429,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":20", "response should identify Milestone 20");
+    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1558,7 +1558,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":20", "response should identify Milestone 20");
+    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1583,7 +1583,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":20", "response should identify Milestone 20");
+    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1780,6 +1780,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 20 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 21 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

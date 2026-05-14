@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 20. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 21. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -85,6 +85,11 @@ Implemented executable instructions:
 - `xchg`
 - `neg`
 - `nop`
+- `adc`
+- `sbb`
+- `clc`
+- `stc`
+- `cmc`
 
 `movsx` and `movzx` require a register destination and an 8-bit or 16-bit register or memory source whose width is narrower than the destination. Register-indirect memory sources such as `[esi]` require `BYTE PTR` or `WORD PTR` because the source width is otherwise ambiguous.
 
@@ -102,6 +107,10 @@ Ordinary `mov` from signed memory does not sign-extend automatically; use `movsx
 `neg` supports register and memory destinations with 8-bit, 16-bit, or 32-bit widths. It updates the tracked arithmetic flags (`CF`, `ZF`, `SF`, and `OF`) using the destination width.
 
 `nop` takes no operands. It advances execution without changing registers, flags, memory, or console state.
+
+`adc` and `sbb` support register and memory destinations with compatible register, immediate, or memory sources where existing width rules are unambiguous. They use the current carry flag as carry-in or borrow-in and update the tracked arithmetic flags (`CF`, `ZF`, `SF`, and `OF`).
+
+`clc`, `stc`, and `cmc` take no operands and mutate only the tracked carry flag.
 
 ## Recognized unsupported features
 

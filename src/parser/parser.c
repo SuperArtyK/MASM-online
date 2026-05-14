@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 20.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 21.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -1527,6 +1527,26 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_NOP;
         return true;
     }
+    if (vm_parser_token_equals(token, "adc")) {
+        *out_opcode = VM_IR_OPCODE_ADC;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "sbb")) {
+        *out_opcode = VM_IR_OPCODE_SBB;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "clc")) {
+        *out_opcode = VM_IR_OPCODE_CLC;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "stc")) {
+        *out_opcode = VM_IR_OPCODE_STC;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "cmc")) {
+        *out_opcode = VM_IR_OPCODE_CMC;
+        return true;
+    }
 
     return false;
 }
@@ -1534,13 +1554,16 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
 /// Returns whether an opcode uses no explicit source operands.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for accumulator conversion instructions.
+/// @return true for accumulator conversion, NOP, and carry-control instructions.
 static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_CBW ||
            opcode == VM_IR_OPCODE_CWDE ||
            opcode == VM_IR_OPCODE_CWD ||
            opcode == VM_IR_OPCODE_CDQ ||
-           opcode == VM_IR_OPCODE_NOP;
+           opcode == VM_IR_OPCODE_NOP ||
+           opcode == VM_IR_OPCODE_CLC ||
+           opcode == VM_IR_OPCODE_STC ||
+           opcode == VM_IR_OPCODE_CMC;
 }
 
 /// Returns whether an opcode uses sign/zero-extension width rules.
@@ -3270,8 +3293,19 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
     vm_parser_advance(state);
     if (vm_parser_opcode_has_no_operands(opcode)) {
-        if (opcode == VM_IR_OPCODE_NOP && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), "NOP does not take operands.");
+        if ((opcode == VM_IR_OPCODE_NOP || opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
+            !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            const char *message = "Instruction does not take operands.";
+            if (opcode == VM_IR_OPCODE_NOP) {
+                message = "NOP does not take operands.";
+            } else if (opcode == VM_IR_OPCODE_CLC) {
+                message = "CLC does not take operands.";
+            } else if (opcode == VM_IR_OPCODE_STC) {
+                message = "STC does not take operands.";
+            } else if (opcode == VM_IR_OPCODE_CMC) {
+                message = "CMC does not take operands.";
+            }
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), message);
             return false;
         }
         if (!vm_parser_expect_line_end(state)) {

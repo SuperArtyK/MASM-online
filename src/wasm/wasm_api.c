@@ -3,10 +3,10 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 20 source execution export parses optional `.data`, initializes
+ * Milestone 21 source execution export parses optional `.data`, initializes
  * simulated memory, runs the currently supported `.code` subset including TYPE,
  * LENGTHOF, SIZEOF, packed character literals, sign/zero-extension instructions,
- * accumulator conversions, exchange/negation/no-op instructions, and recovered
+ * accumulator conversions, exchange/negation/no-op instructions, carry/borrow arithmetic, carry-flag control, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -36,13 +36,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 20 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 21 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 20 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 21 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 20 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 21 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -63,7 +63,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 20 JSON response.
+/// Bytes available for the returned Milestone 21 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -124,7 +124,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 20 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 21 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -343,7 +343,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 20 UI.
+/// Appends the canonical 32-bit register object used by the Milestone 21 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -860,7 +860,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":20,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":21,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -899,7 +899,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":20,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":21,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

@@ -3,7 +3,7 @@
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
- * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, and nop over the
+ * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, and cmc over the
  * currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
@@ -507,6 +507,295 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
 }
 
 
+/// Converts a masked operand value to a signed 64-bit value for a supported width.
+///
+/// @param value Operand value before masking.
+/// @param width_bits Operand width in bits.
+/// @return Sign-extended value, or zero for unsupported widths.
+static int64_t vm_exec_signed_value_for_width(uint32_t value, uint8_t width_bits) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t masked_value = 0U;
+
+    if (!vm_exec_mask_for_width(width_bits, &mask)) {
+        return 0;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    masked_value = value & mask;
+    if ((masked_value & sign_bit) == 0U) {
+        return (int64_t)masked_value;
+    }
+
+    return (int64_t)masked_value - ((int64_t)mask + 1);
+}
+
+/// Returns the smallest signed value representable by a supported width.
+///
+/// @param width_bits Operand width in bits.
+/// @param out_min_value Receives the minimum signed value.
+/// @return true when @p width_bits is supported.
+static bool vm_exec_signed_min_for_width(uint8_t width_bits, int64_t *out_min_value) {
+    if (out_min_value == NULL) {
+        return false;
+    }
+
+    switch (width_bits) {
+        case 8U:
+            *out_min_value = -128;
+            return true;
+        case 16U:
+            *out_min_value = -32768;
+            return true;
+        case 32U:
+            *out_min_value = -2147483648LL;
+            return true;
+        default:
+            *out_min_value = 0;
+            return false;
+    }
+}
+
+/// Returns the largest signed value representable by a supported width.
+///
+/// @param width_bits Operand width in bits.
+/// @param out_max_value Receives the maximum signed value.
+/// @return true when @p width_bits is supported.
+static bool vm_exec_signed_max_for_width(uint8_t width_bits, int64_t *out_max_value) {
+    if (out_max_value == NULL) {
+        return false;
+    }
+
+    switch (width_bits) {
+        case 8U:
+            *out_max_value = 127;
+            return true;
+        case 16U:
+            *out_max_value = 32767;
+            return true;
+        case 32U:
+            *out_max_value = 2147483647LL;
+            return true;
+        default:
+            *out_max_value = 0;
+            return false;
+    }
+}
+
+/// Applies arithmetic flags for ADC using the incoming carry bit.
+///
+/// @param cpu CPU state whose flags should be updated.
+/// @param left Destination value before addition.
+/// @param right Source value before addition.
+/// @param carry_in Current carry flag value used as an addend.
+/// @param width_bits Operand width in bits.
+/// @param out_result Receives the masked result on success.
+/// @return true when flags and result were computed for a supported width.
+static bool vm_exec_update_adc_flags(VmCpu *cpu, uint32_t left, uint32_t right, bool carry_in, uint8_t width_bits, uint32_t *out_result) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t left_masked = 0U;
+    uint32_t right_masked = 0U;
+    uint32_t result = 0U;
+    uint64_t wide_result = 0U;
+    int64_t signed_sum = 0;
+    int64_t signed_min = 0;
+    int64_t signed_max = 0;
+
+    if (cpu == NULL || out_result == NULL || !vm_exec_mask_for_width(width_bits, &mask) ||
+        !vm_exec_signed_min_for_width(width_bits, &signed_min) ||
+        !vm_exec_signed_max_for_width(width_bits, &signed_max)) {
+        return false;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    left_masked = left & mask;
+    right_masked = right & mask;
+    wide_result = (uint64_t)left_masked + (uint64_t)right_masked + (carry_in ? 1ULL : 0ULL);
+    result = (uint32_t)wide_result & mask;
+    signed_sum = vm_exec_signed_value_for_width(left_masked, width_bits) +
+                 vm_exec_signed_value_for_width(right_masked, width_bits) +
+                 (carry_in ? 1 : 0);
+
+    if (!vm_cpu_write_flag(cpu, VM_FLAG_CF, wide_result > (uint64_t)mask) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_ZF, result == 0U) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_SF, (result & sign_bit) != 0U) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_OF, signed_sum < signed_min || signed_sum > signed_max)) {
+        return false;
+    }
+
+    *out_result = result;
+    return true;
+}
+
+/// Applies arithmetic flags for SBB using the incoming carry bit as borrow.
+///
+/// @param cpu CPU state whose flags should be updated.
+/// @param left Destination value before subtraction.
+/// @param right Source value before subtraction.
+/// @param borrow_in Current carry flag value used as borrow.
+/// @param width_bits Operand width in bits.
+/// @param out_result Receives the masked result on success.
+/// @return true when flags and result were computed for a supported width.
+static bool vm_exec_update_sbb_flags(VmCpu *cpu, uint32_t left, uint32_t right, bool borrow_in, uint8_t width_bits, uint32_t *out_result) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t left_masked = 0U;
+    uint32_t right_masked = 0U;
+    uint32_t result = 0U;
+    uint64_t subtrahend = 0U;
+    int64_t signed_difference = 0;
+    int64_t signed_min = 0;
+    int64_t signed_max = 0;
+
+    if (cpu == NULL || out_result == NULL || !vm_exec_mask_for_width(width_bits, &mask) ||
+        !vm_exec_signed_min_for_width(width_bits, &signed_min) ||
+        !vm_exec_signed_max_for_width(width_bits, &signed_max)) {
+        return false;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    left_masked = left & mask;
+    right_masked = right & mask;
+    subtrahend = (uint64_t)right_masked + (borrow_in ? 1ULL : 0ULL);
+    result = (left_masked - right_masked - (borrow_in ? 1U : 0U)) & mask;
+    signed_difference = vm_exec_signed_value_for_width(left_masked, width_bits) -
+                        vm_exec_signed_value_for_width(right_masked, width_bits) -
+                        (borrow_in ? 1 : 0);
+
+    if (!vm_cpu_write_flag(cpu, VM_FLAG_CF, (uint64_t)left_masked < subtrahend) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_ZF, result == 0U) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_SF, (result & sign_bit) != 0U) ||
+        !vm_cpu_write_flag(cpu, VM_FLAG_OF, signed_difference < signed_min || signed_difference > signed_max)) {
+        return false;
+    }
+
+    *out_result = result;
+    return true;
+}
+
+/// Executes one ADC instruction.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param width_bits Execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_adc(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    bool carry_in = false;
+    uint32_t left = 0U;
+    uint32_t right = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &carry_in)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &left);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &right);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (!vm_exec_update_adc_flags(&vm->cpu, left, right, carry_in, width_bits, &result)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+/// Executes one SBB instruction.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param width_bits Execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_sbb(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    bool borrow_in = false;
+    uint32_t left = 0U;
+    uint32_t right = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &borrow_in)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &left);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &right);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (!vm_exec_update_sbb_flags(&vm->cpu, left, right, borrow_in, width_bits, &result)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+/// Executes a carry-flag control instruction.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to validate.
+/// @param opcode Carry-control opcode to execute.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_carry_control(Vm *vm, const VmIrInstruction *instruction, VmIrOpcode opcode) {
+    bool carry = false;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (opcode == VM_IR_OPCODE_CLC) {
+        return vm_cpu_clear_flag(&vm->cpu, VM_FLAG_CF) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (opcode == VM_IR_OPCODE_STC) {
+        return vm_cpu_set_flag(&vm->cpu, VM_FLAG_CF) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (opcode == VM_IR_OPCODE_CMC) {
+        if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &carry)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        return vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, !carry) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+}
+
 /// Returns whether operands are valid for XCHG and resolves their shared width.
 ///
 /// @param destination First exchange operand.
@@ -929,6 +1218,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_MOV:
         case VM_IR_OPCODE_ADD:
         case VM_IR_OPCODE_SUB:
+        case VM_IR_OPCODE_ADC:
+        case VM_IR_OPCODE_SBB:
             if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
@@ -944,7 +1235,13 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             if (instruction->opcode == VM_IR_OPCODE_ADD) {
                 return vm_exec_execute_add(vm, instruction, width_bits);
             }
-            return vm_exec_execute_sub(vm, instruction, width_bits);
+            if (instruction->opcode == VM_IR_OPCODE_SUB) {
+                return vm_exec_execute_sub(vm, instruction, width_bits);
+            }
+            if (instruction->opcode == VM_IR_OPCODE_ADC) {
+                return vm_exec_execute_adc(vm, instruction, width_bits);
+            }
+            return vm_exec_execute_sbb(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:
             return vm_exec_execute_movx(vm, instruction, true);
         case VM_IR_OPCODE_MOVZX:
@@ -963,6 +1260,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_neg(vm, instruction);
         case VM_IR_OPCODE_NOP:
             return vm_exec_execute_nop(instruction);
+        case VM_IR_OPCODE_CLC:
+        case VM_IR_OPCODE_STC:
+        case VM_IR_OPCODE_CMC:
+            return vm_exec_execute_carry_control(vm, instruction, instruction->opcode);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }
