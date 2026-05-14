@@ -350,6 +350,31 @@ static int test_string_literals(void) {
     return failures;
 }
 
+/// Verifies single-quoted character literal tokenization and source positions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_character_literals(void) {
+    int failures = 0;
+    const char *source = "'A' '\\'' '\\\\' 'AB'";
+    VmLexerToken tokens[8];
+    VmLexerDiagnostic diagnostics[4];
+    VmLexerResult result;
+
+    failures += expect_status(tokenize_for_test(source, tokens, 8U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "character literals should tokenize cleanly");
+    failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_CHARACTER, "'A' should be a character token");
+    failures += expect_lexeme(&tokens[0], "'A'", "character literal lexeme should be preserved");
+    failures += expect_u64(tokens[0].number_value, 65U, "'A' should expose ASCII value 65");
+    failures += expect_u32(tokens[0].location.column, 1U, "first character literal should start in column 1");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_CHARACTER, "escaped quote should be a character token");
+    failures += expect_u64(tokens[1].number_value, 39U, "escaped quote should expose ASCII apostrophe");
+    failures += expect_token_kind(tokens[2].kind, VM_LEXER_TOKEN_CHARACTER, "escaped backslash should be a character token");
+    failures += expect_u64(tokens[2].number_value, 92U, "escaped backslash should expose ASCII backslash");
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_CHARACTER, "multi-character literal should be lexed as a character token for Phase 14 parsing");
+    failures += expect_lexeme(&tokens[3], "'AB'", "multi-character literal lexeme should be preserved");
+
+    return failures;
+}
+
 /// Verifies diagnostics for malformed source that can still produce tokens.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -371,6 +396,9 @@ static int test_error_diagnostics(void) {
 
     failures += expect_status(tokenize_for_test("0x ", tokens, 16U, diagnostics, 8U, &result), VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS, "invalid hex should produce diagnostic");
     failures += expect_diagnostic_code(diagnostics[0].code, VM_LEXER_DIAGNOSTIC_INVALID_HEX_LITERAL, "invalid hex diagnostic code should match");
+
+    failures += expect_status(tokenize_for_test("'unterminated", tokens, 16U, diagnostics, 8U, &result), VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS, "unterminated character should produce diagnostic");
+    failures += expect_diagnostic_code(diagnostics[0].code, VM_LEXER_DIAGNOSTIC_UNTERMINATED_CHARACTER, "unterminated character diagnostic code should match");
 
     failures += expect_status(tokenize_for_test("123abc", tokens, 16U, diagnostics, 8U, &result), VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS, "invalid decimal suffix should produce diagnostic");
     failures += expect_diagnostic_code(diagnostics[0].code, VM_LEXER_DIAGNOSTIC_UNEXPECTED_CHARACTER, "invalid decimal suffix diagnostic code should match");
@@ -447,6 +475,7 @@ int main(void) {
     failures += test_symbol_offset_operator_tokens();
     failures += test_empty_and_whitespace_sources();
     failures += test_string_literals();
+    failures += test_character_literals();
     failures += test_error_diagnostics();
     failures += test_capacity_and_invalid_arguments();
     failures += test_metadata_helpers();

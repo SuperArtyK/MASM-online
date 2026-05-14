@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 13 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 14 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -95,7 +95,7 @@ static int test_zero_instruction_program_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 13 register-indirect source-run acceptance program.
+/// Verifies the Milestone 14 register-indirect source-run acceptance program.
 ///
 /// @return Number of failures.
 static int test_register_indirect_source_run_succeeds(void) {
@@ -112,7 +112,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -122,7 +122,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 13 TYPE acceptance program through the source-run API.
+/// Verifies the Milestone 14 TYPE acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_type_operator_source_run_acceptance_program(void) {
@@ -137,7 +137,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -173,7 +173,7 @@ static int test_type_operator_source_run_element_sizes(void) {
     return failures;
 }
 
-/// Verifies the Milestone 13 LENGTHOF acceptance program through the source-run API.
+/// Verifies the Milestone 14 LENGTHOF acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_lengthof_operator_source_run_acceptance_program(void) {
@@ -190,7 +190,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -223,6 +223,136 @@ static int test_lengthof_operator_source_run_element_counts(void) {
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "LENGTHOF BYTE string should expose EAX = 3");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "LENGTHOF DW DUP should expose EBX = 4");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "LENGTHOF DQ scalar should expose ECX = 1");
+
+    return failures;
+}
+
+/// Verifies the Milestone 14 SIZEOF and character-literal acceptance program through the source-run API.
+///
+/// @return Number of failures.
+static int test_sizeof_operator_source_run_acceptance_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        "ch   BYTE 'A'\n"
+        "pair WORD 'AB'\n"
+        "tag  DWORD 'ABCD'\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF nums\n"
+        "    mov bl, ch\n"
+        "    mov cx, pair\n"
+        "    mov edx, 'ABCD'\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000041h\",\"unsigned\":65}", "mov bl, ch should expose BL byte value through EBX = 65");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00004241h\",\"unsigned\":16961}", "mov cx, pair should expose packed WORD value");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"44434241h\",\"unsigned\":1145258561}", "mov edx, 'ABCD' should expose packed DWORD value");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "SIZEOF acceptance should complete successfully");
+
+    return failures;
+}
+
+/// Verifies SIZEOF returns byte sizes for strings, aliases, and DUP declarations.
+///
+/// @return Number of failures.
+static int test_sizeof_operator_source_run_byte_sizes(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "msg BYTE \"Hi\", 0\n"
+        "words DW 4 DUP(0)\n"
+        "quad DQ 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF msg\n"
+        "    mov ebx, SIZEOF words\n"
+        "    mov ecx, SIZEOF quad\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "SIZEOF byte-size source should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "SIZEOF BYTE string should expose EAX = 3");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "SIZEOF DW DUP should expose EBX = 8");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "SIZEOF DQ should expose ECX = 8");
+
+    return failures;
+}
+
+/// Verifies unsupported SIZEOF expressions surface structured source-run diagnostics.
+///
+/// @return Number of failures.
+static int test_sizeof_operator_source_run_rejects_expression_tail(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF nums + 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "SIZEOF expression tail should fail source run");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "SIZEOF expression tail should be a parse error");
+    failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "SIZEOF expression tail should be categorized as unsupported feature");
+    failures += expect_json_contains(json, "unsupported-sizeof-expression", "SIZEOF expression tail should expose stable diagnostic code");
+    failures += expect_json_contains(json, "Only SIZEOF symbol is supported", "SIZEOF expression diagnostic should be user-readable");
+
+    return failures;
+}
+
+/// Verifies packed character literals that overflow the destination width surface diagnostics.
+///
+/// @return Number of failures.
+static int test_character_literal_source_run_rejects_width_overflow(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 'AB'\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "too-wide character literal should fail source run");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "too-wide character literal should be a parse error");
+    failures += expect_json_contains(json, "invalid-character-literal", "too-wide character literal should expose stable diagnostic code");
+    failures += expect_json_contains(json, "does not fit the destination width", "too-wide character literal should explain the width failure");
+
+    return failures;
+}
+
+/// Verifies packed character literals execute when the destination width can hold all decoded bytes.
+///
+/// @return Number of failures.
+static int test_character_literal_source_run_accepts_narrower_packed_immediates(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "slot DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 'ABC'\n"
+        "    mov DWORD PTR slot, 'ABC'\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "three-byte packed character literal should execute in 32-bit contexts");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "packed character literal program should execute two instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00434241h\",\"unsigned\":4407873}", "mov eax, 'ABC' should expose packed little-endian value");
+    failures += expect_json_contains(json, "\"symbol\":\"slot\"", "memory immediate character literal should update slot");
+    failures += expect_json_contains(json, "\"newHex\":\"00434241h\"", "DWORD memory immediate should store the packed character literal");
 
     return failures;
 }
@@ -341,7 +471,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 13 constant symbol-offset acceptance program.
+/// Verifies the Milestone 14 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -357,7 +487,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
+    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -583,6 +713,11 @@ int main(void) {
     failures += test_type_operator_source_run_element_sizes();
     failures += test_lengthof_operator_source_run_acceptance_program();
     failures += test_lengthof_operator_source_run_element_counts();
+    failures += test_sizeof_operator_source_run_acceptance_program();
+    failures += test_sizeof_operator_source_run_byte_sizes();
+    failures += test_sizeof_operator_source_run_rejects_expression_tail();
+    failures += test_character_literal_source_run_rejects_width_overflow();
+    failures += test_character_literal_source_run_accepts_narrower_packed_immediates();
     failures += test_lengthof_operator_source_run_rejects_expression_tail();
     failures += test_type_operator_source_run_rejects_expression_tail();
     failures += test_scaled_index_source_run_returns_unsupported_feature();
@@ -599,6 +734,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 13 source execution tests passed.");
+    puts("Milestone 14 source execution tests passed.");
     return 0;
 }

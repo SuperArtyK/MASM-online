@@ -3,9 +3,10 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 13 source execution export parses optional `.data`, initializes
- * simulated memory, runs the currently supported `.code` subset including TYPE
- * and LENGTHOF, and reports a compact JSON result for the UI.
+ * Milestone 14 source execution export parses optional `.data`, initializes
+ * simulated memory, runs the currently supported `.code` subset including TYPE,
+ * LENGTHOF, SIZEOF, and packed character literals, and reports a
+ * compact JSON result for the UI.
  */
 
 #include "wasm_api.h"
@@ -33,13 +34,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 13 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 14 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 13 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 14 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 13 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 14 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -60,7 +61,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 13 JSON response.
+/// Bytes available for the returned Milestone 14 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -121,7 +122,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 13 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 14 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -306,7 +307,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append(writer, "}");
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 13 UI.
+/// Appends the canonical 32-bit register object used by the Milestone 14 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -722,7 +723,8 @@ static const char *masm32_sim_wasm_parser_diagnostic_kind(VmParserDiagnosticCode
     if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION ||
-        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION) {
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION) {
         return "unsupported-feature";
     }
 
@@ -818,7 +820,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":13,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":14,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -857,7 +859,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":13,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":14,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

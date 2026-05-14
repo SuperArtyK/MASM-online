@@ -4,8 +4,8 @@
  *
  * The lexer recognizes the token set needed by the current parser: identifiers,
  * MASM32 registers, signed decimal and hexadecimal numbers, strings, commas,
- * square brackets, parentheses, question marks, plus, minus, asterisk signs, colons,
- * comments, directives, and line endings.
+ * square brackets, parentheses, question marks, plus, minus, asterisk signs,
+ * single-quoted character and packed character literal spans, colons, comments, directives, and line endings.
  */
 
 #include "lexer.h"
@@ -557,6 +557,86 @@ static VmLexerStatus lexer_scan_string(VmLexerCursor *cursor, VmLexerWriter *wri
     return VM_LEXER_STATUS_OK;
 }
 
+/// Decodes one escaped byte used by character literal metadata.
+///
+/// @param ch Source byte after a backslash.
+/// @return Decoded byte value for simple supported escape forms.
+static uint8_t lexer_decode_escaped_byte(char ch) {
+    switch (ch) {
+        case 'n':
+            return (uint8_t)'\n';
+        case 'r':
+            return (uint8_t)'\r';
+        case 't':
+            return (uint8_t)'\t';
+        case '\'':
+            return (uint8_t)'\'';
+        case '\\':
+            return (uint8_t)'\\';
+        default:
+            return (uint8_t)ch;
+    }
+}
+
+/// Scans a single-quoted character or packed character literal.
+///
+/// The lexer recognizes the quoted span and stores the first decoded byte in
+/// number_value for legacy parser convenience. The parser decodes the full span
+/// and decides whether it fits the destination data or immediate context.
+///
+/// @param cursor Cursor positioned at the opening single quote.
+/// @param writer Output writer to mutate.
+/// @return Lexer status after scanning this token.
+static VmLexerStatus lexer_scan_character(VmLexerCursor *cursor, VmLexerWriter *writer) {
+    VmLexerSourceLocation start = lexer_location(cursor);
+    bool terminated = false;
+    bool captured_value = false;
+    uint8_t value = 0U;
+    size_t length = 0U;
+
+    lexer_advance_byte(cursor);
+    while (lexer_peek(cursor) != '\0') {
+        if (lexer_peek(cursor) == '\'') {
+            lexer_advance_byte(cursor);
+            terminated = true;
+            break;
+        }
+        if (lexer_peek(cursor) == '\\' && lexer_peek_ahead(cursor, 1U) != '\0') {
+            lexer_advance_byte(cursor);
+            if (lexer_peek(cursor) != '\r' && lexer_peek(cursor) != '\n') {
+                if (!captured_value) {
+                    value = lexer_decode_escaped_byte(lexer_peek(cursor));
+                    captured_value = true;
+                }
+                lexer_advance_byte(cursor);
+                continue;
+            }
+        }
+        if (lexer_peek(cursor) == '\r' || lexer_peek(cursor) == '\n') {
+            break;
+        }
+        if (!captured_value) {
+            value = (uint8_t)lexer_peek(cursor);
+            captured_value = true;
+        }
+        lexer_advance_byte(cursor);
+    }
+
+    length = cursor->offset - start.offset;
+    if (!terminated) {
+        (void)lexer_add_diagnostic(writer, VM_LEXER_DIAGNOSTIC_UNTERMINATED_CHARACTER, start, cursor->source + start.offset, length, "unterminated character literal");
+        if (writer->diagnostic_overflowed) {
+            return VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED;
+        }
+    }
+
+    if (!lexer_add_token(writer, VM_LEXER_TOKEN_CHARACTER, start, cursor->source + start.offset, length, (uint64_t)value, 0U, false, VM_REGISTER_COUNT)) {
+        return lexer_token_capacity_failure(writer, start, cursor->source + start.offset);
+    }
+
+    return VM_LEXER_STATUS_OK;
+}
+
 /// Skips a semicolon comment, stopping before the line ending.
 ///
 /// @param cursor Cursor positioned at ';'.
@@ -654,6 +734,8 @@ VmLexerStatus vm_lexer_tokenize(
             status = lexer_scan_directive(&cursor, &writer);
         } else if (ch == '"') {
             status = lexer_scan_string(&cursor, &writer);
+        } else if (ch == '\'') {
+            status = lexer_scan_character(&cursor, &writer);
         } else if (ch == ',') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_COMMA);
         } else if (ch == '[') {
@@ -716,6 +798,7 @@ const char *vm_lexer_token_kind_name(VmLexerTokenKind kind) {
         "REGISTER",
         "NUMBER",
         "STRING",
+        "CHARACTER",
         "COMMA",
         "LEFT_BRACKET",
         "RIGHT_BRACKET",
@@ -743,6 +826,7 @@ const char *vm_lexer_diagnostic_code_name(VmLexerDiagnosticCode code) {
         "diagnostic-capacity-exceeded",
         "unexpected-character",
         "unterminated-string",
+        "unterminated-character",
         "number-overflow",
         "invalid-hex-literal"
     };

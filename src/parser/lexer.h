@@ -33,6 +33,8 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_NUMBER,
     /// Double-quoted string literal.
     VM_LEXER_TOKEN_STRING,
+    /// Single-quoted character literal.
+    VM_LEXER_TOKEN_CHARACTER,
     /// Comma separator.
     VM_LEXER_TOKEN_COMMA,
     /// Left square bracket.
@@ -71,6 +73,8 @@ typedef enum VmLexerDiagnosticCode {
     VM_LEXER_DIAGNOSTIC_UNEXPECTED_CHARACTER,
     /// A string literal reached end-of-file before a closing quote.
     VM_LEXER_DIAGNOSTIC_UNTERMINATED_STRING,
+    /// A character literal reached end-of-file or a line ending before a closing quote.
+    VM_LEXER_DIAGNOSTIC_UNTERMINATED_CHARACTER,
     /// A numeric literal could not be represented as a 64-bit unsigned value.
     VM_LEXER_DIAGNOSTIC_NUMBER_OVERFLOW,
     /// A hexadecimal literal was missing hexadecimal digits.

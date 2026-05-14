@@ -21,7 +21,7 @@ int masm32_sim_wasm_test_value(void);
 /// @return Final EAX value on success, or -1 on failure.
 int masm32_sim_wasm_milestone4_hardcoded_result(void);
 
-/// Parses and executes a Milestone 13 MASM-like source string and returns JSON.
+/// Parses and executes a Milestone 14 MASM-like source string and returns JSON.
 ///
 /// The returned pointer refers to an internal static buffer that is overwritten
 /// by each subsequent call. This is intended for single-request Web Worker use

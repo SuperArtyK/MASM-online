@@ -10,6 +10,20 @@ The guide assumes the final target described in `FULL_IMPLEMENTATION_SPEC.md`.
 
 ## 2. General Development Rules
 
+### 2.0 Core Language Policy
+
+The VM core, parser, executor, memory model, Irvine32 runtime, and Wasm-facing API must be implemented in **C99**.
+
+Rules:
+
+- Use `.c` and `.h` files for core modules.
+- Compile native tests and Emscripten builds as C99.
+- Do not introduce C++ source files for the core.
+- Do not use C++ standard library features, templates, classes, exceptions, RTTI, or `extern "C"` compatibility wrappers.
+- Keep API boundaries plain C: structs, enums, explicit status codes, and documented functions.
+- Browser UI code may remain JavaScript or TypeScript.
+- The polished source editor should use CodeMirror 6 as the selected editor component; the core C99 parser/VM remains the source of truth for MASM semantics.
+
 ### 2.1 Build Vertically
 
 Prefer small vertical slices over broad incomplete systems.
@@ -126,6 +140,10 @@ Suggested structure:
     src/worker.ts
     src/state.ts
     src/url_state.ts
+    src/editor/
+      codemirror_setup.ts
+      masm_language.ts
+      editor_theme.ts
     src/ui/
   /tests
     core/
@@ -142,12 +160,12 @@ Actual file names may vary, but module boundaries should remain clear.
 
 ### Goal
 
-Create a minimal static web project with a WebAssembly-ready C core and a basic browser UI.
+Create a minimal static web project with a WebAssembly-ready C99 core and a basic browser UI.
 
 ### Tasks
 
 1. Create repository structure.
-2. Add build system for C to WebAssembly using Emscripten.
+2. Add build system for C99 to WebAssembly using Emscripten.
 3. Add basic HTML/CSS/JS or TypeScript frontend.
 4. Add Web Worker that loads the Wasm module.
 5. Add a simple message protocol between UI and worker.
@@ -319,10 +337,13 @@ Tokenize a small MASM-like source file.
 1. Implement lexer for:
    - identifiers
    - registers
-   - numbers, including decimal and hex forms
+   - numbers, including decimal, hexadecimal, and signed forms
+   - signed numeric tokens such as `-42`, `-0x2A`, and `-2Ah`
    - strings
+   - quoted character/string literal tokens such as `'A'` and `'AB'`, with final literal semantics enabled in Phase 14
    - commas
    - brackets
+   - plus and minus tokens where not part of a numeric literal
    - colons
    - comments beginning with `;`
    - line endings
@@ -338,10 +359,10 @@ Lexer handles:
 .data
 msg BYTE "Hello", 0
 .code
-mov eax, 20 ; comment
+mov eax, -1 ; comment
 ```
 
-with correct token positions.
+with correct token positions and signed numeric metadata.
 
 ## 10. Phase 6 - Parser for Minimal Code
 
@@ -419,15 +440,22 @@ Support `.data` declarations and symbolic memory references.
    - `WORD`
    - `DWORD`
    - `QWORD`
+   - `DB`
+   - `DW`
+   - `DD`
+   - `DQ`
+   - comma-separated initializers
    - strings
-   - `DUP`
+   - flat `DUP`
    - `?`
+   - negative numeric initializers using two's-complement encoding after width validation
 3. Build symbol table.
 4. Lay out `.data` memory.
-5. Support `OFFSET`.
+5. Support `OFFSET symbol`.
 6. Support direct symbol memory writes:
    - `mov var, 100`
 7. Add memory-change display by symbol.
+8. Reject out-of-range immediates instead of silently truncating them.
 
 ### Acceptance Criteria
 
@@ -449,29 +477,657 @@ shows:
 var: 00h / 0 -> 64h / 100
 ```
 
-## 13. Phase 9 - Control Flow
+
+## 13. Phase 9 - Constant Symbol Offsets
 
 ### Goal
 
-Support labels, jumps, comparisons, and loops.
+Support constant byte-offset forms for data symbols before control flow is implemented.
+
+This phase makes common textbook MASM array forms executable while preserving MASM byte-offset semantics.
 
 ### Tasks
 
-1. Resolve labels.
-2. Implement:
-   - `cmp`
-   - `jmp`
-   - `je`, `jne`
-   - signed jumps: `jl`, `jle`, `jg`, `jge`
-   - unsigned jumps: `ja`, `jae`, `jb`, `jbe`
-   - `loop`
-3. Add instruction counter.
-4. Add instruction-limit enforcement.
-5. Add tests for signed and unsigned branches.
+1. Parse symbol-relative constant operands:
+   - `nums[8]`
+   - `[nums + 8]`
+   - `[nums - 4]` where the resulting address remains valid
+2. Treat bracketed symbol offsets as byte offsets, not element indexes.
+3. Resolve the final absolute address through the existing symbol table.
+4. Infer access width from the symbol declaration when no `PTR` override is present.
+5. Support both source and destination memory operands where the executor already supports the width.
+6. Return symbol-aware memory changes with byte offset and element index when aligned.
+7. Preserve source line/column metadata in diagnostics.
+8. Add tests for aligned, unaligned, negative, and out-of-bounds symbol offsets.
 
 ### Acceptance Criteria
 
-A loop program executes correctly.
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+.code
+main PROC
+    mov nums[8], 100
+    mov eax, nums[8]
+main ENDP
+END main
+```
+
+executes successfully and reports:
+
+```text
+EAX = 00000064h / 100
+Memory Changes:
+  nums + 8 DWORD
+    byte offset: +8
+    element index: 2
+    00000000h / 0 -> 00000064h / 100
+```
+
+`nums[9]` for a DWORD access should execute as an unaligned access and emit a simulator warning.
+
+## 14. Phase 10 - PTR Width Overrides
+
+### Goal
+
+Support explicit MASM memory-width overrides for memory operands.
+
+### Tasks
+
+1. Parse:
+   - `BYTE PTR`
+   - `WORD PTR`
+   - `DWORD PTR`
+   - `QWORD PTR`, as scaffolded layout/Extended-mode support until 64-bit execution is available
+2. Apply the explicit width to symbol-relative memory operands.
+3. Validate immediate ranges against the explicit width.
+4. Ensure explicit width overrides do not silently conflict with unsupported execution widths.
+5. Emit structured diagnostics for malformed or unsupported `PTR` forms.
+6. Add tests for valid and invalid width overrides.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+.code
+main PROC
+    mov BYTE PTR nums[3], 100
+    mov DWORD PTR nums[8], 12345678h
+main ENDP
+END main
+```
+
+executes supported writes using the explicit access widths.
+
+Invalid forms such as unsupported `QWORD PTR` execution in MASM32 mode produce structured diagnostics instead of truncation or crashes.
+
+## 15. Phase 11 - Register-Indirect Memory Operands
+
+### Goal
+
+Support simple register-indirect addressing forms used by textbook array and buffer code.
+
+### Tasks
+
+1. Parse register-indirect operands:
+   - `[esi]`
+   - `[edi]`
+   - `[ebx]`
+   - `[ebp]`
+2. Parse simple displacement forms:
+   - `[esi + 4]`
+   - `[esi - 4]`
+3. Parse simple symbol/register forms where practical:
+   - `array[esi]`
+   - `[array + esi]`
+4. Use `PTR` or known destination/source width to determine access size.
+5. Route all reads/writes through the checked memory module.
+6. Emit unaligned-access warnings through the existing warning path.
+7. Reject unsupported scaled-index forms with explicit diagnostics.
+8. Add tests for valid, invalid, unaligned, and out-of-bounds register-indirect accesses.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+.code
+main PROC
+    mov esi, OFFSET nums
+    mov DWORD PTR [esi + 8], 100
+    mov eax, DWORD PTR [esi + 8]
+main ENDP
+END main
+```
+
+executes successfully and sets:
+
+```text
+EAX = 00000064h / 100
+```
+
+Unsupported scaled forms such as `[esi * 4]` produce explicit unsupported-feature diagnostics.
+
+## 16. Phase 12 - TYPE Operator
+
+### Goal
+
+Implement the `TYPE` operator for data symbols.
+
+### Tasks
+
+1. Parse `TYPE symbol` in immediate contexts.
+2. Return the declared element size in bytes.
+3. Support `BYTE`, `WORD`, `DWORD`, `QWORD`, and their aliases.
+4. Preserve existing `OFFSET symbol` behavior.
+5. Add tests for scalar declarations, arrays, strings, and `DUP` declarations.
+6. Emit structured diagnostics for unsupported `TYPE` expressions.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+.code
+main PROC
+    mov eax, TYPE nums
+main ENDP
+END main
+```
+
+produces:
+
+```text
+EAX = 00000004h / 4
+```
+
+## 17. Phase 13 - LENGTHOF Operator
+
+### Goal
+
+Implement the `LENGTHOF` operator for data symbols.
+
+### Tasks
+
+1. Parse `LENGTHOF symbol` in immediate contexts.
+2. Return the symbol element count.
+3. Define and test behavior for scalar declarations, arrays, strings, and flat `DUP` declarations.
+4. Preserve source diagnostics for unknown or unsupported symbols.
+5. Add tests for byte, word, dword, qword, string, and `DUP` declarations.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+buf  BYTE "Hello", 0
+.code
+main PROC
+    mov eax, LENGTHOF nums
+    mov ebx, LENGTHOF buf
+main ENDP
+END main
+```
+
+produces:
+
+```text
+EAX = 0000000Ah / 10
+EBX = 00000006h / 6
+```
+
+## 18. Phase 14 - SIZEOF Operator and Character Literals
+
+### Goal
+
+Implement `SIZEOF` and add single-character plus packed multi-character literals for byte-compatible and wider immediate/data contexts.
+
+### Tasks
+
+1. Parse `SIZEOF symbol` in immediate contexts.
+2. Return total symbol byte size.
+3. Finalize single-character literals such as `'A'` and `'0'` where a byte-compatible numeric literal is valid.
+4. Implement packed multi-character literals such as `'AB'`, `'ABC'`, and `'ABCD'` where the destination width can hold the decoded bytes.
+5. Use little-endian integer packing for immediate contexts: the first decoded character is the least significant byte, so `'AB'` becomes `4241h` and `'ABCD'` becomes `44434241h`.
+6. Preserve byte-string behavior for `BYTE` / `DB` declarations, so `msg BYTE 'AB', 0` emits `41h, 42h, 00h`.
+7. Allow packed scalar initializers for `WORD` / `DW`, `DWORD` / `DD`, and `QWORD` / `DQ` when the decoded byte count fits the element width.
+8. Reject empty character literals, literals too wide for the destination width, and unsupported escape forms with structured diagnostics.
+9. Add tests for `SIZEOF` with scalar declarations, strings, arrays, and flat `DUP`.
+10. Add tests for character literals in data declarations, register immediates, memory immediates, accepted width boundaries, and rejected width-overflow cases.
+11. Add diagnostics for unsupported expression forms such as `OFFSET arr + 4` until general expression parsing exists.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+ch   BYTE 'A'
+pair WORD 'AB'
+tag  DWORD 'ABCD'
+.code
+main PROC
+    mov eax, SIZEOF nums
+    mov bl, ch
+    mov cx, pair
+    mov edx, 'ABCD'
+main ENDP
+END main
+```
+
+produces:
+
+```text
+EAX = 00000028h / 40
+BL = 41h / 65
+CX = 4241h / 16961
+EDX = 44434241h / 1145258561
+```
+
+`mov al, 'AB'` must fail with a structured assembly diagnostic because two decoded bytes do not fit an 8-bit destination.
+
+## 19. Phase 15 - Textbook MASM Compatibility Backlog Checkpoint
+
+### Goal
+
+Before moving into control flow, explicitly classify common MASM features as implemented now, scheduled soon, or intentionally deferred. This prevents unsupported textbook constructs from appearing as vague syntax errors.
+
+### Tasks
+
+1. Add or update a supported-syntax reference for the current implemented subset.
+2. Add explicit unsupported-feature diagnostics for common-but-not-yet-supported constructs:
+   - `.DATA?`
+   - `.CONST`
+   - `EQU` and `TEXTEQU`
+   - `STRUCT`, `UNION`, and `RECORD`
+   - `INVOKE`, `PROTO`, and `LOCAL`
+   - `.IF`, `.WHILE`, `.REPEAT`, `.BREAK`, `.CONTINUE`
+   - `MACRO` / `ENDM`
+   - `INCLUDELIB`, `EXTERN`, `PUBLIC`, `COMM`
+3. Add targeted parser tests that these unsupported constructs produce stable `unsupported-feature` diagnostics instead of confusing parse errors.
+4. Add backlog notes for additional data types: `SBYTE`, `SWORD`, `SDWORD`, `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and `FWORD`.
+5. Add backlog notes for expression parser expansion: arithmetic, logical, relational, parenthesized, binary/octal literals, `.RADIX`, `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, and `THIS`.
+6. Keep this as a documentation/diagnostics milestone; do not implement the full feature set here.
+
+### Acceptance Criteria
+
+Unsupported but recognizable MASM textbook constructs produce explicit diagnostics such as:
+
+```text
+Unsupported feature: STRUCT declarations are not supported yet.
+Unsupported feature: INVOKE is not supported yet; use CALL when available.
+Unsupported feature: MASM macro definitions are not supported yet.
+```
+
+The user-facing supported-syntax reference accurately reflects the current implementation.
+
+## 20. Phase 16 - INC and DEC
+
+### Goal
+
+Implement single-operand increment and decrement instructions before control-flow milestones rely on common counter-update patterns.
+
+### Tasks
+
+1. Add parser and IR opcode support for:
+   - `inc`
+   - `dec`
+2. Support register destinations for 8-bit, 16-bit, and 32-bit operands.
+3. Support memory destinations where the existing memory-operand and width-inference rules make the access unambiguous.
+4. Update flags according to x86-style behavior for the supported widths:
+   - update `ZF`
+   - update `SF`
+   - update `OF`
+   - do not modify `CF`
+5. Preserve source line, source text, and operand metadata in diagnostics and last-step deltas.
+6. Add tests for register operands, memory operands, overflow/underflow edge cases, and `CF` preservation.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    inc eax
+    dec eax
+main ENDP
+END main
+```
+
+executes successfully and leaves:
+
+```text
+EAX = 00000000h / 0
+ZF = 1
+```
+
+A test verifies that `inc` and `dec` do not modify `CF`.
+
+## 21. Phase 17 - Bitwise Instructions
+
+### Goal
+
+Implement the core bitwise instructions used by textbook MASM programs.
+
+### Tasks
+
+1. Add parser, IR, and executor support for:
+   - `and`
+   - `or`
+   - `xor`
+   - `not`
+2. Support register destinations and memory destinations where existing memory-operand width rules are unambiguous.
+3. Support register, immediate, and memory sources where compatible with the destination width.
+4. Update flags for `and`, `or`, and `xor`:
+   - update `ZF`
+   - update `SF`
+   - clear `CF`
+   - clear `OF`
+5. Define `not` as a bitwise complement that does not modify flags.
+6. Validate immediate values against destination width.
+7. Add tests for all supported widths, memory operands, flag behavior, and immediate range failures.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.code
+main PROC
+    mov eax, 0FF00h
+    and eax, 00FFh
+    xor eax, 00AAh
+    or  eax, 0001h
+main ENDP
+END main
+```
+
+executes successfully with deterministic register and flag results.
+
+A separate test verifies that `not eax` changes `EAX` but leaves the tracked flags unchanged.
+
+## 22. Phase 18 - Shift Instructions
+
+### Goal
+
+Implement the basic shift instructions needed for bit manipulation examples.
+
+### Tasks
+
+1. Add parser, IR, and executor support for:
+   - `shl`
+   - `shr`
+   - `sar`
+2. Support register destinations first.
+3. Support memory destinations only where existing memory-operand width rules are unambiguous.
+4. Support shift counts from:
+   - immediate literals
+   - `CL`
+5. Implement and test 8-bit, 16-bit, and 32-bit behavior.
+6. Update flags for the supported behavior and document any intentional simplifications.
+7. Reject unsupported counts, invalid widths, and malformed operands with structured diagnostics.
+8. Add tests for zero, one-bit, multi-bit, sign-preserving, and edge-count shifts.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    shl eax, 3
+    shr eax, 1
+main ENDP
+END main
+```
+
+executes successfully and leaves:
+
+```text
+EAX = 00000004h / 4
+```
+
+A `sar` test verifies sign-preserving right-shift behavior for a negative 32-bit value.
+
+## 23. Phase 19 - LEA
+
+### Goal
+
+Implement `lea` as effective-address computation without reading memory.
+
+### Tasks
+
+1. Add parser, IR, and executor support for:
+   - `lea reg, memory_operand`
+2. Reuse the supported memory-address parsing forms from earlier milestones:
+   - direct symbols
+   - constant symbol offsets
+   - offset-zero bracketed forms
+   - register-indirect forms
+   - symbol/register forms
+3. Compute the effective address and write it to the destination register.
+4. Do not read from the computed address.
+5. Do not emit unaligned-access warnings for `lea`, because no memory access occurs.
+6. Reject memory destinations and immediate destinations for `lea`.
+7. Add tests proving that `lea` computes addresses without requiring the target address to be readable.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.data
+nums DWORD 10 DUP(0)
+.code
+main PROC
+    lea esi, nums[8]
+    mov eax, esi
+main ENDP
+END main
+```
+
+executes successfully and leaves:
+
+```text
+EAX = OFFSET nums + 8
+```
+
+No memory read is recorded for the `lea` instruction.
+
+## 24. Phase 20 - MUL and IMUL
+
+### Goal
+
+Implement basic one-operand unsigned and signed multiplication.
+
+### Tasks
+
+1. Add parser, IR, and executor support for:
+   - `mul r/m8`
+   - `mul r/m16`
+   - `mul r/m32`
+   - `imul r/m8`
+   - `imul r/m16`
+   - `imul r/m32`
+2. Implement implicit accumulator behavior:
+   - 8-bit: `AL * r/m8 -> AX`
+   - 16-bit: `AX * r/m16 -> DX:AX`
+   - 32-bit: `EAX * r/m32 -> EDX:EAX`
+3. Support register and memory source operands.
+4. Define and test `CF` and `OF` behavior based on whether the high half of the product is significant.
+5. Leave other tracked flags unchanged or documented as undefined/unchanged according to the simulator's chosen rule.
+6. Reject unsupported two-operand and three-operand `imul` forms until explicitly implemented later.
+7. Add tests for small products, high-half products, signed negative products, and memory operands.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.code
+main PROC
+    mov eax, 6
+    mov ebx, 7
+    mul ebx
+main ENDP
+END main
+```
+
+executes successfully and leaves:
+
+```text
+EDX:EAX = 00000000h:0000002Ah
+EAX = 0000002Ah / 42
+```
+
+A signed `imul` test verifies multiplication involving a negative operand.
+
+## 25. Phase 21 - DIV and IDIV
+
+### Goal
+
+Implement basic unsigned and signed division with runtime diagnostics for invalid division cases.
+
+### Tasks
+
+1. Add parser, IR, and executor support for:
+   - `div r/m8`
+   - `div r/m16`
+   - `div r/m32`
+   - `idiv r/m8`
+   - `idiv r/m16`
+   - `idiv r/m32`
+2. Implement implicit dividend and result behavior:
+   - 8-bit: `AX / r/m8 -> AL quotient, AH remainder`
+   - 16-bit: `DX:AX / r/m16 -> AX quotient, DX remainder`
+   - 32-bit: `EDX:EAX / r/m32 -> EAX quotient, EDX remainder`
+3. Support register and memory divisor operands.
+4. Detect division by zero and stop execution with a structured runtime diagnostic.
+5. Detect quotient overflow and stop execution with a structured runtime diagnostic.
+6. Preserve source line and instruction text in diagnostics.
+7. Add tests for valid division, nonzero remainders, division by zero, quotient overflow, signed division, and memory divisors.
+
+### Acceptance Criteria
+
+Program:
+
+```asm
+.code
+main PROC
+    mov edx, 0
+    mov eax, 42
+    mov ebx, 7
+    div ebx
+main ENDP
+END main
+```
+
+executes successfully and leaves:
+
+```text
+EAX = 00000006h / 6
+EDX = 00000000h / 0
+```
+
+A divide-by-zero program stops with a structured runtime diagnostic that includes the source line and instruction text.
+
+## 26. Phase 22 - Labels and JMP
+
+### Goal
+
+Implement basic label resolution and unconditional jumps.
+
+### Tasks
+
+1. Build a label table for executable instructions.
+2. Resolve `jmp label` to an instruction index or VM instruction address.
+3. Define and test EIP/instruction-index behavior for straight-line and jump execution.
+4. Preserve source line and instruction text in diagnostics.
+5. Reject jumps to unknown labels with structured assembly diagnostics.
+6. Add tests for forward and backward jumps.
+
+### Acceptance Criteria
+
+A program using `jmp done` skips instructions correctly and halts normally at `END main`.
+
+## 27. Phase 23 - CMP and Equality Jumps
+
+### Goal
+
+Implement `cmp` and equality-based conditional jumps.
+
+### Tasks
+
+1. Implement `cmp` using existing subtraction flag semantics without storing the result.
+2. Implement:
+   - `je`, `jz`
+   - `jne`, `jnz`
+3. Add parser and executor support for the new opcodes.
+4. Add tests for equal and not-equal branches.
+5. Ensure source-line diagnostics remain correct for invalid operands.
+
+### Acceptance Criteria
+
+A program using `cmp eax, ebx` followed by `je equalLabel` branches correctly based on `ZF`.
+
+## 28. Phase 24 - Signed and Unsigned Conditional Jumps
+
+### Goal
+
+Implement signed and unsigned relational jumps.
+
+### Tasks
+
+1. Implement signed jumps:
+   - `jl`, `jnge`
+   - `jle`, `jng`
+   - `jg`, `jnle`
+   - `jge`, `jnl`
+2. Implement unsigned jumps:
+   - `ja`, `jnbe`
+   - `jae`, `jnb`
+   - `jb`, `jnae`
+   - `jbe`, `jna`
+3. Add tests that distinguish signed and unsigned branch behavior.
+4. Add edge-case tests for overflow, carry, zero, and sign interactions.
+
+### Acceptance Criteria
+
+Signed and unsigned comparison programs branch differently where expected, for example comparing `-1` and `1` as signed versus unsigned values.
+
+## 29. Phase 25 - LOOP and Instruction Limit
+
+### Goal
+
+Implement `loop` and protect execution from infinite loops.
+
+### Tasks
+
+1. Implement `loop label` using `ECX` decrement semantics.
+2. Add instruction counter to source execution.
+3. Add default instruction-limit enforcement.
+4. Stop execution with structured diagnostics when the limit is exceeded.
+5. Include source line and instruction text in instruction-limit diagnostics.
+6. Add tests for finite loops and infinite loops.
+
+### Acceptance Criteria
+
+A finite loop program executes correctly.
 
 An infinite loop stops with:
 
@@ -481,55 +1137,105 @@ Execution stopped: instruction limit exceeded.
 
 The message includes source line and instruction text.
 
-## 14. Phase 10 - Stack, CALL, and RET
+## 30. Phase 26 - Stack Initialization, PUSH, and POP
 
 ### Goal
 
-Support procedure calls and stack operations.
+Initialize the simulated stack and implement basic stack data movement.
 
 ### Tasks
 
-1. Initialize stack pointer.
-2. Implement:
-   - `push`
-   - `pop`
-   - `call`
-   - `ret`
-3. Track stack usage and peak stack usage.
-4. Add stack overflow detection.
-5. Add optional call-depth tracking.
-6. Add tests for nested calls and recursion.
+1. Initialize `ESP` to the top of the stack region.
+2. Implement `push`.
+3. Implement `pop`.
+4. Track stack usage and peak stack usage.
+5. Detect stack overflow and invalid stack reads.
+6. Add tests for register, immediate, and memory push/pop forms where supported.
 
 ### Acceptance Criteria
 
-A program with `call SomeProc` and `ret` works.
+A program can push a value, pop it into another register, and preserve expected stack pointer behavior.
 
-Infinite recursion stops with either:
+Stack overflow stops execution with a structured diagnostic.
 
-- call-depth limit exceeded, or
-- stack overflow.
-
-Diagnostic must include line and procedure if known.
-
-## 15. Phase 11 - Irvine32 Output Routines
+## 31. Phase 27 - CALL and RET
 
 ### Goal
 
-Support basic console output.
+Support procedure calls and returns.
 
 ### Tasks
 
-1. Implement Program Console stream.
-2. Intercept calls to:
-   - `WriteString`
-   - `WriteChar`
-   - `WriteInt`
-   - `WriteDec`
-   - `WriteHex`
+1. Implement `call label` and `call ProcedureName`.
+2. Implement `ret`.
+3. Push and pop return addresses through the checked stack memory path.
+4. Support nested calls.
+5. Track procedure metadata where practical for diagnostics.
+6. Add tests for simple and nested calls.
+
+### Acceptance Criteria
+
+A program with `call SomeProc` and `ret` works correctly and returns to the instruction after the call.
+
+## 32. Phase 28 - Call-Depth Diagnostics
+
+### Goal
+
+Add clearer diagnostics for runaway recursion and excessive call nesting.
+
+### Tasks
+
+1. Add optional call-depth tracking.
+2. Add a configurable or fixed initial call-depth limit.
+3. Report possible infinite recursion before or alongside stack overflow when applicable.
+4. Include current procedure and source line where known.
+5. Add tests for infinite recursion and deep-but-valid calls.
+
+### Acceptance Criteria
+
+Infinite recursion stops with either:
+
+```text
+Runtime error: maximum call depth exceeded.
+```
+
+or stack overflow, with line and procedure information when available.
+
+## 33. Phase 29 - Program Console Infrastructure
+
+### Goal
+
+Create the program-output stream that Irvine32 routines will use.
+
+### Tasks
+
+1. Implement Program Console stream in the worker/source-run result path.
+2. Keep Program Console separate from Simulator Messages.
+3. Add output byte and line counters.
+4. Add default output byte and line limits.
+5. Add output-limit diagnostics.
+6. Add tests for output buffering and limit handling.
+
+### Acceptance Criteria
+
+Program output data can be returned separately from simulator warnings/errors, and output limits stop or report runaway output deterministically.
+
+## 34. Phase 30 - Basic Irvine32 Output Routines
+
+### Goal
+
+Implement basic text/character Irvine32-style output routines.
+
+### Tasks
+
+1. Intercept calls to:
    - `Crlf`
-3. Add output byte and line limits.
-4. Separate Program Console and Simulator Messages.
-5. Add tests for output routines.
+   - `WriteChar`
+   - `WriteString`
+2. Define routine contracts in source comments and user-facing docs.
+3. Validate string pointers and null terminators.
+4. Route output only to Program Console.
+5. Add tests for valid and invalid pointer cases.
 
 ### Acceptance Criteria
 
@@ -551,49 +1257,151 @@ prints `Hello` in Program Console.
 
 Simulator warnings/errors do not appear in Program Console.
 
-## 16. Phase 12 - Irvine32 Input Routines
+## 35. Phase 31 - Numeric Irvine32 Output Routines
 
 ### Goal
 
-Support interactive input without blocking the UI.
+Implement integer-formatting Irvine32-style output routines.
+
+### Tasks
+
+1. Intercept calls to:
+   - `WriteInt`
+   - `WriteDec`
+   - `WriteHex`
+2. Define signed/unsigned formatting behavior.
+3. Respect output byte and line limits.
+4. Add tests for zero, positive, negative, maximum, and minimum values.
+
+### Acceptance Criteria
+
+Programs using `WriteInt`, `WriteDec`, and `WriteHex` print expected textual values in Program Console.
+
+## 36. Phase 32 - Diagnostic Irvine32 Output Routines and RandomRange
+
+### Goal
+
+Add diagnostic-style Irvine32 routines and deterministic randomness.
+
+### Tasks
+
+1. Implement `DumpRegs`.
+2. Implement `DumpMem`.
+3. Implement `RandomRange` using deterministic seeded randomness.
+4. Add tests for output shape and deterministic random behavior.
+5. Document any deviations from the real Irvine32 library.
+
+### Acceptance Criteria
+
+`DumpRegs` and `DumpMem` produce useful educational output, and `RandomRange` is deterministic when the seed is fixed.
+
+## 37. Phase 33 - WAITING_FOR_INPUT Protocol
+
+### Goal
+
+Add the VM and worker protocol state needed for interactive input.
 
 ### Tasks
 
 1. Add VM state `WAITING_FOR_INPUT`.
-2. Implement:
-   - `ReadString`
-   - `ReadInt`
-   - `ReadChar`
+2. Add worker messages for input request, input submission, and input cancellation.
 3. Pause active execution timer while waiting for input.
 4. Keep Stop available while waiting for input.
-5. Resume VM after input submission.
-6. Add input cancellation behavior.
-7. Add tests using simulated input.
+5. Add input cancellation behavior.
+6. Add tests using simulated input events.
+
+### Acceptance Criteria
+
+A program can pause execution waiting for input, the UI can submit or cancel input, and active execution time does not count human input wait time.
+
+## 38. Phase 34 - ReadChar and ReadInt
+
+### Goal
+
+Implement simple Irvine32 input routines for character and integer input.
+
+### Tasks
+
+1. Implement `ReadChar`.
+2. Implement `ReadInt`.
+3. Define parsing behavior for whitespace, signs, invalid input, and cancellation.
+4. Resume VM correctly after input is provided.
+5. Add tests with simulated input values.
+
+### Acceptance Criteria
+
+Programs can call `ReadChar` and `ReadInt`, wait for browser input, resume, and use the returned values.
+
+## 39. Phase 35 - ReadString
+
+### Goal
+
+Implement Irvine32-style string input.
+
+### Tasks
+
+1. Implement `ReadString`.
+2. Validate `EDX` destination pointer and `ECX` maximum character count.
+3. Write submitted input into simulated memory with null termination.
+4. Return character count in `EAX`.
+5. Add tests for valid input, truncation, invalid buffers, and cancellation.
 
 ### Acceptance Criteria
 
 A program can call `ReadString`, wait for browser input, resume, and use the resulting buffer.
 
-Execution time limit does not count human input wait time.
-
-## 17. Phase 13 - Debugger v1
+## 40. Phase 36 - Step Into Backend
 
 ### Goal
 
-Add source-level stepping and current-state inspection.
+Expose backend stepping for debugger use.
 
 ### Tasks
 
-1. Add Step Into.
-2. Add Continue.
-3. Add Reset.
-4. Highlight current source line.
-5. Display current registers.
-6. Display aliases in grouped rows.
-7. Display current flags.
-8. Display last-step register and flag changes.
-9. Display last-step memory changes.
-10. Display instruction count and active execution time.
+1. Add a worker/API path for Step Into.
+2. Execute exactly one VM instruction per step.
+3. Return current instruction metadata.
+4. Return source line and source text.
+5. Preserve current VM state between steps.
+6. Add tests for stepping through a small program.
+
+### Acceptance Criteria
+
+A test can step through multiple instructions and receive the correct instruction metadata for each step.
+
+## 41. Phase 37 - Register and Flag Current-State UI
+
+### Goal
+
+Display current registers, aliases, and flags in the browser UI.
+
+### Tasks
+
+1. Add current register table.
+2. Display grouped aliases.
+3. Display current flags.
+4. Show hex and unsigned decimal by default.
+5. Keep signed decimal optional or deferred.
+6. Add formatter tests.
+
+### Acceptance Criteria
+
+The UI displays canonical registers and aliases in grouped rows, with current flag values.
+
+## 42. Phase 38 - Last-Step Delta UI
+
+### Goal
+
+Display what changed during the last executed instruction.
+
+### Tasks
+
+1. Display last-step register changes.
+2. Display alias changes derived from canonical register changes.
+3. Display flag changes.
+4. Display memory changes.
+5. Hide unchanged aliases by default.
+6. Add tests for register, alias, flag, and memory delta formatting.
 
 ### Acceptance Criteria
 
@@ -611,42 +1419,112 @@ AX:  0000h / 0     -> 0014h / 20
 AL:  00h / 0       -> 14h / 20
 ```
 
-Unchanged aliases are hidden by default.
-
-## 18. Phase 14 - Breakpoints and Step Over
+## 43. Phase 39 - Execution Statistics and Stack Summary UI
 
 ### Goal
 
-Add practical debugging controls.
+Show runtime execution metrics useful during debugging.
 
 ### Tasks
 
-1. Add source-line breakpoints.
-2. Stop execution at breakpoints.
-3. Implement Step Over.
-4. For Step Over, aggregate register/flag/memory changes across the call.
-5. Show number of instructions executed during Step Over.
+1. Display instruction count.
+2. Display active execution time.
+3. Display stack pointer, current stack usage, peak stack usage, and remaining stack.
+4. Add warning display for high stack usage if available.
+5. Add formatter tests.
 
 ### Acceptance Criteria
 
-A breakpoint pauses before executing the associated instruction.
+The debugger UI shows instruction count, active execution time, and stack summary after running or stepping a program.
 
-Step Over on `call SomeProc` runs until return and shows all changed registers and memory.
-
-## 19. Phase 15 - Memory Visualization Improvements
+## 44. Phase 40 - Source-Line Breakpoints
 
 ### Goal
 
-Make memory deltas educational and symbol-aware.
+Add basic source-line breakpoints.
 
 ### Tasks
 
-1. Resolve memory changes to nearest symbol.
+1. Allow users to set and clear source-line breakpoints.
+2. Store breakpoints in project state when appropriate.
+3. Stop before executing an instruction whose source line has a breakpoint.
+4. Return structured breakpoint-hit state.
+5. Add tests for breakpoint hit and continue behavior.
+
+### Acceptance Criteria
+
+A breakpoint pauses execution before the associated instruction executes.
+
+## 45. Phase 41 - Continue and Pause Behavior
+
+### Goal
+
+Make debugger run control practical after breakpoints and stepping.
+
+### Tasks
+
+1. Implement Continue from paused or breakpoint state.
+2. Preserve VM state across pause/continue cycles.
+3. Keep Stop responsive.
+4. Define behavior when Continue reaches input wait, halt, crash, or resource limit.
+5. Add tests for pause/continue transitions.
+
+### Acceptance Criteria
+
+A program stopped at a breakpoint can continue to the next stop condition without rebuilding VM state.
+
+## 46. Phase 42 - Step Over Backend
+
+### Goal
+
+Implement backend Step Over behavior.
+
+### Tasks
+
+1. If current instruction is not `call`, Step Over behaves like Step Into.
+2. If current instruction is `call`, execute until the return address is reached or another stop condition occurs.
+3. Track the number of instructions executed during Step Over.
+4. Preserve aggregate state needed for delta reporting.
+5. Add tests for simple and nested calls.
+
+### Acceptance Criteria
+
+Step Over on `call SomeProc` runs until the call returns and stops on the instruction after the call.
+
+## 47. Phase 43 - Step Over Aggregate Delta Display
+
+### Goal
+
+Display aggregate changes produced during a Step Over operation.
+
+### Tasks
+
+1. Compute register, flag, memory, and output deltas from before the call to after return.
+2. Display number of instructions executed during Step Over.
+3. Show aggregate memory changes without flooding the UI.
+4. Add formatter tests.
+
+### Acceptance Criteria
+
+Step Over on `call SomeProc` shows all changed registers, flags, memory, and instruction count for the call.
+
+## 48. Phase 44 - Memory Visualization Improvements
+
+### Goal
+
+Make memory deltas educational and symbol-aware beyond the basic display added in the data and indexed-memory phases.
+
+Parsing and execution of `nums[8]`, `[esi + 4]`, and `PTR` forms should already exist before this phase. This phase improves grouping, display, and explanatory output.
+
+### Tasks
+
+1. Resolve memory changes to nearest symbol when not already available from the executor result.
 2. Show byte offsets using MASM-style byte offsets.
 3. Show element index when the symbol has an element size.
-4. Show unaligned access warnings.
+4. Show unaligned access warnings with the exact bytes read or written.
 5. Add logical write grouping and expandable byte-level view.
 6. Add string interpretation for byte arrays.
+7. Collapse large string/buffer changes by default while allowing expansion.
 
 ### Acceptance Criteria
 
@@ -668,7 +1546,7 @@ nums + 8 DWORD
   00000000h / 0 -> 00000064h / 100
 ```
 
-## 20. Phase 16 - URL Save and Share
+## 49. Phase 45 - URL Save and Share
 
 ### Goal
 
@@ -694,7 +1572,7 @@ A user can create a project, copy a share URL, reload/open it, and recover sourc
 
 Super-extended memory permission is not saved.
 
-## 21. Phase 17 - Memory Settings UI
+## 50. Phase 46 - Memory Settings UI
 
 ### Goal
 
@@ -721,7 +1599,7 @@ The UI reports:
 This project requests <N> of simulated memory. Your local limit is <M>.
 ```
 
-## 22. Phase 18 - Super-Extended Memory Mode
+## 51. Phase 47 - Super-Extended Memory Mode
 
 ### Goal
 
@@ -744,7 +1622,7 @@ A shared project can request 3 GiB, but it cannot force the recipient's browser 
 
 The recipient must manually enable it and confirm before running.
 
-## 23. Phase 19 - Extended 32-bit Mode
+## 52. Phase 48 - Extended 32-bit Mode
 
 ### Goal
 
@@ -782,7 +1660,7 @@ AX  = 001Eh / 30
 AL  = 1Eh / 30
 ```
 
-## 24. Phase 20 - Resource Watchdogs and Diagnostics
+## 53. Phase 49 - Resource Watchdogs and Diagnostics
 
 ### Goal
 
@@ -805,7 +1683,7 @@ Harden the simulator against runaway programs and expensive assembly inputs.
 
 Runaway execution, runaway output, and excessive memory allocation stop with structured diagnostics instead of freezing the page.
 
-## 25. Phase 21 - Test Suite Expansion
+## 54. Phase 50 - Test Suite Expansion
 
 ### Goal
 
@@ -814,15 +1692,19 @@ Convert example programs and bug cases into regression tests.
 ### Tasks
 
 1. Add tests for every implemented instruction.
-2. Add tests for register aliases.
-3. Add tests for flag behavior.
-4. Add tests for signed and unsigned jumps.
-5. Add tests for memory permissions.
-6. Add tests for unaligned access.
-7. Add tests for Irvine32 routines.
-8. Add tests for debugger deltas.
-9. Add tests for URL schema migration.
-10. Add tests for worker stop behavior where practical.
+2. Add tests for numeric literals, including negative decimal and hexadecimal literals.
+3. Add tests for register aliases.
+4. Add tests for flag behavior.
+5. Add tests for direct symbol memory operands.
+6. Add tests for indexed and symbol-relative memory operands.
+7. Add tests for `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, and `SIZEOF`.
+8. Add tests for signed and unsigned jumps.
+9. Add tests for memory permissions.
+10. Add tests for unaligned access.
+11. Add tests for Irvine32 routines.
+12. Add tests for debugger deltas.
+13. Add tests for URL schema migration.
+14. Add tests for worker stop behavior where practical.
 
 ### Acceptance Criteria
 
@@ -830,7 +1712,7 @@ All known supported behavior is covered by automated tests.
 
 Bug fixes must include regression tests.
 
-## 26. Phase 22 - Documentation and Examples
+## 55. Phase 51 - Documentation and Examples
 
 ### Goal
 
@@ -849,7 +1731,7 @@ Make the project understandable for users and future contributors.
 3. Add supported syntax reference.
 4. Add unsupported-feature list.
 5. Add developer architecture notes.
-6. Generate Doxygen documentation for C core.
+6. Generate Doxygen documentation for the C99 core.
 7. Ensure all public APIs have Doxygen comments.
 
 ### Acceptance Criteria
@@ -858,11 +1740,122 @@ A new developer can understand the architecture and add a simple instruction by 
 
 A new user can run an example without reading the implementation.
 
-## 27. Phase 23 - Polish and UX Hardening
+## 56. Phase 52 - CodeMirror Source Editor Integration
 
 ### Goal
 
-Improve quality, clarity, and resilience.
+Replace the plain source textarea with CodeMirror 6 without changing simulator semantics.
+
+### Tasks
+
+1. Add CodeMirror 6 dependencies to the web project.
+2. Create an editor wrapper module that exposes get/set source text.
+3. Preserve existing Run behavior and worker protocol.
+4. Enable line numbers.
+5. Keep diagnostics and source execution based on plain strings passed to the worker.
+6. Add tests where practical and manual verification steps for browser behavior.
+
+### Acceptance Criteria
+
+The user can edit and run the same programs as before, now through CodeMirror with line numbers.
+
+## 57. Phase 53 - MASM Syntax Highlighting
+
+### Goal
+
+Add MASM-aware syntax highlighting to the CodeMirror editor.
+
+### Tasks
+
+1. Highlight directives.
+2. Highlight instructions.
+3. Highlight registers and aliases.
+4. Highlight data types and operators.
+5. Highlight strings, character literals, numbers, comments, and labels.
+6. Keep highlighting lightweight and independent from semantic validation.
+7. Add fixture tests for tokenizer/highlighting helpers where practical.
+
+### Acceptance Criteria
+
+The editor visually distinguishes MASM directives, instructions, registers, data declarations, labels, comments, strings, and numeric literals.
+
+## 58. Phase 54 - Editor Indentation Behavior
+
+### Goal
+
+Add predictable basic indentation behavior for assembly editing.
+
+### Tasks
+
+1. Preserve the previous line's indentation when Enter is pressed.
+2. Configure Tab to insert spaces.
+3. Configure Shift+Tab to dedent one indentation level.
+4. Keep MASM-aware auto-indentation conservative.
+5. Add tests for indentation helpers where practical.
+
+### Acceptance Criteria
+
+When the user indents procedure instructions, new lines keep that indentation until the user changes it.
+
+## 59. Phase 55 - Dark Mode and Local Editor Preferences
+
+### Goal
+
+Add local-only visual preferences for the editor and site.
+
+### Tasks
+
+1. Add dark/light mode toggle.
+2. Coordinate site theme and CodeMirror theme.
+3. Store the preference in local storage only.
+4. Do not save the preference in URL project state.
+5. Add tests for state serialization exclusion where practical.
+
+### Acceptance Criteria
+
+The user's dark/light preference persists locally but is not included in shared links.
+
+## 60. Phase 56 - Editor Diagnostics Integration
+
+### Goal
+
+Connect parser/VM diagnostics to CodeMirror visual markers.
+
+### Tasks
+
+1. Map structured diagnostics with line/column to editor decorations.
+2. Add clickable Simulator Messages that jump to the source location.
+3. Highlight diagnostic lines or ranges without altering source text.
+4. Clear stale diagnostics on successful runs or new runs.
+5. Add tests for diagnostic mapping helpers.
+
+### Acceptance Criteria
+
+A parser error shown in Simulator Messages can be clicked to move the editor to the relevant line and column.
+
+## 61. Phase 57 - Debugger Editor Integration
+
+### Goal
+
+Integrate the editor with debugger execution state.
+
+### Tasks
+
+1. Highlight the current execution line.
+2. Add breakpoint gutter support using CodeMirror gutters.
+3. Keep breakpoints synchronized with project state.
+4. Display breakpoint markers without interfering with line numbers.
+5. Add tests for breakpoint state mapping where practical.
+
+### Acceptance Criteria
+
+The current execution line is highlighted during debugging, and users can set/clear breakpoints through the editor gutter.
+
+## 62. Phase 58 - Final Polish and UX Hardening
+
+### Goal
+
+Improve quality, clarity, and resilience after the major editor, debugger, and simulator features are in place.
 
 ### Tasks
 
@@ -883,7 +1876,7 @@ The simulator is comfortable for real educational use.
 
 Errors are actionable and do not look like internal crashes unless the simulator itself failed.
 
-## 28. Suggested AI Assistant Workflow
+## 57. Suggested AI Assistant Workflow
 
 When using an AI assistant to implement the project, use small prompts tied to one phase at a time.
 
@@ -908,11 +1901,11 @@ For each phase, ask the assistant to:
 5. Run the test suite.
 6. Explain any limitations.
 
-## 29. Definition of v1 Complete
+## 58. Definition of v1 Complete
 
 Version 1 is complete when a user can:
 
-1. Paste a small MASM32/Irvine32 console program.
+1. Paste or edit a small MASM32/Irvine32 console program in a CodeMirror-based source editor with line numbers.
 2. Run it in the browser.
 3. Provide input when requested.
 4. See program output in Program Console.
@@ -924,4 +1917,3 @@ Version 1 is complete when a user can:
 10. Share the project with a compressed URL.
 
 The v1 target is educational quality and predictable behavior, not full MASM compatibility.
-

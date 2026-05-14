@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 13.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 14.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * SIZEOF and full MASM expression parsing remain later milestones.
+ * full MASM expression parsing remain later milestones.
  */
 
 #include "parser.h"
@@ -75,6 +75,8 @@ typedef struct VmParserPtrWidth {
     /// Token containing PTR for diagnostics.
     const VmLexerToken *ptr_token;
 } VmParserPtrWidth;
+
+static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token);
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
@@ -445,6 +447,8 @@ static uint8_t vm_parser_decode_escaped_byte(char ch) {
             return (uint8_t)'\t';
         case '"':
             return (uint8_t)'"';
+        case '\'':
+            return (uint8_t)'\'';
         case '\\':
             return (uint8_t)'\\';
         default:
@@ -485,6 +489,126 @@ static bool vm_parser_append_string_bytes(VmParserState *state, const VmLexerTok
 
     *out_element_count = count;
     return true;
+}
+
+/// Returns whether a character-literal escape form is supported.
+///
+/// @param ch Source byte after a backslash.
+/// @return true when the escape has explicit parser semantics.
+static bool vm_parser_is_supported_character_escape(char ch) {
+    return ch == 'n' || ch == 'r' || ch == 't' || ch == '\'' || ch == '\\';
+}
+
+/// Decodes bytes from a single-quoted character literal token.
+///
+/// Character literals may contain one or more decoded bytes. The parser keeps
+/// escape handling explicit so unsupported escape forms become structured
+/// diagnostics instead of silently changing program meaning.
+///
+/// @param token Character token including surrounding single quotes.
+/// @param out_bytes Receives decoded bytes.
+/// @param byte_capacity Capacity of @p out_bytes in bytes.
+/// @param out_byte_count Receives the number of decoded bytes.
+/// @param out_unsupported_escape Receives true when an unknown escape was seen.
+/// @return true when at least one byte was decoded and the token fits capacity.
+static bool vm_parser_decode_character_literal_bytes(
+    const VmLexerToken *token,
+    uint8_t *out_bytes,
+    uint32_t byte_capacity,
+    uint32_t *out_byte_count,
+    bool *out_unsupported_escape
+) {
+    size_t index = 1U;
+    size_t end = 0U;
+    uint32_t decoded_count = 0U;
+
+    if (out_byte_count != NULL) {
+        *out_byte_count = 0U;
+    }
+    if (out_unsupported_escape != NULL) {
+        *out_unsupported_escape = false;
+    }
+
+    if (token == NULL || out_bytes == NULL || out_byte_count == NULL || out_unsupported_escape == NULL ||
+        token->kind != VM_LEXER_TOKEN_CHARACTER || token->lexeme_length < 2U) {
+        return false;
+    }
+
+    end = token->lexeme_length - 1U;
+    while (index < end) {
+        uint8_t decoded = 0U;
+        if (token->lexeme[index] == '\\') {
+            if (index + 1U >= end || !vm_parser_is_supported_character_escape(token->lexeme[index + 1U])) {
+                *out_unsupported_escape = true;
+                return false;
+            }
+            index += 1U;
+            decoded = vm_parser_decode_escaped_byte(token->lexeme[index]);
+        } else {
+            decoded = (uint8_t)token->lexeme[index];
+        }
+
+        if (decoded_count >= byte_capacity) {
+            *out_byte_count = decoded_count;
+            return false;
+        }
+        out_bytes[decoded_count] = decoded;
+        decoded_count += 1U;
+        index += 1U;
+    }
+
+    if (decoded_count == 0U) {
+        return false;
+    }
+
+    *out_byte_count = decoded_count;
+    return true;
+}
+
+/// Packs decoded character-literal bytes as a little-endian integer.
+///
+/// The first decoded byte becomes the least significant byte, matching the
+/// Phase 14 packed immediate rule for literals such as 'AB' and 'ABCD'.
+///
+/// @param bytes Decoded character-literal bytes.
+/// @param byte_count Number of decoded bytes to pack.
+/// @param out_value Receives the packed integer.
+/// @return true when @p byte_count is between one and eight bytes.
+static bool vm_parser_pack_character_bytes(const uint8_t *bytes, uint32_t byte_count, uint64_t *out_value) {
+    uint32_t index = 0U;
+    uint64_t value = 0U;
+
+    if (bytes == NULL || out_value == NULL || byte_count == 0U || byte_count > 8U) {
+        return false;
+    }
+
+    for (index = 0U; index < byte_count; index += 1U) {
+        value |= ((uint64_t)bytes[index]) << (index * 8U);
+    }
+
+    *out_value = value;
+    return true;
+}
+
+/// Adds a structured diagnostic for a rejected character literal.
+///
+/// @param state Parser state to mutate.
+/// @param token Character literal token associated with the error.
+/// @param unsupported_escape Whether the rejected literal contained an unknown escape.
+/// @param too_wide Whether the literal was too wide for its destination context.
+static void vm_parser_add_character_literal_diagnostic(
+    VmParserState *state,
+    const VmLexerToken *token,
+    bool unsupported_escape,
+    bool too_wide
+) {
+    if (unsupported_escape) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL, token, "Unsupported escape sequence in character literal.");
+    } else if (too_wide) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL, token, "Character literal does not fit the destination width.");
+    } else {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL, token, "Character literal must contain at least one decoded byte.");
+    }
 }
 
 /// Parses one non-DUP initializer and appends its bytes.
@@ -541,6 +665,41 @@ static bool vm_parser_parse_single_data_initializer(
         return true;
     }
 
+    if (token->kind == VM_LEXER_TOKEN_CHARACTER) {
+        uint8_t bytes[8];
+        uint32_t byte_count = 0U;
+        bool unsupported_escape = false;
+        uint64_t packed_value = 0U;
+        uint32_t byte_index = 0U;
+
+        if (!vm_parser_decode_character_literal_bytes(token, bytes, 8U, &byte_count, &unsupported_escape)) {
+            vm_parser_add_character_literal_diagnostic(state, token, unsupported_escape, !unsupported_escape && byte_count >= 8U);
+            return false;
+        }
+
+        if (data_type == VM_SYMBOL_DATA_TYPE_BYTE) {
+            for (byte_index = 0U; byte_index < byte_count; byte_index += 1U) {
+                if (!vm_parser_append_data_byte(state, bytes[byte_index], token)) {
+                    return false;
+                }
+            }
+            vm_parser_advance(state);
+            *out_element_count = byte_count;
+            return true;
+        }
+
+        if (byte_count > (uint32_t)element_size || !vm_parser_pack_character_bytes(bytes, byte_count, &packed_value)) {
+            vm_parser_add_character_literal_diagnostic(state, token, false, true);
+            return false;
+        }
+        if (!vm_parser_append_data_integer(state, packed_value, element_size, token)) {
+            return false;
+        }
+        vm_parser_advance(state);
+        *out_element_count = 1U;
+        return true;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_QUESTION) {
         if (!vm_parser_append_data_integer(state, 0U, element_size, token)) {
             return false;
@@ -551,7 +710,7 @@ static bool vm_parser_parse_single_data_initializer(
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, token, "Expected a number, string, DUP, or ? initializer.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, token, "Expected a number, string, character literal, DUP, or ? initializer.");
     return false;
 }
 
@@ -667,7 +826,7 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     uint32_t start_offset = 0U;
     uint32_t start_data_size = 0U;
 
-    if (state == NULL || name_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (state == NULL || !vm_parser_token_can_name_data_symbol(name_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_DECLARATION, name_token, "Expected symbol name in .data declaration.");
         return false;
     }
@@ -807,6 +966,19 @@ static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *o
     return true;
 }
 
+/// Returns whether a token can carry a data symbol name.
+///
+/// The lexer classifies register-looking words such as `ch` as register tokens.
+/// Milestone 14's acceptance program uses `ch` as a data symbol, so parser
+/// symbol lookup accepts both identifier and register tokens as symbol names.
+///
+/// @param token Token to inspect.
+/// @return true when the token can be used as a data symbol name.
+static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token) {
+    return token != NULL &&
+           (token->kind == VM_LEXER_TOKEN_IDENTIFIER || token->kind == VM_LEXER_TOKEN_REGISTER);
+}
+
 /// Resolves a data symbol token.
 ///
 /// @param state Parser state to inspect.
@@ -815,7 +987,7 @@ static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *o
 static const VmSymbol *vm_parser_resolve_symbol(VmParserState *state, const VmLexerToken *token) {
     const VmSymbol *symbol = NULL;
 
-    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (state == NULL || !vm_parser_token_can_name_data_symbol(token)) {
         return NULL;
     }
 
@@ -858,7 +1030,7 @@ static bool vm_parser_build_symbol_offset_memory_operand(
     uint64_t access_end = 0U;
     uint64_t data_end = 0U;
 
-    if (state == NULL || symbol_token == NULL || out_operand == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (state == NULL || symbol_token == NULL || out_operand == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         return false;
     }
 
@@ -918,7 +1090,7 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
     return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
-/// Returns whether a register is allowed as a Milestone 13 memory base.
+/// Returns whether a register is allowed as a Milestone 14 memory base.
 ///
 /// @param token Register token to inspect.
 /// @return true for ESI, EDI, EBX, and EBP.
@@ -1130,7 +1302,7 @@ static bool vm_parser_parse_symbol_register_index_memory_operand(
     const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
     const VmLexerToken *base_token = NULL;
 
-    if (state == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
         return false;
     }
 
@@ -1195,7 +1367,7 @@ static bool vm_parser_parse_bracketed_symbol_register_memory_operand(
     symbol_token = vm_parser_current_token(state);
     plus_token = vm_parser_peek_token(state, 1U);
     base_token = vm_parser_peek_token(state, 2U);
-    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || plus_token == NULL || plus_token->kind != VM_LEXER_TOKEN_PLUS || base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+    if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || plus_token == NULL || plus_token->kind != VM_LEXER_TOKEN_PLUS || base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected [symbol + register] memory operand.");
         return false;
     }
@@ -1313,7 +1485,7 @@ static bool vm_parser_parse_bracketed_symbol_offset_memory_operand(VmParserState
 
     vm_parser_advance(state);
     symbol_token = vm_parser_current_token(state);
-    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected a data symbol after '['.");
         return false;
     }
@@ -1347,7 +1519,7 @@ static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, Vm
     const VmLexerToken *offset_token = NULL;
     int32_t offset = 0;
 
-    if (state == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
         return false;
     }
 
@@ -1510,7 +1682,7 @@ static bool vm_parser_parse_bracketed_symbol_offset_memory_operand_with_width(
 
     vm_parser_advance(state);
     symbol_token = vm_parser_current_token(state);
-    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected a data symbol after '['.");
         return false;
     }
@@ -1549,7 +1721,7 @@ static bool vm_parser_parse_symbol_index_memory_operand_with_width(
     const VmLexerToken *offset_token = NULL;
     int32_t offset = 0;
 
-    if (state == NULL || width == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+    if (state == NULL || width == NULL || out_operand == NULL || symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
         return false;
     }
 
@@ -1661,6 +1833,15 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
         return false;
     }
 
+    if (token->kind == VM_LEXER_TOKEN_REGISTER &&
+        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length) != NULL) {
+        if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_REGISTER) {
         *out_operand = vm_ir_operand_register(token->register_id, 0U);
         vm_parser_advance(state);
@@ -1702,7 +1883,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
 /// Parses a TYPE symbol expression as a 32-bit immediate element-size value.
 ///
 /// The current milestone intentionally supports only the simple `TYPE symbol`
-/// form in source-immediate contexts. LENGTHOF, SIZEOF, arithmetic expression
+/// form in source-immediate contexts. Arithmetic expression
 /// tails, bracketed operands, and other MASM expressions remain future phases.
 ///
 /// @param state Parser state to mutate.
@@ -1723,7 +1904,7 @@ static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperan
         return false;
     }
 
-    if (symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, symbol_token, "Unsupported TYPE expression. Only TYPE symbol is supported by the current milestone.");
         return false;
     }
@@ -1748,7 +1929,7 @@ static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperan
 /// Parses a LENGTHOF symbol expression as a 32-bit immediate element-count value.
 ///
 /// The current milestone intentionally supports only the simple `LENGTHOF symbol`
-/// form in source-immediate contexts. SIZEOF, arithmetic expression tails,
+/// form in source-immediate contexts. Arithmetic expression tails,
 /// bracketed operands, and other MASM expressions remain future phases.
 ///
 /// @param state Parser state to mutate.
@@ -1769,7 +1950,7 @@ static bool vm_parser_parse_lengthof_source_operand(VmParserState *state, VmIrOp
         return false;
     }
 
-    if (symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, symbol_token, "Unsupported LENGTHOF expression. Only LENGTHOF symbol is supported by the current milestone.");
         return false;
     }
@@ -1791,7 +1972,53 @@ static bool vm_parser_parse_lengthof_source_operand(VmParserState *state, VmIrOp
     return true;
 }
 
-/// Parses a source operand that may be register, immediate, direct symbol, OFFSET symbol, TYPE symbol, or LENGTHOF symbol.
+/// Parses a SIZEOF symbol expression as a 32-bit immediate total-size value.
+///
+/// The current milestone intentionally supports only the simple `SIZEOF symbol`
+/// form in source-immediate contexts. Arithmetic expression tails, bracketed
+/// operands, and other MASM expressions remain future phases.
+///
+/// @param state Parser state to mutate.
+/// @param out_operand Receives the immediate operand containing the total byte size.
+/// @return true when the SIZEOF expression was parsed successfully.
+static bool vm_parser_parse_sizeof_source_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *sizeof_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || out_operand == NULL || sizeof_token == NULL) {
+        return false;
+    }
+
+    if (symbol_token == NULL || vm_parser_is_line_end_token(symbol_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, sizeof_token, "SIZEOF requires a following data symbol.");
+        return false;
+    }
+
+    if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, symbol_token, "Unsupported SIZEOF expression. Only SIZEOF symbol is supported by the current milestone.");
+        return false;
+    }
+
+    if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, tail_token, "Unsupported SIZEOF expression. Only SIZEOF symbol is supported by the current milestone.");
+        return false;
+    }
+
+    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+    if (symbol == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "SIZEOF references an unknown data symbol.");
+        return false;
+    }
+
+    *out_operand = vm_ir_operand_immediate(symbol->size_bytes, 32U);
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses a source operand that may be register, immediate, direct symbol, OFFSET symbol, TYPE symbol, LENGTHOF symbol, SIZEOF symbol, or character literal.
 ///
 /// @param state Parser state to mutate.
 /// @param out_operand Receives the parsed IR operand.
@@ -1828,6 +2055,35 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LENGTHOF")) {
         return vm_parser_parse_lengthof_source_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "SIZEOF")) {
+        return vm_parser_parse_sizeof_source_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_CHARACTER) {
+        uint8_t bytes[4];
+        uint32_t byte_count = 0U;
+        bool unsupported_escape = false;
+        uint64_t packed_value = 0U;
+
+        if (!vm_parser_decode_character_literal_bytes(token, bytes, 4U, &byte_count, &unsupported_escape) ||
+            !vm_parser_pack_character_bytes(bytes, byte_count, &packed_value)) {
+            vm_parser_add_character_literal_diagnostic(state, token, unsupported_escape, !unsupported_escape && byte_count >= 4U);
+            return false;
+        }
+        *out_operand = vm_ir_operand_immediate((uint32_t)packed_value, (uint8_t)(byte_count * 8U));
+        vm_parser_advance(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_REGISTER &&
+        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length) != NULL) {
+        if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
     }
 
     if (token->kind == VM_LEXER_TOKEN_REGISTER) {
@@ -1869,9 +2125,14 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET")) {
         const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
         const VmSymbol *symbol = NULL;
-        if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "OFFSET requires a following data symbol.");
+            return false;
+        }
+        if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, tail_token, "Unsupported OFFSET expression. Only OFFSET symbol is supported by the current milestone.");
             return false;
         }
         symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
@@ -1893,7 +2154,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, register-indirect, OFFSET source operand, TYPE source operand, or LENGTHOF source operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, register-indirect, OFFSET source operand, TYPE source operand, LENGTHOF source operand, SIZEOF source operand, or character literal.");
     return false;
 }
 
@@ -2050,13 +2311,13 @@ static bool vm_parser_encode_number_for_width(const VmLexerToken *token, uint8_t
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
 /// @param destination Destination operand that selects the instruction width.
-/// @param source Source operand to validate against the destination width.
+/// @param source Source operand to validate and normalize against the destination width.
 /// @param source_token Token associated with the source operand for diagnostics.
-/// @return true when the source can be represented without narrowing.
+/// @return true when the source can be represented without narrowing; character immediates are normalized to the selected execution width.
 static bool vm_parser_validate_source_width(
     VmParserState *state,
     const VmIrOperand *destination,
-    const VmIrOperand *source,
+    VmIrOperand *source,
     const VmLexerToken *source_token
 ) {
     uint8_t destination_width = 0U;
@@ -2073,7 +2334,13 @@ static bool vm_parser_validate_source_width(
     }
 
     if (source->kind == VM_IR_OPERAND_IMMEDIATE) {
-        if (source->width_bits != 0U && source->width_bits != destination_width) {
+        if (source_token != NULL && source_token->kind == VM_LEXER_TOKEN_CHARACTER) {
+            if (source->width_bits == 0U || source->width_bits > destination_width) {
+                vm_parser_add_character_literal_diagnostic(state, source_token, false, true);
+                return false;
+            }
+            source->width_bits = destination_width;
+        } else if (source->width_bits != 0U && source->width_bits != destination_width) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Immediate operand width does not match the destination operand width.");
             return false;
         }
@@ -2664,6 +2931,10 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-type-expression";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION:
             return "unsupported-lengthof-expression";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION:
+            return "unsupported-sizeof-expression";
+        case VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL:
+            return "invalid-character-literal";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:
