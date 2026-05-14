@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 9 .data declarations, symbols, OFFSET, and memory changes.
+ * @brief Tests for Milestone 10 .data declarations, symbols, OFFSET, and memory changes.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 9 parser test.
+/// Number of lexer tokens available to each Milestone 10 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 9 parser test.
+/// Number of lexer diagnostics available to each Milestone 10 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 9 parser test.
+/// Number of parser diagnostics available to each Milestone 10 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 9 parser test.
+/// Number of IR instructions available to each Milestone 10 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 9 parser test.
+/// Number of source-text bytes available to each Milestone 10 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 9 parser test.
+/// Number of data symbols available to each Milestone 10 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 9 parser test.
+/// Number of data image bytes available to each Milestone 10 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 9 test.
+/// Holds all caller-owned parser buffers for one Milestone 10 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 9 buffers.
+/// Parses source with full Milestone 10 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 9 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 10 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -350,7 +350,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 9 acceptance program executes through parser and VM.
+/// Verifies the Milestone 10 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -370,7 +370,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 9 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 10 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -464,7 +464,7 @@ static int test_data_type_aliases_and_mixed_case(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 9 error paths.
+/// Verifies parser diagnostics for new Milestone 10 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -602,6 +602,187 @@ static int test_data_capacity_error(void) {
     return failures;
 }
 
+
+/// Verifies explicit PTR width overrides parse to memory operands with requested widths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_ptr_width_overrides_parse_to_ir(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR nums[3], 100\n"
+        "    mov WORD PTR [nums + 4], 1234h\n"
+        "    mov DWORD PTR nums[8], 12345678h\n"
+        "    mov bl, BYTE PTR nums[3]\n"
+        "    mov eax, DWORD PTR [nums + 8]\n"
+        "    mov BYTE PTR [nums], 1\n"
+        "    mov DWORD PTR [nums + 0], 2\n"
+        "    mov BYTE PTR nums[0], 3\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "PTR width override sample should parse");
+    failures += expect_size(result.instruction_count, 8U, "PTR width override sample should emit eight instructions");
+    failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 3U, "BYTE PTR nums[3] should use byte offset 3");
+    failures += expect_u32(buffers.instructions[0].destination.width_bits, 8U, "BYTE PTR destination should use 8-bit width");
+    failures += expect_u32(buffers.instructions[1].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 4U, "WORD PTR [nums + 4] should use byte offset 4");
+    failures += expect_u32(buffers.instructions[1].destination.width_bits, 16U, "WORD PTR destination should use 16-bit width");
+    failures += expect_u32(buffers.instructions[2].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 8U, "DWORD PTR nums[8] should use byte offset 8");
+    failures += expect_u32(buffers.instructions[2].destination.width_bits, 32U, "DWORD PTR destination should use 32-bit width");
+    failures += expect_u32(buffers.instructions[3].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 3U, "BYTE PTR source should use byte offset 3");
+    failures += expect_u32(buffers.instructions[3].source.width_bits, 8U, "BYTE PTR source should use 8-bit width");
+    failures += expect_u32(buffers.instructions[4].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 8U, "DWORD PTR source should use byte offset 8");
+    failures += expect_u32(buffers.instructions[4].source.width_bits, 32U, "DWORD PTR source should use 32-bit width");
+    failures += expect_u32(buffers.instructions[5].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "BYTE PTR [nums] should use offset zero");
+    failures += expect_u32(buffers.instructions[5].destination.width_bits, 8U, "BYTE PTR [nums] should use 8-bit width");
+    failures += expect_u32(buffers.instructions[6].destination.width_bits, 32U, "DWORD PTR [nums + 0] should use 32-bit width");
+    failures += expect_u32(buffers.instructions[7].destination.width_bits, 8U, "BYTE PTR nums[0] should use 8-bit width");
+
+    return failures;
+}
+
+/// Verifies the Milestone 10 acceptance program executes explicit-width writes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_ptr_width_overrides_execute_acceptance_program(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR nums[3], 100\n"
+        "    mov DWORD PTR nums[8], 12345678h\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint8_t byte_value = 0U;
+    uint32_t dword_value = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "PTR acceptance program should parse");
+    failures += expect_u32(buffers.instructions[0].destination.width_bits, 8U, "first acceptance write should be BYTE width");
+    failures += expect_u32(buffers.instructions[1].destination.width_bits, 32U, "second acceptance write should be DWORD width");
+    failures += expect_u32(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for PTR acceptance program");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load for PTR acceptance program");
+    failures += expect_u32(vm_load_program(&vm, buffers.instructions, result.instruction_count), VM_EXEC_STATUS_OK, "PTR acceptance program should load");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "BYTE PTR write should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "DWORD PTR write should execute");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 3U, &byte_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("BYTE PTR memory read should succeed");
+    failures += expect_u8(byte_value, 100U, "BYTE PTR nums[3] should write one byte");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 8U, &dword_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("DWORD PTR memory read should succeed");
+    failures += expect_u32(dword_value, 0x12345678U, "DWORD PTR nums[8] should write the full dword");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies explicit-width memory sources execute with matching register widths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_ptr_width_overrides_source_reads_execute(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR nums[3], 100\n"
+        "    mov bl, BYTE PTR nums[3]\n"
+        "    mov DWORD PTR nums[8], 12345678h\n"
+        "    mov eax, DWORD PTR nums[8]\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "PTR source-read program should parse");
+    failures += expect_u32(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for PTR source-read program");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load for PTR source-read program");
+    failures += expect_u32(vm_load_program(&vm, buffers.instructions, result.instruction_count), VM_EXEC_STATUS_OK, "PTR source-read program should load");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "BYTE PTR write before read should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "BYTE PTR source read should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "DWORD PTR write before read should execute");
+    failures += expect_u32(vm_step(&vm), VM_EXEC_STATUS_OK, "DWORD PTR source read should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after DWORD PTR source read");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after BYTE PTR source read");
+    failures += expect_u32(eax, 0x12345678U, "EAX should receive DWORD PTR source value");
+    failures += expect_u32(ebx & 0xFFU, 100U, "BL should receive BYTE PTR source value");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies malformed or unsupported PTR width override diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_ptr_width_override_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov BYTE nums[3], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing PTR keyword should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "missing PTR diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov REAL4 PTR nums[0], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported PTR width keyword should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "unsupported PTR width keyword diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov BYTE PTR, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing PTR memory operand should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "missing PTR operand diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov BYTE PTR eax, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "PTR applied to register should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "PTR register diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov QWORD PTR nums[0], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "QWORD PTR executable use should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "QWORD PTR diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov BYTE PTR nums[3], 300\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "BYTE PTR immediate overflow should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, "BYTE PTR immediate overflow diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, BYTE PTR nums[3]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "BYTE PTR source to EAX should fail width validation");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "PTR source width mismatch diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov DWORD PTR [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "future register-indirect PTR form should remain unsupported");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "register-indirect PTR diagnostic should match");
+
+    return failures;
+}
+
+/// Verifies browser-facing JSON reports PTR access widths and unaligned warnings.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_wasm_json_reports_ptr_width_memory_changes(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR nums[3], 100\n"
+        "    mov WORD PTR nums[5], 1234h\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
+    failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
+    failures += expect_json_contains(json, "\"code\":\"unaligned-memory-access\"", "unaligned WORD PTR write should emit a warning");
+    failures += expect_json_contains(json, "Unaligned WORD memory access", "unaligned warning should name WORD width");
+
+    return failures;
+}
+
 /// Verifies browser-facing JSON includes symbol-aware memory changes for the acceptance program.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -617,7 +798,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":9", "response should identify Milestone 9");
+    failures += expect_json_contains(json, "\"phase\":10", "response should identify Milestone 10");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -630,7 +811,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 9 tests pass.
+/// @return Zero when all Milestone 10 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -646,12 +827,17 @@ int main(void) {
     failures += test_symbol_write_immediate_range_errors();
     failures += test_symbol_write_immediate_range_covers_type_aliases();
     failures += test_data_capacity_error();
+    failures += test_ptr_width_overrides_parse_to_ir();
+    failures += test_ptr_width_overrides_execute_acceptance_program();
+    failures += test_ptr_width_overrides_source_reads_execute();
+    failures += test_ptr_width_override_error_paths();
+    failures += test_wasm_json_reports_ptr_width_memory_changes();
     failures += test_wasm_json_reports_symbolic_memory_change();
 
     if (failures != 0) {
         return 1;
     }
 
-    puts("Milestone 9 data section and symbol tests passed.");
+    puts("Milestone 10 data section and symbol tests passed.");
     return 0;
 }

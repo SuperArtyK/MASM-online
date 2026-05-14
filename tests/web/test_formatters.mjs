@@ -1,6 +1,6 @@
 /*
  * @file test_formatters.mjs
- * @brief Unit tests for Milestone 9 UI formatting helpers.
+ * @brief Unit tests for Milestone 10 UI formatting helpers.
  *
  * These tests cover pure formatting behavior without importing the browser entry
  * point, which would create DOM and Worker side effects.

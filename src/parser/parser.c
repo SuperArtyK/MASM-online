@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 9.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 10.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
- * executor. Control flow, stack behavior, PTR width overrides, register-indirect
- * operands, Irvine32 routines, and full MASM expression parsing remain later milestones.
+ * executor. Control flow, stack behavior, register-indirect operands, Irvine32 routines,
+ * and full MASM expression parsing remain later milestones.
  */
 
 #include "parser.h"
@@ -65,6 +65,16 @@ typedef struct VmParserState {
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
+
+/// Describes one parsed PTR width override prefix.
+typedef struct VmParserPtrWidth {
+    /// Width in bits requested by BYTE/WORD/DWORD/QWORD PTR.
+    uint8_t width_bits;
+    /// Token containing the width keyword for diagnostics.
+    const VmLexerToken *width_token;
+    /// Token containing PTR for diagnostics.
+    const VmLexerToken *ptr_token;
+} VmParserPtrWidth;
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
@@ -819,13 +829,15 @@ static const VmSymbol *vm_parser_resolve_symbol(VmParserState *state, const VmLe
 
 /// Creates a memory operand for a symbol plus constant byte offset.
 ///
-/// The offset is validated against the referenced symbol byte span. Bracketed
+/// The offset is validated against the current .data image byte span. Bracketed
 /// offsets use MASM byte-offset semantics; they are not element indexes.
 ///
 /// @param state Parser state to inspect.
 /// @param symbol_token Symbol token used for diagnostics.
 /// @param offset_token Token containing the offset, or NULL for direct symbol use.
 /// @param offset Signed byte offset relative to the symbol address.
+/// @param explicit_width_bits Optional PTR override width in bits, or zero to infer from the symbol.
+/// @param width_token Optional width-token used for PTR diagnostics.
 /// @param out_operand Receives a memory-address operand on success.
 /// @return true when the operand was resolved and is executable by the current VM.
 static bool vm_parser_build_symbol_offset_memory_operand(
@@ -833,6 +845,8 @@ static bool vm_parser_build_symbol_offset_memory_operand(
     const VmLexerToken *symbol_token,
     const VmLexerToken *offset_token,
     int32_t offset,
+    uint8_t explicit_width_bits,
+    const VmLexerToken *width_token,
     VmIrOperand *out_operand
 ) {
     const VmSymbol *symbol = NULL;
@@ -853,12 +867,17 @@ static bool vm_parser_build_symbol_offset_memory_operand(
         return false;
     }
 
-    if (symbol->element_size_bytes > 4U) {
+    if (explicit_width_bits == 64U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : symbol_token, "QWORD PTR execution is deferred until Extended 32-bit Mode.");
+        return false;
+    }
+
+    if (explicit_width_bits == 0U && symbol->element_size_bytes > 4U) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
         return false;
     }
 
-    width_bytes = (uint32_t)symbol->element_size_bytes;
+    width_bytes = explicit_width_bits != 0U ? (uint32_t)(explicit_width_bits / 8U) : (uint32_t)symbol->element_size_bytes;
     if (width_bytes == 0U) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset has an unsupported zero-width access.");
         return false;
@@ -879,7 +898,12 @@ static bool vm_parser_build_symbol_offset_memory_operand(
         return false;
     }
 
-    width_bits = (uint8_t)(symbol->element_size_bytes * 8U);
+    width_bits = explicit_width_bits != 0U ? explicit_width_bits : (uint8_t)(symbol->element_size_bytes * 8U);
+    if (!vm_ir_width_is_supported(width_bits)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : symbol_token, "PTR width override is not executable in the current MASM32 subset.");
+        return false;
+    }
+
     *out_operand = vm_ir_operand_memory(final_address, width_bits);
     return true;
 }
@@ -891,7 +915,7 @@ static bool vm_parser_build_symbol_offset_memory_operand(
 /// @param out_operand Receives a memory-address operand on success.
 /// @return true when the symbol was resolved and is executable by the current VM.
 static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const VmLexerToken *token, VmIrOperand *out_operand) {
-    return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, out_operand);
+    return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
 /// Parses an optional signed offset after a bracketed symbol token.
@@ -991,7 +1015,7 @@ static bool vm_parser_parse_bracketed_symbol_offset_memory_operand(VmParserState
         return false;
     }
 
-    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, out_operand)) {
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, 0U, NULL, out_operand)) {
         return false;
     }
 
@@ -1033,12 +1057,256 @@ static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, Vm
         return false;
     }
 
-    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, out_operand)) {
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, 0U, NULL, out_operand)) {
         return false;
     }
 
     vm_parser_advance(state);
     return true;
+}
+
+/// Parses a MASM PTR width keyword.
+///
+/// @param token Token to inspect.
+/// @param out_width_bits Receives 8, 16, 32, or 64 on success.
+/// @return true when @p token is BYTE, WORD, DWORD, or QWORD.
+static bool vm_parser_parse_ptr_width_keyword(const VmLexerToken *token, uint8_t *out_width_bits) {
+    if (token == NULL || out_width_bits == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (vm_parser_token_equals(token, "BYTE")) {
+        *out_width_bits = 8U;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "WORD")) {
+        *out_width_bits = 16U;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "DWORD")) {
+        *out_width_bits = 32U;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "QWORD")) {
+        *out_width_bits = 64U;
+        return true;
+    }
+
+    return false;
+}
+
+/// Returns whether the current token begins a PTR width override prefix.
+///
+/// @param state Parser state to inspect.
+/// @return true when the current token is a supported PTR width keyword.
+static bool vm_parser_current_token_starts_ptr_width(const VmParserState *state) {
+    uint8_t ignored_width = 0U;
+    return vm_parser_parse_ptr_width_keyword(vm_parser_current_token(state), &ignored_width);
+}
+
+/// Returns whether the current token looks like an unsupported PTR width prefix.
+///
+/// This catches malformed forms such as `REAL4 PTR nums[0]` before the parser
+/// misreports `REAL4` as an ordinary unknown data symbol.
+///
+/// @param state Parser state to inspect.
+/// @return true when the current token is an identifier followed by PTR but is
+/// not one of BYTE, WORD, DWORD, or QWORD.
+static bool vm_parser_current_token_is_malformed_ptr_prefix(const VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *next_token = vm_parser_peek_token(state, 1U);
+
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           next_token != NULL &&
+           next_token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           vm_parser_token_equals(next_token, "PTR") &&
+           !vm_parser_current_token_starts_ptr_width(state);
+}
+
+/// Parses a PTR width prefix without parsing its following memory operand.
+///
+/// @param state Parser state positioned at BYTE, WORD, DWORD, or QWORD.
+/// @param out_width Receives the parsed width metadata.
+/// @return true when WIDTH PTR was consumed.
+static bool vm_parser_parse_ptr_width_prefix(VmParserState *state, VmParserPtrWidth *out_width) {
+    const VmLexerToken *width_token = vm_parser_current_token(state);
+    const VmLexerToken *ptr_token = vm_parser_peek_token(state, 1U);
+    uint8_t width_bits = 0U;
+
+    if (state == NULL || out_width == NULL || !vm_parser_parse_ptr_width_keyword(width_token, &width_bits)) {
+        return false;
+    }
+
+    if (ptr_token == NULL || ptr_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(ptr_token, "PTR")) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, width_token, "Expected PTR after memory width override.");
+        return false;
+    }
+
+    out_width->width_bits = width_bits;
+    out_width->width_token = width_token;
+    out_width->ptr_token = ptr_token;
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Creates a memory operand for a direct data symbol with an explicit width.
+///
+/// @param state Parser state to inspect.
+/// @param token Symbol token to resolve.
+/// @param width Parsed PTR width metadata.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when the symbol was resolved and the width is executable.
+static bool vm_parser_parse_symbol_memory_operand_with_width(
+    VmParserState *state,
+    const VmLexerToken *token,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    return vm_parser_build_symbol_offset_memory_operand(
+        state,
+        token,
+        NULL,
+        0,
+        width != NULL ? width->width_bits : 0U,
+        width != NULL ? width->width_token : NULL,
+        out_operand
+    );
+}
+
+/// Parses `[symbol]`, `[symbol + constant]`, and `[symbol - constant]` with explicit width.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param width Parsed PTR width metadata.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when a bracketed symbol-offset operand was parsed.
+static bool vm_parser_parse_bracketed_symbol_offset_memory_operand_with_width(
+    VmParserState *state,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = NULL;
+    const VmLexerToken *offset_token = NULL;
+    int32_t offset = 0;
+
+    if (state == NULL || width == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    symbol_token = vm_parser_current_token(state);
+    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected a data symbol after '['.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    if (!vm_parser_parse_bracket_symbol_offset_suffix(state, &offset, &offset_token)) {
+        return false;
+    }
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, width->width_bits, width->width_token, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `symbol[constant]` with an explicit PTR width.
+///
+/// @param state Parser state positioned at the symbol token.
+/// @param width Parsed PTR width metadata.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when a symbol-indexed constant operand was parsed.
+static bool vm_parser_parse_symbol_index_memory_operand_with_width(
+    VmParserState *state,
+    const VmParserPtrWidth *width,
+    VmIrOperand *out_operand
+) {
+    const VmLexerToken *symbol_token = vm_parser_current_token(state);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *offset_token = NULL;
+    int32_t offset = 0;
+
+    if (state == NULL || width == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    offset_token = vm_parser_current_token(state);
+    if (offset_token == NULL || offset_token->kind != VM_LEXER_TOKEN_NUMBER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, offset_token != NULL ? offset_token : left_token, "Expected a constant byte offset inside symbol brackets.");
+        return false;
+    }
+
+    if (!vm_parser_number_to_i32_offset(offset_token, &offset)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token, "Symbol offset is outside the supported signed 32-bit range.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, width->width_bits, width->width_token, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses a memory operand following a WIDTH PTR prefix.
+///
+/// Register-indirect addressing is intentionally not accepted here; Milestone 11
+/// can extend this switch to parse register-based memory forms while reusing the
+/// already parsed width metadata.
+///
+/// @param state Parser state positioned after WIDTH PTR.
+/// @param width Parsed PTR width metadata.
+/// @param out_operand Receives the parsed memory operand.
+/// @return true when the WIDTH PTR memory operand was parsed.
+static bool vm_parser_parse_ptr_memory_operand(VmParserState *state, const VmParserPtrWidth *width, VmIrOperand *out_operand) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (state == NULL || width == NULL || out_operand == NULL) {
+        return false;
+    }
+
+    if (token == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "PTR width override requires a memory operand.");
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_bracketed_symbol_offset_memory_operand_with_width(state, width, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_symbol_index_memory_operand_with_width(state, width, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        if (!vm_parser_parse_symbol_memory_operand_with_width(state, token, width, out_operand)) {
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "PTR width override requires a data symbol or supported symbol-offset memory operand.");
+    return false;
 }
 
 /// Parses a register or direct-symbol destination operand.
@@ -1055,6 +1323,20 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
 
     if (token == NULL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a destination operand.");
+        return false;
+    }
+
+    if (vm_parser_current_token_starts_ptr_width(state)) {
+        VmParserPtrWidth width;
+        memset(&width, 0, sizeof(width));
+        if (!vm_parser_parse_ptr_width_prefix(state, &width)) {
+            return false;
+        }
+        return vm_parser_parse_ptr_memory_operand(state, &width, out_operand);
+    }
+
+    if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, or QWORD before PTR.");
         return false;
     }
 
@@ -1098,6 +1380,20 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
 
     if (token == NULL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a source operand.");
+        return false;
+    }
+
+    if (vm_parser_current_token_starts_ptr_width(state)) {
+        VmParserPtrWidth width;
+        memset(&width, 0, sizeof(width));
+        if (!vm_parser_parse_ptr_width_prefix(state, &width)) {
+            return false;
+        }
+        return vm_parser_parse_ptr_memory_operand(state, &width, out_operand);
+    }
+
+    if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, or QWORD before PTR.");
         return false;
     }
 
@@ -1877,6 +2173,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unknown-symbol";
         case VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE:
             return "symbol-offset-out-of-range";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH:
+            return "unsupported-ptr-width";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:

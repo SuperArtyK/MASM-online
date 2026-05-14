@@ -2,7 +2,7 @@
  * @file worker.js
  * @brief Web Worker for browser-side MASM32 simulator execution.
  *
- * The worker owns Wasm loading and Milestone 9 source execution so parsing and
+ * The worker owns Wasm loading and Milestone 10 source execution so parsing and
  * VM execution do not run on the browser main thread.
  */
 
@@ -29,7 +29,7 @@ function createNotBuiltWasmInfo() {
 }
 
 /**
- * Creates a JavaScript source-runner around the Milestone 9 C export.
+ * Creates a JavaScript source-runner around the Milestone 10 C export.
  *
  * @param {object} moduleInstance Initialized Emscripten module instance.
  * @returns {(source: string) => unknown} Function that runs source and returns parsed JSON.
@@ -101,7 +101,7 @@ async function loadWasmRuntime() {
       status: "loaded",
       testValue,
       sourceExecution: "unavailable",
-      message: "Wasm artifact loaded, but the Milestone 9 source execution export was not found. Rebuild the Wasm artifact."
+      message: "Wasm artifact loaded, but the Milestone 10 source execution export was not found. Rebuild the Wasm artifact."
     };
   }
 
