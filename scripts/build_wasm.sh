@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
 # @file build_wasm.sh
-# @brief Builds the Phase 0 C core into a browser-loadable WebAssembly module.
+# @brief Builds the implemented C99 simulator core into a browser-loadable WebAssembly module.
 #
-# The script intentionally compiles C files only. It requires Emscripten's emcc
-# on PATH and writes the generated module to web/dist.
+# The script intentionally compiles C99 files only. It requires Emscripten's emcc
+# on PATH and writes the generated module to web/dist. Keep this source list in
+# step with implemented simulator milestones.
 
 set -eu
 
@@ -26,6 +27,9 @@ emcc \
   -I"${ROOT_DIR}/src/core" \
   -I"${ROOT_DIR}/src/parser" \
   -I"${ROOT_DIR}/src/wasm" \
+  -std=c99 \
+  -Wall \
+  -Wextra \
   -O2 \
   -sMODULARIZE=1 \
   -sEXPORT_ES6=1 \

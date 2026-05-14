@@ -1,11 +1,12 @@
 @echo off
 REM /*
 REM  * @file build_wasm.cmd
-REM  * @brief Builds the Phase 0 C core into the browser WebAssembly artifact on Windows.
+REM  * @brief Builds the implemented C99 simulator core into the browser WebAssembly artifact on Windows.
 REM  *
 REM  * This script is intended for Visual Studio External Tools, Visual Studio
 REM  * Makefile Projects, and standard Windows Command Prompt sessions. It uses
 REM  * EMSDK_ROOT when available, then falls back to emcc already being on PATH.
+REM  * Keep this C99 source list in step with implemented simulator milestones.
 REM  */
 setlocal EnableExtensions
 
@@ -46,6 +47,9 @@ emcc ^
   -I"%ROOT_DIR%\src\core" ^
   -I"%ROOT_DIR%\src\parser" ^
   -I"%ROOT_DIR%\src\wasm" ^
+  -std=c99 ^
+  -Wall ^
+  -Wextra ^
   -O2 ^
   -sMODULARIZE=1 ^
   -sEXPORT_ES6=1 ^
