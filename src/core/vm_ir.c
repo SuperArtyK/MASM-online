@@ -106,6 +106,12 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "cwd";
         case VM_IR_OPCODE_CDQ:
             return "cdq";
+        case VM_IR_OPCODE_XCHG:
+            return "xchg";
+        case VM_IR_OPCODE_NEG:
+            return "neg";
+        case VM_IR_OPCODE_NOP:
+            return "nop";
         default:
             return NULL;
     }

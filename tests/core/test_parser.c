@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the minimal parser and implemented data extensions.
+ * @brief Unit and integration tests for the parser through Milestone 20.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -900,7 +900,7 @@ static int test_lexer_capacity_failure_is_distinct(void) {
     return failures;
 }
 
-/// Verifies parser support for Milestone 19 extension opcodes.
+/// Verifies parser support for sign and zero extension opcodes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_extension_instructions_parse_to_ir(void) {
@@ -967,6 +967,119 @@ static int test_extension_instruction_parse_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies XCHG, NEG, and NOP parse into expected IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase20_instructions_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    xchg eax, ebx\n"
+        "    xchg DWORD PTR [esi], eax\n"
+        "    xchg bl, BYTE PTR [edi]\n"
+        "    neg eax\n"
+        "    neg BYTE PTR [edi]\n"
+        "    nop\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 20 instruction program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 20 instruction program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 6U, "Phase 20 instruction program should emit six instructions");
+    failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_XCHG, "first Phase 20 opcode should be XCHG");
+    failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "xchg register destination should be register");
+    failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_REGISTER, "xchg register source should be register");
+    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_XCHG, "second Phase 20 opcode should be XCHG");
+    failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "xchg PTR [esi] destination should be register-indirect memory");
+    failures += expect_u32(buffers.instructions[1].destination.width_bits, 32U, "xchg DWORD PTR [esi] should emit DWORD width");
+    failures += expect_u32(buffers.instructions[2].source.width_bits, 8U, "xchg BYTE PTR [edi] source should emit BYTE width");
+    failures += expect_u32(buffers.instructions[3].opcode, VM_IR_OPCODE_NEG, "fourth Phase 20 opcode should be NEG");
+    failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_NONE, "NEG should emit no source operand");
+    failures += expect_u32(buffers.instructions[4].destination.width_bits, 8U, "NEG BYTE PTR should emit 8-bit memory width");
+    failures += expect_u32(buffers.instructions[5].opcode, VM_IR_OPCODE_NOP, "sixth Phase 20 opcode should be NOP");
+    failures += expect_u32(buffers.instructions[5].destination.kind, VM_IR_OPERAND_NONE, "NOP should emit no destination operand");
+    failures += expect_u32(buffers.instructions[5].source.kind, VM_IR_OPERAND_NONE, "NOP should emit no source operand");
+
+    return failures;
+}
+
+/// Verifies parser diagnostics for malformed Phase 20 operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase20_instruction_parse_error_paths(void) {
+    int failures = 0;
+    const char *xchg_immediate_source =
+        ".code\n"
+        "main PROC\n"
+        "    xchg eax, 1\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *xchg_width_mismatch_source =
+        ".code\n"
+        "main PROC\n"
+        "    xchg eax, al\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *xchg_memory_memory_source =
+        ".code\n"
+        "main PROC\n"
+        "    xchg DWORD PTR [esi], DWORD PTR [edi]\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *neg_extra_operand_source =
+        ".code\n"
+        "main PROC\n"
+        "    neg eax, ebx\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *neg_ambiguous_memory_source =
+        ".code\n"
+        "main PROC\n"
+        "    neg [esi]\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *nop_operand_source =
+        ".code\n"
+        "main PROC\n"
+        "    nop eax\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(xchg_immediate_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "XCHG immediate source should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 1U, "XCHG immediate source should produce one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "XCHG immediate diagnostic should be unsupported syntax");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory", "XCHG immediate diagnostic should describe operand requirement");
+
+    failures += expect_parser_status(parse_for_test(xchg_width_mismatch_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "XCHG width mismatch should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "XCHG width mismatch diagnostic should be operand width mismatch");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "widths must match", "XCHG width mismatch diagnostic should describe width rule");
+
+    failures += expect_parser_status(parse_for_test(xchg_memory_memory_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "XCHG memory-memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "XCHG memory-memory diagnostic should be unsupported syntax");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "memory-to-memory", "XCHG memory-memory diagnostic should describe unsupported form");
+
+    failures += expect_parser_status(parse_for_test(neg_extra_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NEG extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "NEG extra operand diagnostic should be unsupported syntax");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "NEG extra operand diagnostic should describe operand count");
+
+    failures += expect_parser_status(parse_for_test(neg_ambiguous_memory_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NEG ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "NEG ambiguous memory diagnostic should be operand width mismatch");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "known", "NEG ambiguous memory diagnostic should describe known width requirement");
+
+    failures += expect_parser_status(parse_for_test(nop_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOP operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "NOP operand diagnostic should be unsupported syntax");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "NOP operand diagnostic should describe no-operand rule");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1025,6 +1138,8 @@ int main(void) {
     failures += test_lexer_capacity_failure_is_distinct();
     failures += test_extension_instructions_parse_to_ir();
     failures += test_extension_instruction_parse_error_paths();
+    failures += test_phase20_instructions_parse_to_ir();
+    failures += test_phase20_instruction_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

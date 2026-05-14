@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 19. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 20. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -82,6 +82,9 @@ Implemented executable instructions:
 - `cwde`
 - `cwd`
 - `cdq`
+- `xchg`
+- `neg`
+- `nop`
 
 `movsx` and `movzx` require a register destination and an 8-bit or 16-bit register or memory source whose width is narrower than the destination. Register-indirect memory sources such as `[esi]` require `BYTE PTR` or `WORD PTR` because the source width is otherwise ambiguous.
 
@@ -93,6 +96,12 @@ Accumulator conversions are no-operand instructions:
 - `cdq`: sign-extend `EAX` into `EDX:EAX`
 
 Ordinary `mov` from signed memory does not sign-extend automatically; use `movsx` when sign extension is required.
+
+`xchg` supports register/register, register/memory, and memory/register exchanges when both operands have matching widths. Memory operands must use existing direct-symbol, symbol-offset, or `PTR`/register-indirect forms that make the access width unambiguous. `xchg` does not modify tracked flags.
+
+`neg` supports register and memory destinations with 8-bit, 16-bit, or 32-bit widths. It updates the tracked arithmetic flags (`CF`, `ZF`, `SF`, and `OF`) using the destination width.
+
+`nop` takes no operands. It advances execution without changing registers, flags, memory, or console state.
 
 ## Recognized unsupported features
 

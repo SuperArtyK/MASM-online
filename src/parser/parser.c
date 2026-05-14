@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 19.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 20.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -1515,6 +1515,18 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_CDQ;
         return true;
     }
+    if (vm_parser_token_equals(token, "xchg")) {
+        *out_opcode = VM_IR_OPCODE_XCHG;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "neg")) {
+        *out_opcode = VM_IR_OPCODE_NEG;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "nop")) {
+        *out_opcode = VM_IR_OPCODE_NOP;
+        return true;
+    }
 
     return false;
 }
@@ -1527,7 +1539,8 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_CBW ||
            opcode == VM_IR_OPCODE_CWDE ||
            opcode == VM_IR_OPCODE_CWD ||
-           opcode == VM_IR_OPCODE_CDQ;
+           opcode == VM_IR_OPCODE_CDQ ||
+           opcode == VM_IR_OPCODE_NOP;
 }
 
 /// Returns whether an opcode uses sign/zero-extension width rules.
@@ -1536,6 +1549,23 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
 /// @return true for MOVSX and MOVZX.
 static bool vm_parser_opcode_is_extension_move(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_MOVSX || opcode == VM_IR_OPCODE_MOVZX;
+}
+
+
+/// Returns whether an opcode uses one mutable destination operand.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for single-operand destination instructions.
+static bool vm_parser_opcode_is_single_destination_operand(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_NEG;
+}
+
+/// Returns whether an opcode uses exchange operand validation rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for XCHG.
+static bool vm_parser_opcode_is_exchange(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_XCHG;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -3065,6 +3095,81 @@ static bool vm_parser_validate_extension_widths(
     return true;
 }
 
+
+/// Validates source and destination widths for XCHG.
+///
+/// XCHG accepts register/register, register/memory, and memory/register forms
+/// only. Memory/memory and immediate forms remain unsupported. Register-only
+/// memory operands may inherit width from the opposite register operand.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param first First exchange operand.
+/// @param second Second exchange operand.
+/// @param operand_token Token associated with the second operand for diagnostics.
+/// @return true when the XCHG operand pair is supported.
+static bool vm_parser_validate_exchange_operands(
+    VmParserState *state,
+    const VmIrOperand *first,
+    const VmIrOperand *second,
+    const VmLexerToken *operand_token
+) {
+    uint8_t first_width = 0U;
+    uint8_t second_width = 0U;
+
+    if (state == NULL || first == NULL || second == NULL) {
+        return false;
+    }
+
+    if ((first->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(first)) ||
+        (second->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(second))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "XCHG requires register or memory operands.");
+        return false;
+    }
+
+    if (vm_parser_operand_is_memory(first) && vm_parser_operand_is_memory(second)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "XCHG does not support memory-to-memory operands.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(first, &first_width) || !vm_parser_resolve_operand_width(second, &second_width)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "XCHG operands require known 8-bit, 16-bit, or 32-bit widths.");
+        return false;
+    }
+
+    if (first_width != second_width) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "XCHG operand widths must match.");
+        return false;
+    }
+
+    return true;
+}
+
+/// Validates the destination operand for NEG.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination Destination operand to validate.
+/// @param operand_token Token associated with the operand for diagnostics.
+/// @return true when the operand has a supported execution width.
+static bool vm_parser_validate_neg_operand(VmParserState *state, const VmIrOperand *destination, const VmLexerToken *operand_token) {
+    uint8_t width_bits = 0U;
+
+    if (state == NULL || destination == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "NEG requires a register or memory destination.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(destination, &width_bits)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "NEG destination requires a known 8-bit, 16-bit, or 32-bit width.");
+        return false;
+    }
+
+    return true;
+}
+
 /// Consumes an expected comma token.
 ///
 /// @param state Parser state to mutate.
@@ -3165,6 +3270,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
     vm_parser_advance(state);
     if (vm_parser_opcode_has_no_operands(opcode)) {
+        if (opcode == VM_IR_OPCODE_NOP && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), "NOP does not take operands.");
+            return false;
+        }
         if (!vm_parser_expect_line_end(state)) {
             return false;
         }
@@ -3174,6 +3283,21 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     if (!vm_parser_parse_destination_operand(state, &destination)) {
         return false;
     }
+
+    if (vm_parser_opcode_is_single_destination_operand(opcode)) {
+        if (!vm_parser_validate_neg_operand(state, &destination, mnemonic_token)) {
+            return false;
+        }
+        if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), "NEG takes exactly one register or memory operand.");
+            return false;
+        }
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
     if (!vm_parser_expect_comma(state)) {
         return false;
     }
@@ -3184,6 +3308,11 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
     if (vm_parser_opcode_is_extension_move(opcode)) {
         if (!vm_parser_validate_extension_widths(state, &destination, &source, source_token)) {
+            return false;
+        }
+    } else if (vm_parser_opcode_is_exchange(opcode)) {
+        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (!vm_parser_validate_exchange_operands(state, &destination, &source, source_token)) {
             return false;
         }
     } else {

@@ -2,10 +2,11 @@
  * @file vm_exec.c
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
- * The executor intentionally supports only a tiny vertical slice: mov, add,
- * sub, movsx, movzx, cbw, cwde, cwd, and cdq over the currently supported
- * register and memory operand forms. It records last-step deltas by snapshotting CPU state and copying memory-module
- * byte changes after each successful step.
+ * The executor intentionally supports only a staged vertical slice: mov, add,
+ * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, and nop over the
+ * currently supported register and memory operand forms. It records last-step
+ * deltas by snapshotting CPU state and copying memory-module byte changes after
+ * each successful step.
  */
 
 #include "vm_exec.h"
@@ -505,6 +506,136 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
     return status;
 }
 
+
+/// Returns whether operands are valid for XCHG and resolves their shared width.
+///
+/// @param destination First exchange operand.
+/// @param source Second exchange operand.
+/// @param out_width_bits Receives the shared operand width on success.
+/// @return true when both operands are register or memory operands with matching supported widths.
+static bool vm_exec_xchg_operands_are_supported(const VmIrOperand *destination, const VmIrOperand *source, uint8_t *out_width_bits) {
+    uint8_t destination_width = 0U;
+    uint8_t source_width = 0U;
+
+    if (destination == NULL || source == NULL || out_width_bits == NULL) {
+        return false;
+    }
+    if (!vm_exec_operand_is_destination(destination) || !vm_exec_operand_is_destination(source)) {
+        return false;
+    }
+    if (vm_exec_operand_is_memory(destination) && vm_exec_operand_is_memory(source)) {
+        return false;
+    }
+    if (!vm_exec_operand_width(destination, &destination_width) || !vm_exec_operand_width(source, &source_width)) {
+        return false;
+    }
+    if (destination_width != source_width) {
+        return false;
+    }
+
+    *out_width_bits = destination_width;
+    return true;
+}
+
+/// Executes one XCHG instruction without modifying flags.
+///
+/// The implementation reads both operands before writing either operand. When
+/// one operand is memory, the memory write is attempted before the register
+/// write so checked-memory failures do not leave a register half-exchanged.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_xchg(Vm *vm, const VmIrInstruction *instruction) {
+    uint8_t width_bits = 0U;
+    uint32_t destination_value = 0U;
+    uint32_t source_value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_xchg_operands_are_supported(&instruction->destination, &instruction->source, &width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &destination_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (vm_exec_operand_is_memory(&instruction->source)) {
+        status = vm_exec_write_operand(vm, instruction, &instruction->source, width_bits, destination_value);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+        return vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, source_value);
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    return vm_exec_write_operand(vm, instruction, &instruction->source, width_bits, destination_value);
+}
+
+/// Executes one NEG instruction and updates arithmetic flags.
+///
+/// NEG is modeled as subtraction from zero at the destination operand width.
+/// This reuses the existing CF, ZF, SF, and OF update behavior and avoids
+/// broadening the flag model beyond the flags currently tracked by the VM.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_neg(Vm *vm, const VmIrInstruction *instruction) {
+    VmCpu before_cpu;
+    uint8_t width_bits = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_operand_is_destination(&instruction->destination) || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (!vm_cpu_update_sub_flags(&vm->cpu, 0U, value, width_bits, &result)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+    return status;
+}
+
+/// Executes one NOP instruction.
+///
+/// @param instruction Instruction to validate.
+/// @return OK when both operand slots are empty, otherwise unsupported operand.
+static VmExecStatus vm_exec_execute_nop(const VmIrInstruction *instruction) {
+    if (instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    return instruction->destination.kind == VM_IR_OPERAND_NONE && instruction->source.kind == VM_IR_OPERAND_NONE ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
 /// Sign-extends a masked value from an implemented source width to 32 bits.
 ///
 /// @param value Source value before masking.
@@ -826,6 +957,12 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_cwd(vm, instruction);
         case VM_IR_OPCODE_CDQ:
             return vm_exec_execute_cdq(vm, instruction);
+        case VM_IR_OPCODE_XCHG:
+            return vm_exec_execute_xchg(vm, instruction);
+        case VM_IR_OPCODE_NEG:
+            return vm_exec_execute_neg(vm, instruction);
+        case VM_IR_OPCODE_NOP:
+            return vm_exec_execute_nop(instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }

@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 19 sign/zero-extension UI: source editing, Run button,
+  This page provides the Milestone 20 exchange, negation, and no-op UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates MOVSX and MOVZX.
+  execution stay inside the worker/Wasm path; the default program demonstrates XCHG, NEG, and NOP.
 -->
 <html lang="en">
   <head>
@@ -18,15 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 19: sign and zero extension instructions. The default program demonstrates MOVSX over signed byte data and MOVZX over unsigned byte data.</p>
+        <p class="muted">Milestone 20: exchange, negation, and no-op instructions. The default program demonstrates XCHG, NEG, and NOP.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.data
-x SBYTE -1
-y BYTE  0FFh
-.code
+        <textarea id="editor" spellcheck="false">.code
 main PROC
-    movsx eax, x
-    movzx ebx, y
+    mov eax, 5
+    mov ebx, 10
+    xchg eax, ebx
+    neg eax
+    nop
 main ENDP
 END main</textarea>
         <div class="controls">

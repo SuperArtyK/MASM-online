@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 19.
+ * @brief Unit tests for the VM executor through Milestone 20.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -620,6 +620,179 @@ static int test_extension_instruction_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies XCHG register/register behavior and flag preservation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_xchg_registers_preserves_flags(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_XCHG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, "main.asm", 1U, "xchg eax, ebx", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for xchg register tests");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "xchg register program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 5U) ? 0 : record_failure("EAX write should succeed before xchg");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 10U) ? 0 : record_failure("EBX write should succeed before xchg");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("CF set should succeed before xchg");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("ZF set should succeed before xchg");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("SF clear should succeed before xchg");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("OF set should succeed before xchg");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "xchg eax, ebx should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after xchg");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after xchg");
+    failures += expect_u32(eax, 10U, "xchg should move EBX into EAX");
+    failures += expect_u32(ebx, 5U, "xchg should move EAX into EBX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "xchg should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "xchg should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "xchg should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "xchg should preserve OF");
+    failures += expect_size(vm_last_delta(&vm)->flag_change_count, 0U, "xchg should not report flag deltas");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies XCHG memory/register behavior and NOP last-step deltas.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_xchg_memory_and_nop_delta(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t mem_value = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_XCHG, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, "main.asm", 1U, "xchg DWORD PTR value, eax", 0U},
+        {VM_IR_OPCODE_NOP, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "nop", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for xchg memory tests");
+    failures += expect_status(vm_load_program(&vm, program, 2U), VM_EXEC_STATUS_OK, "xchg memory program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x11223344U) ? 0 : record_failure("EAX write should succeed before memory xchg");
+    failures += vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0xAABBCCDDU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("data memory write should succeed before memory xchg");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "xchg memory, eax should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after memory xchg");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &mem_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("data memory read should succeed after memory xchg");
+    failures += expect_u32(eax, 0xAABBCCDDU, "memory xchg should move old memory into EAX");
+    failures += expect_u32(mem_value, 0x11223344U, "memory xchg should move old EAX into memory");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 4U, "memory xchg should record four changed bytes");
+    failures += expect_size(vm_last_delta(&vm)->flag_change_count, 0U, "memory xchg should not change flags");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "nop should execute");
+    failures += expect_size(vm_last_delta(&vm)->register_change_count, 0U, "nop should report no register changes");
+    failures += expect_size(vm_last_delta(&vm)->flag_change_count, 0U, "nop should report no flag changes");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "nop should report no memory changes");
+    failures += expect_size(vm_last_delta(&vm)->memory_access_count, 0U, "nop should report no memory accesses");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies NEG register and memory behavior plus arithmetic flag edge cases.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_neg_register_memory_and_flags(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint8_t mem8 = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov al, 1", 0U},
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "neg al", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov al, 80h", 2U},
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "neg al", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000000U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "mov eax, 80000000h", 4U},
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "neg eax", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 5U, VM_REGISTER_COUNT, 0U}, "main.asm", 7U, "mov BYTE PTR value, 5", 6U},
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 8U, "neg BYTE PTR value", 7U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 9U, "mov al, 0", 8U},
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 10U, "neg al", 9U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for neg tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "neg program should load");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov al, 1 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "neg al should execute for 1");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after neg al");
+    failures += expect_u32(eax, 0x000000FFU, "neg al should produce FFh for input 1");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "neg nonzero should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "neg one should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "neg one at 8-bit width should set SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "neg one should clear OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov al, 80h should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "neg al should execute for 80h");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after neg 80h");
+    failures += expect_u32(eax, 0x00000080U, "neg 80h at 8-bit width should remain 80h");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "neg most-negative 8-bit value should set OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov eax, 80000000h should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "neg eax should execute for 80000000h");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after neg eax");
+    failures += expect_u32(eax, 0x80000000U, "neg most-negative 32-bit value should remain unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "neg most-negative 32-bit value should set OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov memory byte should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "neg memory byte should execute");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &mem8, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after neg");
+    failures += expect_u32((uint32_t)mem8, 0xFBU, "neg BYTE PTR memory should store FBh for input 5");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 1U, "neg byte memory should record one changed byte");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov al, 0 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "neg zero should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "neg zero should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "neg zero should set ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "neg zero should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "neg zero should clear OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies unsupported Phase 20 operand combinations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase20_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction xchg_immediate[] = {
+        {VM_IR_OPCODE_XCHG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "xchg eax, 1", 0U}
+    };
+    const VmIrInstruction xchg_width_mismatch[] = {
+        {VM_IR_OPCODE_XCHG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 2U, "xchg eax, al", 0U}
+    };
+    const VmIrInstruction xchg_memory_memory[] = {
+        {VM_IR_OPCODE_XCHG, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U}, "main.asm", 3U, "xchg a, b", 0U}
+    };
+    const VmIrInstruction neg_has_source[] = {
+        {VM_IR_OPCODE_NEG, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, "main.asm", 4U, "neg eax, ebx", 0U}
+    };
+    const VmIrInstruction nop_has_operand[] = {
+        {VM_IR_OPCODE_NOP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "nop eax", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 20 error tests");
+    failures += expect_status(vm_load_program(&vm, xchg_immediate, 1U), VM_EXEC_STATUS_OK, "xchg immediate program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "xchg immediate source should be unsupported");
+    failures += expect_status(vm_load_program(&vm, xchg_width_mismatch, 1U), VM_EXEC_STATUS_OK, "xchg width mismatch program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "xchg width mismatch should be unsupported");
+    failures += expect_status(vm_load_program(&vm, xchg_memory_memory, 1U), VM_EXEC_STATUS_OK, "xchg memory-memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "xchg memory-memory should be unsupported");
+    failures += expect_status(vm_load_program(&vm, neg_has_source, 1U), VM_EXEC_STATUS_OK, "neg with source program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "neg with source should be unsupported");
+    failures += expect_status(vm_load_program(&vm, nop_has_operand, 1U), VM_EXEC_STATUS_OK, "nop with operand program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "nop with operand should be unsupported");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -648,7 +821,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 19.
+/// Runs all executor tests through Milestone 20.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -666,6 +839,10 @@ int main(void) {
     failures += test_accumulator_extension_instructions();
     failures += test_extension_instruction_edge_cases();
     failures += test_extension_instruction_error_paths();
+    failures += test_xchg_registers_preserves_flags();
+    failures += test_xchg_memory_and_nop_delta();
+    failures += test_neg_register_memory_and_flags();
+    failures += test_phase20_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -673,6 +850,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 19 passed.");
+    puts("Executor tests through Milestone 20 passed.");
     return 0;
 }

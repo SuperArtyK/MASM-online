@@ -36,6 +36,12 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_CWD,
     /// Sign-extend EAX into EDX:EAX.
     VM_IR_OPCODE_CDQ,
+    /// Exchange the values of two register or memory/register operands.
+    VM_IR_OPCODE_XCHG,
+    /// Compute the two's-complement negation of a register or memory operand.
+    VM_IR_OPCODE_NEG,
+    /// Advance execution without mutating VM state.
+    VM_IR_OPCODE_NOP,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;
