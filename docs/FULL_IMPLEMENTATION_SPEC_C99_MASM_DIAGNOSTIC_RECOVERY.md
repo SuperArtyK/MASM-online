@@ -205,6 +205,10 @@ Supported data declarations:
 - `WORD`
 - `DWORD`
 - `QWORD`
+- `SBYTE`
+- `SWORD`
+- `SDWORD`
+- `SQWORD`
 - `DB`
 - `DW`
 - `DD`
@@ -228,12 +232,18 @@ var DWORD 10
 arr BYTE 1, 2, 3, 4
 buf BYTE 64 DUP(0)
 qval QWORD 12345678h
+sb   SBYTE -1
+sw   SWORD -2
+sd   SDWORD -3
+sq   SQWORD -4
 neg DWORD -1
 ```
 
 Notes:
 
 - `?` reserves storage. The initial deterministic simulator behavior may zero-fill the bytes while retaining metadata that the declaration was originally uninitialized.
+- `SBYTE`, `SWORD`, `SDWORD`, and `SQWORD` are signed integer data declarations. They use the same byte sizes as `BYTE`, `WORD`, `DWORD`, and `QWORD`, but their initializers are validated against signed ranges.
+- `QWORD` and `SQWORD` data declarations, layout, and metadata are supported in MASM32 Educational Mode. Executable 64-bit memory operations and 64-bit registers are deferred to Extended 32-bit Mode.
 - Nested `DUP`, `.data?`, and complex initializer expressions are later compatibility features.
 
 ### 8.3 Numeric Literals
@@ -261,16 +271,26 @@ b BYTE -1
 w WORD -2
 d DWORD -3
 q QWORD -4
+sb SBYTE -1
+sw SWORD -2
+sd SDWORD -3
+sq SQWORD -4
 ```
 
 Required range behavior:
 
 ```text
-8-bit destination:   unsigned 0..255, signed negative -128..-1
-16-bit destination:  unsigned 0..65535, signed negative -32768..-1
-32-bit destination:  unsigned 0..4294967295, signed negative -2147483648..-1
-64-bit data layout:  unsigned and negative QWORD initializers encoded as 64-bit data bytes
+8-bit unsigned destination/declaration:   unsigned 0..255, signed negative -128..-1 when negative literals are allowed
+16-bit unsigned destination/declaration:  unsigned 0..65535, signed negative -32768..-1 when negative literals are allowed
+32-bit unsigned destination/declaration:  unsigned 0..4294967295, signed negative -2147483648..-1 when negative literals are allowed
+64-bit unsigned data layout:              unsigned QWORD values and negative QWORD initializers encoded as 64-bit data bytes
+SBYTE declaration:                         -128..127
+SWORD declaration:                         -32768..32767
+SDWORD declaration:                        -2147483648..2147483647
+SQWORD declaration:                        -9223372036854775808..9223372036854775807
 ```
+
+For signed declarations, positive values must fit the signed positive range. For example, `SBYTE 127` succeeds but `SBYTE 128` fails. For unsigned declarations, the unsigned range remains available, and negative literals are encoded as two's-complement values only after width validation.
 
 Out-of-range literals should produce structured assembly diagnostics instead of silent truncation.
 
@@ -288,7 +308,7 @@ Supported quoted character literal behavior:
 - Therefore `'A'` is `41h`, `'AB'` is `4241h`, and `'ABCD'` is `44434241h`.
 - Width validation is required. For example, `mov al, 'AB'` must be rejected because two decoded bytes do not fit an 8-bit destination.
 - `BYTE` / `DB` declarations may continue to treat quoted strings as byte sequences, so `msg BYTE 'AB', 0` emits `41h, 42h, 00h`.
-- `WORD` / `DW`, `DWORD` / `DD`, and `QWORD` / `DQ` may treat quoted literals as packed scalar initializers when the decoded byte count fits the element width.
+- `WORD` / `DW`, `DWORD` / `DD`, `QWORD` / `DQ`, and signed equivalents such as `SWORD`, `SDWORD`, and `SQWORD` may treat quoted literals as packed scalar initializers when the decoded byte count fits the element width.
 
 Examples:
 
@@ -324,6 +344,7 @@ Memory type overrides should be supported in staged form:
 - `WORD PTR`
 - `DWORD PTR`
 - `QWORD PTR`, for data layout and Extended 32-bit Mode where applicable
+- `SQWORD PTR`, for signed 64-bit metadata and Extended 32-bit Mode where applicable
 
 Examples:
 
@@ -337,6 +358,8 @@ mov DWORD PTR [esi], 12345678h
 ```
 
 `SIZEOF`, `LENGTHOF`, and `TYPE` are core textbook MASM operators and should be implemented shortly after data symbols and indexed memory operands.
+
+`QWORD PTR` and `SQWORD PTR` should be recognized in MASM32 Educational Mode, but executable 64-bit memory reads/writes should produce structured unsupported diagnostics until Extended 32-bit Mode enables them.
 
 ### 8.5 Memory Operands and Addressing Forms
 
@@ -382,7 +405,11 @@ Stage D is a later compatibility feature and should not block textbook examples 
 
 ### 8.6 Instructions
 
-Initial instruction subset:
+The simulator should implement instructions in staged, testable groups. The goal is educational MASM32/Irvine32 compatibility, not full x86 coverage.
+
+#### 8.6.1 Baseline and Early Textbook Instructions
+
+Baseline arithmetic, data movement, control flow, stack, and address computation:
 
 - `mov`
 - `add`
@@ -411,6 +438,7 @@ Initial instruction subset:
 - `xor`
 - `not`
 - `shl`
+- `sal`, as an alias of `shl`
 - `shr`
 - `sar`
 - `mul`
@@ -419,7 +447,86 @@ Initial instruction subset:
 - `idiv`
 - `lea`
 
-Additional instructions can be added incrementally once the VM, debugger, and tests are stable.
+#### 8.6.2 Additional Textbook v1 Instructions
+
+These instructions are common enough in introductory MASM coursework to include in the educational v1 roadmap.
+
+Data movement and conversion:
+
+- `movsx`
+- `movzx`
+- `cbw`
+- `cwde`
+- `cwd`
+- `cdq`
+
+Arithmetic and carry/borrow handling:
+
+- `neg`
+- `adc`
+- `sbb`
+
+Carry flag control:
+
+- `clc`
+- `stc`
+- `cmc`
+
+Logical/test and data exchange:
+
+- `test`
+- `xchg`
+- `nop`
+
+Rotate instructions:
+
+- `rol`
+- `ror`
+
+#### 8.6.3 Later Planned Instruction Additions
+
+These are useful but should be implemented after the core instruction, control-flow, and stack behavior is stable.
+
+Extended loop helpers:
+
+- `loope`, `loopz`
+- `loopne`, `loopnz`
+- `jcxz`
+- `jecxz`
+
+Stack/procedure convenience:
+
+- `leave`
+- `ret imm16`
+
+Conditional byte set:
+
+- `setcc` family, including:
+  - `sete`, `setz`
+  - `setne`, `setnz`
+  - `setl`, `setle`, `setg`, `setge`
+  - `seta`, `setae`, `setb`, `setbe`
+
+#### 8.6.4 Deferred Instruction Families
+
+These instruction families remain intentionally deferred because they require broader VM state, additional registers, string/prefix semantics, OS behavior, or substantially more compatibility work.
+
+- String instructions and prefixes:
+  - `movsb`, `movsw`, `movsd`
+  - `stosb`, `stosw`, `stosd`
+  - `lodsb`, `lodsw`, `lodsd`
+  - `cmpsb`, `cmpsw`, `cmpsd`
+  - `scasb`, `scasw`, `scasd`
+  - `rep`, `repe`, `repne`
+  - direction-flag behavior through `cld` and `std`
+- FPU instructions such as `fld`, `fstp`, `fadd`, `fsub`, `fmul`, and `fdiv`.
+- SSE/AVX instructions and vector registers.
+- Segment registers, far pointers, and segment override behavior.
+- Interrupt and hardware/OS instructions such as `int`, `iret`, `in`, `out`, `hlt`, `cli`, and `sti`.
+- Atomic/concurrency instructions such as `lock`, `cmpxchg`, and `xadd`.
+- BCD/ASCII adjust instructions such as `aaa`, `aas`, `daa`, `das`, `aam`, and `aad`.
+
+Additional instructions may be added later as separate, tested compatibility milestones.
 
 ### 8.7 Unsupported Initially
 
@@ -435,7 +542,7 @@ Initially unsupported:
 - Full scaled-index addressing, until the staged memory-operand milestones reach it.
 - FPU instructions.
 - SSE/AVX instructions.
-- String instructions such as `movsb`, `stosb`, `lodsb`, unless added later.
+- String instructions and `rep` prefixes, unless added in a later dedicated string-instruction milestone.
 - Segment registers and segment override behavior.
 - Interrupts.
 - Windows API calls.
@@ -447,7 +554,7 @@ The current target is **educational MASM32/Irvine32 compatibility**, not full MA
 Important textbook/compatibility areas to track explicitly:
 
 - Equates and constants: `=`, `EQU`, `TEXTEQU`, `LABEL`.
-- Additional data types: `SBYTE`, `SWORD`, `SDWORD`, `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`.
+- Additional non-integer data types: `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`. Signed integer data types `SBYTE`, `SWORD`, `SDWORD`, and `SQWORD` are part of the planned textbook subset rather than a distant backlog item.
 - `.CONST` and `.DATA?`, with deterministic simulator behavior for uninitialized storage.
 - Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, and structure initializers.
 - Procedure metadata: `PROTO`, `INVOKE`, `LOCAL`, parameters, and calling-convention modeling.
@@ -457,6 +564,7 @@ Important textbook/compatibility areas to track explicitly:
 - Include/library declarations: broader `INCLUDE`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `PUBLIC`, and `COMM` handling.
 - Expression parser: `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, `NOT`, relational operators, parentheses, `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, `THIS`, and segment-related operators where applicable.
 - Instruction prefixes and string instructions: `REP`, `REPE`, `REPNE`, `LOCK`, `movsb`, `movsd`, `stosb`, `stosd`, `lodsb`, `cmpsb`, and direction-flag behavior.
+- Additional textbook instructions now tracked in the v1 roadmap: `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, `cdq`, `neg`, `adc`, `sbb`, `clc`, `stc`, `cmc`, `test`, `xchg`, `nop`, `sal`, `rol`, `ror`, extended loop helpers, `leave`, `ret imm16`, and the `setcc` family.
 
 These features should not be silently accepted before they are implemented. Unsupported forms should produce explicit `unsupported-feature` diagnostics with source location.
 
@@ -1257,6 +1365,33 @@ Unsupported feature: Windows API calls are not available in this simulator.
 Line 14: invoke MessageBox, NULL, ADDR msg, ADDR title, MB_OK
 ```
 
+Lexer diagnostics must not be collapsed into generic umbrella messages when the lexer can identify the actual problem. For example, the UI should prefer diagnostics such as:
+
+```text
+[assembly-error] invalid-hex-literal line 3, column 14: Invalid hexadecimal literal.
+[assembly-error] unterminated-string line 7, column 18: Unterminated string literal.
+[assembly-error] unexpected-character line 9, column 5: Unexpected character.
+```
+
+over a generic message such as:
+
+```text
+[assembly-error] lexer-failed line 1, column 1: Lexer failed or produced diagnostics before parsing.
+```
+
+A generic `lexer-failed` diagnostic may be retained internally as a summary/status code, but it must not be the only user-visible diagnostic when more specific lexer diagnostics are available.
+
+The parser should eventually support diagnostic recovery for known unsupported constructs. Recovery must be conservative:
+
+- Recover from known unsupported line-level constructs by skipping to the next line.
+- Recover from known unsupported block constructs by skipping to the matching terminator where practical.
+- Avoid cascading noise from inside skipped unsupported constructs.
+- Cap the number of diagnostics reported in one pass.
+- Never execute a program if any assembly diagnostic was produced.
+- Stop immediately on fatal capacity, lexer state, or internal parser errors.
+
+Recoverable unsupported constructs include common textbook/compiler forms such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `.DATA?`, `.CONST`, `EQU`, `TEXTEQU`, `PROTO`, `LOCAL`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
+
 ## 22. Save and Share URL Format
 
 Use compressed encoded project state in the URL fragment.
@@ -1473,6 +1608,7 @@ Important split areas:
 
 - Memory operand support should be implemented incrementally: constant symbol offsets, `PTR` width overrides, then register-indirect operands.
 - Data operators and literals should be implemented incrementally: `TYPE`, then `LENGTHOF`, then `SIZEOF` together with single-character and packed multi-character literals.
+- Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then `LOOP` and instruction limits.
 - Stack support should be implemented incrementally: stack initialization with `PUSH`/`POP`, then `CALL`/`RET`, then call-depth diagnostics.
 - Irvine32 support should be implemented incrementally: console infrastructure, basic text output, numeric output, diagnostic output/randomness, input protocol, simple input, then string input.
@@ -1487,6 +1623,7 @@ Possible future features:
 
 - CodeMirror 6 source editor integration with line numbers, MASM highlighting, dark/light themes, and local-only editor preferences.
 - CodeMirror diagnostic markers, clickable Simulator Messages, current execution-line highlighting, and breakpoint gutter integration.
+- Multi-diagnostic parser recovery that reports several unsupported constructs in one pass while still refusing execution.
 - Optional CodeMirror autocomplete for instructions, registers, directives, data symbols, labels, and Irvine32 routines.
 - More MASM directives, especially `.CONST`, `.DATA?`, `ALIGN`, `LABEL`, and `.RADIX`.
 - MASM equates and constants: `=`, `EQU`, `TEXTEQU`.
