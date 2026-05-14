@@ -1,0 +1,105 @@
+/*
+ * @file symbols.h
+ * @brief Symbol metadata for MASM32 simulator parser data declarations.
+ *
+ * This module defines the small Milestone 8 symbol model used for .data layout
+ * and direct symbolic memory operands. It is intentionally limited to data
+ * symbols; label targets and procedure metadata remain later milestones.
+ */
+
+#ifndef MASM32_SIM_SYMBOLS_H
+#define MASM32_SIM_SYMBOLS_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+/// Maximum bytes retained for one symbol name, including the null terminator.
+#define VM_SYMBOL_NAME_CAPACITY 64U
+
+/// Identifies the scalar storage type of one MASM data declaration.
+typedef enum VmSymbolDataType {
+    /// 8-bit BYTE or DB data element.
+    VM_SYMBOL_DATA_TYPE_BYTE = 0,
+    /// 16-bit WORD or DW data element.
+    VM_SYMBOL_DATA_TYPE_WORD,
+    /// 32-bit DWORD or DD data element.
+    VM_SYMBOL_DATA_TYPE_DWORD,
+    /// 64-bit QWORD or DQ data element.
+    VM_SYMBOL_DATA_TYPE_QWORD,
+    /// Number of supported Milestone 8 data types.
+    VM_SYMBOL_DATA_TYPE_COUNT
+} VmSymbolDataType;
+
+/// Describes one data symbol laid out in the simulated .data region.
+typedef struct VmSymbol {
+    /// Null-terminated symbol name copied from source.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Scalar element type declared for the symbol.
+    VmSymbolDataType data_type;
+    /// Simulated address of the first byte of the symbol.
+    uint32_t address;
+    /// Total bytes occupied by this symbol.
+    uint32_t size_bytes;
+    /// Size in bytes of one declared element.
+    uint8_t element_size_bytes;
+    /// Number of declared elements represented by this symbol.
+    uint32_t element_count;
+    /// Whether any initializer used MASM's uninitialized marker `?`.
+    bool has_uninitialized_initializer;
+} VmSymbol;
+
+/// Returns the byte width of a supported data type.
+///
+/// @param data_type Data type to inspect.
+/// @return Element size in bytes, or zero for invalid values.
+uint8_t vm_symbol_data_type_size_bytes(VmSymbolDataType data_type);
+
+/// Returns the canonical MASM spelling for a supported data type.
+///
+/// @param data_type Data type to inspect.
+/// @return Static type name, or NULL for invalid values.
+const char *vm_symbol_data_type_name(VmSymbolDataType data_type);
+
+/// Parses a MASM data type token spelling.
+///
+/// @param text Source spelling of the type token.
+/// @param length Number of bytes in @p text.
+/// @param out_data_type Receives the parsed type on success.
+/// @return true when the spelling is BYTE, WORD, DWORD, QWORD, DB, DW, DD, or DQ.
+bool vm_symbol_parse_data_type(const char *text, size_t length, VmSymbolDataType *out_data_type);
+
+/// Copies a source symbol name into a fixed symbol slot.
+///
+/// @param symbol Destination symbol to mutate.
+/// @param text Source symbol-name bytes.
+/// @param length Number of bytes in @p text.
+/// @return true when the name fit and was copied.
+bool vm_symbol_set_name(VmSymbol *symbol, const char *text, size_t length);
+
+/// Compares a symbol name with a source slice using ASCII case-insensitive matching.
+///
+/// @param symbol Symbol whose name should be compared.
+/// @param text Source slice to compare.
+/// @param length Number of bytes in @p text.
+/// @return true when the names match case-insensitively.
+bool vm_symbol_name_equals(const VmSymbol *symbol, const char *text, size_t length);
+
+/// Finds a data symbol by case-insensitive name.
+///
+/// @param symbols Symbol array to inspect.
+/// @param symbol_count Number of valid entries in @p symbols.
+/// @param text Source name slice to find.
+/// @param length Number of bytes in @p text.
+/// @return Matching symbol, or NULL when none exists.
+const VmSymbol *vm_symbol_find_by_name(const VmSymbol *symbols, size_t symbol_count, const char *text, size_t length);
+
+/// Finds the symbol whose byte range contains an address.
+///
+/// @param symbols Symbol array to inspect.
+/// @param symbol_count Number of valid entries in @p symbols.
+/// @param address Simulated address to resolve.
+/// @return Containing symbol, or NULL when none exists.
+const VmSymbol *vm_symbol_find_by_address(const VmSymbol *symbols, size_t symbol_count, uint32_t address);
+
+#endif

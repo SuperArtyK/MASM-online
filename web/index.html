@@ -1,0 +1,54 @@
+<!doctype html>
+<!--
+  @file index.html
+  @brief Browser shell for the MASM32 educational simulator.
+
+  This page provides the Milestone 8 vertical slice: source editing, Run button,
+  final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
+  execution stay inside the worker/Wasm path.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MASM32 Educational Simulator</title>
+    <link rel="stylesheet" href="./src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel">
+        <h1>MASM32 Educational Simulator</h1>
+        <p class="muted">Milestone 8: run a minimal .data + .code program through the worker/Wasm path.</p>
+        <label for="editor">Editor</label>
+        <textarea id="editor" spellcheck="false">.data
+var BYTE 0
+.code
+main PROC
+    mov var, 100
+main ENDP
+END main</textarea>
+        <div class="controls">
+          <button id="run-button" type="button">Run</button>
+          <button id="ping-button" type="button">Ping worker</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Simulator Messages</h2>
+        <pre id="simulator-messages" aria-live="polite"></pre>
+      </section>
+      <section class="panel">
+        <h2>Final Registers</h2>
+        <pre id="final-registers" aria-live="polite"></pre>
+      </section>
+      <section class="panel">
+        <h2>Memory Changes</h2>
+        <pre id="memory-changes" aria-live="polite"></pre>
+      </section>
+      <section class="panel">
+        <h2>Program Console</h2>
+        <pre id="program-console" aria-live="polite"></pre>
+      </section>
+    </main>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
