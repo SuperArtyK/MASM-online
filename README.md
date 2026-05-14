@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 15.
+Static, browser-based MASM32 educational simulator through Milestone 17.
 
 ## Current scope
 
@@ -12,6 +12,7 @@ Implemented through the current milestone:
 - Lexer/parser support through `.data`, `.code`, symbols, constant and register-indirect memory operands, `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literals.
 - Executable `mov`, `add`, and `sub` for the currently supported operand forms.
 - Explicit `unsupported-feature` diagnostics for common textbook MASM constructs tracked by the Milestone 15 backlog checkpoint.
+- Milestone 17 multi-diagnostic recovery for safely skipped unsupported line, block, and section constructs.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 

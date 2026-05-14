@@ -959,6 +959,13 @@ Implement textbook signed integer data declarations without enabling executable 
 8. Continue rejecting executable `QWORD PTR` and `SQWORD PTR` memory operations in MASM32 Educational Mode until Extended 32-bit Mode enables them.
 9. Do not add automatic sign-extension on ordinary `mov` from signed memory. Sign-extension instructions such as `movsx` are a later feature.
 10. Add tests for valid initializers, range failures, metadata operators, `DUP`, packed literals, and unsupported executable 64-bit operations.
+11. Add unary-plus numeric literal support in all contexts where numeric literals are already valid:
+    - `+42`
+    - `+0x2A`
+    - `+2Ah`
+12. Treat unary plus as a numeric-literal sign marker only, not as general expression parsing.
+    Do not implement `1 + 2`, `OFFSET label + 4`, `+(expr)`, or parenthesized expressions in this phase.
+
 
 ### Acceptance Criteria
 
@@ -991,6 +998,34 @@ ECX = 00000006h / 6
 `SBYTE 127` succeeds, `SBYTE 128` fails, `SBYTE -128` succeeds, and `SBYTE -129` fails.
 
 `mov eax, sb` must not automatically sign-extend `SBYTE` storage. Ordinary `mov` uses the resolved operand width; explicit sign-extension instructions are added later.
+
+Unary plus must work wherever ordinary positive numeric literals already work:
+
+```asm
+.data
+sb SBYTE +127
+sw SWORD +32767
+d  DWORD +42
+.code
+main PROC
+    mov eax, +42
+    mov ebx, +0x2A
+    mov ecx, +2Ah
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 0000002Ah / 42
+EBX = 0000002Ah / 42
+ECX = 0000002Ah / 42
+```
+
+Out-of-range unary-plus values must produce the same structured diagnostics as unsigned positive literals, for example `mov al, +256` fails.
+
+
 
 ## 23. Phase 19 - Sign and Zero Extension Instructions
 

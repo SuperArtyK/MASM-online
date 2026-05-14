@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 16.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 17.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
@@ -8,8 +8,8 @@
  * memory operands, constant symbol-offset memory operands, PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, and explicit unsupported-feature
- * diagnostics for recognized MASM textbook constructs, and surfaced lexer
- * diagnostics without collapsing them into umbrella parse errors.
+ * diagnostics and safe recovery for recognized MASM textbook constructs, and
+ * surfaced lexer diagnostics without collapsing them into umbrella parse errors.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -180,7 +180,7 @@ typedef struct VmParserConfig {
     size_t data_image_capacity;
     /// Caller-owned parser diagnostic output buffer.
     VmParserDiagnostic *diagnostics;
-    /// Number of entries available in @ref diagnostics.
+    /// Number of entries available in @ref diagnostics; this also bounds recovery diagnostics.
     size_t diagnostic_capacity;
 } VmParserConfig;
 

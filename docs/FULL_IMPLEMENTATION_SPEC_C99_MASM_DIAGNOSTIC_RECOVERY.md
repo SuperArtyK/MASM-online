@@ -294,7 +294,15 @@ For signed declarations, positive values must fit the signed positive range. For
 
 Out-of-range literals should produce structured assembly diagnostics instead of silent truncation.
 
-Unary plus, parenthesized expressions, arithmetic expressions, binary/octal literals, radix-changing directives such as `.RADIX`, and symbolic expressions such as `OFFSET label - 4` are later expression-parser features.
+Supported numeric literal forms also include unary-plus numeric literals:
+
+- positive decimal: `+42`
+- positive C-style hexadecimal: `+0x2A`
+- positive MASM-style hexadecimal: `+2Ah`
+
+Unary plus is treated only as part of a numeric literal. General expression forms such as `1 + 2`, `OFFSET label + 4`, `+(42)`, and parenthesized expressions remain later expression-parser features.
+
+Parenthesized expressions, arithmetic expressions, binary/octal literals, radix-changing directives such as `.RADIX`, and symbolic expressions such as `OFFSET label - 4` are later expression-parser features.
 
 
 ### 8.3.1 Character and Packed Character Literals

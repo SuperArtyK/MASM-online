@@ -196,7 +196,10 @@ static int expect_unsupported_feature_source(const char *source, const char *exp
     VmParserResult result;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "recognized unsupported feature should produce parser diagnostics");
-    failures += expect_size(result.diagnostic_count, 1U, "recognized unsupported feature should produce one parser diagnostic");
+    if (result.diagnostic_count < 1U) {
+        failures += record_failure("recognized unsupported feature should produce at least one parser diagnostic");
+        return failures;
+    }
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "recognized unsupported feature diagnostic code should match");
     failures += expect_string_contains(buffers.diagnostics[0].message, expected_message_fragment, "recognized unsupported feature diagnostic message should describe the feature");
 
@@ -410,6 +413,238 @@ static int test_scheduled_and_backlog_data_types_are_documented_diagnostics(void
     failures += expect_unsupported_feature_source(".data\nr REAL10 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
     failures += expect_unsupported_feature_source(".data\nt TBYTE 0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
     failures += expect_unsupported_feature_source(".data\nf FWORD 0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
+
+    return failures;
+}
+
+/// Verifies Milestone 17 collects several safe unsupported-feature diagnostics in one parse.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_multi_diagnostic_unsupported_feature_recovery(void) {
+    const char *source =
+        ".data\n"
+        "Point STRUCT\n"
+        "    x DWORD ?\n"
+        "Point ENDS\n"
+        ".code\n"
+        "main PROC\n"
+        "    INVOKE SomeProc\n"
+        "    .IF eax == 0\n"
+        "        mov ebx, 1\n"
+        "    .ENDIF\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "multiple unsupported constructs should recover with diagnostics");
+    failures += expect_size(result.diagnostic_count, 3U, "STRUCT, INVOKE, and .IF should produce three diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "STRUCT diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "INVOKE diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".IF diagnostic code should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "STRUCT", "first diagnostic should describe STRUCT");
+    failures += expect_string_contains(buffers.diagnostics[1].message, "INVOKE", "second diagnostic should describe INVOKE");
+    failures += expect_string_contains(buffers.diagnostics[2].message, ".IF", "third diagnostic should describe .IF");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 2U, "STRUCT diagnostic line should be preserved");
+    failures += expect_u32(buffers.diagnostics[1].location.line, 7U, "INVOKE diagnostic line should be preserved");
+    failures += expect_u32(buffers.diagnostics[2].location.line, 8U, ".IF diagnostic line should be preserved");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 7U, "STRUCT diagnostic column should be preserved");
+    failures += expect_u32(buffers.diagnostics[1].location.column, 5U, "INVOKE diagnostic column should be preserved");
+    failures += expect_u32(buffers.diagnostics[2].location.column, 5U, ".IF diagnostic column should be preserved");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 12U, "STRUCT diagnostic byte offset should be preserved");
+    failures += expect_size(buffers.diagnostics[1].location.offset, 64U, "INVOKE diagnostic byte offset should be preserved");
+    failures += expect_size(buffers.diagnostics[2].location.offset, 84U, ".IF diagnostic byte offset should be preserved");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "STRUCT diagnostic span length should be preserved");
+    failures += expect_size(buffers.diagnostics[1].lexeme_length, 6U, "INVOKE diagnostic span length should be preserved");
+    failures += expect_size(buffers.diagnostics[2].lexeme_length, 3U, ".IF diagnostic span length should be preserved");
+    failures += expect_size(result.instruction_count, 0U, "instructions inside skipped unsupported blocks should not be emitted");
+
+    return failures;
+}
+
+/// Verifies unsupported section recovery resumes at the following .code section.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_unsupported_section_recovery_resumes_at_code(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".DATA?\nx DWORD ?\n.code\nmain PROC\nmov eax, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".DATA? should recover to .code");
+    failures += expect_size(result.diagnostic_count, 1U, ".DATA? should produce one diagnostic");
+    failures += expect_size(result.instruction_count, 1U, ".DATA? recovery should parse following code");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".DATA? diagnostic code should match");
+
+    failures += expect_parser_status(parse_for_test(".CONST\nvalue DWORD 1\n.code\nmain PROC\nmov eax, 2\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".CONST should recover to .code");
+    failures += expect_size(result.diagnostic_count, 1U, ".CONST should produce one diagnostic");
+    failures += expect_size(result.instruction_count, 1U, ".CONST recovery should parse following code");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".CONST diagnostic code should match");
+
+    failures += expect_parser_status(parse_for_test(".DATA?\nbuffer BYTE 64 DUP(?)\n\n.CONST\nlimit DWORD 10\n\n.code\nmain PROC\nmov eax, 3\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".DATA? followed by .CONST should recover both sections");
+    failures += expect_size(result.diagnostic_count, 2U, ".DATA? and .CONST should each produce a diagnostic");
+    failures += expect_size(result.instruction_count, 1U, "combined unsupported section recovery should parse following code");
+    failures += expect_string_contains(buffers.diagnostics[0].message, ".DATA?", "first section diagnostic should describe .DATA?");
+    failures += expect_string_contains(buffers.diagnostics[1].message, ".CONST", "second section diagnostic should describe .CONST");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 1U, ".DATA? diagnostic line should be preserved in combined section recovery");
+    failures += expect_u32(buffers.diagnostics[1].location.line, 4U, ".CONST diagnostic line should be preserved in combined section recovery");
+
+    return failures;
+}
+
+/// Verifies recovery skips unsupported block bodies without cascaded diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_unsupported_block_recovery_avoids_body_cascades(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    .IF eax == 0\n"
+        "        badinstruction eax\n"
+        "    .ENDIF\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported .IF block should recover");
+    failures += expect_size(result.diagnostic_count, 1U, ".IF body should not produce cascaded diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".IF diagnostic code should match");
+    failures += expect_size(result.instruction_count, 0U, ".IF body instruction should not be emitted");
+
+    return failures;
+}
+
+/// Verifies every Milestone 17 line-level unsupported construct can recover independently.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_line_level_unsupported_feature_recovery_covers_required_constructs(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    INVOKE SomeProc\n"
+        "    SomeProc PROTO\n"
+        "    LOCAL temp:DWORD\n"
+        "    Count EQU 1\n"
+        "    Greeting TEXTEQU <Hello>\n"
+        "    INCLUDELIB Irvine32.lib\n"
+        "    EXTERN SomeProc:PROC\n"
+        "    PUBLIC main\n"
+        "    COMM shared:DWORD\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "all line-level unsupported constructs should recover");
+    failures += expect_size(result.diagnostic_count, 9U, "all required line-level constructs should produce diagnostics");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "INVOKE", "line diagnostic should describe INVOKE");
+    failures += expect_string_contains(buffers.diagnostics[1].message, "PROTO", "line diagnostic should describe PROTO");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "LOCAL", "line diagnostic should describe LOCAL");
+    failures += expect_string_contains(buffers.diagnostics[3].message, "EQU", "line diagnostic should describe EQU");
+    failures += expect_string_contains(buffers.diagnostics[4].message, "TEXTEQU", "line diagnostic should describe TEXTEQU");
+    failures += expect_string_contains(buffers.diagnostics[5].message, "INCLUDELIB", "line diagnostic should describe INCLUDELIB");
+    failures += expect_string_contains(buffers.diagnostics[6].message, "EXTERN", "line diagnostic should describe EXTERN");
+    failures += expect_string_contains(buffers.diagnostics[7].message, "PUBLIC", "line diagnostic should describe PUBLIC");
+    failures += expect_string_contains(buffers.diagnostics[8].message, "COMM", "line diagnostic should describe COMM");
+    failures += expect_size(result.instruction_count, 0U, "unsupported line-level constructs should not emit instructions");
+
+    return failures;
+}
+
+/// Verifies required Milestone 17 block terminators are recognized during recovery.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_block_recovery_covers_required_terminators(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "MyUnion UNION\n"
+        "    b BYTE ?\n"
+        "MyUnion ENDS\n"
+        "MyMacro MACRO\n"
+        "    mov eax, 1\n"
+        "ENDM\n"
+        ".code\n"
+        "main PROC\n"
+        "    .WHILE ecx > 0\n"
+        "        mov eax, 2\n"
+        "    .ENDW\n"
+        "    .REPEAT\n"
+        "        mov ebx, 3\n"
+        "    .UNTIL ebx == 3\n"
+        "    .REPEAT\n"
+        "        mov ecx, 4\n"
+        "    .UNTILCXZ\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "required block constructs should recover");
+    failures += expect_size(result.diagnostic_count, 5U, "UNION, MACRO, .WHILE, and both .REPEAT blocks should produce diagnostics");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "UNION", "block diagnostic should describe UNION");
+    failures += expect_string_contains(buffers.diagnostics[1].message, "macro", "block diagnostic should describe MACRO");
+    failures += expect_string_contains(buffers.diagnostics[2].message, ".WHILE", "block diagnostic should describe .WHILE");
+    failures += expect_string_contains(buffers.diagnostics[3].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTIL");
+    failures += expect_string_contains(buffers.diagnostics[4].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTILCXZ");
+    failures += expect_size(result.instruction_count, 0U, "unsupported block bodies should not emit instructions");
+
+    return failures;
+}
+
+/// Verifies an unterminated unsupported block remains non-executable and bounded.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_unterminated_unsupported_block_does_not_execute_body(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    .IF eax == 0\n"
+        "        mov eax, 99\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unterminated unsupported block should still return diagnostics");
+    failures += expect_size(result.diagnostic_count, 2U, "unterminated unsupported block should report unsupported feature and missing END");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "unterminated block first diagnostic should be unsupported-feature");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_EXPECTED_END, "unterminated block should report missing END after recovery reaches EOF");
+    failures += expect_size(result.instruction_count, 0U, "unterminated unsupported block body should not emit instructions");
+
+    return failures;
+}
+
+/// Verifies diagnostic capacity remains fatal during recovery.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_recovery_diagnostic_capacity_failure_is_fatal(void) {
+    ParserTestBuffers buffers;
+    VmParserConfig config;
+    VmParserResult result;
+    int failures = 0;
+
+    memset(&buffers, 0, sizeof(buffers));
+    memset(&config, 0, sizeof(config));
+    memset(&result, 0, sizeof(result));
+    config.source = ".code\nmain PROC\nINVOKE A\nPROTO B\nLOCAL c:DWORD\nmain ENDP\nEND main\n";
+    config.source_file = "main.asm";
+    config.tokens = buffers.tokens;
+    config.token_capacity = TEST_TOKEN_CAPACITY;
+    config.lexer_diagnostics = buffers.lexer_diagnostics;
+    config.lexer_diagnostic_capacity = TEST_LEXER_DIAGNOSTIC_CAPACITY;
+    config.instructions = buffers.instructions;
+    config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
+    config.source_text_storage = buffers.source_text;
+    config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.diagnostics = buffers.diagnostics;
+    config.diagnostic_capacity = 2U;
+
+    failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED, "recovery diagnostic capacity exhaustion should be fatal");
+    failures += expect_size(result.diagnostic_count, 2U, "diagnostic output should remain capped at configured capacity");
 
     return failures;
 }
@@ -712,6 +947,13 @@ int main(void) {
     failures += test_textbook_unsupported_directives_are_stable();
     failures += test_textbook_unsupported_keywords_are_stable();
     failures += test_scheduled_and_backlog_data_types_are_documented_diagnostics();
+    failures += test_multi_diagnostic_unsupported_feature_recovery();
+    failures += test_unsupported_section_recovery_resumes_at_code();
+    failures += test_unsupported_block_recovery_avoids_body_cascades();
+    failures += test_line_level_unsupported_feature_recovery_covers_required_constructs();
+    failures += test_block_recovery_covers_required_terminators();
+    failures += test_unterminated_unsupported_block_does_not_execute_body();
+    failures += test_recovery_diagnostic_capacity_failure_is_fatal();
     failures += test_immediate_range_matches_destination_width();
     failures += test_negative_immediate_range_matches_destination_width();
     failures += test_immediate_range_covers_register_alias_families();

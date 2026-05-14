@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 16 diagnostics checkpoint UI: source editing, Run button,
+  This page provides the Milestone 17 diagnostics checkpoint UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
   execution stay inside the worker/Wasm path; the default program still demonstrates the previously implemented data/operator path.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 16: diagnostic plumbing and lexer error surfacing. The default program still demonstrates the existing SIZEOF and packed-character literal path; malformed source now reports specific lexer diagnostics.</p>
+        <p class="muted">Milestone 17: multi-diagnostic unsupported-feature recovery. The default program still demonstrates the existing SIZEOF and packed-character literal path; sources with several known unsupported constructs now report multiple simulator messages.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.data
 nums DWORD 10 DUP(0)

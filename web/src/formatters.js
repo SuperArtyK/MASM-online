@@ -1,6 +1,6 @@
 /*
  * @file formatters.js
- * @brief Pure UI formatting helpers for Milestone 16 browser output.
+ * @brief Pure UI formatting helpers for Milestone 17 browser output.
  *
  * These helpers format final register state, simulator diagnostics, and
  * symbol-aware memory changes returned by the worker. They are isolated from
@@ -13,11 +13,11 @@
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
-/** Canonical MASM32 register display order for the Milestone 16 final-state panel. */
+/** Canonical MASM32 register display order for the Milestone 17 final-state panel. */
 const CANONICAL_REGISTER_DISPLAY_ORDER = ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"];
 
 /**
- * Formats one register value for the Milestone 16 final-register panel.
+ * Formats one register value for the Milestone 17 final-register panel.
  *
  * @param {string} name Register display name.
  * @param {RegisterValue} value Register value object.

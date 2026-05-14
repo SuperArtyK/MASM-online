@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 15. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 17. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -106,6 +106,17 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 - `EXTERN`
 - `PUBLIC`
 - `COMM`
+
+
+## Diagnostic recovery behavior
+
+Milestone 17 can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
+
+Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
+
+Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
+
+Recovered unsupported sections include `.DATA?` and `.CONST`.
 
 ## Backlog notes
 

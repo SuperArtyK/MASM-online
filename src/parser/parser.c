@@ -1,13 +1,14 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 16.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 17.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
  * full MASM expression parsing remain later milestones. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
- * unsupported-feature diagnostics and surfaces lexer diagnostics without generic umbrella errors.
+ * unsupported-feature diagnostics, safely skipped when recoverable, and surfaced
+ * lexer diagnostics remain specific instead of generic umbrella errors.
  */
 
 #include "parser.h"
@@ -313,45 +314,6 @@ static const char *vm_parser_unsupported_data_type_message(const VmLexerToken *t
     return vm_parser_find_unsupported_feature_message(token, data_types, sizeof(data_types) / sizeof(data_types[0]));
 }
 
-/// Adds an unsupported-feature diagnostic for the current token or token pair.
-///
-/// @param state Parser state to mutate.
-/// @param token Primary token associated with the unsupported feature.
-/// @param next Next token, used for two-token forms and `.DATA?`.
-/// @return true when a recognized unsupported-feature diagnostic was emitted.
-static bool vm_parser_add_unsupported_feature_if_recognized(
-    VmParserState *state,
-    const VmLexerToken *token,
-    const VmLexerToken *next
-) {
-    const char *message = NULL;
-    const VmLexerToken *diagnostic_token = token;
-
-    if (state == NULL || token == NULL) {
-        return false;
-    }
-
-    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
-        message = vm_parser_unsupported_directive_message(token, next);
-    }
-
-    if (message == NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
-        message = vm_parser_unsupported_keyword_message(token);
-    }
-
-    if (message == NULL && next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER) {
-        message = vm_parser_unsupported_keyword_message(next);
-        diagnostic_token = next;
-    }
-
-    if (message == NULL) {
-        return false;
-    }
-
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
-    return true;
-}
-
 /// Returns the current parser token.
 ///
 /// @param state Parser state to inspect.
@@ -447,6 +409,227 @@ static bool vm_parser_add_diagnostic(
     }
     diagnostic->message = message;
     state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Skips tokens through the end of the current source line.
+///
+/// @param state Parser state to mutate.
+static void vm_parser_recover_skip_line(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    while (token != NULL && token->kind != VM_LEXER_TOKEN_EOF && token->kind != VM_LEXER_TOKEN_NEWLINE) {
+        vm_parser_advance(state);
+        token = vm_parser_current_token(state);
+    }
+
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_NEWLINE) {
+        vm_parser_advance(state);
+    }
+}
+
+/// Returns whether a token is an identifier or directive with a specific spelling.
+///
+/// @param token Token to inspect.
+/// @param spelling Case-insensitive spelling to match.
+/// @return true when @p token has the requested spelling.
+static bool vm_parser_recover_token_has_spelling(const VmLexerToken *token, const char *spelling) {
+    return token != NULL && spelling != NULL &&
+           (token->kind == VM_LEXER_TOKEN_IDENTIFIER || token->kind == VM_LEXER_TOKEN_DIRECTIVE) &&
+           vm_parser_token_equals(token, spelling);
+}
+
+/// Returns whether a token is one of up to three recovery terminators.
+///
+/// @param token Token to inspect.
+/// @param first First case-insensitive terminator spelling.
+/// @param second Optional second terminator spelling.
+/// @param third Optional third terminator spelling.
+/// @return true when @p token matches any supplied terminator.
+static bool vm_parser_recover_is_terminator(
+    const VmLexerToken *token,
+    const char *first,
+    const char *second,
+    const char *third
+) {
+    return vm_parser_recover_token_has_spelling(token, first) ||
+           vm_parser_recover_token_has_spelling(token, second) ||
+           vm_parser_recover_token_has_spelling(token, third);
+}
+
+/// Skips an unsupported block-like construct and consumes its terminator line.
+///
+/// This recovery deliberately ignores all tokens inside the block so unsupported
+/// bodies do not produce cascaded parser diagnostics. Missing terminators leave
+/// the parser at EOF, where the normal final END check reports the remaining
+/// fatal structure problem.
+///
+/// @param state Parser state to mutate.
+/// @param first_terminator First accepted block terminator spelling.
+/// @param second_terminator Optional second accepted block terminator spelling.
+/// @param third_terminator Optional third accepted block terminator spelling.
+static void vm_parser_recover_skip_block(
+    VmParserState *state,
+    const char *first_terminator,
+    const char *second_terminator,
+    const char *third_terminator
+) {
+    const VmLexerToken *token = NULL;
+
+    if (state == NULL) {
+        return;
+    }
+
+    vm_parser_recover_skip_line(state);
+    token = vm_parser_current_token(state);
+    while (token != NULL && token->kind != VM_LEXER_TOKEN_EOF) {
+        if (vm_parser_recover_is_terminator(token, first_terminator, second_terminator, third_terminator)) {
+            vm_parser_recover_skip_line(state);
+            return;
+        }
+        vm_parser_advance(state);
+        token = vm_parser_current_token(state);
+    }
+}
+
+/// Skips an unsupported section until the next known section directive or EOF.
+///
+/// This keeps section recovery narrow: declarations inside an unsupported
+/// section are ignored, but a later recoverable section such as `.CONST` after
+/// `.DATA?` remains visible to the normal recovery loop.
+///
+/// @param state Parser state to mutate.
+static void vm_parser_recover_skip_unsupported_section(VmParserState *state) {
+    const VmLexerToken *token = NULL;
+    const VmLexerToken *next = NULL;
+
+    if (state == NULL) {
+        return;
+    }
+
+    vm_parser_recover_skip_line(state);
+    token = vm_parser_current_token(state);
+    while (token != NULL && token->kind != VM_LEXER_TOKEN_EOF) {
+        next = vm_parser_peek_token(state, 1U);
+        if (token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+            (vm_parser_token_equals(token, ".code") ||
+             vm_parser_token_equals(token, ".data") ||
+             vm_parser_token_equals(token, ".const") ||
+             vm_parser_is_data_question_directive(token, next))) {
+            return;
+        }
+        vm_parser_advance(state);
+        token = vm_parser_current_token(state);
+    }
+}
+
+/// Returns whether a token pair starts a recovered `.DATA?` unsupported section.
+///
+/// @param token Candidate `.data` token.
+/// @param next Candidate contiguous question-mark token.
+/// @return true when the pair starts `.DATA?`.
+static bool vm_parser_recover_is_data_question_start(const VmLexerToken *token, const VmLexerToken *next) {
+    return vm_parser_is_data_question_directive(token, next);
+}
+
+/// Adds a recognized unsupported-feature diagnostic and skips its safe recovery span.
+///
+/// @param state Parser state to mutate.
+/// @return true when a known unsupported construct was diagnosed and skipped.
+static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *next = vm_parser_peek_token(state, 1U);
+    const char *message = NULL;
+    const VmLexerToken *diagnostic_token = token;
+
+    if (state == NULL || token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        return false;
+    }
+
+    if (vm_parser_recover_is_data_question_start(token, next)) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        diagnostic_token = token;
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
+        vm_parser_recover_skip_unsupported_section(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".const")) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_unsupported_section(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".if")) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_block(state, ".endif", NULL, NULL);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".while")) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_block(state, ".endw", NULL, NULL);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".repeat")) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_block(state, ".until", ".untilcxz", NULL);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+        (vm_parser_token_equals(token, ".break") || vm_parser_token_equals(token, ".continue"))) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if ((token->kind == VM_LEXER_TOKEN_IDENTIFIER && (vm_parser_token_equals(token, "struct") || vm_parser_token_equals(token, "union"))) ||
+        (next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER && (vm_parser_token_equals(next, "struct") || vm_parser_token_equals(next, "union")))) {
+        diagnostic_token = (token->kind == VM_LEXER_TOKEN_IDENTIFIER && (vm_parser_token_equals(token, "struct") || vm_parser_token_equals(token, "union"))) ? token : next;
+        message = vm_parser_unsupported_keyword_message(diagnostic_token);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
+        vm_parser_recover_skip_block(state, "ends", NULL, NULL);
+        return true;
+    }
+
+    if ((token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "macro")) ||
+        (next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(next, "macro"))) {
+        diagnostic_token = (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "macro")) ? token : next;
+        message = vm_parser_unsupported_keyword_message(diagnostic_token);
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
+        vm_parser_recover_skip_block(state, "endm", NULL, NULL);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        message = vm_parser_unsupported_keyword_message(token);
+        diagnostic_token = token;
+    }
+
+    if (message == NULL && next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        message = vm_parser_unsupported_keyword_message(next);
+        diagnostic_token = next;
+    }
+
+    if (message == NULL && state->section == VM_PARSER_SECTION_DATA && vm_parser_token_can_name_data_symbol(token) &&
+        next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        message = vm_parser_unsupported_data_type_message(next);
+        diagnostic_token = next;
+    }
+
+    if (message == NULL) {
+        return false;
+    }
+
+    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
+    vm_parser_recover_skip_line(state);
     return true;
 }
 
@@ -1295,7 +1478,7 @@ static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *o
 /// Returns whether a token can carry a data symbol name.
 ///
 /// The lexer classifies register-looking words such as `ch` as register tokens.
-/// Milestone 15's acceptance program uses `ch` as a data symbol, so parser
+/// The character-literal acceptance program uses `ch` as a data symbol, so parser
 /// symbol lookup accepts both identifier and register tokens as symbol names.
 ///
 /// @param token Token to inspect.
@@ -1416,7 +1599,7 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
     return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
-/// Returns whether a register is allowed as a Milestone 15 memory base.
+/// Returns whether a register is allowed as a register-indirect memory base.
 ///
 /// @param token Register token to inspect.
 /// @return true for ESI, EDI, EBX, and EBP.
@@ -2973,8 +3156,8 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return false;
     }
 
-    if (vm_parser_add_unsupported_feature_if_recognized(state, token, next)) {
-        return false;
+    if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
+        return !state->diagnostic_overflowed;
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
@@ -3029,8 +3212,11 @@ static bool vm_parser_parse_data_section(VmParserState *state) {
             return false;
         }
 
-        if (vm_parser_add_unsupported_feature_if_recognized(state, token, vm_parser_peek_token(state, 1U))) {
-            return false;
+        if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
+            if (state->diagnostic_overflowed) {
+                return false;
+            }
+            continue;
         }
 
         if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
@@ -3158,7 +3344,20 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
         return out_result->status;
     }
 
-    if (vm_parser_add_unsupported_feature_if_recognized(&state, token, vm_parser_peek_token(&state, 1U))) {
+    while (vm_parser_recover_unsupported_feature_if_recognized(&state)) {
+        if (state.diagnostic_overflowed) {
+            out_result->status = vm_parser_finalize_status(&state);
+            return out_result->status;
+        }
+        vm_parser_skip_newlines(&state);
+        token = vm_parser_current_token(&state);
+        if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+            break;
+        }
+    }
+
+    if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        vm_parser_add_diagnostic(&state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive.");
         out_result->status = vm_parser_finalize_status(&state);
         return out_result->status;
     }
