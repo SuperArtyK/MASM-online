@@ -1,11 +1,11 @@
 /*
  * @file parser.h
- * @brief Milestone 8 parser for MASM-like .data and minimal .code programs.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 9.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to Milestone 8 data declarations, OFFSET, and direct symbol
- * memory operands for mov/add/sub.
+ * remains limited to implemented data declarations, OFFSET, direct symbol
+ * memory operands, and constant symbol-offset memory operands for mov/add/sub.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -82,7 +82,7 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL,
     /// A .data declaration was missing a symbol name, type, or initializer.
     VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_DECLARATION,
-    /// A .data declaration used a type outside the Milestone 8 data subset.
+    /// A .data declaration used a type outside the implemented data subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE,
     /// A .data initializer was missing or malformed.
     VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER,
@@ -92,6 +92,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_SYMBOL_CAPACITY_EXCEEDED,
     /// A symbolic operand or OFFSET expression referenced an unknown symbol.
     VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL,
+    /// A constant symbol-offset memory operand resolves outside the referenced symbol.
+    VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE,
     /// A DUP initializer was malformed or unsupported.
     VM_PARSER_DIAGNOSTIC_INVALID_DUP,
     /// Number of parser diagnostic codes.
@@ -166,12 +168,13 @@ typedef struct VmParserResult {
     size_t data_size;
 } VmParserResult;
 
-/// Parses a MASM-like source file into Milestone 8 data layout and executable IR.
+/// Parses a MASM-like source file into implemented data layout and executable IR.
 ///
 /// The parser accepts optional .data declarations before .code, emits data-symbol
 /// metadata and a deterministic .data image, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
-/// or `OFFSET symbol`; destination operands may use registers or direct symbols.
+/// `OFFSET symbol`, or constant symbol-offset memory operands; destination
+/// operands may use registers, direct symbols, or constant symbol-offset memory operands.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

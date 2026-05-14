@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 8 .data declarations, symbols, OFFSET, and memory changes.
+ * @brief Tests for Milestone 9 .data declarations, symbols, OFFSET, and memory changes.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 8 parser test.
+/// Number of lexer tokens available to each Milestone 9 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 8 parser test.
+/// Number of lexer diagnostics available to each Milestone 9 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 8 parser test.
+/// Number of parser diagnostics available to each Milestone 9 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 8 parser test.
+/// Number of IR instructions available to each Milestone 9 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 8 parser test.
+/// Number of source-text bytes available to each Milestone 9 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 8 parser test.
+/// Number of data symbols available to each Milestone 9 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 8 parser test.
+/// Number of data image bytes available to each Milestone 9 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 8 test.
+/// Holds all caller-owned parser buffers for one Milestone 9 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 8 buffers.
+/// Parses source with full Milestone 9 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 8 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 9 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -310,6 +310,129 @@ static int test_offset_and_direct_symbol_write_execute(void) {
     return failures;
 }
 
+
+/// Verifies constant symbol-offset operands parse to absolute memory operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_constant_symbol_offsets_parse_to_ir(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov nums[8], 100\n"
+        "    mov eax, nums[8]\n"
+        "    mov [nums + 12], 200\n"
+        "    mov ebx, [nums + 12]\n"
+        "    mov [nums], 300\n"
+        "    mov ecx, [nums + 0]\n"
+        "    mov nums[0], 400\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "constant symbol offsets should parse");
+    failures += expect_size(result.instruction_count, 7U, "constant symbol offset sample should emit seven instructions");
+    failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "nums[8] destination should be memory");
+    failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 8U, "nums[8] destination should use byte offset 8");
+    failures += expect_u32(buffers.instructions[0].destination.width_bits, 32U, "nums[8] destination should infer DWORD width");
+    failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "nums[8] source should be memory");
+    failures += expect_u32(buffers.instructions[1].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 8U, "nums[8] source should use byte offset 8");
+    failures += expect_u32(buffers.instructions[2].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 12U, "[nums + 12] destination should use byte offset 12");
+    failures += expect_u32(buffers.instructions[3].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 12U, "[nums + 12] source should use byte offset 12");
+    failures += expect_u32(buffers.instructions[4].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "[nums] destination should use byte offset 0");
+    failures += expect_u32(buffers.instructions[4].destination.width_bits, 32U, "[nums] destination should infer DWORD width");
+    failures += expect_u32(buffers.instructions[5].source.address, VM_MEMORY_DEFAULT_DATA_BASE, "[nums + 0] source should use byte offset 0");
+    failures += expect_u32(buffers.instructions[6].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "nums[0] destination should use byte offset 0");
+
+    return failures;
+}
+
+/// Verifies the Milestone 9 acceptance program executes through parser and VM.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_constant_symbol_offsets_execute_acceptance_program(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov nums[8], 100\n"
+        "    mov eax, nums[8]\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t memory_value = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 9 acceptance source should parse");
+    failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
+    failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("nums[8] write should execute");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("nums[8] read should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed");
+    failures += expect_u32(eax, 100U, "EAX should receive the value read from nums[8]");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 8U, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("nums[8] memory read should succeed");
+    failures += expect_u32(memory_value, 100U, "nums[8] should contain 100");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies parser diagnostics for invalid constant symbol offsets.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_constant_symbol_offset_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [missing + 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unknown bracketed symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "unknown bracketed symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [nums - 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "negative offset before the data image should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, "negative offset diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [missing]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unknown offset-zero bracketed symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "unknown offset-zero bracketed symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, nums[37]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "offset crossing the data image should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, "crossing offset diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [nums +]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "malformed bracketed offset should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "malformed bracketed offset diagnostic should match");
+
+    return failures;
+}
+
+/// Verifies edge offsets at the end of a symbol and unaligned offsets.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_constant_symbol_offset_edge_cases(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov nums[36], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "last aligned DWORD slot should parse");
+    failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 36U, "last aligned slot should use byte offset 36");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov nums[9], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "unaligned DWORD offset should parse");
+    failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 9U, "unaligned slot should use byte offset 9");
+    failures += expect_u32(buffers.instructions[0].destination.width_bits, 32U, "unaligned slot should still infer DWORD width");
+
+    failures += expect_parser_status(parse_for_test(".data\nhead DWORD 0\ntail DWORD 0\n.code\nmain PROC\nmov [tail - 4], 123\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "negative offset that remains inside .data should parse");
+    failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "[tail - 4] should resolve to the previous DWORD address");
+    failures += expect_u32(buffers.instructions[0].destination.width_bits, 32U, "[tail - 4] should infer the referenced symbol width");
+
+    return failures;
+}
+
 /// Verifies DB/DW/DD/DQ aliases and mixed case declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -341,7 +464,7 @@ static int test_data_type_aliases_and_mixed_case(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 8 error paths.
+/// Verifies parser diagnostics for new Milestone 9 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -494,7 +617,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":8", "response should identify Milestone 8");
+    failures += expect_json_contains(json, "\"phase\":9", "response should identify Milestone 9");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -507,12 +630,16 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 8 tests pass.
+/// @return Zero when all Milestone 9 tests pass.
 int main(void) {
     int failures = 0;
 
     failures += test_data_layout_symbols_and_initializers();
     failures += test_offset_and_direct_symbol_write_execute();
+    failures += test_constant_symbol_offsets_parse_to_ir();
+    failures += test_constant_symbol_offsets_execute_acceptance_program();
+    failures += test_constant_symbol_offset_error_paths();
+    failures += test_constant_symbol_offset_edge_cases();
     failures += test_data_type_aliases_and_mixed_case();
     failures += test_data_error_paths();
     failures += test_negative_data_initializers_and_symbol_writes();
@@ -525,6 +652,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 8 data section and symbol tests passed.");
+    puts("Milestone 9 data section and symbol tests passed.");
     return 0;
 }

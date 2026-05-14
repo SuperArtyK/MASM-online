@@ -1,22 +1,23 @@
 /*
  * @file formatters.js
- * @brief Pure UI formatting helpers for Milestone 8 browser output.
+ * @brief Pure UI formatting helpers for Milestone 9 browser output.
  *
- * These helpers format final register state and simulator diagnostics returned
- * by the worker. They are isolated from DOM and Worker setup so they can be
- * covered by Node.js tests without browser automation.
+ * These helpers format final register state, simulator diagnostics, and
+ * symbol-aware memory changes returned by the worker. They are isolated from
+ * DOM and Worker setup so they can be covered by Node.js tests without browser
+ * automation.
  */
 
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number}} SimulatorMessage */
-/** @typedef {{symbol?: string, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
+/** @typedef {{symbol?: string, dataType?: string, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
-/** Canonical MASM32 register display order for the Milestone 8 final-state panel. */
+/** Canonical MASM32 register display order for the Milestone 9 final-state panel. */
 const CANONICAL_REGISTER_DISPLAY_ORDER = ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"];
 
 /**
- * Formats one register value for the Milestone 8 final-register panel.
+ * Formats one register value for the Milestone 9 final-register panel.
  *
  * @param {string} name Register display name.
  * @param {RegisterValue} value Register value object.
@@ -60,20 +61,71 @@ export function formatSimulatorMessages(messages) {
   }).join("\n");
 }
 
+/**
+ * Returns whether a memory-change object includes a nonzero byte offset.
+ *
+ * @param {MemoryChange} change Memory change to inspect.
+ * @returns {boolean} true when the change should use the expanded offset view.
+ */
+function hasSymbolOffset(change) {
+  return change && Number.isFinite(change.byteOffset) && change.byteOffset > 0;
+}
+
+/**
+ * Formats a memory-change symbol label with MASM byte-offset notation.
+ *
+ * @param {MemoryChange} change Memory change object.
+ * @returns {string} Symbol label for display.
+ */
+function formatMemoryChangeLabel(change) {
+  const symbol = change && change.symbol ? change.symbol : "<unknown>";
+  const dataType = change && change.dataType ? ` ${change.dataType}` : "";
+
+  if (hasSymbolOffset(change)) {
+    return `${symbol} + ${change.byteOffset}${dataType}`;
+  }
+
+  return symbol;
+}
+
+/**
+ * Formats old/new scalar values from one memory change.
+ *
+ * @param {MemoryChange} change Memory change object.
+ * @returns {string} Value transition string.
+ */
+function formatMemoryChangeValueTransition(change) {
+  const oldHex = change && change.oldHex ? change.oldHex : "??h";
+  const oldUnsigned = change && Number.isFinite(change.oldUnsigned) ? change.oldUnsigned : "?";
+  const newHex = change && change.newHex ? change.newHex : "??h";
+  const newUnsigned = change && Number.isFinite(change.newUnsigned) ? change.newUnsigned : "?";
+  return `${oldHex} / ${oldUnsigned} -> ${newHex} / ${newUnsigned}`;
+}
 
 /**
  * Formats one symbol-aware memory change returned by the worker.
+ *
+ * Direct symbol writes keep the compact symbol row. Symbol-offset writes
+ * use a small multi-line display that exposes MASM byte-offset semantics and
+ * an aligned element index when the core reports one.
  *
  * @param {MemoryChange} change Memory change object.
  * @returns {string} Human-readable memory-change row.
  */
 export function formatMemoryChangeLine(change) {
-  const symbol = change && change.symbol ? change.symbol : "<unknown>";
-  const oldHex = change && change.oldHex ? change.oldHex : "??h";
-  const oldUnsigned = change && Number.isFinite(change.oldUnsigned) ? change.oldUnsigned : "?";
-  const newHex = change && change.newHex ? change.newHex : "??h";
-  const newUnsigned = change && Number.isFinite(change.newUnsigned) ? change.newUnsigned : "?";
-  return `${symbol}: ${oldHex} / ${oldUnsigned} -> ${newHex} / ${newUnsigned}`;
+  const label = formatMemoryChangeLabel(change);
+  const transition = formatMemoryChangeValueTransition(change);
+
+  if (!hasSymbolOffset(change)) {
+    return `${label}: ${transition}`;
+  }
+
+  const lines = [label, `  byte offset: +${change.byteOffset}`];
+  if (Number.isInteger(change.elementIndex)) {
+    lines.push(`  element index: ${change.elementIndex}`);
+  }
+  lines.push(`  ${transition}`);
+  return lines.join("\n");
 }
 
 /**

@@ -45,6 +45,10 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_RIGHT_PAREN,
     /// Question mark used by uninitialized data declarations.
     VM_LEXER_TOKEN_QUESTION,
+    /// Plus sign used by constant symbol-offset memory operands.
+    VM_LEXER_TOKEN_PLUS,
+    /// Minus sign used by constant symbol-offset memory operands when not part of a signed number.
+    VM_LEXER_TOKEN_MINUS,
     /// Colon used by labels.
     VM_LEXER_TOKEN_COLON,
     /// Number of lexer token kinds.

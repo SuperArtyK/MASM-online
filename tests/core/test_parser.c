@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the minimal parser and its Milestone 8 extensions.
+ * @brief Unit and integration tests for the minimal parser and implemented data extensions.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current

@@ -2,7 +2,7 @@
  * @file symbols.h
  * @brief Symbol metadata for MASM32 simulator parser data declarations.
  *
- * This module defines the small Milestone 8 symbol model used for .data layout
+ * This module defines the small symbol model used for .data layout
  * and direct symbolic memory operands. It is intentionally limited to data
  * symbols; label targets and procedure metadata remain later milestones.
  */
@@ -27,7 +27,7 @@ typedef enum VmSymbolDataType {
     VM_SYMBOL_DATA_TYPE_DWORD,
     /// 64-bit QWORD or DQ data element.
     VM_SYMBOL_DATA_TYPE_QWORD,
-    /// Number of supported Milestone 8 data types.
+    /// Number of supported data types.
     VM_SYMBOL_DATA_TYPE_COUNT
 } VmSymbolDataType;
 

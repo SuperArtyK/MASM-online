@@ -1,6 +1,6 @@
 /*
  * @file test_formatters.mjs
- * @brief Unit tests for Milestone 8 UI formatting helpers.
+ * @brief Unit tests for Milestone 9 UI formatting helpers.
  *
  * These tests cover pure formatting behavior without importing the browser entry
  * point, which would create DOM and Worker side effects.
@@ -77,4 +77,42 @@ test("formats memory changes and empty memory changes", () => {
     newUnsigned: 100
   }]), "var: 00h / 0 -> 64h / 100");
   assert.equal(formatMemoryChanges([]), "No memory changes.");
+});
+
+test("formats offset-zero bracketed symbol changes as direct symbol rows", () => {
+  assert.equal(formatMemoryChangeLine({
+    symbol: "nums",
+    dataType: "DWORD",
+    byteOffset: 0,
+    elementIndex: 0,
+    oldHex: "00000000h",
+    oldUnsigned: 0,
+    newHex: "00000064h",
+    newUnsigned: 100
+  }), "nums: 00000000h / 0 -> 00000064h / 100");
+});
+
+test("formats symbol-offset memory changes with byte offset and element index", () => {
+  assert.equal(formatMemoryChangeLine({
+    symbol: "nums",
+    dataType: "DWORD",
+    byteOffset: 8,
+    elementIndex: 2,
+    oldHex: "00000000h",
+    oldUnsigned: 0,
+    newHex: "00000064h",
+    newUnsigned: 100
+  }), "nums + 8 DWORD\n  byte offset: +8\n  element index: 2\n  00000000h / 0 -> 00000064h / 100");
+});
+
+test("formats unaligned symbol-offset memory changes without element index", () => {
+  assert.equal(formatMemoryChangeLine({
+    symbol: "nums",
+    dataType: "DWORD",
+    byteOffset: 9,
+    oldHex: "00000000h",
+    oldUnsigned: 0,
+    newHex: "00000064h",
+    newUnsigned: 100
+  }), "nums + 9 DWORD\n  byte offset: +9\n  00000000h / 0 -> 00000064h / 100");
 });

@@ -1,6 +1,6 @@
 /*
  * @file symbols.c
- * @brief Helpers for Milestone 8 .data symbols.
+ * @brief Helpers for implemented .data symbols.
  *
  * The parser uses this module to keep data-symbol name handling and data-type
  * metadata consistent while data layout remains intentionally small and static.

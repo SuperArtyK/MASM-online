@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Milestone 8 parser for MASM-like .data and minimal .code programs.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 9.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
- * executor. Control flow, stack behavior, indexed memory operands, Irvine32
- * routines, and full MASM expression parsing remain later milestones.
+ * executor. Control flow, stack behavior, PTR width overrides, register-indirect
+ * operands, Irvine32 routines, and full MASM expression parsing remain later milestones.
  */
 
 #include "parser.h"
@@ -764,6 +764,126 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
     return false;
 }
 
+/// Converts a numeric token into a signed byte offset.
+///
+/// Offset literals remain deliberately simple: one numeric token is accepted,
+/// including lexer-supported negative numeric tokens. Full arithmetic expression
+/// parsing remains a later milestone.
+///
+/// @param token Number token to convert.
+/// @param out_offset Receives the signed byte offset.
+/// @return true when the token fits in a signed 32-bit byte offset.
+static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *out_offset) {
+    if (token == NULL || out_offset == NULL || token->kind != VM_LEXER_TOKEN_NUMBER) {
+        return false;
+    }
+
+    if (token->number_is_negative) {
+        if (token->number_value > 0x80000000ULL) {
+            return false;
+        }
+        if (token->number_value == 0x80000000ULL) {
+            *out_offset = (int32_t)INT32_MIN;
+        } else {
+            *out_offset = -(int32_t)token->number_value;
+        }
+        return true;
+    }
+
+    if (token->number_value > 0x7FFFFFFFULL) {
+        return false;
+    }
+    *out_offset = (int32_t)token->number_value;
+    return true;
+}
+
+/// Resolves a data symbol token.
+///
+/// @param state Parser state to inspect.
+/// @param token Symbol token to resolve.
+/// @return Matching symbol, or NULL after recording a diagnostic.
+static const VmSymbol *vm_parser_resolve_symbol(VmParserState *state, const VmLexerToken *token) {
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return NULL;
+    }
+
+    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length);
+    if (symbol == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, token, "Unknown data symbol.");
+    }
+
+    return symbol;
+}
+
+/// Creates a memory operand for a symbol plus constant byte offset.
+///
+/// The offset is validated against the referenced symbol byte span. Bracketed
+/// offsets use MASM byte-offset semantics; they are not element indexes.
+///
+/// @param state Parser state to inspect.
+/// @param symbol_token Symbol token used for diagnostics.
+/// @param offset_token Token containing the offset, or NULL for direct symbol use.
+/// @param offset Signed byte offset relative to the symbol address.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when the operand was resolved and is executable by the current VM.
+static bool vm_parser_build_symbol_offset_memory_operand(
+    VmParserState *state,
+    const VmLexerToken *symbol_token,
+    const VmLexerToken *offset_token,
+    int32_t offset,
+    VmIrOperand *out_operand
+) {
+    const VmSymbol *symbol = NULL;
+    uint8_t width_bits = 0U;
+    uint32_t width_bytes = 0U;
+    uint32_t data_relative_offset = 0U;
+    uint32_t final_address = 0U;
+    int64_t final_address_signed = 0;
+    uint64_t access_end = 0U;
+    uint64_t data_end = 0U;
+
+    if (state == NULL || symbol_token == NULL || out_operand == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    symbol = vm_parser_resolve_symbol(state, symbol_token);
+    if (symbol == NULL) {
+        return false;
+    }
+
+    if (symbol->element_size_bytes > 4U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
+        return false;
+    }
+
+    width_bytes = (uint32_t)symbol->element_size_bytes;
+    if (width_bytes == 0U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset has an unsupported zero-width access.");
+        return false;
+    }
+
+    final_address_signed = (int64_t)(uint64_t)symbol->address + (int64_t)offset;
+    if (final_address_signed < (int64_t)(uint64_t)VM_MEMORY_DEFAULT_DATA_BASE || final_address_signed > (int64_t)UINT32_MAX) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset resolves outside the current .data image.");
+        return false;
+    }
+
+    final_address = (uint32_t)final_address_signed;
+    data_relative_offset = final_address - VM_MEMORY_DEFAULT_DATA_BASE;
+    access_end = (uint64_t)data_relative_offset + (uint64_t)width_bytes;
+    data_end = (uint64_t)state->result->data_size;
+    if (access_end > data_end) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset access extends beyond the current .data image.");
+        return false;
+    }
+
+    width_bits = (uint8_t)(symbol->element_size_bytes * 8U);
+    *out_operand = vm_ir_operand_memory(final_address, width_bits);
+    return true;
+}
+
 /// Creates a memory operand for a direct data symbol token.
 ///
 /// @param state Parser state to inspect.
@@ -771,26 +891,153 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
 /// @param out_operand Receives a memory-address operand on success.
 /// @return true when the symbol was resolved and is executable by the current VM.
 static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const VmLexerToken *token, VmIrOperand *out_operand) {
-    const VmSymbol *symbol = NULL;
-    uint8_t width_bits = 0U;
+    return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, out_operand);
+}
 
-    if (state == NULL || token == NULL || out_operand == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+/// Parses an optional signed offset after a bracketed symbol token.
+///
+/// Supported forms are empty offset-zero brackets, `+ number`, `- number`,
+/// and a negative number token used by compact forms such as `[nums-4]`. Full
+/// arithmetic expression parsing remains a later milestone.
+///
+/// @param state Parser state positioned after the symbol token.
+/// @param out_offset Receives the signed offset.
+/// @param out_offset_token Receives the token most relevant for diagnostics.
+/// @return true when an offset suffix was parsed.
+static bool vm_parser_parse_bracket_symbol_offset_suffix(VmParserState *state, int32_t *out_offset, const VmLexerToken **out_offset_token) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    int32_t offset = 0;
+
+    if (state == NULL || out_offset == NULL || out_offset_token == NULL) {
         return false;
     }
 
-    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length);
-    if (symbol == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, token, "Unknown data symbol.");
+    *out_offset = 0;
+    *out_offset_token = token;
+
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        *out_offset = 0;
+        *out_offset_token = NULL;
+        return true;
+    }
+
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && token->number_is_negative) {
+        if (!vm_parser_number_to_i32_offset(token, &offset)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, token, "Symbol offset is outside the supported signed 32-bit range.");
+            return false;
+        }
+        *out_offset = offset;
+        *out_offset_token = token;
+        vm_parser_advance(state);
+        return true;
+    }
+
+    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
+        const VmLexerToken *operator_token = token;
+        const VmLexerToken *number_token = NULL;
+        int32_t magnitude = 0;
+
+        vm_parser_advance(state);
+        number_token = vm_parser_current_token(state);
+        if (number_token == NULL || number_token->kind != VM_LEXER_TOKEN_NUMBER || number_token->number_is_negative) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, number_token != NULL ? number_token : operator_token, "Expected a non-negative numeric symbol offset after + or -." );
+            return false;
+        }
+
+        if (!vm_parser_number_to_i32_offset(number_token, &magnitude)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, number_token, "Symbol offset is outside the supported signed 32-bit range.");
+            return false;
+        }
+
+        *out_offset = operator_token->kind == VM_LEXER_TOKEN_MINUS ? -magnitude : magnitude;
+        *out_offset_token = number_token;
+        vm_parser_advance(state);
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected + offset or - offset after bracketed data symbol.");
+    return false;
+}
+
+/// Parses `[symbol]`, `[symbol + constant]`, and `[symbol - constant]` memory operands.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when a bracketed symbol-offset operand was parsed.
+static bool vm_parser_parse_bracketed_symbol_offset_memory_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = NULL;
+    const VmLexerToken *offset_token = NULL;
+    int32_t offset = 0;
+
+    if (state == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
         return false;
     }
 
-    if (symbol->element_size_bytes > 4U) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
+    vm_parser_advance(state);
+    symbol_token = vm_parser_current_token(state);
+    if (symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, symbol_token != NULL ? symbol_token : left_token, "Expected a data symbol after '['.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    if (!vm_parser_parse_bracket_symbol_offset_suffix(state, &offset, &offset_token)) {
         return false;
     }
 
-    width_bits = (uint8_t)(symbol->element_size_bytes * 8U);
-    *out_operand = vm_ir_operand_memory(symbol->address, width_bits);
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `symbol[constant]` memory operands.
+///
+/// @param state Parser state positioned at the symbol token.
+/// @param out_operand Receives a memory-address operand on success.
+/// @return true when a symbol-indexed constant operand was parsed.
+static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *symbol_token = vm_parser_current_token(state);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *offset_token = NULL;
+    int32_t offset = 0;
+
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    offset_token = vm_parser_current_token(state);
+    if (offset_token == NULL || offset_token->kind != VM_LEXER_TOKEN_NUMBER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, offset_token != NULL ? offset_token : left_token, "Expected a constant byte offset inside symbol brackets.");
+        return false;
+    }
+
+    if (!vm_parser_number_to_i32_offset(offset_token, &offset)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token, "Symbol offset is outside the supported signed 32-bit range.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
+        return false;
+    }
+
+    if (!vm_parser_build_symbol_offset_memory_operand(state, symbol_token, offset_token, offset, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
     return true;
 }
 
@@ -817,6 +1064,14 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
         return true;
     }
 
+    if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_bracketed_symbol_offset_memory_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
+    }
+
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
         if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
             return false;
@@ -825,7 +1080,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register or data symbol destination operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, data symbol, or constant symbol-offset destination operand.");
     return false;
 }
 
@@ -850,6 +1105,14 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         *out_operand = vm_ir_operand_register(token->register_id, 0U);
         vm_parser_advance(state);
         return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_bracketed_symbol_offset_memory_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
     }
 
     if (token->kind == VM_LEXER_TOKEN_NUMBER) {
@@ -889,7 +1152,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, or OFFSET source operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, or OFFSET source operand.");
     return false;
 }
 
@@ -1612,6 +1875,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "symbol-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL:
             return "unknown-symbol";
+        case VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE:
+            return "symbol-offset-out-of-range";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:

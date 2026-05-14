@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 8 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 9 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":8", "response should identify Milestone 8");
+    failures += expect_json_contains(json, "\"phase\":9", "response should identify Milestone 9");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -132,6 +132,139 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
     failures += expect_json_contains(json, "\"kind\":\"assembly-error\"", "AL overflow should be an assembly error");
     failures += expect_json_contains(json, "immediate-out-of-range", "AL overflow should expose immediate range diagnostic");
     failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"0000000Fh\"", "AL overflow should not truncate to 15");
+
+    return failures;
+}
+
+
+/// Verifies the Milestone 9 constant symbol-offset acceptance program.
+///
+/// @return Number of failures.
+static int test_constant_symbol_offset_source_run_succeeds(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov nums[8], 100\n"
+        "    mov eax, nums[8]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":9", "response should identify Milestone 9");
+    failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\"", "memory changes should include nums symbol");
+    failures += expect_json_contains(json, "\"byteOffset\":8", "memory changes should include byte offset 8");
+    failures += expect_json_contains(json, "\"elementIndex\":2", "memory changes should include aligned element index 2");
+    failures += expect_json_contains(json, "\"dataType\":\"DWORD\"", "memory changes should include DWORD type");
+    failures += expect_json_contains(json, "\"newHex\":\"00000064h\"", "memory change should include DWORD new hex");
+
+    return failures;
+}
+
+/// Verifies unaligned constant symbol-offset accesses execute with simulator warnings.
+///
+/// @return Number of failures.
+static int test_unaligned_constant_symbol_offset_reports_warning(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov nums[9], 100\n"
+        "    mov eax, nums[9]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "unaligned constant symbol-offset source should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "unaligned read should still load EAX = 100");
+    failures += expect_json_contains(json, "\"byteOffset\":9", "memory change should include unaligned byte offset 9");
+    failures += expect_json_not_contains(json, "\"elementIndex\"", "unaligned memory change should not report an aligned element index");
+    failures += expect_json_contains(json, "\"kind\":\"simulator-warning\"", "unaligned access should produce a simulator warning");
+    failures += expect_json_contains(json, "unaligned-memory-access", "unaligned warning should use a stable code");
+
+    return failures;
+}
+
+
+/// Verifies a negative symbol offset executes when the final address remains inside .data.
+///
+/// @return Number of failures.
+static int test_negative_symbol_offset_inside_data_image_succeeds(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "head DWORD 0\n"
+        "tail DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov [tail - 4], 123\n"
+        "    mov eax, head\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "negative symbol offset inside .data should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "negative symbol offset should update the previous DWORD");
+    failures += expect_json_contains(json, "\"symbol\":\"head\"", "memory change should resolve to the containing data symbol");
+    failures += expect_json_contains(json, "\"newHex\":\"0000007Bh\"", "memory change should include the updated value");
+
+    return failures;
+}
+
+/// Verifies offset-zero bracketed symbol operands execute like direct symbol access.
+///
+/// @return Number of failures.
+static int test_offset_zero_bracketed_symbol_operands_execute(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov [nums], 100\n"
+        "    mov eax, [nums + 0]\n"
+        "    mov nums[0], 101\n"
+        "    mov ebx, nums[0]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "offset-zero bracketed symbol operands should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "offset-zero bracketed symbol sample should execute four instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "[nums + 0] should read the first DWORD");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000065h\",\"unsigned\":101}", "nums[0] should read the updated first DWORD");
+    failures += expect_json_contains(json, "\"byteOffset\":0", "offset-zero memory changes should include byte offset 0");
+    failures += expect_json_contains(json, "\"elementIndex\":0", "offset-zero aligned changes should include element index 0");
+
+    return failures;
+}
+
+/// Verifies out-of-bounds constant symbol offsets return structured parse errors.
+///
+/// @return Number of failures.
+static int test_constant_symbol_offset_out_of_bounds_returns_parse_error(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, nums[37]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "out-of-bounds symbol offset should fail");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "out-of-bounds symbol offset should be a parse error");
+    failures += expect_json_contains(json, "symbol-offset-out-of-range", "out-of-bounds symbol offset should expose stable diagnostic code");
+    failures += expect_json_contains(json, "\"line\":5", "out-of-bounds diagnostic should preserve source line");
 
     return failures;
 }
@@ -241,6 +374,11 @@ int main(void) {
     failures += test_narrow_register_immediate_overflow_returns_parse_error();
     failures += test_negative_immediate_source_run_succeeds();
     failures += test_negative_immediate_overflow_returns_parse_error();
+    failures += test_constant_symbol_offset_source_run_succeeds();
+    failures += test_unaligned_constant_symbol_offset_reports_warning();
+    failures += test_negative_symbol_offset_inside_data_image_succeeds();
+    failures += test_offset_zero_bracketed_symbol_operands_execute();
+    failures += test_constant_symbol_offset_out_of_bounds_returns_parse_error();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -249,6 +387,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 8 source execution tests passed.");
+    puts("Milestone 9 source execution tests passed.");
     return 0;
 }

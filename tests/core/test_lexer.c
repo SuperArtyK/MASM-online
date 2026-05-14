@@ -290,6 +290,27 @@ static int test_brackets_and_commas(void) {
     return failures;
 }
 
+
+/// Verifies plus and standalone minus tokens used by constant symbol offsets.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_symbol_offset_operator_tokens(void) {
+    int failures = 0;
+    const char *source = "[nums + 8] nums-label";
+    VmLexerToken tokens[16];
+    VmLexerDiagnostic diagnostics[4];
+    VmLexerResult result;
+
+    failures += expect_status(tokenize_for_test(source, tokens, 16U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "symbol offset operators should tokenize cleanly");
+    failures += expect_token_kind(tokens[2].kind, VM_LEXER_TOKEN_PLUS, "+ should tokenize as PLUS");
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_NUMBER, "8 should tokenize as a number after +");
+    failures += expect_token_kind(tokens[5].kind, VM_LEXER_TOKEN_IDENTIFIER, "nums should tokenize before standalone minus");
+    failures += expect_token_kind(tokens[6].kind, VM_LEXER_TOKEN_MINUS, "standalone - should tokenize as MINUS");
+    failures += expect_token_kind(tokens[7].kind, VM_LEXER_TOKEN_IDENTIFIER, "label should tokenize after standalone minus");
+
+    return failures;
+}
+
 /// Verifies empty and whitespace-only source behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -422,6 +443,7 @@ int main(void) {
     failures += test_number_forms();
     failures += test_signed_number_forms();
     failures += test_brackets_and_commas();
+    failures += test_symbol_offset_operator_tokens();
     failures += test_empty_and_whitespace_sources();
     failures += test_string_literals();
     failures += test_error_diagnostics();
