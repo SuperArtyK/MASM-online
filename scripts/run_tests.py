@@ -121,6 +121,7 @@ def run_structure_tests() -> None:
         "src/parser/parser.h",
         "src/parser/symbols.c",
         "src/parser/symbols.h",
+        "docs/SUPPORTED_SYNTAX.md",
         "web/index.html",
         "web/src/main.js",
         "web/src/worker.js",
@@ -282,8 +283,15 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX")
+    assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION")
+    assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
+    assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
+    assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Expression parser expansion")
     assert_text_contains("src/parser/parser.c", "WIDTH PTR")
     assert_text_contains("src/parser/parser.c", "TYPE symbol")
     assert_text_contains("src/parser/parser.c", "LENGTHOF symbol")
@@ -295,12 +303,12 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/*\n * @file test_wasm_source_run.c")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies that the guide's minimal source execution sample")
     assert_text_contains("tests/core/test_data_section.c", "/*\n * @file test_data_section.c")
-    assert_text_contains("tests/core/test_data_section.c", "/// Verifies Milestone 14 data layout")
+    assert_text_contains("tests/core/test_data_section.c", "/// Verifies Milestone 15 data layout")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies register-indirect memory operands")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies TYPE symbol emits declared element-size immediates")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies LENGTHOF symbol emits element-count immediates")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 14")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 15")
     assert_text_contains("web/src/formatters.js", "Formats final canonical registers")
     assert_text_contains("tests/web/test_formatters.mjs", "/*\n * @file test_formatters.mjs")
     print("Milestone structure tests passed.")

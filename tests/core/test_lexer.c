@@ -312,6 +312,33 @@ static int test_symbol_offset_operator_tokens(void) {
     return failures;
 }
 
+
+/// Verifies punctuation needed to keep unsupported textbook MASM examples lexable.
+///
+/// These tokens do not implement expressions. They only allow the parser to
+/// classify constructs such as TEXTEQU <...>, .IF eax == 1, and REAL4 1.0
+/// as unsupported features instead of failing in the lexer.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_unsupported_feature_punctuation_tokens(void) {
+    int failures = 0;
+    const char *source = "TEXTEQU <Hello> .IF eax == 1 REAL4 1.0 ecx > 0";
+    VmLexerToken tokens[32];
+    VmLexerDiagnostic diagnostics[4];
+    VmLexerResult result;
+
+    failures += expect_status(tokenize_for_test(source, tokens, 32U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "unsupported-feature punctuation should tokenize without diagnostics");
+    failures += expect_size(result.diagnostic_count, 0U, "unsupported-feature punctuation should not produce lexer diagnostics");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_LESS_THAN, "< should tokenize as LESS_THAN");
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_GREATER_THAN, "> should tokenize as GREATER_THAN");
+    failures += expect_token_kind(tokens[6].kind, VM_LEXER_TOKEN_EQUALS, "first = should tokenize as EQUALS");
+    failures += expect_token_kind(tokens[7].kind, VM_LEXER_TOKEN_EQUALS, "second = should tokenize as EQUALS");
+    failures += expect_token_kind(tokens[11].kind, VM_LEXER_TOKEN_DOT, "decimal point in unsupported REAL initializer should tokenize as DOT");
+    failures += expect_token_kind(tokens[14].kind, VM_LEXER_TOKEN_GREATER_THAN, "> in unsupported condition should tokenize as GREATER_THAN");
+
+    return failures;
+}
+
 /// Verifies empty and whitespace-only source behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -473,6 +500,7 @@ int main(void) {
     failures += test_signed_number_forms();
     failures += test_brackets_and_commas();
     failures += test_symbol_offset_operator_tokens();
+    failures += test_unsupported_feature_punctuation_tokens();
     failures += test_empty_and_whitespace_sources();
     failures += test_string_literals();
     failures += test_character_literals();

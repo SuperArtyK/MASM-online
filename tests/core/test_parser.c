@@ -143,6 +143,21 @@ static int expect_string(const char *actual, const char *expected, const char *m
     return 0;
 }
 
+/// Verifies that a C string contains an expected fragment.
+///
+/// @param actual Actual string pointer.
+/// @param expected_fragment Fragment expected inside @p actual.
+/// @param message Failure message when the fragment is absent.
+/// @return Zero on success, otherwise one failure.
+static int expect_string_contains(const char *actual, const char *expected_fragment, const char *message) {
+    if (actual == NULL || expected_fragment == NULL || strstr(actual, expected_fragment) == NULL) {
+        fprintf(stderr, "FAIL: %s\n", message);
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Initializes parser buffers and parses source text.
 ///
 /// @param source Source text to parse.
@@ -168,6 +183,24 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
     return vm_parser_parse_program(&config, out_result);
+}
+
+/// Verifies one source sample reports the generic unsupported-feature diagnostic.
+///
+/// @param source MASM-like source text expected to hit a recognized deferred feature.
+/// @param expected_message_fragment Fragment expected in the diagnostic message.
+/// @return Zero on success, otherwise a positive failure count.
+static int expect_unsupported_feature_source(const char *source, const char *expected_message_fragment) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "recognized unsupported feature should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 1U, "recognized unsupported feature should produce one parser diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "recognized unsupported feature diagnostic code should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, expected_message_fragment, "recognized unsupported feature diagnostic message should describe the feature");
+
+    return failures;
 }
 
 /// Verifies that the guide's minimal program parses into two IR instructions.
@@ -318,6 +351,65 @@ static int test_error_path_diagnostics(void) {
 
     failures += expect_parser_status(parse_for_test(".code\nmain PROC\nmov eax, 184467440737095516160\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_LEXER_FAILED, "lexer numeric overflow should stop parser");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_FAILED, "lexer overflow diagnostic should be surfaced by parser");
+
+    return failures;
+}
+
+/// Verifies Phase 15 explicitly classifies common unsupported MASM directives.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_textbook_unsupported_directives_are_stable(void) {
+    int failures = 0;
+
+    failures += expect_unsupported_feature_source(".DATA?\n.code\nmain PROC\nmain ENDP\nEND main\n", ".DATA?");
+    failures += expect_unsupported_feature_source(".CONST\nvalue DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", ".CONST");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\nmov eax, 1\n.IF eax == 1\nmov ebx, 2\nmain ENDP\nEND main\n", ".IF");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\nmov ecx, 3\n.WHILE ecx > 0\nsub ecx, 1\nmain ENDP\nEND main\n", ".WHILE");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\n.REPEAT\nmov eax, 1\n.UNTIL eax == 1\nmain ENDP\nEND main\n", ".REPEAT");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\n.BREAK\nmain ENDP\nEND main\n", ".BREAK");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\n.CONTINUE\nmain ENDP\nEND main\n", ".CONTINUE");
+
+    return failures;
+}
+
+/// Verifies Phase 15 explicitly classifies common unsupported MASM keywords.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_textbook_unsupported_keywords_are_stable(void) {
+    int failures = 0;
+
+    failures += expect_unsupported_feature_source("COUNT EQU 10\n.code\nmain PROC\nmain ENDP\nEND main\n", "EQU");
+    failures += expect_unsupported_feature_source("NAME TEXTEQU <main>\n.code\nmain PROC\nmain ENDP\nEND main\n", "TEXTEQU");
+    failures += expect_unsupported_feature_source("Point STRUCT\nx DWORD ?\nPoint ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "STRUCT");
+    failures += expect_unsupported_feature_source("Choice UNION\nx DWORD ?\nChoice ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "UNION");
+    failures += expect_unsupported_feature_source("Flags RECORD bit0:1\n.code\nmain PROC\nmain ENDP\nEND main\n", "RECORD");
+    failures += expect_unsupported_feature_source("ExitProcess PROTO\n.code\nmain PROC\nmain ENDP\nEND main\n", "PROTO");
+    failures += expect_unsupported_feature_source("INCLUDELIB kernel32.lib\n.code\nmain PROC\nmain ENDP\nEND main\n", "INCLUDELIB");
+    failures += expect_unsupported_feature_source("EXTERN ExitProcess:PROC\n.code\nmain PROC\nmain ENDP\nEND main\n", "EXTERN");
+    failures += expect_unsupported_feature_source("PUBLIC main\n.code\nmain PROC\nmain ENDP\nEND main\n", "PUBLIC");
+    failures += expect_unsupported_feature_source("COMM buffer:BYTE:16\n.code\nmain PROC\nmain ENDP\nEND main\n", "COMM");
+    failures += expect_unsupported_feature_source("m MACRO\nENDM\n.code\nmain PROC\nmain ENDP\nEND main\n", "macro definitions");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\nINVOKE ExitProcess, 0\nmain ENDP\nEND main\n", "INVOKE");
+    failures += expect_unsupported_feature_source(".code\nmain PROC\nLOCAL temp:DWORD\nmain ENDP\nEND main\n", "LOCAL");
+
+    return failures;
+}
+
+/// Verifies scheduled and backlog data types are classified without implementation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_scheduled_and_backlog_data_types_are_documented_diagnostics(void) {
+    int failures = 0;
+
+    failures += expect_unsupported_feature_source(".data\nsb SBYTE -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
+    failures += expect_unsupported_feature_source(".data\nsw SWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
+    failures += expect_unsupported_feature_source(".data\nsd SDWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
+    failures += expect_unsupported_feature_source(".data\nsq SQWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
+    failures += expect_unsupported_feature_source(".data\nr REAL4 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
+    failures += expect_unsupported_feature_source(".data\nr REAL8 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
+    failures += expect_unsupported_feature_source(".data\nr REAL10 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
+    failures += expect_unsupported_feature_source(".data\nt TBYTE 0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
+    failures += expect_unsupported_feature_source(".data\nf FWORD 0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
 
     return failures;
 }
@@ -505,6 +597,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION), "unsupported-instruction") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported-instruction");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE), "unsupported-feature") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported-feature");
+    }
     if (vm_parser_status_name((VmParserStatus)999) != NULL) {
         failures += record_failure("invalid parser status name should be NULL");
     }
@@ -527,6 +622,9 @@ int main(void) {
     failures += test_labels_blank_lines_comments_and_crlf();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();
+    failures += test_textbook_unsupported_directives_are_stable();
+    failures += test_textbook_unsupported_keywords_are_stable();
+    failures += test_scheduled_and_backlog_data_types_are_documented_diagnostics();
     failures += test_immediate_range_matches_destination_width();
     failures += test_negative_immediate_range_matches_destination_width();
     failures += test_immediate_range_covers_register_alias_families();

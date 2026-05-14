@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 14 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 15 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -95,7 +95,7 @@ static int test_zero_instruction_program_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 register-indirect source-run acceptance program.
+/// Verifies the Milestone 15 register-indirect source-run acceptance program.
 ///
 /// @return Number of failures.
 static int test_register_indirect_source_run_succeeds(void) {
@@ -112,7 +112,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -122,7 +122,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 TYPE acceptance program through the source-run API.
+/// Verifies the Milestone 15 TYPE acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_type_operator_source_run_acceptance_program(void) {
@@ -137,7 +137,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -173,7 +173,7 @@ static int test_type_operator_source_run_element_sizes(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 LENGTHOF acceptance program through the source-run API.
+/// Verifies the Milestone 15 LENGTHOF acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_lengthof_operator_source_run_acceptance_program(void) {
@@ -190,7 +190,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -227,7 +227,7 @@ static int test_lengthof_operator_source_run_element_counts(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 SIZEOF and character-literal acceptance program through the source-run API.
+/// Verifies the Milestone 15 SIZEOF and character-literal acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_sizeof_operator_source_run_acceptance_program(void) {
@@ -248,7 +248,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
@@ -471,7 +471,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 14 constant symbol-offset acceptance program.
+/// Verifies the Milestone 15 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -487,7 +487,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -670,6 +670,120 @@ static int test_empty_source_returns_parse_error_json(void) {
     return failures;
 }
 
+/// Verifies unsupported textbook MASM constructs surface as unsupported features.
+///
+/// @return Number of failures.
+static int test_textbook_unsupported_features_return_unsupported_feature_messages(void) {
+    char struct_json[2048];
+    char invoke_json[2048];
+    char dataq_json[2048];
+    int failures = 0;
+
+    (void)snprintf(struct_json, sizeof(struct_json), "%s", masm32_sim_wasm_run_source_json(
+        "Point STRUCT\n"
+        "x DWORD ?\n"
+        "Point ENDS\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    (void)snprintf(invoke_json, sizeof(invoke_json), "%s", masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "INVOKE ExitProcess, 0\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    (void)snprintf(dataq_json, sizeof(dataq_json), "%s", masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(struct_json, "\"ok\":false", "STRUCT source should fail source run");
+    failures += expect_json_contains(struct_json, "\"kind\":\"unsupported-feature\"", "STRUCT should be classified as unsupported feature");
+    failures += expect_json_contains(struct_json, "\"code\":\"unsupported-feature\"", "STRUCT should use stable unsupported-feature code");
+    failures += expect_json_contains(struct_json, "STRUCT declarations are not supported yet", "STRUCT message should be specific");
+
+    failures += expect_json_contains(invoke_json, "\"kind\":\"unsupported-feature\"", "INVOKE should be classified as unsupported feature");
+    failures += expect_json_contains(invoke_json, "INVOKE is not supported yet", "INVOKE message should be specific");
+
+    failures += expect_json_contains(dataq_json, "\"kind\":\"unsupported-feature\"", ".DATA? should be classified as unsupported feature");
+    failures += expect_json_contains(dataq_json, ".DATA? uninitialized data sections are not supported yet", ".DATA? message should be specific");
+
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "Greeting TEXTEQU <Hello>\n"
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    ), "\"kind\":\"unsupported-feature\"", "TEXTEQU angle-bracket sample should be classified as unsupported feature");
+
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "mov eax, 1\n"
+        ".IF eax == 1\n"
+        "mov ebx, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    ), "\"kind\":\"unsupported-feature\"", ".IF comparison sample should be classified as unsupported feature");
+
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "mov ecx, 3\n"
+        ".WHILE ecx > 0\n"
+        "sub ecx, 1\n"
+        "main ENDP\n"
+        "END main\n"
+    ), "\"kind\":\"unsupported-feature\"", ".WHILE comparison sample should be classified as unsupported feature");
+
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        ".REPEAT\n"
+        "mov eax, 1\n"
+        ".UNTIL eax == 1\n"
+        "main ENDP\n"
+        "END main\n"
+    ), "\"kind\":\"unsupported-feature\"", ".REPEAT/.UNTIL sample should be classified as unsupported feature");
+
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "r REAL4 1.0\n"
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    ), "\"kind\":\"unsupported-feature\"", "REAL4 float sample should be classified as unsupported feature");
+
+    return failures;
+}
+
+/// Verifies scheduled signed integer data types are not treated as permanent gaps.
+///
+/// @return Number of failures.
+static int test_scheduled_signed_types_return_scheduled_unsupported_feature_messages(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "sb SBYTE -1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "SBYTE should remain unsupported before Milestone 16");
+    failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "SBYTE should be classified as unsupported feature");
+    failures += expect_json_contains(json, "scheduled for the next milestone", "SBYTE message should identify next-milestone scheduling");
+
+    return failures;
+}
+
 /// Verifies that the static JSON buffer is overwritten by subsequent calls.
 ///
 /// @return Number of failures.
@@ -726,6 +840,8 @@ int main(void) {
     failures += test_negative_symbol_offset_inside_data_image_succeeds();
     failures += test_offset_zero_bracketed_symbol_operands_execute();
     failures += test_constant_symbol_offset_out_of_bounds_returns_parse_error();
+    failures += test_textbook_unsupported_features_return_unsupported_feature_messages();
+    failures += test_scheduled_signed_types_return_scheduled_unsupported_feature_messages();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -734,6 +850,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 14 source execution tests passed.");
+    puts("Milestone 15 source execution tests passed.");
     return 0;
 }

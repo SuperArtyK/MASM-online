@@ -1,11 +1,13 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 14.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 15.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * full MASM expression parsing remain later milestones.
+ * full MASM expression parsing remain later milestones. Recognizable textbook
+ * MASM constructs outside the implemented subset are classified with explicit
+ * unsupported-feature diagnostics.
  */
 
 #include "parser.h"
@@ -76,7 +78,22 @@ typedef struct VmParserPtrWidth {
     const VmLexerToken *ptr_token;
 } VmParserPtrWidth;
 
+/// Describes one recognized but intentionally unsupported MASM construct.
+typedef struct VmParserUnsupportedFeature {
+    /// Keyword or directive spelling to match case-insensitively.
+    const char *spelling;
+    /// Stable diagnostic message explaining the unsupported construct.
+    const char *message;
+} VmParserUnsupportedFeature;
+
 static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token);
+
+static bool vm_parser_add_diagnostic(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+);
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
@@ -154,6 +171,174 @@ static bool vm_parser_token_lexemes_equal(const VmLexerToken *left, const VmLexe
         }
     }
 
+    return true;
+}
+
+/// Returns whether two tokens are contiguous bytes on the same source line.
+///
+/// @param left First token in source order.
+/// @param right Token expected to begin immediately after @p left.
+/// @return true when the second token starts immediately after the first token.
+static bool vm_parser_tokens_are_contiguous(const VmLexerToken *left, const VmLexerToken *right) {
+    if (left == NULL || right == NULL) {
+        return false;
+    }
+
+    return left->location.line == right->location.line &&
+           right->location.offset == left->location.offset + left->lexeme_length;
+}
+
+/// Returns whether a token pair spells the deferred `.DATA?` directive.
+///
+/// The lexer intentionally keeps `.data` and `?` as separate tokens because `?`
+/// is already used by data initializers. This helper recognizes only the
+/// contiguous directive form so ordinary `.data` followed by an initializer is
+/// not misclassified.
+///
+/// @param directive_token Candidate `.data` directive token.
+/// @param question_token Candidate question-mark token immediately after it.
+/// @return true when the pair represents `.DATA?`.
+static bool vm_parser_is_data_question_directive(const VmLexerToken *directive_token, const VmLexerToken *question_token) {
+    return directive_token != NULL && question_token != NULL &&
+           directive_token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+           question_token->kind == VM_LEXER_TOKEN_QUESTION &&
+           vm_parser_token_equals(directive_token, ".data") &&
+           vm_parser_tokens_are_contiguous(directive_token, question_token);
+}
+
+/// Looks up a static unsupported-feature message by exact token spelling.
+///
+/// @param token Candidate token to classify.
+/// @param features Table of unsupported-feature descriptors.
+/// @param feature_count Number of entries in @p features.
+/// @return Static message for a recognized feature, or NULL.
+static const char *vm_parser_find_unsupported_feature_message(
+    const VmLexerToken *token,
+    const VmParserUnsupportedFeature *features,
+    size_t feature_count
+) {
+    size_t index = 0U;
+
+    if (token == NULL || features == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < feature_count; index += 1U) {
+        if (vm_parser_token_equals(token, features[index].spelling)) {
+            return features[index].message;
+        }
+    }
+
+    return NULL;
+}
+
+/// Returns an unsupported-feature message for a recognized directive token.
+///
+/// @param token Candidate directive token.
+/// @param next Next token, used only for `.DATA?` recognition.
+/// @return Static unsupported-feature message, or NULL when not recognized.
+static const char *vm_parser_unsupported_directive_message(const VmLexerToken *token, const VmLexerToken *next) {
+    static const VmParserUnsupportedFeature directives[] = {
+        {".const", "Unsupported feature: .CONST sections are not supported yet."},
+        {".if", "Unsupported feature: MASM .IF high-level flow is not supported yet."},
+        {".while", "Unsupported feature: MASM .WHILE high-level flow is not supported yet."},
+        {".repeat", "Unsupported feature: MASM .REPEAT high-level flow is not supported yet."},
+        {".break", "Unsupported feature: MASM .BREAK high-level flow is not supported yet."},
+        {".continue", "Unsupported feature: MASM .CONTINUE high-level flow is not supported yet."}
+    };
+
+    if (vm_parser_is_data_question_directive(token, next)) {
+        return "Unsupported feature: .DATA? uninitialized data sections are not supported yet.";
+    }
+
+    return vm_parser_find_unsupported_feature_message(token, directives, sizeof(directives) / sizeof(directives[0]));
+}
+
+/// Returns an unsupported-feature message for a recognized keyword token.
+///
+/// @param token Candidate identifier token.
+/// @return Static unsupported-feature message, or NULL when not recognized.
+static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *token) {
+    static const VmParserUnsupportedFeature keywords[] = {
+        {"equ", "Unsupported feature: EQU constants are not supported yet."},
+        {"textequ", "Unsupported feature: TEXTEQU text constants are not supported yet."},
+        {"struct", "Unsupported feature: STRUCT declarations are not supported yet."},
+        {"union", "Unsupported feature: UNION declarations are not supported yet."},
+        {"record", "Unsupported feature: RECORD declarations are not supported yet."},
+        {"invoke", "Unsupported feature: INVOKE is not supported yet; use CALL when available."},
+        {"proto", "Unsupported feature: PROTO procedure metadata is not supported yet."},
+        {"local", "Unsupported feature: LOCAL procedure variables are not supported yet."},
+        {"macro", "Unsupported feature: MASM macro definitions are not supported yet."},
+        {"endm", "Unsupported feature: MASM macro definitions are not supported yet."},
+        {"includelib", "Unsupported feature: INCLUDELIB linker declarations are not supported yet."},
+        {"extern", "Unsupported feature: EXTERN declarations are not supported yet."},
+        {"public", "Unsupported feature: PUBLIC declarations are not supported yet."},
+        {"comm", "Unsupported feature: COMM declarations are not supported yet."}
+    };
+
+    return vm_parser_find_unsupported_feature_message(token, keywords, sizeof(keywords) / sizeof(keywords[0]));
+}
+
+/// Returns an unsupported-feature message for a scheduled or deferred data type.
+///
+/// Signed integer declarations are scheduled for the next milestone. Non-integer
+/// declaration families are documented backlog items. This helper classifies
+/// them without implementing their storage semantics.
+///
+/// @param token Candidate data-type token.
+/// @return Static unsupported-feature message, or NULL when the type is not recognized.
+static const char *vm_parser_unsupported_data_type_message(const VmLexerToken *token) {
+    static const VmParserUnsupportedFeature data_types[] = {
+        {"sbyte", "Unsupported feature: SBYTE data declarations are scheduled for the next milestone."},
+        {"sword", "Unsupported feature: SWORD data declarations are scheduled for the next milestone."},
+        {"sdword", "Unsupported feature: SDWORD data declarations are scheduled for the next milestone."},
+        {"sqword", "Unsupported feature: SQWORD data declarations are scheduled for the next milestone."},
+        {"real4", "Unsupported feature: REAL4 floating-point declarations are backlog work."},
+        {"real8", "Unsupported feature: REAL8 floating-point declarations are backlog work."},
+        {"real10", "Unsupported feature: REAL10 floating-point declarations are backlog work."},
+        {"tbyte", "Unsupported feature: TBYTE declarations are backlog work."},
+        {"fword", "Unsupported feature: FWORD declarations are backlog work."}
+    };
+
+    return vm_parser_find_unsupported_feature_message(token, data_types, sizeof(data_types) / sizeof(data_types[0]));
+}
+
+/// Adds an unsupported-feature diagnostic for the current token or token pair.
+///
+/// @param state Parser state to mutate.
+/// @param token Primary token associated with the unsupported feature.
+/// @param next Next token, used for two-token forms and `.DATA?`.
+/// @return true when a recognized unsupported-feature diagnostic was emitted.
+static bool vm_parser_add_unsupported_feature_if_recognized(
+    VmParserState *state,
+    const VmLexerToken *token,
+    const VmLexerToken *next
+) {
+    const char *message = NULL;
+    const VmLexerToken *diagnostic_token = token;
+
+    if (state == NULL || token == NULL) {
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        message = vm_parser_unsupported_directive_message(token, next);
+    }
+
+    if (message == NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        message = vm_parser_unsupported_keyword_message(token);
+    }
+
+    if (message == NULL && next != NULL && next->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        message = vm_parser_unsupported_keyword_message(next);
+        diagnostic_token = next;
+    }
+
+    if (message == NULL) {
+        return false;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
     return true;
 }
 
@@ -832,6 +1017,11 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     }
 
     if (type_token == NULL || type_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_symbol_parse_data_type(type_token->lexeme, type_token->lexeme_length, &data_type)) {
+        const char *unsupported_type_message = vm_parser_unsupported_data_type_message(type_token);
+        if (unsupported_type_message != NULL) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, type_token, unsupported_type_message);
+            return false;
+        }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE, type_token, "Expected BYTE, WORD, DWORD, QWORD, DB, DW, DD, or DQ data type.");
         return false;
     }
@@ -969,7 +1159,7 @@ static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *o
 /// Returns whether a token can carry a data symbol name.
 ///
 /// The lexer classifies register-looking words such as `ch` as register tokens.
-/// Milestone 14's acceptance program uses `ch` as a data symbol, so parser
+/// Milestone 15's acceptance program uses `ch` as a data symbol, so parser
 /// symbol lookup accepts both identifier and register tokens as symbol names.
 ///
 /// @param token Token to inspect.
@@ -1090,7 +1280,7 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
     return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
-/// Returns whether a register is allowed as a Milestone 14 memory base.
+/// Returns whether a register is allowed as a Milestone 15 memory base.
 ///
 /// @param token Register token to inspect.
 /// @return true for ESI, EDI, EBX, and EBP.
@@ -2647,6 +2837,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_add_unsupported_feature_if_recognized(state, token, next)) {
+        return false;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Only one optional .data section followed by .code is supported by this milestone.");
         return false;
@@ -2696,6 +2890,10 @@ static bool vm_parser_parse_data_section(VmParserState *state) {
         token = vm_parser_current_token(state);
         if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive after .data declarations.");
+            return false;
+        }
+
+        if (vm_parser_add_unsupported_feature_if_recognized(state, token, vm_parser_peek_token(state, 1U))) {
             return false;
         }
 
@@ -2813,6 +3011,11 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
         return out_result->status;
     }
 
+    if (vm_parser_add_unsupported_feature_if_recognized(&state, token, vm_parser_peek_token(&state, 1U))) {
+        out_result->status = vm_parser_finalize_status(&state);
+        return out_result->status;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".data")) {
         if (!vm_parser_parse_data_section(&state)) {
             out_result->status = vm_parser_finalize_status(&state);
@@ -2903,6 +3106,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "source-text-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX:
             return "unsupported-syntax";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE:
+            return "unsupported-feature";
         case VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE:
             return "number-out-of-range";
         case VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE:

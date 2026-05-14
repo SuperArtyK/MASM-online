@@ -1,27 +1,26 @@
 # MASM32 Educational Simulator
 
-Phase 0 skeleton plus Milestone 1 CPU registers and Milestone 2 flags for a static, browser-based MASM32 educational simulator.
+Static, browser-based MASM32 educational simulator through Milestone 15.
 
 ## Current scope
 
-Implemented in this milestone:
+Implemented through the current milestone:
 
-- C-only core scaffold.
-- WebAssembly export boundary scaffold.
-- Static browser UI shell.
-- Web Worker with `PING` / `PONG` protocol.
-- Command-line tests.
+- C99 core, parser, executor, memory model, and WebAssembly export boundary.
+- Static browser UI shell with worker-based source execution.
+- MASM32-mode register aliases, arithmetic flags, checked memory regions, and minimal IR execution.
+- Lexer/parser support through `.data`, `.code`, symbols, constant and register-indirect memory operands, `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literals.
+- Executable `mov`, `add`, and `sub` for the currently supported operand forms.
+- Explicit `unsupported-feature` diagnostics for common textbook MASM constructs tracked by the Milestone 15 backlog checkpoint.
+- Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
-- MASM32-mode canonical CPU register storage and alias read/write helpers.
-- Milestone 2 `CF`, `ZF`, `SF`, and `OF` flag helpers.
-- Addition, subtraction, and comparison flag-update helpers.
 
 Not implemented yet:
 
-- MASM parsing.
-- VM execution.
-- Memory, stack, Irvine32 routines, instruction execution, parser, or debugger features.
+- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, full expression parsing, and Windows API behavior.
 - Extended 32-bit / 64-bit register behavior.
+
+See `docs/SUPPORTED_SYNTAX.md` for the current supported subset, scheduled features, and recognized unsupported constructs.
 
 ## Run native tests
 

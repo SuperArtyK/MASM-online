@@ -4,7 +4,8 @@
  *
  * The lexer recognizes the token set needed by the current parser: identifiers,
  * MASM32 registers, signed decimal and hexadecimal numbers, strings, commas,
- * square brackets, parentheses, question marks, plus, minus, asterisk signs,
+ * square brackets, parentheses, question marks, plus, minus, asterisk,
+ * comparison punctuation needed to classify unsupported textbook constructs,
  * single-quoted character and packed character literal spans, colons, comments, directives, and line endings.
  */
 
@@ -730,8 +731,10 @@ VmLexerStatus vm_lexer_tokenize(
             status = lexer_scan_identifier(&cursor, &writer);
         } else if (lexer_is_digit(ch) || (ch == '-' && lexer_is_digit(lexer_peek_ahead(&cursor, 1U)))) {
             status = lexer_scan_number(&cursor, &writer);
-        } else if (ch == '.') {
+        } else if (ch == '.' && lexer_is_identifier_start(lexer_peek_ahead(&cursor, 1U))) {
             status = lexer_scan_directive(&cursor, &writer);
+        } else if (ch == '.') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_DOT);
         } else if (ch == '"') {
             status = lexer_scan_string(&cursor, &writer);
         } else if (ch == '\'') {
@@ -754,6 +757,12 @@ VmLexerStatus vm_lexer_tokenize(
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_MINUS);
         } else if (ch == '*') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_ASTERISK);
+        } else if (ch == '<') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_LESS_THAN);
+        } else if (ch == '>') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_GREATER_THAN);
+        } else if (ch == '=') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_EQUALS);
         } else if (ch == ':') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_COLON);
         } else {
@@ -808,6 +817,10 @@ const char *vm_lexer_token_kind_name(VmLexerTokenKind kind) {
         "PLUS",
         "MINUS",
         "ASTERISK",
+        "LESS_THAN",
+        "GREATER_THAN",
+        "EQUALS",
+        "DOT",
         "COLON"
     };
 

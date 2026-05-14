@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 14 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE, LENGTHOF, SIZEOF, and character-literal support.
+ * @brief Tests for Milestone 15 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE, LENGTHOF, SIZEOF, and character-literal support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 14 parser test.
+/// Number of lexer tokens available to each Milestone 15 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 14 parser test.
+/// Number of lexer diagnostics available to each Milestone 15 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 14 parser test.
+/// Number of parser diagnostics available to each Milestone 15 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 14 parser test.
+/// Number of IR instructions available to each Milestone 15 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 14 parser test.
+/// Number of source-text bytes available to each Milestone 15 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 14 parser test.
+/// Number of data symbols available to each Milestone 15 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 14 parser test.
+/// Number of data image bytes available to each Milestone 15 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 14 test.
+/// Holds all caller-owned parser buffers for one Milestone 15 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 14 buffers.
+/// Parses source with full Milestone 15 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 14 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 15 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -350,7 +350,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 acceptance program executes through parser and VM.
+/// Verifies the Milestone 15 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -370,7 +370,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 14 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 15 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -1067,7 +1067,7 @@ static int test_type_operator_error_paths(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 14 error paths.
+/// Verifies parser diagnostics for new Milestone 15 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -1078,8 +1078,11 @@ static int test_data_error_paths(void) {
     failures += expect_parser_status(parse_for_test(".data\nvar BYTE 0\nvar BYTE 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "duplicate symbols should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, "duplicate symbol diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".data\nvar REAL4 0\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported data type should fail");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE, "unsupported type diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nvar REAL4 0\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "backlog data type should fail with unsupported feature");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "backlog type diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nvar FOO 0\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unknown data type should still fail as unsupported data type");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE, "unknown type diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".data\nvar BYTE 2 DUP\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid DUP should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_DUP, "invalid DUP diagnostic should match");
@@ -1249,7 +1252,7 @@ static int test_ptr_width_overrides_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 acceptance program executes explicit-width writes.
+/// Verifies the Milestone 15 acceptance program executes explicit-width writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_ptr_width_overrides_execute_acceptance_program(void) {
@@ -1364,7 +1367,7 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 14 register-indirect acceptance program executes.
+/// Verifies the Milestone 15 register-indirect acceptance program executes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_register_indirect_acceptance_program_executes(void) {
@@ -1418,7 +1421,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1547,7 +1550,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1572,7 +1575,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":14", "response should identify Milestone 14");
+    failures += expect_json_contains(json, "\"phase\":15", "response should identify Milestone 15");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1585,7 +1588,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 14 tests pass.
+/// @return Zero when all Milestone 15 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -1634,6 +1637,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 14 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 15 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

@@ -53,6 +53,14 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_MINUS,
     /// Asterisk used to recognize and reject unsupported scaled-index operands.
     VM_LEXER_TOKEN_ASTERISK,
+    /// Less-than sign used only to keep unsupported MASM textbook constructs lexable.
+    VM_LEXER_TOKEN_LESS_THAN,
+    /// Greater-than sign used only to keep unsupported MASM textbook constructs lexable.
+    VM_LEXER_TOKEN_GREATER_THAN,
+    /// Equals sign used only to keep unsupported MASM high-level conditions lexable.
+    VM_LEXER_TOKEN_EQUALS,
+    /// Dot punctuation when a period is not part of a dot-prefixed directive.
+    VM_LEXER_TOKEN_DOT,
     /// Colon used by labels.
     VM_LEXER_TOKEN_COLON,
     /// Number of lexer token kinds.
