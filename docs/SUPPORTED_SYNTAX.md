@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 17. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 18. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -32,6 +32,10 @@ Implemented data types:
 - `WORD`, `DW`
 - `DWORD`, `DD`
 - `QWORD`, `DQ` for data layout and metadata only; executable 64-bit memory operations remain unsupported in MASM32 Educational Mode.
+- `SBYTE`
+- `SWORD`
+- `SDWORD`
+- `SQWORD`
 
 Implemented initializer forms:
 
@@ -61,7 +65,7 @@ Implemented memory forms:
 - Simple displacements: `[esi + 4]`, `[esi - 4]`.
 - Simple symbol/register forms: `array[esi]`, `[array + esi]`.
 - Width overrides: `BYTE PTR`, `WORD PTR`, `DWORD PTR`.
-- `QWORD PTR` is recognized but executable QWORD memory operations are rejected in MASM32 Educational Mode.
+- `QWORD PTR` and `SQWORD PTR` are recognized but executable 64-bit memory operations are rejected in MASM32 Educational Mode.
 
 Array bracket offsets are byte offsets, not element indexes.
 
@@ -72,15 +76,6 @@ Implemented executable instructions:
 - `mov`
 - `add`
 - `sub`
-
-## Scheduled soon
-
-The following signed integer data declarations are scheduled for the next milestone and should not be treated as permanently unsupported:
-
-- `SBYTE`
-- `SWORD`
-- `SDWORD`
-- `SQWORD`
 
 ## Recognized unsupported features
 
@@ -110,7 +105,7 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 
 ## Diagnostic recovery behavior
 
-Milestone 17 can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
+Milestone 17 and later can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
 Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
 

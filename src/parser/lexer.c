@@ -373,7 +373,7 @@ static bool lexer_parse_uint64(const char *text, size_t length, uint32_t base, u
 
 /// Scans a decimal or hexadecimal number token.
 ///
-/// @param cursor Cursor positioned at the first digit or a leading minus sign.
+/// @param cursor Cursor positioned at the first digit or a leading sign byte.
 /// @param writer Output writer to mutate.
 /// @return Lexer status after scanning this token.
 static VmLexerStatus lexer_scan_number(VmLexerCursor *cursor, VmLexerWriter *writer) {
@@ -387,8 +387,8 @@ static VmLexerStatus lexer_scan_number(VmLexerCursor *cursor, VmLexerWriter *wri
     bool overflowed = false;
     bool invalid_hex = false;
 
-    if (lexer_peek(cursor) == '-') {
-        is_negative = true;
+    if (lexer_peek(cursor) == '-' || lexer_peek(cursor) == '+') {
+        is_negative = lexer_peek(cursor) == '-';
         lexer_advance_byte(cursor);
         value_offset = cursor->offset;
     }
@@ -729,7 +729,7 @@ VmLexerStatus vm_lexer_tokenize(
         }
         if (lexer_is_identifier_start(ch)) {
             status = lexer_scan_identifier(&cursor, &writer);
-        } else if (lexer_is_digit(ch) || (ch == '-' && lexer_is_digit(lexer_peek_ahead(&cursor, 1U)))) {
+        } else if (lexer_is_digit(ch) || ((ch == '-' || ch == '+') && lexer_is_digit(lexer_peek_ahead(&cursor, 1U)))) {
             status = lexer_scan_number(&cursor, &writer);
         } else if (ch == '.' && lexer_is_identifier_start(lexer_peek_ahead(&cursor, 1U))) {
             status = lexer_scan_directive(&cursor, &writer);

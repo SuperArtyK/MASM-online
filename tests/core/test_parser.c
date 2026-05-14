@@ -398,16 +398,12 @@ static int test_textbook_unsupported_keywords_are_stable(void) {
     return failures;
 }
 
-/// Verifies scheduled and backlog data types are classified without implementation.
+/// Verifies backlog-only data types remain classified without implementation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_scheduled_and_backlog_data_types_are_documented_diagnostics(void) {
     int failures = 0;
 
-    failures += expect_unsupported_feature_source(".data\nsb SBYTE -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
-    failures += expect_unsupported_feature_source(".data\nsw SWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
-    failures += expect_unsupported_feature_source(".data\nsd SDWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
-    failures += expect_unsupported_feature_source(".data\nsq SQWORD -1\n.code\nmain PROC\nmain ENDP\nEND main\n", "scheduled for the next milestone");
     failures += expect_unsupported_feature_source(".data\nr REAL4 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
     failures += expect_unsupported_feature_source(".data\nr REAL8 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");
     failures += expect_unsupported_feature_source(".data\nr REAL10 1.0\n.code\nmain PROC\nmain ENDP\nEND main\n", "backlog");

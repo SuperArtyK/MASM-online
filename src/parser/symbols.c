@@ -54,7 +54,14 @@ uint8_t vm_symbol_data_type_size_bytes(VmSymbolDataType data_type) {
         case VM_SYMBOL_DATA_TYPE_DWORD:
             return 4U;
         case VM_SYMBOL_DATA_TYPE_QWORD:
+        case VM_SYMBOL_DATA_TYPE_SQWORD:
             return 8U;
+        case VM_SYMBOL_DATA_TYPE_SBYTE:
+            return 1U;
+        case VM_SYMBOL_DATA_TYPE_SWORD:
+            return 2U;
+        case VM_SYMBOL_DATA_TYPE_SDWORD:
+            return 4U;
         default:
             return 0U;
     }
@@ -70,6 +77,14 @@ const char *vm_symbol_data_type_name(VmSymbolDataType data_type) {
             return "DWORD";
         case VM_SYMBOL_DATA_TYPE_QWORD:
             return "QWORD";
+        case VM_SYMBOL_DATA_TYPE_SBYTE:
+            return "SBYTE";
+        case VM_SYMBOL_DATA_TYPE_SWORD:
+            return "SWORD";
+        case VM_SYMBOL_DATA_TYPE_SDWORD:
+            return "SDWORD";
+        case VM_SYMBOL_DATA_TYPE_SQWORD:
+            return "SQWORD";
         default:
             return NULL;
     }
@@ -96,8 +111,31 @@ bool vm_symbol_parse_data_type(const char *text, size_t length, VmSymbolDataType
         *out_data_type = VM_SYMBOL_DATA_TYPE_QWORD;
         return true;
     }
+    if (vm_symbol_slice_equals(text, length, "SBYTE")) {
+        *out_data_type = VM_SYMBOL_DATA_TYPE_SBYTE;
+        return true;
+    }
+    if (vm_symbol_slice_equals(text, length, "SWORD")) {
+        *out_data_type = VM_SYMBOL_DATA_TYPE_SWORD;
+        return true;
+    }
+    if (vm_symbol_slice_equals(text, length, "SDWORD")) {
+        *out_data_type = VM_SYMBOL_DATA_TYPE_SDWORD;
+        return true;
+    }
+    if (vm_symbol_slice_equals(text, length, "SQWORD")) {
+        *out_data_type = VM_SYMBOL_DATA_TYPE_SQWORD;
+        return true;
+    }
 
     return false;
+}
+
+bool vm_symbol_data_type_is_signed(VmSymbolDataType data_type) {
+    return data_type == VM_SYMBOL_DATA_TYPE_SBYTE ||
+           data_type == VM_SYMBOL_DATA_TYPE_SWORD ||
+           data_type == VM_SYMBOL_DATA_TYPE_SDWORD ||
+           data_type == VM_SYMBOL_DATA_TYPE_SQWORD;
 }
 
 bool vm_symbol_set_name(VmSymbol *symbol, const char *text, size_t length) {

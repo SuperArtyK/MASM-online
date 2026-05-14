@@ -27,6 +27,14 @@ typedef enum VmSymbolDataType {
     VM_SYMBOL_DATA_TYPE_DWORD,
     /// 64-bit QWORD or DQ data element.
     VM_SYMBOL_DATA_TYPE_QWORD,
+    /// Signed 8-bit SBYTE data element.
+    VM_SYMBOL_DATA_TYPE_SBYTE,
+    /// Signed 16-bit SWORD data element.
+    VM_SYMBOL_DATA_TYPE_SWORD,
+    /// Signed 32-bit SDWORD data element.
+    VM_SYMBOL_DATA_TYPE_SDWORD,
+    /// Signed 64-bit SQWORD data element.
+    VM_SYMBOL_DATA_TYPE_SQWORD,
     /// Number of supported data types.
     VM_SYMBOL_DATA_TYPE_COUNT
 } VmSymbolDataType;
@@ -66,8 +74,14 @@ const char *vm_symbol_data_type_name(VmSymbolDataType data_type);
 /// @param text Source spelling of the type token.
 /// @param length Number of bytes in @p text.
 /// @param out_data_type Receives the parsed type on success.
-/// @return true when the spelling is BYTE, WORD, DWORD, QWORD, DB, DW, DD, or DQ.
+/// @return true when the spelling is a supported integer data declaration type.
 bool vm_symbol_parse_data_type(const char *text, size_t length, VmSymbolDataType *out_data_type);
+
+/// Returns whether a data type validates numeric initializers as signed.
+///
+/// @param data_type Data type to inspect.
+/// @return true for SBYTE, SWORD, SDWORD, and SQWORD.
+bool vm_symbol_data_type_is_signed(VmSymbolDataType data_type);
 
 /// Copies a source symbol name into a fixed symbol slot.
 ///

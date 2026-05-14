@@ -245,8 +245,8 @@ static int test_number_forms(void) {
 /// @return Zero on success, otherwise a positive failure count.
 static int test_signed_number_forms(void) {
     int failures = 0;
-    const char *source = "-42 -0x2A -2Ah";
-    VmLexerToken tokens[8];
+    const char *source = "-42 -0x2A -2Ah +42 +0x2A +2Ah";
+    VmLexerToken tokens[12];
     VmLexerDiagnostic diagnostics[4];
     VmLexerResult result;
 
@@ -266,6 +266,22 @@ static int test_signed_number_forms(void) {
     failures += expect_u32(tokens[2].number_base, 16U, "-2Ah should have hex base");
     if (!tokens[2].number_is_negative) {
         failures += record_failure("-2Ah should be marked negative");
+    }
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_NUMBER, "+42 should be a number");
+    failures += expect_u64(tokens[3].number_value, 42U, "+42 should preserve magnitude 42");
+    failures += expect_u32(tokens[3].number_base, 10U, "+42 should have decimal base");
+    if (tokens[3].number_is_negative) {
+        failures += record_failure("+42 should not be marked negative");
+    }
+    failures += expect_u64(tokens[4].number_value, 42U, "+0x2A should preserve magnitude 42");
+    failures += expect_u32(tokens[4].number_base, 16U, "+0x2A should have hex base");
+    if (tokens[4].number_is_negative) {
+        failures += record_failure("+0x2A should not be marked negative");
+    }
+    failures += expect_u64(tokens[5].number_value, 42U, "+2Ah should preserve magnitude 42");
+    failures += expect_u32(tokens[5].number_base, 16U, "+2Ah should have hex base");
+    if (tokens[5].number_is_negative) {
+        failures += record_failure("+2Ah should not be marked negative");
     }
 
     return failures;

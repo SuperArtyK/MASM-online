@@ -327,6 +327,8 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
         "    mov [nums], 300\n"
         "    mov ecx, [nums + 0]\n"
         "    mov nums[0], 400\n"
+        "    mov edx, [nums+16]\n"
+        "    mov DWORD PTR [nums +20], 500\n"
         "main ENDP\n"
         "END main\n";
     DataSectionTestBuffers buffers;
@@ -334,7 +336,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "constant symbol offsets should parse");
-    failures += expect_size(result.instruction_count, 7U, "constant symbol offset sample should emit seven instructions");
+    failures += expect_size(result.instruction_count, 9U, "constant symbol offset sample should emit nine instructions");
     failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "nums[8] destination should be memory");
     failures += expect_u32(buffers.instructions[0].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 8U, "nums[8] destination should use byte offset 8");
     failures += expect_u32(buffers.instructions[0].destination.width_bits, 32U, "nums[8] destination should infer DWORD width");
@@ -346,6 +348,8 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     failures += expect_u32(buffers.instructions[4].destination.width_bits, 32U, "[nums] destination should infer DWORD width");
     failures += expect_u32(buffers.instructions[5].source.address, VM_MEMORY_DEFAULT_DATA_BASE, "[nums + 0] source should use byte offset 0");
     failures += expect_u32(buffers.instructions[6].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "nums[0] destination should use byte offset 0");
+    failures += expect_u32(buffers.instructions[7].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 16U, "[nums+16] source should accept compact unary-plus offset spelling");
+    failures += expect_u32(buffers.instructions[8].destination.address, VM_MEMORY_DEFAULT_DATA_BASE + 20U, "DWORD PTR [nums +20] destination should accept unary-plus offset token");
 
     return failures;
 }
@@ -1344,6 +1348,8 @@ static int test_register_indirect_operands_parse_to_ir(void) {
         "    mov eax, [esi]\n"
         "    mov nums[esi], eax\n"
         "    mov eax, [nums + esi]\n"
+        "    mov DWORD PTR [esi+12], 7\n"
+        "    mov ebx, DWORD PTR [esi +16]\n"
         "main ENDP\n"
         "END main\n";
     DataSectionTestBuffers buffers;
@@ -1351,7 +1357,7 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "register-indirect sample should parse");
-    failures += expect_size(result.instruction_count, 7U, "register-indirect sample should emit seven instructions");
+    failures += expect_size(result.instruction_count, 9U, "register-indirect sample should emit nine instructions");
     failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "DWORD PTR [esi + 8] should emit register memory destination");
     failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_ESI, "DWORD PTR [esi + 8] should use ESI base");
     failures += expect_u32(buffers.instructions[1].destination.address, 0U, "plain [esi + 8] should not include a static symbol base");
@@ -1363,6 +1369,8 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     failures += expect_u32(buffers.instructions[5].destination.address, VM_MEMORY_DEFAULT_DATA_BASE, "nums[esi] should include nums symbol base");
     failures += expect_u32(buffers.instructions[5].destination.reg, VM_REGISTER_ESI, "nums[esi] should use ESI as runtime byte offset");
     failures += expect_u32(buffers.instructions[6].source.address, VM_MEMORY_DEFAULT_DATA_BASE, "[nums + esi] should include nums symbol base");
+    failures += expect_u32(buffers.instructions[7].destination.immediate, 12U, "DWORD PTR [esi+12] should accept compact unary-plus displacement spelling");
+    failures += expect_u32(buffers.instructions[8].source.immediate, 16U, "DWORD PTR [esi +16] should accept unary-plus displacement token");
 
     return failures;
 }
@@ -1421,7 +1429,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":17", "response should identify Milestone 17");
+    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1550,7 +1558,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":17", "response should identify Milestone 17");
+    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1575,13 +1583,145 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":17", "response should identify Milestone 17");
+    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
     failures += expect_json_contains(json, "\"oldUnsigned\":0", "memory change should include old byte decimal");
     failures += expect_json_contains(json, "\"newHex\":\"64h\"", "memory change should include new byte hex");
     failures += expect_json_contains(json, "\"newUnsigned\":100", "memory change should include new byte decimal");
+
+    return failures;
+}
+
+
+/// Verifies signed integer declarations lay out data and metadata correctly.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_integer_data_declarations_layout_and_metadata(void) {
+    const char *source =
+        ".data\n"
+        "sb SBYTE -1, 127\n"
+        "sw SWORD -2\n"
+        "sd SDWORD -3\n"
+        "sq SQWORD -4\n"
+        "arr SWORD 3 DUP(-1)\n"
+        "plus SDWORD +42\n"
+        "pair SWORD 'AB'\n"
+        "uninit SQWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "signed integer declarations should parse");
+    failures += expect_size(result.symbol_count, 8U, "signed declaration sample should create eight symbols");
+    failures += expect_u8(buffers.data_image[0], 0xFFU, "SBYTE -1 should encode FF");
+    failures += expect_u8(buffers.data_image[1], 0x7FU, "SBYTE 127 should encode 7F");
+    failures += expect_u8(buffers.data_image[2], 0xFEU, "SWORD -2 low byte should encode FE");
+    failures += expect_u8(buffers.data_image[3], 0xFFU, "SWORD -2 high byte should encode FF");
+    failures += expect_u8(buffers.data_image[4], 0xFDU, "SDWORD -3 low byte should encode FD");
+    failures += expect_u8(buffers.data_image[8], 0xFCU, "SQWORD -4 low byte should encode FC");
+    failures += expect_u8(buffers.data_image[16], 0xFFU, "SWORD DUP(-1) first byte should encode FF");
+    failures += expect_u8(buffers.data_image[22], 0x2AU, "SDWORD +42 low byte should encode 2A");
+    failures += expect_u8(buffers.data_image[26], 0x41U, "SWORD 'AB' low byte should encode A");
+    failures += expect_u8(buffers.data_image[27], 0x42U, "SWORD 'AB' high byte should encode B");
+    failures += expect_u8(buffers.symbols[0].element_size_bytes, 1U, "SBYTE symbol should have one-byte elements");
+    failures += expect_u32(buffers.symbols[0].element_count, 2U, "SBYTE comma initializer should count two elements");
+    failures += expect_u8(buffers.symbols[4].element_size_bytes, 2U, "SWORD DUP symbol should have two-byte elements");
+    failures += expect_u32(buffers.symbols[4].element_count, 3U, "SWORD DUP symbol should count repeated elements");
+    failures += expect_u32(buffers.symbols[7].size_bytes, 8U, "SQWORD ? should reserve eight bytes");
+    if (!buffers.symbols[7].has_uninitialized_initializer) {
+        failures += record_failure("SQWORD ? should retain uninitialized metadata");
+    }
+    if (!vm_symbol_data_type_is_signed(buffers.symbols[0].data_type) || !vm_symbol_data_type_is_signed(buffers.symbols[3].data_type)) {
+        failures += record_failure("signed symbol data types should be marked signed");
+    }
+
+    return failures;
+}
+
+/// Verifies signed declaration range validation rejects values outside signed bounds.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_integer_range_errors(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nsb SBYTE 127\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SBYTE 127 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsb SBYTE -128\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SBYTE -128 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsb SBYTE 128\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SBYTE 128 should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "SBYTE positive overflow diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nsb SBYTE -129\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SBYTE -129 should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "SBYTE negative overflow diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nsw SWORD 32767\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SWORD 32767 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsw SWORD -32768\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SWORD -32768 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsw SWORD 32768\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SWORD positive overflow should fail");
+    failures += expect_parser_status(parse_for_test(".data\nsw SWORD -32769\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SWORD negative overflow should fail");
+    failures += expect_parser_status(parse_for_test(".data\nsd SDWORD 2147483647\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SDWORD 2147483647 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsd SDWORD -2147483648\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SDWORD -2147483648 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsd SDWORD 2147483648\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SDWORD positive overflow should fail");
+    failures += expect_parser_status(parse_for_test(".data\nsd SDWORD -2147483649\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SDWORD negative overflow should fail");
+    failures += expect_parser_status(parse_for_test(".data\nsq SQWORD 9223372036854775807\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SQWORD 9223372036854775807 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsq SQWORD -9223372036854775808\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "SQWORD -9223372036854775808 should parse");
+    failures += expect_parser_status(parse_for_test(".data\nsq SQWORD 9223372036854775808\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SQWORD positive overflow should fail");
+    failures += expect_parser_status(parse_for_test(".data\nsq SQWORD -9223372036854775809\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SQWORD negative overflow should fail");
+
+    return failures;
+}
+
+/// Verifies signed metadata operators and 64-bit execution diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_integer_metadata_and_64bit_execution_limits(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "sq SQWORD -4\n"
+        "arr SWORD 3 DUP(-1)\n"
+        ".code\n"
+        "main PROC\n"
+        "mov eax, TYPE sq\n"
+        "mov ebx, LENGTHOF arr\n"
+        "mov ecx, SIZEOF arr\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK, "signed metadata operator program should parse");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 8U, "TYPE SQWORD should produce 8");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 3U, "LENGTHOF SWORD DUP should produce 3");
+    failures += expect_u32(buffers.instructions[2].source.immediate, 6U, "SIZEOF SWORD DUP should produce 6");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "sq SQWORD -1\n"
+        ".code\n"
+        "main PROC\n"
+        "mov SQWORD PTR sq, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SQWORD PTR executable use should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SQWORD PTR diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "sb SBYTE -1\n"
+        ".code\n"
+        "main PROC\n"
+        "mov eax, sb\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ordinary mov eax, SBYTE memory should not auto sign-extend");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "ordinary mov width mismatch should remain explicit");
 
     return failures;
 }
@@ -1632,11 +1772,14 @@ int main(void) {
     failures += test_ptr_width_override_error_paths();
     failures += test_wasm_json_reports_ptr_width_memory_changes();
     failures += test_wasm_json_reports_symbolic_memory_change();
+    failures += test_signed_integer_data_declarations_layout_and_metadata();
+    failures += test_signed_integer_range_errors();
+    failures += test_signed_integer_metadata_and_64bit_execution_limits();
 
     if (failures != 0) {
         return 1;
     }
 
-    puts("Milestone 15 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 18 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

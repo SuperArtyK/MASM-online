@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 17.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 18.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -116,6 +116,17 @@ static bool vm_parser_add_lexer_status_diagnostic(
 /// @param out_value Receives the encoded 32-bit immediate value.
 /// @return true when the token fits the requested width.
 static bool vm_parser_encode_number_for_width(const VmLexerToken *token, uint8_t width_bits, uint32_t *out_value);
+
+/// Encodes a numeric initializer for a declared data type.
+///
+/// Signed declarations require positive and negative literals to fit the signed
+/// range; unsigned declarations keep the existing unsigned-positive behavior.
+///
+/// @param token Number token to encode.
+/// @param data_type Declared data type controlling range validation.
+/// @param out_value Receives the encoded unsigned storage value.
+/// @return true when the token fits the requested declaration type.
+static bool vm_parser_encode_number_for_data_type(const VmLexerToken *token, VmSymbolDataType data_type, uint64_t *out_value);
 
 /// Returns whether a byte is an ASCII whitespace byte other than line endings.
 ///
@@ -290,20 +301,16 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
     return vm_parser_find_unsupported_feature_message(token, keywords, sizeof(keywords) / sizeof(keywords[0]));
 }
 
-/// Returns an unsupported-feature message for a scheduled or deferred data type.
+/// Returns an unsupported-feature message for a deferred data type.
 ///
-/// Signed integer declarations are scheduled for the next milestone. Non-integer
-/// declaration families are documented backlog items. This helper classifies
-/// them without implementing their storage semantics.
+/// Signed integer declarations are implemented in Milestone 18. Non-integer
+/// declaration families remain documented backlog items and are still classified
+/// without implementing their storage semantics.
 ///
 /// @param token Candidate data-type token.
 /// @return Static unsupported-feature message, or NULL when the type is not recognized.
 static const char *vm_parser_unsupported_data_type_message(const VmLexerToken *token) {
     static const VmParserUnsupportedFeature data_types[] = {
-        {"sbyte", "Unsupported feature: SBYTE data declarations are scheduled for the next milestone."},
-        {"sword", "Unsupported feature: SWORD data declarations are scheduled for the next milestone."},
-        {"sdword", "Unsupported feature: SDWORD data declarations are scheduled for the next milestone."},
-        {"sqword", "Unsupported feature: SQWORD data declarations are scheduled for the next milestone."},
         {"real4", "Unsupported feature: REAL4 floating-point declarations are backlog work."},
         {"real8", "Unsupported feature: REAL8 floating-point declarations are backlog work."},
         {"real10", "Unsupported feature: REAL10 floating-point declarations are backlog work."},
@@ -937,6 +944,52 @@ static bool vm_parser_encode_number_for_size(const VmLexerToken *token, uint8_t 
     return true;
 }
 
+/// Returns the largest positive value accepted by a signed data declaration.
+///
+/// @param size_bytes Element size in bytes.
+/// @return Maximum signed positive value for that size, or zero for invalid sizes.
+static uint64_t vm_parser_signed_positive_max_for_size(uint8_t size_bytes) {
+    switch (size_bytes) {
+        case 1U:
+            return 0x7FULL;
+        case 2U:
+            return 0x7FFFULL;
+        case 4U:
+            return 0x7FFFFFFFULL;
+        case 8U:
+            return 0x7FFFFFFFFFFFFFFFULL;
+        default:
+            return 0ULL;
+    }
+}
+
+static bool vm_parser_encode_number_for_data_type(const VmLexerToken *token, VmSymbolDataType data_type, uint64_t *out_value) {
+    uint8_t size_bytes = vm_symbol_data_type_size_bytes(data_type);
+
+    if (token == NULL || out_value == NULL || token->kind != VM_LEXER_TOKEN_NUMBER || size_bytes == 0U || size_bytes > 8U) {
+        return false;
+    }
+
+    if (!vm_symbol_data_type_is_signed(data_type)) {
+        return vm_parser_encode_number_for_size(token, size_bytes, out_value);
+    }
+
+    if (token->number_is_negative) {
+        uint64_t max_magnitude = vm_parser_max_negative_magnitude_for_size(size_bytes);
+        if (token->number_value > max_magnitude) {
+            return false;
+        }
+        *out_value = 0ULL - token->number_value;
+        return true;
+    }
+
+    if (token->number_value > vm_parser_signed_positive_max_for_size(size_bytes)) {
+        return false;
+    }
+    *out_value = token->number_value;
+    return true;
+}
+
 /// Decodes one simple escaped string byte.
 ///
 /// @param ch Escaped byte after a backslash.
@@ -1145,8 +1198,8 @@ static bool vm_parser_parse_single_data_initializer(
 
     if (token->kind == VM_LEXER_TOKEN_NUMBER) {
         uint64_t encoded_value = 0U;
-        if (!vm_parser_encode_number_for_size(token, element_size, &encoded_value)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, "Data initializer exceeds the declared element width.");
+        if (!vm_parser_encode_number_for_data_type(token, data_type, &encoded_value)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, vm_symbol_data_type_is_signed(data_type) ? "Data initializer exceeds the signed range for the declared type." : "Data initializer exceeds the declared element width.");
             return false;
         }
         if (!vm_parser_append_data_integer(state, encoded_value, element_size, token)) {
@@ -1181,7 +1234,7 @@ static bool vm_parser_parse_single_data_initializer(
             return false;
         }
 
-        if (data_type == VM_SYMBOL_DATA_TYPE_BYTE) {
+        if (data_type == VM_SYMBOL_DATA_TYPE_BYTE || data_type == VM_SYMBOL_DATA_TYPE_SBYTE) {
             for (byte_index = 0U; byte_index < byte_count; byte_index += 1U) {
                 if (!vm_parser_append_data_byte(state, bytes[byte_index], token)) {
                     return false;
@@ -1341,7 +1394,7 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, type_token, unsupported_type_message);
             return false;
         }
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE, type_token, "Expected BYTE, WORD, DWORD, QWORD, DB, DW, DD, or DQ data type.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_DATA_TYPE, type_token, "Expected BYTE, WORD, DWORD, QWORD, SBYTE, SWORD, SDWORD, SQWORD, DB, DW, DD, or DQ data type.");
         return false;
     }
 
@@ -1475,6 +1528,24 @@ static bool vm_parser_number_to_i32_offset(const VmLexerToken *token, int32_t *o
     return true;
 }
 
+/// Returns whether a numeric token was spelled with a leading unary plus.
+///
+/// The lexer stores unary-plus numeric literals as number tokens. Bracketed
+/// offset parsers use this helper to preserve existing compact offset forms
+/// such as `[esi+4]` and `[nums+8]` without accepting whitespace-only
+/// expression forms such as `[nums 8]`.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is a non-negative number token whose lexeme starts with `+`.
+static bool vm_parser_number_token_has_leading_plus(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_NUMBER &&
+           !token->number_is_negative &&
+           token->lexeme != NULL &&
+           token->lexeme_length > 0U &&
+           token->lexeme[0] == '+';
+}
+
 /// Returns whether a token can carry a data symbol name.
 ///
 /// The lexer classifies register-looking words such as `ch` as register tokens.
@@ -1549,12 +1620,12 @@ static bool vm_parser_build_symbol_offset_memory_operand(
     }
 
     if (explicit_width_bits == 64U) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : symbol_token, "QWORD PTR execution is deferred until Extended 32-bit Mode.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : symbol_token, "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
         return false;
     }
 
     if (explicit_width_bits == 0U && symbol->element_size_bytes > 4U) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD and SQWORD memory operands are deferred until Extended 32-bit Mode.");
         return false;
     }
 
@@ -1660,7 +1731,7 @@ static bool vm_parser_build_register_memory_operand(
     }
 
     if (explicit_width_bits == 64U) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : base_token, "QWORD PTR execution is deferred until Extended 32-bit Mode.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : base_token, "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
         return false;
     }
 
@@ -1671,7 +1742,7 @@ static bool vm_parser_build_register_memory_operand(
         }
         if (width_bits == 0U) {
             if (symbol->element_size_bytes > 4U) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD memory operands are deferred until Extended 32-bit Mode.");
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "QWORD and SQWORD memory operands are deferred until Extended 32-bit Mode.");
                 return false;
             }
             width_bits = (uint8_t)(symbol->element_size_bytes * 8U);
@@ -1711,6 +1782,21 @@ static bool vm_parser_parse_register_displacement_suffix(VmParserState *state, i
     if (token != NULL && token->kind == VM_LEXER_TOKEN_ASTERISK) {
         vm_parser_add_scaled_index_diagnostic(state, token);
         return false;
+    }
+
+    if (vm_parser_number_token_has_leading_plus(token)) {
+        int32_t magnitude = 0;
+        if (!vm_parser_number_to_i32_offset(token, &magnitude)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, token, "Register displacement is outside the supported signed 32-bit range.");
+            return false;
+        }
+        *out_displacement = magnitude;
+        vm_parser_advance(state);
+        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+            vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+            return false;
+        }
+        return true;
     }
 
     if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
@@ -1939,7 +2025,7 @@ static bool vm_parser_parse_bracket_symbol_offset_suffix(VmParserState *state, i
         return true;
     }
 
-    if (token != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && token->number_is_negative) {
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && (token->number_is_negative || vm_parser_number_token_has_leading_plus(token))) {
         if (!vm_parser_number_to_i32_offset(token, &offset)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, token, "Symbol offset is outside the supported signed 32-bit range.");
             return false;
@@ -2063,7 +2149,7 @@ static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, Vm
 ///
 /// @param token Token to inspect.
 /// @param out_width_bits Receives 8, 16, 32, or 64 on success.
-/// @return true when @p token is BYTE, WORD, DWORD, or QWORD.
+/// @return true when @p token is BYTE, WORD, DWORD, QWORD, or SQWORD.
 static bool vm_parser_parse_ptr_width_keyword(const VmLexerToken *token, uint8_t *out_width_bits) {
     if (token == NULL || out_width_bits == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
         return false;
@@ -2081,7 +2167,7 @@ static bool vm_parser_parse_ptr_width_keyword(const VmLexerToken *token, uint8_t
         *out_width_bits = 32U;
         return true;
     }
-    if (vm_parser_token_equals(token, "QWORD")) {
+    if (vm_parser_token_equals(token, "QWORD") || vm_parser_token_equals(token, "SQWORD")) {
         *out_width_bits = 64U;
         return true;
     }
@@ -2105,7 +2191,7 @@ static bool vm_parser_current_token_starts_ptr_width(const VmParserState *state)
 ///
 /// @param state Parser state to inspect.
 /// @return true when the current token is an identifier followed by PTR but is
-/// not one of BYTE, WORD, DWORD, or QWORD.
+/// not one of BYTE, WORD, DWORD, QWORD, or SQWORD.
 static bool vm_parser_current_token_is_malformed_ptr_prefix(const VmParserState *state) {
     const VmLexerToken *token = vm_parser_current_token(state);
     const VmLexerToken *next_token = vm_parser_peek_token(state, 1U);
@@ -2338,7 +2424,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
     }
 
     if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, or QWORD before PTR.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, QWORD, or SQWORD before PTR.");
         return false;
     }
 
@@ -2554,7 +2640,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     }
 
     if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, or QWORD before PTR.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, QWORD, or SQWORD before PTR.");
         return false;
     }
 

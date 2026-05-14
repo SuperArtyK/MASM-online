@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 17 diagnostics checkpoint UI: source editing, Run button,
+  This page provides the Milestone 18 signed integer data UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program still demonstrates the previously implemented data/operator path.
+  execution stay inside the worker/Wasm path; the default program demonstrates signed declaration metadata.
 -->
 <html lang="en">
   <head>
@@ -18,19 +18,19 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 17: multi-diagnostic unsupported-feature recovery. The default program still demonstrates the existing SIZEOF and packed-character literal path; sources with several known unsupported constructs now report multiple simulator messages.</p>
+        <p class="muted">Milestone 18: signed integer data declarations and unary-plus numeric literals. The default program demonstrates SQWORD/SWORD metadata operators while preserving earlier diagnostics.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.data
-nums DWORD 10 DUP(0)
-pair WORD 'AB'
-tag  DWORD 'ABCD'
-ch   BYTE 'A'
+sb SBYTE -1
+sw SWORD -2
+sd SDWORD -3
+sq SQWORD -4
+arr SWORD 3 DUP(-1)
 .code
 main PROC
-    mov eax, SIZEOF nums
-    mov bl, ch
-    mov cx, pair
-    mov edx, 'ABCD'
+    mov eax, TYPE sq
+    mov ebx, LENGTHOF arr
+    mov ecx, SIZEOF arr
 main ENDP
 END main</textarea>
         <div class="controls">
