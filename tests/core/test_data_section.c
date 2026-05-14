@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 12 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE operator support.
+ * @brief Tests for Milestone 13 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE and LENGTHOF operator support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 12 parser test.
+/// Number of lexer tokens available to each Milestone 13 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 12 parser test.
+/// Number of lexer diagnostics available to each Milestone 13 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 12 parser test.
+/// Number of parser diagnostics available to each Milestone 13 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 12 parser test.
+/// Number of IR instructions available to each Milestone 13 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 12 parser test.
+/// Number of source-text bytes available to each Milestone 13 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 12 parser test.
+/// Number of data symbols available to each Milestone 13 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 12 parser test.
+/// Number of data image bytes available to each Milestone 13 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 12 test.
+/// Holds all caller-owned parser buffers for one Milestone 13 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 12 buffers.
+/// Parses source with full Milestone 13 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 12 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 13 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -350,7 +350,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 12 acceptance program executes through parser and VM.
+/// Verifies the Milestone 13 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -370,7 +370,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 12 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 13 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -601,6 +601,177 @@ static int test_type_operator_preserves_offset_source_operands(void) {
     return failures;
 }
 
+/// Verifies LENGTHOF symbol emits element-count immediates for supported declarations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lengthof_operator_parse_to_immediates(void) {
+    const char *source =
+        ".data\n"
+        "b BYTE 0\n"
+        "ba DB 2 DUP(0)\n"
+        "w WORD 0\n"
+        "wa DW 3 DUP(0)\n"
+        "d DWORD 0\n"
+        "da DD 4 DUP(0)\n"
+        "q QWORD 0\n"
+        "qa DQ 5 DUP(0)\n"
+        "msg BYTE \"Hi\", 0\n"
+        "many BYTE 2 DUP(\"AB\")\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, LENGTHOF b\n"
+        "    mov ebx, LENGTHOF ba\n"
+        "    mov ecx, LENGTHOF w\n"
+        "    mov edx, LENGTHOF wa\n"
+        "    mov eax, LENGTHOF d\n"
+        "    mov ebx, LENGTHOF da\n"
+        "    mov ecx, LENGTHOF q\n"
+        "    mov edx, LENGTHOF qa\n"
+        "    mov eax, lEnGtHoF msg\n"
+        "    mov ebx, LENGTHOF many\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "LENGTHOF operator sample should parse");
+    failures += expect_size(result.instruction_count, 10U, "LENGTHOF sample should emit ten instructions");
+    failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_IMMEDIATE, "LENGTHOF b should emit an immediate");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "LENGTHOF scalar BYTE should be 1");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 2U, "LENGTHOF DB DUP should be 2");
+    failures += expect_u32(buffers.instructions[2].source.immediate, 1U, "LENGTHOF scalar WORD should be 1");
+    failures += expect_u32(buffers.instructions[3].source.immediate, 3U, "LENGTHOF DW DUP should be 3");
+    failures += expect_u32(buffers.instructions[4].source.immediate, 1U, "LENGTHOF scalar DWORD should be 1");
+    failures += expect_u32(buffers.instructions[5].source.immediate, 4U, "LENGTHOF DD DUP should be 4");
+    failures += expect_u32(buffers.instructions[6].source.immediate, 1U, "LENGTHOF scalar QWORD should be 1");
+    failures += expect_u32(buffers.instructions[7].source.immediate, 5U, "LENGTHOF DQ DUP should be 5");
+    failures += expect_u32(buffers.instructions[8].source.immediate, 3U, "mixed-case LENGTHOF BYTE string should count bytes including terminator");
+    failures += expect_u32(buffers.instructions[9].source.immediate, 4U, "LENGTHOF flat DUP string should multiply byte count by repeat count");
+    failures += expect_u32(buffers.instructions[0].source.width_bits, 32U, "LENGTHOF immediates should use 32-bit immediate width");
+
+    return failures;
+}
+
+/// Verifies LENGTHOF source operands execute through parser and VM integration.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lengthof_operator_executes_acceptance_program(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        "buf  BYTE \"Hello\", 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, LENGTHOF nums\n"
+        "    mov ebx, LENGTHOF buf\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "LENGTHOF acceptance source should parse");
+    failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("VM should initialize for LENGTHOF acceptance test");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("LENGTHOF acceptance data image should load");
+    failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("LENGTHOF acceptance program should load");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("LENGTHOF nums mov should execute");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("LENGTHOF buf mov should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX should be readable after LENGTHOF mov");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX should be readable after LENGTHOF mov");
+    failures += expect_u32(eax, 10U, "LENGTHOF nums should leave EAX = 10");
+    failures += expect_u32(ebx, 6U, "LENGTHOF buf should leave EBX = 6");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies LENGTHOF can supply an immediate value for a memory destination.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lengthof_operator_executes_memory_immediate_context(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        "outval DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov outval, LENGTHOF nums\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t memory_value = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "LENGTHOF memory-immediate source should parse");
+    failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("VM should initialize for LENGTHOF memory-immediate test");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("LENGTHOF memory-immediate data image should load");
+    failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("LENGTHOF memory-immediate program should load");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("LENGTHOF memory-immediate mov should execute");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 40U, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("outval should be readable after LENGTHOF memory-immediate mov");
+    failures += expect_u32(memory_value, 10U, "mov outval, LENGTHOF nums should write DWORD value 10");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies LENGTHOF preserves existing OFFSET and TYPE behavior in the same program.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lengthof_operator_preserves_type_and_offset_source_operands(void) {
+    const char *source =
+        ".data\n"
+        "msg BYTE \"Hi\", 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET msg\n"
+        "    mov ebx, TYPE msg\n"
+        "    mov ecx, LENGTHOF msg\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "OFFSET, TYPE, and LENGTHOF source operands should parse together");
+    failures += expect_u32(buffers.instructions[0].source.immediate, VM_MEMORY_DEFAULT_DATA_BASE, "OFFSET msg should remain the symbol address");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 1U, "TYPE msg should return BYTE element size");
+    failures += expect_u32(buffers.instructions[2].source.immediate, 3U, "LENGTHOF msg should return BYTE string element count");
+
+    return failures;
+}
+
+/// Verifies structured parser diagnostics for unsupported LENGTHOF expression forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_lengthof_operator_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF missing\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF unknown symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "LENGTHOF unknown symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF without symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "LENGTHOF missing symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF nums + 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF arithmetic expression should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, "LENGTHOF expression diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF [nums]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF bracket expression should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, "LENGTHOF bracket expression diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, SIZEOF nums\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SIZEOF should remain unimplemented");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "SIZEOF should not be implemented by LENGTHOF milestone");
+
+    return failures;
+}
+
 /// Verifies structured parser diagnostics for unsupported TYPE expression forms.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -621,16 +792,13 @@ static int test_type_operator_error_paths(void) {
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, TYPE [nums]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TYPE bracket expression should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, "TYPE bracket expression diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF nums\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF should remain unimplemented");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "LENGTHOF should not be implemented by TYPE milestone");
-
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, SIZEOF nums\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SIZEOF should remain unimplemented");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "SIZEOF should not be implemented by TYPE milestone");
 
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 12 error paths.
+/// Verifies parser diagnostics for new Milestone 13 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -812,7 +980,7 @@ static int test_ptr_width_overrides_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 12 acceptance program executes explicit-width writes.
+/// Verifies the Milestone 13 acceptance program executes explicit-width writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_ptr_width_overrides_execute_acceptance_program(void) {
@@ -927,7 +1095,7 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 12 register-indirect acceptance program executes.
+/// Verifies the Milestone 13 register-indirect acceptance program executes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_register_indirect_acceptance_program_executes(void) {
@@ -981,7 +1149,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
+    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1110,7 +1278,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
+    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1135,7 +1303,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
+    failures += expect_json_contains(json, "\"phase\":13", "response should identify Milestone 13");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1148,7 +1316,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 12 tests pass.
+/// @return Zero when all Milestone 13 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -1163,6 +1331,11 @@ int main(void) {
     failures += test_type_operator_executes_acceptance_program();
     failures += test_type_operator_executes_memory_immediate_context();
     failures += test_type_operator_preserves_offset_source_operands();
+    failures += test_lengthof_operator_parse_to_immediates();
+    failures += test_lengthof_operator_executes_acceptance_program();
+    failures += test_lengthof_operator_executes_memory_immediate_context();
+    failures += test_lengthof_operator_preserves_type_and_offset_source_operands();
+    failures += test_lengthof_operator_error_paths();
     failures += test_type_operator_error_paths();
     failures += test_data_error_paths();
     failures += test_negative_data_initializers_and_symbol_writes();
@@ -1186,6 +1359,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 12 data section, register-indirect, and TYPE tests passed.");
+    puts("Milestone 13 data section, register-indirect, and TYPE and LENGTHOF tests passed.");
     return 0;
 }

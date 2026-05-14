@@ -1,11 +1,11 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 12.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 13.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
  * remains limited to implemented data declarations, OFFSET, direct symbol
- * memory operands, constant symbol-offset memory operands, PTR width overrides, and register-indirect memory operands and TYPE expressions for mov/add/sub.
+ * memory operands, constant symbol-offset memory operands, PTR width overrides, and register-indirect memory operands, TYPE expressions, and LENGTHOF expressions for mov/add/sub.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -100,6 +100,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX,
     /// A TYPE expression was recognized but is outside the implemented TYPE symbol form.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION,
+    /// A LENGTHOF expression was recognized but is outside the implemented LENGTHOF symbol form.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION,
     /// A DUP initializer was malformed or unsupported.
     VM_PARSER_DIAGNOSTIC_INVALID_DUP,
     /// Number of parser diagnostic codes.
@@ -179,7 +181,7 @@ typedef struct VmParserResult {
 /// The parser accepts optional .data declarations before .code, emits data-symbol
 /// metadata and a deterministic .data image, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
-/// `OFFSET symbol`, `TYPE symbol`, constant symbol-offset memory operands, register-indirect memory operands, or PTR width
+/// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, constant symbol-offset memory operands, register-indirect memory operands, or PTR width
 /// overrides on supported memory operands; destination operands may use
 /// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or PTR
 /// width overrides on supported memory operands.

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 12 vertical slice: source editing, Run button,
+  This page provides the Milestone 13 vertical slice: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
   execution stay inside the worker/Wasm path.
 -->
@@ -18,13 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 12: run a .data + .code program using the TYPE operator through the worker/Wasm path.</p>
+        <p class="muted">Milestone 13: run a .data + .code program using the LENGTHOF operator through the worker/Wasm path.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.data
 nums DWORD 10 DUP(0)
+buf  BYTE "Hello", 0
 .code
 main PROC
-    mov eax, TYPE nums
+    mov eax, LENGTHOF nums
+    mov ebx, LENGTHOF buf
 main ENDP
 END main</textarea>
         <div class="controls">

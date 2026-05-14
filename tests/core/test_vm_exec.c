@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 12.
+ * @brief Unit tests for the VM executor through Milestone 13.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -492,7 +492,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 12.
+/// Runs all executor tests through Milestone 13.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -513,6 +513,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 12 passed.");
+    puts("Executor tests through Milestone 13 passed.");
     return 0;
 }
