@@ -900,6 +900,73 @@ static int test_lexer_capacity_failure_is_distinct(void) {
     return failures;
 }
 
+/// Verifies parser support for Milestone 19 extension opcodes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_extension_instructions_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    movsx eax, al\n"
+        "    movzx ebx, ax\n"
+        "    cbw\n"
+        "    cwde\n"
+        "    cwd\n"
+        "    cdq\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "extension instruction program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "extension instruction program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 6U, "extension instruction program should emit six instructions");
+    failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_MOVSX, "first extension opcode should be MOVSX");
+    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_MOVZX, "second extension opcode should be MOVZX");
+    failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_CBW, "third extension opcode should be CBW");
+    failures += expect_u32(buffers.instructions[3].opcode, VM_IR_OPCODE_CWDE, "fourth extension opcode should be CWDE");
+    failures += expect_u32(buffers.instructions[4].opcode, VM_IR_OPCODE_CWD, "fifth extension opcode should be CWD");
+    failures += expect_u32(buffers.instructions[5].opcode, VM_IR_OPCODE_CDQ, "sixth extension opcode should be CDQ");
+    failures += expect_u32(buffers.instructions[2].destination.kind, VM_IR_OPERAND_NONE, "CBW should emit no destination operand");
+    failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_NONE, "CBW should emit no source operand");
+
+    return failures;
+}
+
+/// Verifies parser diagnostics for malformed extension-instruction operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_extension_instruction_parse_error_paths(void) {
+    int failures = 0;
+    const char *same_width_source =
+        ".code\n"
+        "main PROC\n"
+        "    movsx ax, bx\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *operand_on_cbw_source =
+        ".code\n"
+        "main PROC\n"
+        "    cbw eax\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(same_width_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "same-width MOVSX should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 1U, "same-width MOVSX should produce one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "same-width MOVSX diagnostic should be operand width mismatch");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "wider than the source", "same-width MOVSX diagnostic should describe width rule");
+
+    failures += expect_parser_status(parse_for_test(operand_on_cbw_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CBW with operand should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 1U, "CBW with operand should produce one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_LINE_END, "CBW with operand should expect line end");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -956,6 +1023,8 @@ int main(void) {
     failures += test_capacity_and_invalid_arguments();
     failures += test_lexer_diagnostics_are_preserved_by_parser();
     failures += test_lexer_capacity_failure_is_distinct();
+    failures += test_extension_instructions_parse_to_ir();
+    failures += test_extension_instruction_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

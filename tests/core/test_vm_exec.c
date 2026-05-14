@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 15.
+ * @brief Unit tests for the VM executor through Milestone 19.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -464,6 +464,162 @@ static int test_error_paths_and_diagnostics(void) {
     return failures;
 }
 
+/// Verifies MOVSX and MOVZX over register and memory sources.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_movsx_movzx_register_and_memory_sources(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    uint32_t ecx = 0U;
+    uint32_t edx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov al, 80h", 0U},
+        {VM_IR_OPCODE_MOVSX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 2U, "movsx eax, al", 1U},
+        {VM_IR_OPCODE_MOVZX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 3U, "movzx ebx, al", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0xFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "mov BYTE PTR [data], 0FFh", 3U},
+        {VM_IR_OPCODE_MOVSX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U}, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, "main.asm", 5U, "movsx ecx, BYTE PTR [data]", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x8001U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "mov WORD PTR [data+2], 8001h", 5U},
+        {VM_IR_OPCODE_MOVSX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EDX, 0U}, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U}, "main.asm", 7U, "movsx edx, WORD PTR [data+2]", 6U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for extension tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "extension program should load");
+    while (!vm.halted) {
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "extension step should execute");
+    }
+
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after movsx"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after movzx"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &ecx) ? 0 : record_failure("ECX read should succeed after memory movsx"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after word movsx"));
+    failures += expect_u32(eax, 0xFFFFFF80U, "movsx eax, al should sign-extend 80h");
+    failures += expect_u32(ebx, 0x00000080U, "movzx ebx, al should zero-extend 80h");
+    failures += expect_u32(ecx, 0xFFFFFFFFU, "movsx ecx, byte memory should sign-extend FFh");
+    failures += expect_u32(edx, 0xFFFF8001U, "movsx edx, word memory should sign-extend 8001h");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies CBW, CWDE, CWD, and CDQ accumulator conversions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_accumulator_extension_instructions(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov eax, 0", 0U},
+        {VM_IR_OPCODE_SUB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "sub eax, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov al, 80h", 2U},
+        {VM_IR_OPCODE_CBW, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "cbw", 3U},
+        {VM_IR_OPCODE_CWDE, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "cwde", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EDX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "mov edx, 0", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x8000U, VM_REGISTER_COUNT, 0U}, "main.asm", 7U, "mov ax, 8000h", 6U},
+        {VM_IR_OPCODE_CWD, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 8U, "cwd", 7U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000000U, VM_REGISTER_COUNT, 0U}, "main.asm", 9U, "mov eax, 80000000h", 8U},
+        {VM_IR_OPCODE_CDQ, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 10U, "cdq", 9U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for accumulator tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "accumulator program should load");
+    while (!vm.halted) {
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "accumulator step should execute");
+    }
+
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after cdq"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after cdq"));
+    failures += expect_u32(eax, 0x80000000U, "cdq should leave EAX unchanged");
+    failures += expect_u32(edx, 0xFFFFFFFFU, "cdq should sign-extend negative EAX into EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "conversion instructions should preserve existing CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "conversion instructions should preserve existing SF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies 16-bit destinations and positive accumulator conversion edge cases.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_extension_instruction_edge_cases(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ecx = 0U;
+    uint32_t edx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0xFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov bl, 0FFh", 0U},
+        {VM_IR_OPCODE_MOVZX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_CX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U}, "main.asm", 2U, "movzx cx, bl", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFF007FU, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov eax, 0FFFF007Fh", 2U},
+        {VM_IR_OPCODE_CBW, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "cbw", 3U},
+        {VM_IR_OPCODE_CWDE, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "cwde", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EDX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xAAAAFFFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "mov edx, 0AAAAFFFFh", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x0001U, VM_REGISTER_COUNT, 0U}, "main.asm", 7U, "mov ax, 1", 6U},
+        {VM_IR_OPCODE_CWD, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 8U, "cwd", 7U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EDX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFFFFFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 9U, "mov edx, 0FFFFFFFFh", 8U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 10U, "mov eax, 1", 9U},
+        {VM_IR_OPCODE_CDQ, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 11U, "cdq", 10U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for extension edge-case tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "extension edge-case program should load");
+    while (!vm.halted) {
+        failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "extension edge-case step should execute");
+    }
+
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after positive cdq"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &ecx) ? 0 : record_failure("ECX read should succeed after movzx cx, bl"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after positive cdq"));
+    failures += expect_u32(ecx, 0x000000FFU, "movzx cx, bl should zero-extend into a 16-bit destination alias");
+    failures += expect_u32(eax, 0x00000001U, "positive cdq should leave EAX unchanged");
+    failures += expect_u32(edx, 0x00000000U, "positive cdq should clear EDX");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies unsupported extension-instruction operand combinations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_extension_instruction_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction memory_destination[] = {
+        {VM_IR_OPCODE_MOVSX, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 1U, "movsx [data], al", 0U}
+    };
+    const VmIrInstruction immediate_source[] = {
+        {VM_IR_OPCODE_MOVZX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "movzx eax, 1", 0U}
+    };
+    const VmIrInstruction source_not_narrow[] = {
+        {VM_IR_OPCODE_MOVSX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, "main.asm", 3U, "movsx eax, ebx", 0U}
+    };
+    const VmIrInstruction destination_not_wider[] = {
+        {VM_IR_OPCODE_MOVZX, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BX, 0U}, "main.asm", 4U, "movzx ax, bx", 0U}
+    };
+    const VmIrInstruction operand_on_cbw[] = {
+        {VM_IR_OPCODE_CBW, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "cbw eax", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for extension error tests");
+    failures += expect_status(vm_load_program(&vm, memory_destination, 1U), VM_EXEC_STATUS_OK, "memory destination program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "movsx memory destination should be unsupported");
+    failures += expect_status(vm_load_program(&vm, immediate_source, 1U), VM_EXEC_STATUS_OK, "immediate source program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "movzx immediate source should be unsupported");
+    failures += expect_status(vm_load_program(&vm, source_not_narrow, 1U), VM_EXEC_STATUS_OK, "wide source program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "movsx 32-bit source should be unsupported");
+    failures += expect_status(vm_load_program(&vm, destination_not_wider, 1U), VM_EXEC_STATUS_OK, "same-width extension program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "movzx same-width operands should be unsupported");
+    failures += expect_status(vm_load_program(&vm, operand_on_cbw, 1U), VM_EXEC_STATUS_OK, "cbw with operand program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "cbw with operand should be unsupported");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -492,7 +648,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 15.
+/// Runs all executor tests through Milestone 19.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -506,6 +662,10 @@ int main(void) {
     failures += test_alias_width_edge_case();
     failures += test_zero_length_program_halts();
     failures += test_error_paths_and_diagnostics();
+    failures += test_movsx_movzx_register_and_memory_sources();
+    failures += test_accumulator_extension_instructions();
+    failures += test_extension_instruction_edge_cases();
+    failures += test_extension_instruction_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -513,6 +673,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 15 passed.");
+    puts("Executor tests through Milestone 19 passed.");
     return 0;
 }

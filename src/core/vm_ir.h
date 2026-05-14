@@ -24,6 +24,18 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ADD,
     /// Subtract source operand from destination operand and update arithmetic flags.
     VM_IR_OPCODE_SUB,
+    /// Sign-extend an 8-bit or 16-bit source operand into a wider register destination.
+    VM_IR_OPCODE_MOVSX,
+    /// Zero-extend an 8-bit or 16-bit source operand into a wider register destination.
+    VM_IR_OPCODE_MOVZX,
+    /// Sign-extend AL into AX.
+    VM_IR_OPCODE_CBW,
+    /// Sign-extend AX into EAX.
+    VM_IR_OPCODE_CWDE,
+    /// Sign-extend AX into DX:AX.
+    VM_IR_OPCODE_CWD,
+    /// Sign-extend EAX into EDX:EAX.
+    VM_IR_OPCODE_CDQ,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

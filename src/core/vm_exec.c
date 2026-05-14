@@ -3,8 +3,8 @@
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a tiny vertical slice: mov, add,
- * and sub over immediate, register, absolute memory, and supported register-indirect memory operands. It
- * records last-step deltas by snapshotting CPU state and copying memory-module
+ * sub, movsx, movzx, cbw, cwde, cwd, and cdq over the currently supported
+ * register and memory operand forms. It records last-step deltas by snapshotting CPU state and copying memory-module
  * byte changes after each successful step.
  */
 
@@ -505,6 +505,179 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
     return status;
 }
 
+/// Sign-extends a masked value from an implemented source width to 32 bits.
+///
+/// @param value Source value before masking.
+/// @param source_width_bits Source width in bits; must be 8 or 16.
+/// @return Sign-extended 32-bit value, or zero for unsupported source widths.
+static uint32_t vm_exec_sign_extend_value(uint32_t value, uint8_t source_width_bits) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t masked_value = 0U;
+
+    if (source_width_bits == 8U) {
+        mask = 0x000000FFU;
+        sign_bit = 0x00000080U;
+    } else if (source_width_bits == 16U) {
+        mask = 0x0000FFFFU;
+        sign_bit = 0x00008000U;
+    } else {
+        return 0U;
+    }
+
+    masked_value = value & mask;
+    if ((masked_value & sign_bit) != 0U) {
+        return masked_value | ~mask;
+    }
+
+    return masked_value;
+}
+
+/// Executes one MOVSX or MOVZX instruction.
+///
+/// MOVSX sign-extends and MOVZX zero-extends an 8-bit or 16-bit register or
+/// memory source into a wider register destination. Memory reads remain routed
+/// through the checked VM memory helpers.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param should_sign_extend true for MOVSX, false for MOVZX.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_movx(Vm *vm, const VmIrInstruction *instruction, bool should_sign_extend) {
+    uint8_t destination_width = 0U;
+    uint8_t source_width = 0U;
+    uint32_t source_value = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (instruction->destination.kind != VM_IR_OPERAND_REGISTER) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->destination, &destination_width) || !vm_exec_operand_width(&instruction->source, &source_width)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if ((source_width != 8U && source_width != 16U) || destination_width <= source_width) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, source_width, &source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    result = should_sign_extend ? vm_exec_sign_extend_value(source_value, source_width) : source_value;
+    return vm_exec_write_operand(vm, instruction, &instruction->destination, destination_width, result);
+}
+
+/// Returns whether an instruction descriptor has no operands.
+///
+/// @param instruction Instruction to inspect.
+/// @return true when both operand slots are empty.
+static bool vm_exec_instruction_has_no_operands(const VmIrInstruction *instruction) {
+    return instruction != NULL &&
+           instruction->destination.kind == VM_IR_OPERAND_NONE &&
+           instruction->source.kind == VM_IR_OPERAND_NONE;
+}
+
+/// Executes CBW by sign-extending AL into AX.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction descriptor used for operand validation.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_cbw(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t al = 0U;
+    uint32_t ax = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_instruction_has_no_operands(instruction)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AL, &al)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    ax = vm_exec_sign_extend_value(al, 8U) & 0x0000FFFFU;
+    return vm_cpu_write_register(&vm->cpu, VM_REGISTER_AX, ax) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
+/// Executes CWDE by sign-extending AX into EAX.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction descriptor used for operand validation.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_cwde(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t ax = 0U;
+    uint32_t eax = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_instruction_has_no_operands(instruction)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &ax)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    eax = vm_exec_sign_extend_value(ax, 16U);
+    return vm_cpu_write_register(&vm->cpu, VM_REGISTER_EAX, eax) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
+/// Executes CWD by sign-extending AX into DX:AX.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction descriptor used for operand validation.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_cwd(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t ax = 0U;
+    uint32_t dx = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_instruction_has_no_operands(instruction)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &ax)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    dx = (ax & 0x00008000U) != 0U ? 0x0000FFFFU : 0x00000000U;
+    return vm_cpu_write_register(&vm->cpu, VM_REGISTER_DX, dx) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
+/// Executes CDQ by sign-extending EAX into EDX:EAX.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction descriptor used for operand validation.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_cdq(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_instruction_has_no_operands(instruction)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EAX, &eax)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    edx = (eax & 0x80000000U) != 0U ? 0xFFFFFFFFU : 0x00000000U;
+    return vm_cpu_write_register(&vm->cpu, VM_REGISTER_EDX, edx) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
 /// Captures canonical register changes after one successful instruction.
 ///
 /// @param delta Delta structure to update.
@@ -621,25 +794,38 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
-    if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
-    }
-
-    if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
-    }
-
-    if (!vm_exec_source_width_is_compatible(&instruction->source, width_bits)) {
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
-    }
-
     switch (instruction->opcode) {
         case VM_IR_OPCODE_MOV:
-            return vm_exec_execute_mov(vm, instruction, width_bits);
         case VM_IR_OPCODE_ADD:
-            return vm_exec_execute_add(vm, instruction, width_bits);
         case VM_IR_OPCODE_SUB:
+            if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            if (!vm_exec_source_width_is_compatible(&instruction->source, width_bits)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            if (instruction->opcode == VM_IR_OPCODE_MOV) {
+                return vm_exec_execute_mov(vm, instruction, width_bits);
+            }
+            if (instruction->opcode == VM_IR_OPCODE_ADD) {
+                return vm_exec_execute_add(vm, instruction, width_bits);
+            }
             return vm_exec_execute_sub(vm, instruction, width_bits);
+        case VM_IR_OPCODE_MOVSX:
+            return vm_exec_execute_movx(vm, instruction, true);
+        case VM_IR_OPCODE_MOVZX:
+            return vm_exec_execute_movx(vm, instruction, false);
+        case VM_IR_OPCODE_CBW:
+            return vm_exec_execute_cbw(vm, instruction);
+        case VM_IR_OPCODE_CWDE:
+            return vm_exec_execute_cwde(vm, instruction);
+        case VM_IR_OPCODE_CWD:
+            return vm_exec_execute_cwd(vm, instruction);
+        case VM_IR_OPCODE_CDQ:
+            return vm_exec_execute_cdq(vm, instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }

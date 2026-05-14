@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 18.
+Static, browser-based MASM32 educational simulator through Milestone 19.
 
 ## Current scope
 
@@ -10,9 +10,9 @@ Implemented through the current milestone:
 - Static browser UI shell with worker-based source execution.
 - MASM32-mode register aliases, arithmetic flags, checked memory regions, and minimal IR execution.
 - Lexer/parser support through `.data`, `.code`, symbols, constant and register-indirect memory operands, `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literals.
-- Executable `mov`, `add`, and `sub` for the currently supported operand forms.
+- Executable `mov`, `add`, `sub`, `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, and `cdq` for the currently supported operand forms.
 - Explicit `unsupported-feature` diagnostics for common textbook MASM constructs tracked by the Milestone 15 backlog checkpoint.
-- Milestone 18 multi-diagnostic recovery for safely skipped unsupported line, block, and section constructs.
+- Milestone 19 sign/zero-extension instructions for signed byte/word data and accumulator conversion examples.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 

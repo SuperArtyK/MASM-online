@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 18.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 19.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -1491,8 +1491,51 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_SUB;
         return true;
     }
+    if (vm_parser_token_equals(token, "movsx")) {
+        *out_opcode = VM_IR_OPCODE_MOVSX;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "movzx")) {
+        *out_opcode = VM_IR_OPCODE_MOVZX;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "cbw")) {
+        *out_opcode = VM_IR_OPCODE_CBW;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "cwde")) {
+        *out_opcode = VM_IR_OPCODE_CWDE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "cwd")) {
+        *out_opcode = VM_IR_OPCODE_CWD;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "cdq")) {
+        *out_opcode = VM_IR_OPCODE_CDQ;
+        return true;
+    }
 
     return false;
+}
+
+/// Returns whether an opcode uses no explicit source operands.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for accumulator conversion instructions.
+static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_CBW ||
+           opcode == VM_IR_OPCODE_CWDE ||
+           opcode == VM_IR_OPCODE_CWD ||
+           opcode == VM_IR_OPCODE_CDQ;
+}
+
+/// Returns whether an opcode uses sign/zero-extension width rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for MOVSX and MOVZX.
+static bool vm_parser_opcode_is_extension_move(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_MOVSX || opcode == VM_IR_OPCODE_MOVZX;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -2936,7 +2979,7 @@ static bool vm_parser_validate_source_width(
             }
             source->width_bits = destination_width;
         } else if (source->width_bits != 0U && source->width_bits != destination_width) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Immediate operand width does not match the destination operand width.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, source_token, "Immediate operand width does not match the destination operand width.");
             return false;
         }
         if (source_token != NULL && source_token->kind == VM_LEXER_TOKEN_NUMBER) {
@@ -2954,7 +2997,7 @@ static bool vm_parser_validate_source_width(
 
     if (source->kind == VM_IR_OPERAND_REGISTER || vm_parser_operand_is_memory(source)) {
         if (!vm_parser_resolve_operand_width(source, &source_width) || source_width != destination_width) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Source operand width does not match the destination operand width.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, source_token, "Source operand width does not match the destination operand width.");
             return false;
         }
         return true;
@@ -2962,6 +3005,64 @@ static bool vm_parser_validate_source_width(
 
     vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, source_token, "Expected a register, immediate, data symbol, register-indirect memory operand, or OFFSET source operand.");
     return false;
+}
+
+/// Validates source and destination widths for MOVSX and MOVZX.
+///
+/// These instructions require a register destination and an 8-bit or 16-bit
+/// register/memory source whose width is narrower than the destination. The
+/// parser deliberately rejects ambiguous register-indirect memory sources when
+/// no PTR or symbol width is available.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination Destination operand that must be a wider register.
+/// @param source Source operand that must be 8-bit or 16-bit register/memory.
+/// @param operand_token Token associated with the invalid operand for diagnostics.
+/// @return true when the extension instruction operands are supported.
+static bool vm_parser_validate_extension_widths(
+    VmParserState *state,
+    const VmIrOperand *destination,
+    const VmIrOperand *source,
+    const VmLexerToken *operand_token
+) {
+    uint8_t destination_width = 0U;
+    uint8_t source_width = 0U;
+
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "MOVSX and MOVZX require a register destination.");
+        return false;
+    }
+
+    if (source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "MOVSX and MOVZX require an 8-bit or 16-bit register or memory source.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(destination, &destination_width)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "MOVSX and MOVZX destination width is unsupported.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(source, &source_width)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "MOVSX and MOVZX memory sources require a known 8-bit or 16-bit width.");
+        return false;
+    }
+
+    if (source_width != 8U && source_width != 16U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "MOVSX and MOVZX sources must be 8-bit or 16-bit operands.");
+        return false;
+    }
+
+    if (destination_width <= source_width) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "MOVSX and MOVZX destinations must be wider than the source operand.");
+        return false;
+    }
+
+    return true;
 }
 
 /// Consumes an expected comma token.
@@ -3046,7 +3147,7 @@ static bool vm_parser_emit_instruction(
     return true;
 }
 
-/// Parses one two-operand instruction.
+/// Parses one implemented instruction.
 ///
 /// @param state Parser state to mutate.
 /// @return true when the instruction was parsed and emitted.
@@ -3063,6 +3164,13 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     vm_parser_advance(state);
+    if (vm_parser_opcode_has_no_operands(opcode)) {
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
     if (!vm_parser_parse_destination_operand(state, &destination)) {
         return false;
     }
@@ -3073,10 +3181,18 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     if (!vm_parser_parse_source_operand(state, &source)) {
         return false;
     }
-    vm_parser_infer_register_memory_widths(&destination, &source);
-    if (!vm_parser_validate_source_width(state, &destination, &source, source_token)) {
-        return false;
+
+    if (vm_parser_opcode_is_extension_move(opcode)) {
+        if (!vm_parser_validate_extension_widths(state, &destination, &source, source_token)) {
+            return false;
+        }
+    } else {
+        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (!vm_parser_validate_source_width(state, &destination, &source, source_token)) {
+            return false;
+        }
     }
+
     if (!vm_parser_expect_line_end(state)) {
         return false;
     }
@@ -3554,6 +3670,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "source-text-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX:
             return "unsupported-syntax";
+        case VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH:
+            return "operand-width-mismatch";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE:
             return "unsupported-feature";
         case VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE:

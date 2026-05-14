@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 18. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 19. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -76,6 +76,23 @@ Implemented executable instructions:
 - `mov`
 - `add`
 - `sub`
+- `movsx`
+- `movzx`
+- `cbw`
+- `cwde`
+- `cwd`
+- `cdq`
+
+`movsx` and `movzx` require a register destination and an 8-bit or 16-bit register or memory source whose width is narrower than the destination. Register-indirect memory sources such as `[esi]` require `BYTE PTR` or `WORD PTR` because the source width is otherwise ambiguous.
+
+Accumulator conversions are no-operand instructions:
+
+- `cbw`: sign-extend `AL` into `AX`
+- `cwde`: sign-extend `AX` into `EAX`
+- `cwd`: sign-extend `AX` into `DX:AX`
+- `cdq`: sign-extend `EAX` into `EDX:EAX`
+
+Ordinary `mov` from signed memory does not sign-extend automatically; use `movsx` when sign extension is required.
 
 ## Recognized unsupported features
 

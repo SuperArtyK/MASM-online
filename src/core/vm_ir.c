@@ -2,8 +2,8 @@
  * @file vm_ir.c
  * @brief Constructors and metadata helpers for implemented IR operands.
  *
- * The helpers in this file keep hardcoded IR program construction consistent
- * while parser support is intentionally deferred to later milestones.
+ * The helpers in this file keep hardcoded IR program construction and parser
+ * emission consistent across implemented milestones.
  */
 
 #include "vm_ir.h"
@@ -94,6 +94,18 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "add";
         case VM_IR_OPCODE_SUB:
             return "sub";
+        case VM_IR_OPCODE_MOVSX:
+            return "movsx";
+        case VM_IR_OPCODE_MOVZX:
+            return "movzx";
+        case VM_IR_OPCODE_CBW:
+            return "cbw";
+        case VM_IR_OPCODE_CWDE:
+            return "cwde";
+        case VM_IR_OPCODE_CWD:
+            return "cwd";
+        case VM_IR_OPCODE_CDQ:
+            return "cdq";
         default:
             return NULL;
     }

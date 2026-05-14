@@ -3,9 +3,10 @@
  * @brief IR executor for the MASM32 educational VM core.
  *
  * This module executes caller-provided IR instruction arrays. It supports the
- * currently implemented mov, add, and sub forms over immediate, register,
- * absolute memory, and register-indirect memory operands. Control flow, stack
- * behavior, Irvine32 routines, and resource watchdogs remain later milestones.
+ * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, and cdq
+ * forms over the currently supported register and memory operand shapes. Control
+ * flow, stack behavior, Irvine32 routines, and resource watchdogs remain later
+ * milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H

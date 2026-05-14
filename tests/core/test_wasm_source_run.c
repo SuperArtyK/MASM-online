@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 18 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 19 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -95,7 +95,7 @@ static int test_zero_instruction_program_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 18 register-indirect source-run acceptance program.
+/// Verifies the Milestone 19 register-indirect source-run acceptance program.
 ///
 /// @return Number of failures.
 static int test_register_indirect_source_run_succeeds(void) {
@@ -112,7 +112,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -122,7 +122,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 18 TYPE acceptance program through the source-run API.
+/// Verifies the Milestone 19 TYPE acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_type_operator_source_run_acceptance_program(void) {
@@ -137,7 +137,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -173,7 +173,7 @@ static int test_type_operator_source_run_element_sizes(void) {
     return failures;
 }
 
-/// Verifies the Milestone 18 LENGTHOF acceptance program through the source-run API.
+/// Verifies the Milestone 19 LENGTHOF acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_lengthof_operator_source_run_acceptance_program(void) {
@@ -190,7 +190,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -227,7 +227,7 @@ static int test_lengthof_operator_source_run_element_counts(void) {
     return failures;
 }
 
-/// Verifies the Milestone 18 SIZEOF and character-literal acceptance program through the source-run API.
+/// Verifies the Milestone 19 SIZEOF and character-literal acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_sizeof_operator_source_run_acceptance_program(void) {
@@ -248,7 +248,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
@@ -471,7 +471,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 18 constant symbol-offset acceptance program.
+/// Verifies the Milestone 19 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -487,7 +487,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -859,7 +859,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
     return failures;
 }
 
-/// Verifies Milestone 18 source-run JSON reports multiple recovered unsupported features.
+/// Verifies Milestone 19 source-run JSON reports multiple recovered unsupported features.
 ///
 /// @return Number of failures.
 static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void) {
@@ -882,7 +882,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":false", "unsupported recovery source should not execute");
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "unsupported recovery source should be a parse error");
     failures += expect_json_contains(json, "STRUCT declarations", "source-run should include STRUCT diagnostic");
@@ -903,7 +903,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     return failures;
 }
 
-/// Verifies the Milestone 18 signed declaration acceptance program.
+/// Verifies the Milestone 19 signed declaration acceptance program.
 ///
 /// @return Number of failures.
 static int test_signed_integer_source_run_acceptance_program(void) {
@@ -924,7 +924,7 @@ static int test_signed_integer_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":18", "response should identify Milestone 18");
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
     failures += expect_json_contains(json, "\"ok\":true", "signed acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "TYPE SQWORD should produce EAX = 8");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "LENGTHOF SWORD DUP should produce EBX = 3");
@@ -997,6 +997,192 @@ static int test_signed_integer_source_run_error_paths(void) {
     return failures;
 }
 
+/// Verifies the Milestone 19 sign/zero-extension acceptance program.
+///
+/// @return Number of failures.
+static int test_extension_source_run_acceptance_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x SBYTE -1\n"
+        "y BYTE  0FFh\n"
+        ".code\n"
+        "main PROC\n"
+        "    movsx eax, x\n"
+        "    movzx ebx, y\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":19", "response should identify Milestone 19");
+    failures += expect_json_contains(json, "\"ok\":true", "extension acceptance program should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "movsx eax, SBYTE -1 should sign-extend to FFFFFFFFh");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "movzx ebx, BYTE 0FFh should zero-extend to FFh");
+
+    return failures;
+}
+
+/// Verifies accumulator conversion instructions through the source-run path.
+///
+/// @return Number of failures.
+static int test_accumulator_extension_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 80h\n"
+        "    cbw\n"
+        "    cwde\n"
+        "    mov ax, 8000h\n"
+        "    cwd\n"
+        "    mov eax, 80000000h\n"
+        "    cdq\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "accumulator extension program should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":7", "accumulator extension program should execute seven instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"80000000h\",\"unsigned\":2147483648}", "cdq should leave EAX unchanged");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "cdq should sign-extend EAX into EDX");
+
+    return failures;
+}
+
+
+/// Verifies MOVSX and MOVZX source-run behavior for PTR register-indirect memory sources.
+///
+/// @return Number of failures.
+static int test_extension_register_indirect_memory_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf BYTE 80h, 0FFh, 34h, 12h\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET buf\n"
+        "    movsx eax, BYTE PTR [esi]\n"
+        "    movzx ebx, WORD PTR [esi + 2]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "register-indirect extension source program should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFF80h\",\"unsigned\":4294967168}", "movsx eax, BYTE PTR [esi] should sign-extend 80h");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "movzx ebx, WORD PTR [esi + 2] should zero-extend 1234h");
+
+    return failures;
+}
+
+/// Verifies ordinary MOV does not silently widen signed byte memory into EAX.
+///
+/// The regression risk is an accidental fallback that treats signed byte memory
+/// as a source for an implicit 32-bit sign-extending MOV. Ordinary MOV must
+/// keep the existing width rules and require explicit MOVSX for widening.
+///
+/// @return Number of failures.
+static int test_plain_mov_from_signed_memory_rejects_implicit_widening(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "sb SBYTE -1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, sb\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "plain mov eax, SBYTE memory should not execute");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "plain mov eax, SBYTE memory should be rejected before execution");
+    failures += expect_json_contains(json, "operand-width-mismatch", "plain mov eax, SBYTE memory should report a structured width diagnostic");
+    failures += expect_json_contains(json, "Source operand width does not match the destination operand width", "plain mov eax, SBYTE memory should keep explicit width validation");
+    failures += expect_json_not_contains(json, "execution-complete", "plain mov eax, SBYTE memory should not execute successfully");
+
+    return failures;
+}
+
+
+/// Verifies source-run edge cases for 16-bit MOVZX destinations and positive CDQ.
+///
+/// @return Number of failures.
+static int test_extension_source_run_edge_cases(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov bl, 0FFh\n"
+        "    movzx cx, bl\n"
+        "    mov edx, 0FFFFFFFFh\n"
+        "    mov eax, 1\n"
+        "    cdq\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "extension edge-case program should execute");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "movzx cx, bl should update the low word of ECX");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "positive cdq should leave EAX unchanged");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "positive cdq should clear EDX");
+
+    return failures;
+}
+
+/// Verifies source-run diagnostics for invalid extension instruction widths and operands.
+///
+/// @return Number of failures.
+static int test_extension_source_run_error_paths(void) {
+    const char *same_width_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    movsx ax, bx\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    char same_width_copy[1024];
+    char cbw_operand_copy[1024];
+    const char *cbw_operand_json = NULL;
+    const char *ambiguous_memory_json = NULL;
+    int failures = 0;
+
+    if (same_width_json == NULL) {
+        return record_failure("same-width MOVSX result should not be NULL");
+    }
+    (void)snprintf(same_width_copy, sizeof(same_width_copy), "%s", same_width_json);
+
+    cbw_operand_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    cbw eax\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (cbw_operand_json == NULL) {
+        return record_failure("CBW operand result should not be NULL");
+    }
+    (void)snprintf(cbw_operand_copy, sizeof(cbw_operand_copy), "%s", cbw_operand_json);
+
+    ambiguous_memory_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, 00500000h\n"
+        "    movsx eax, [esi]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+
+    failures += expect_json_contains(same_width_copy, "\"ok\":false", "same-width MOVSX should fail source-run");
+    failures += expect_json_contains(same_width_copy, "operand-width-mismatch", "same-width MOVSX should report operand width mismatch");
+    failures += expect_json_contains(same_width_copy, "wider than the source", "same-width MOVSX diagnostic should describe width rule");
+    failures += expect_json_contains(cbw_operand_copy, "\"ok\":false", "CBW with operand should fail source-run");
+    failures += expect_json_contains(cbw_operand_copy, "expected-line-end", "CBW with operand should report expected line end");
+    failures += expect_json_contains(ambiguous_memory_json, "\"ok\":false", "MOVSX with ambiguous [esi] source should fail source-run");
+    failures += expect_json_contains(ambiguous_memory_json, "operand-width-mismatch", "ambiguous MOVSX memory source should report operand width mismatch");
+    failures += expect_json_contains(ambiguous_memory_json, "memory sources require a known 8-bit or 16-bit width", "ambiguous MOVSX memory source diagnostic should describe width requirement");
+
+    return failures;
+}
+
 /// Verifies that the static JSON buffer is overwritten by subsequent calls.
 ///
 /// @return Number of failures.
@@ -1061,6 +1247,12 @@ int main(void) {
     failures += test_signed_integer_source_run_acceptance_program();
     failures += test_unary_plus_source_run_acceptance_program();
     failures += test_signed_integer_source_run_error_paths();
+    failures += test_extension_source_run_acceptance_program();
+    failures += test_accumulator_extension_source_run_program();
+    failures += test_extension_source_run_edge_cases();
+    failures += test_extension_register_indirect_memory_source_run_program();
+    failures += test_plain_mov_from_signed_memory_rejects_implicit_widening();
+    failures += test_extension_source_run_error_paths();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -1069,6 +1261,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 18 source execution tests passed.");
+    puts("Milestone 19 source execution tests passed.");
     return 0;
 }

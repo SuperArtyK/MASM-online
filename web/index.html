@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 18 signed integer data UI: source editing, Run button,
+  This page provides the Milestone 19 sign/zero-extension UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates signed declaration metadata.
+  execution stay inside the worker/Wasm path; the default program demonstrates MOVSX and MOVZX.
 -->
 <html lang="en">
   <head>
@@ -18,19 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 18: signed integer data declarations and unary-plus numeric literals. The default program demonstrates SQWORD/SWORD metadata operators while preserving earlier diagnostics.</p>
+        <p class="muted">Milestone 19: sign and zero extension instructions. The default program demonstrates MOVSX over signed byte data and MOVZX over unsigned byte data.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.data
-sb SBYTE -1
-sw SWORD -2
-sd SDWORD -3
-sq SQWORD -4
-arr SWORD 3 DUP(-1)
+x SBYTE -1
+y BYTE  0FFh
 .code
 main PROC
-    mov eax, TYPE sq
-    mov ebx, LENGTHOF arr
-    mov ecx, SIZEOF arr
+    movsx eax, x
+    movzx ebx, y
 main ENDP
 END main</textarea>
         <div class="controls">

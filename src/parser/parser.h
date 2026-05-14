@@ -1,13 +1,14 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 18.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 19.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
  * remains limited to implemented data declarations, OFFSET, direct symbol
  * memory operands, constant symbol-offset memory operands, PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
- * literal expressions for mov/add/sub, and explicit unsupported-feature
+ * literal expressions for mov/add/sub, sign and zero extension
+ * instructions, and explicit unsupported-feature
  * diagnostics and safe recovery for recognized MASM textbook constructs, and
  * surfaced lexer diagnostics without collapsing them into umbrella parse errors.
  */
@@ -94,6 +95,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_SOURCE_TEXT_CAPACITY_EXCEEDED,
     /// The parser found syntax that is not supported by the implemented milestone scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
+    /// Recognized operands have widths that cannot be combined by the current instruction.
+    VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH,
     /// The parser recognized a MASM textbook construct that is intentionally deferred.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE,
     /// A numeric literal exceeded the 32-bit immediate range supported by the current IR.
