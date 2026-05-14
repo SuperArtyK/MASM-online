@@ -42,16 +42,6 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_NEG,
     /// Advance execution without mutating VM state.
     VM_IR_OPCODE_NOP,
-    /// Add source plus carry flag to destination and update arithmetic flags.
-    VM_IR_OPCODE_ADC,
-    /// Subtract source plus carry flag from destination and update arithmetic flags.
-    VM_IR_OPCODE_SBB,
-    /// Clear the carry flag without mutating other modeled flags.
-    VM_IR_OPCODE_CLC,
-    /// Set the carry flag without mutating other modeled flags.
-    VM_IR_OPCODE_STC,
-    /// Complement the carry flag without mutating other modeled flags.
-    VM_IR_OPCODE_CMC,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

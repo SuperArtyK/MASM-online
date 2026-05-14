@@ -112,16 +112,6 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "neg";
         case VM_IR_OPCODE_NOP:
             return "nop";
-        case VM_IR_OPCODE_ADC:
-            return "adc";
-        case VM_IR_OPCODE_SBB:
-            return "sbb";
-        case VM_IR_OPCODE_CLC:
-            return "clc";
-        case VM_IR_OPCODE_STC:
-            return "stc";
-        case VM_IR_OPCODE_CMC:
-            return "cmc";
         default:
             return NULL;
     }

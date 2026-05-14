@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 21.
+ * @brief Unit and integration tests for the parser through Milestone 20.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -1080,117 +1080,6 @@ static int test_phase20_instruction_parse_error_paths(void) {
     return failures;
 }
 
-
-/// Verifies ADC, SBB, and carry-control instructions parse into expected IR shapes.
-///
-/// @return Zero on success, otherwise a positive failure count.
-static int test_phase21_instructions_parse_to_ir(void) {
-    int failures = 0;
-    const char *source =
-        ".code\n"
-        "main PROC\n"
-        "    stc\n"
-        "    adc eax, 0\n"
-        "    adc ebx, DWORD PTR [esi]\n"
-        "    sbb DWORD PTR [esi], eax\n"
-        "    clc\n"
-        "    cmc\n"
-        "main ENDP\n"
-        "END main\n";
-    ParserTestBuffers buffers;
-    VmParserResult result;
-    VmParserStatus status = parse_for_test(source, &buffers, &result);
-
-    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 21 instruction program should parse successfully");
-    failures += expect_size(result.diagnostic_count, 0U, "Phase 21 instruction program should not produce diagnostics");
-    failures += expect_size(result.instruction_count, 6U, "Phase 21 instruction program should emit six instructions");
-    failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_STC, "first Phase 21 opcode should be STC");
-    failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_NONE, "STC should emit no destination operand");
-    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_ADC, "second Phase 21 opcode should be ADC");
-    failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_REGISTER, "ADC destination should be a register");
-    failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_IMMEDIATE, "ADC source should be an immediate");
-    failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_ADC, "third Phase 21 opcode should be ADC");
-    failures += expect_u32(buffers.instructions[2].destination.kind, VM_IR_OPERAND_REGISTER, "ADC memory-source destination should be a register");
-    failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "ADC memory-source operand should be register-indirect memory");
-    failures += expect_u32(buffers.instructions[2].source.width_bits, 32U, "ADC DWORD PTR [esi] source should emit DWORD width");
-    failures += expect_u32(buffers.instructions[3].opcode, VM_IR_OPCODE_SBB, "fourth Phase 21 opcode should be SBB");
-    failures += expect_u32(buffers.instructions[3].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "SBB destination should be register-indirect memory");
-    failures += expect_u32(buffers.instructions[3].destination.width_bits, 32U, "SBB DWORD PTR [esi] should emit DWORD width");
-    failures += expect_u32(buffers.instructions[4].opcode, VM_IR_OPCODE_CLC, "fifth Phase 21 opcode should be CLC");
-    failures += expect_u32(buffers.instructions[5].opcode, VM_IR_OPCODE_CMC, "sixth Phase 21 opcode should be CMC");
-
-    return failures;
-}
-
-/// Verifies parser diagnostics for malformed Phase 21 operands.
-///
-/// @return Zero on success, otherwise a positive failure count.
-static int test_phase21_instruction_parse_error_paths(void) {
-    int failures = 0;
-    const char *adc_width_mismatch_source =
-        ".code\n"
-        "main PROC\n"
-        "    adc eax, al\n"
-        "main ENDP\n"
-        "END main\n";
-    const char *adc_immediate_overflow_source =
-        ".code\n"
-        "main PROC\n"
-        "    adc al, 256\n"
-        "main ENDP\n"
-        "END main\n";
-    const char *sbb_width_mismatch_source =
-        ".code\n"
-        "main PROC\n"
-        "    sbb eax, BYTE PTR [esi]\n"
-        "main ENDP\n"
-        "END main\n";
-    const char *clc_operand_source =
-        ".code\n"
-        "main PROC\n"
-        "    clc eax\n"
-        "main ENDP\n"
-        "END main\n";
-    const char *stc_operand_source =
-        ".code\n"
-        "main PROC\n"
-        "    stc eax\n"
-        "main ENDP\n"
-        "END main\n";
-    const char *cmc_operand_source =
-        ".code\n"
-        "main PROC\n"
-        "    cmc eax\n"
-        "main ENDP\n"
-        "END main\n";
-    ParserTestBuffers buffers;
-    VmParserResult result;
-
-    failures += expect_parser_status(parse_for_test(adc_width_mismatch_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ADC width mismatch should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "ADC width mismatch diagnostic should be operand width mismatch");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "does not match", "ADC width mismatch diagnostic should describe width rule");
-
-    failures += expect_parser_status(parse_for_test(adc_immediate_overflow_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ADC immediate overflow should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, "ADC immediate overflow diagnostic should be immediate out of range");
-
-    failures += expect_parser_status(parse_for_test(sbb_width_mismatch_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SBB width mismatch should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "SBB width mismatch diagnostic should be operand width mismatch");
-
-    failures += expect_parser_status(parse_for_test(clc_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CLC operand should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CLC operand diagnostic should be unsupported syntax");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "CLC operand diagnostic should describe no-operand rule");
-
-    failures += expect_parser_status(parse_for_test(stc_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "STC operand should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "STC operand diagnostic should be unsupported syntax");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "STC operand diagnostic should describe no-operand rule");
-
-    failures += expect_parser_status(parse_for_test(cmc_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMC operand should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CMC operand diagnostic should be unsupported syntax");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "CMC operand diagnostic should describe no-operand rule");
-
-    return failures;
-}
-
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1251,8 +1140,6 @@ int main(void) {
     failures += test_extension_instruction_parse_error_paths();
     failures += test_phase20_instructions_parse_to_ir();
     failures += test_phase20_instruction_parse_error_paths();
-    failures += test_phase21_instructions_parse_to_ir();
-    failures += test_phase21_instruction_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
