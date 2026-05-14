@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 20.
+ * @brief Unit tests for the VM executor through Milestone 21.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -755,6 +755,257 @@ static int test_neg_register_memory_and_flags(void) {
     return failures;
 }
 
+/// Verifies ADC carry propagation and arithmetic flag updates.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_adc_register_carry_propagation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFFFFFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov eax, 0FFFFFFFFh", 0U},
+        {VM_IR_OPCODE_ADD, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "add eax, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov ebx, 0", 2U},
+        {VM_IR_OPCODE_ADC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "adc ebx, 0", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for ADC register tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "ADC register program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov eax should execute before ADC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "add should produce carry before ADC");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "add overflow should set CF before ADC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov ebx should preserve carry before ADC");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "mov should preserve CF before ADC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ADC should consume carry");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after ADC");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after ADC");
+    failures += expect_u32(eax, 0U, "acceptance program should leave EAX zero");
+    failures += expect_u32(ebx, 1U, "ADC should propagate carry into EBX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "ADC 0 + carry into zero should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "ADC result one should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "ADC result one should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "ADC result one should clear OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies ADC edge cases for aliases, signed overflow, and memory destinations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_adc_alias_and_memory_edge_cases(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t memory_value = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x7FU, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "mov al, 7Fh", 1U},
+        {VM_IR_OPCODE_ADC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "adc al, 0", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFFFFFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "mov DWORD PTR value, 0FFFFFFFFh", 3U},
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "stc", 4U},
+        {VM_IR_OPCODE_ADC, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "adc DWORD PTR value, 0", 5U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for ADC edge tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "ADC edge program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute before alias ADC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AL should execute before alias ADC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ADC AL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after alias ADC");
+    failures += expect_u32(eax, 0x00000080U, "ADC AL should preserve upper EAX bits and write 80h");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "ADC 7Fh + carry should not set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "ADC 7Fh + carry should set OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "ADC 80h result should set SF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov memory before memory ADC should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before memory ADC should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ADC memory destination should execute");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory read after ADC should succeed");
+    failures += expect_u32(memory_value, 0U, "ADC memory should wrap FFFFFFFFh + carry to zero");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "ADC memory wrap should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "ADC memory wrap should set ZF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 4U, "ADC DWORD memory should record four byte changes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies SBB borrow propagation for register and memory destinations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_sbb_register_and_memory_borrow_propagation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    uint8_t memory_value = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov eax, 0", 0U},
+        {VM_IR_OPCODE_SUB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "sub eax, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 5U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov ebx, 5", 2U},
+        {VM_IR_OPCODE_SBB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "sbb ebx, 2", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 5U, "mov BYTE PTR value, 0", 4U},
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "stc", 5U},
+        {VM_IR_OPCODE_SBB, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 7U, "sbb BYTE PTR value, 0", 6U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for SBB tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "SBB program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov eax before SBB should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "sub should set borrow before SBB");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "sub 0 - 1 should set CF before SBB");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov ebx should preserve borrow before SBB");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SBB register should consume borrow");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after SBB");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after SBB");
+    failures += expect_u32(eax, 0xFFFFFFFFU, "SBB setup should leave EAX at FFFFFFFFh");
+    failures += expect_u32(ebx, 2U, "SBB should subtract source and incoming borrow");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "SBB 5 - 2 - 1 should clear CF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov memory before SBB should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before memory SBB should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SBB memory destination should execute");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory read after SBB should succeed");
+    failures += expect_u32((uint32_t)memory_value, 0xFFU, "SBB memory should borrow to FFh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "SBB memory borrow should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "SBB memory FFh should set SF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies ADC and SBB can read compatible memory source operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_adc_sbb_memory_source_operands(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFFFFFFU, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "mov DWORD PTR a, 0FFFFFFFFh", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "mov DWORD PTR b, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "mov eax, 0", 2U},
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "stc", 3U},
+        {VM_IR_OPCODE_ADC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, "main.asm", 5U, "adc eax, DWORD PTR a", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 5U, VM_REGISTER_COUNT, 0U}, "main.asm", 6U, "mov ebx, 5", 5U},
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 7U, "stc", 6U},
+        {VM_IR_OPCODE_SBB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U}, "main.asm", 8U, "sbb ebx, DWORD PTR b", 7U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for memory-source ADC/SBB tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "memory-source ADC/SBB program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov first memory source should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov second memory source should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov eax before memory-source ADC should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before memory-source ADC should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ADC with memory source should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after memory-source ADC");
+    failures += expect_u32(eax, 0U, "ADC with memory source should wrap to zero");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "ADC with FFFFFFFFh memory source and carry should set CF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov ebx before memory-source SBB should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before memory-source SBB should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SBB with memory source should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after memory-source SBB");
+    failures += expect_u32(ebx, 3U, "SBB with memory source should subtract source and borrow");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "SBB memory source without borrow-out should clear CF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies SBB signed-overflow flag behavior for supported widths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_sbb_signed_overflow_edge_case(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CLC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "clc", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "mov al, 80h", 1U},
+        {VM_IR_OPCODE_SBB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "sbb al, 1", 2U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for SBB overflow tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "SBB overflow program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CLC before SBB overflow should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AL before SBB overflow should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SBB signed overflow case should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after SBB overflow case");
+    failures += expect_u32(eax, 0x0000007FU, "SBB 80h - 1 should produce 7Fh at 8-bit width");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "SBB 80h - 1 should not borrow in unsigned arithmetic");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "SBB 7Fh result should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "SBB most-negative minus one should set OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies carry-flag control instructions mutate only CF.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_carry_flag_control_instructions(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_CMC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 2U, "cmc", 1U},
+        {VM_IR_OPCODE_CMC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "cmc", 2U},
+        {VM_IR_OPCODE_CLC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "clc", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for carry-control tests");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("ZF set should succeed before carry-control tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "carry-control program should load");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("ZF set should succeed after load for carry-control tests");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "STC should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "STC should preserve ZF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 99U, 1U, "STC should report only one flag change from initial state");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMC should clear set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "CMC should clear set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "CMC should preserve ZF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMC should set clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "CMC should set clear CF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CLC should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "CLC should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "CLC should preserve ZF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies unsupported Phase 21 operand combinations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase21_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction adc_memory_memory[] = {
+        {VM_IR_OPCODE_ADC, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U}, "main.asm", 1U, "adc a, b", 0U}
+    };
+    const VmIrInstruction sbb_width_mismatch[] = {
+        {VM_IR_OPCODE_SBB, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 2U, "sbb eax, al", 0U}
+    };
+    const VmIrInstruction clc_has_operand[] = {
+        {VM_IR_OPCODE_CLC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U}, "main.asm", 3U, "clc eax", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 21 error tests");
+    failures += expect_status(vm_load_program(&vm, adc_memory_memory, 1U), VM_EXEC_STATUS_OK, "ADC memory-memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "ADC memory-memory should be unsupported");
+    failures += expect_status(vm_load_program(&vm, sbb_width_mismatch, 1U), VM_EXEC_STATUS_OK, "SBB width mismatch program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "SBB width mismatch should be unsupported");
+    failures += expect_status(vm_load_program(&vm, clc_has_operand, 1U), VM_EXEC_STATUS_OK, "CLC operand program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CLC with operand should be unsupported");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies unsupported Phase 20 operand combinations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -821,7 +1072,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 20.
+/// Runs all executor tests through Milestone 21.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -843,6 +1094,13 @@ int main(void) {
     failures += test_xchg_memory_and_nop_delta();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
+    failures += test_adc_register_carry_propagation();
+    failures += test_adc_alias_and_memory_edge_cases();
+    failures += test_sbb_register_and_memory_borrow_propagation();
+    failures += test_adc_sbb_memory_source_operands();
+    failures += test_sbb_signed_overflow_edge_case();
+    failures += test_carry_flag_control_instructions();
+    failures += test_phase21_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -850,6 +1108,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 20 passed.");
+    puts("Executor tests through Milestone 21 passed.");
     return 0;
 }
