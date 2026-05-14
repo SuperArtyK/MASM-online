@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 11 .data declarations, symbols, PTR, and register-indirect memory operands.
+ * @brief Tests for Milestone 12 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE operator support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,28 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 11 parser test.
+/// Number of lexer tokens available to each Milestone 12 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 11 parser test.
+/// Number of lexer diagnostics available to each Milestone 12 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 11 parser test.
+/// Number of parser diagnostics available to each Milestone 12 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 11 parser test.
+/// Number of IR instructions available to each Milestone 12 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 11 parser test.
+/// Number of source-text bytes available to each Milestone 12 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 11 parser test.
+/// Number of data symbols available to each Milestone 12 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 11 parser test.
+/// Number of data image bytes available to each Milestone 12 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 11 test.
+/// Holds all caller-owned parser buffers for one Milestone 12 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -150,7 +150,7 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
-/// Parses source with full Milestone 11 buffers.
+/// Parses source with full Milestone 12 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -201,7 +201,7 @@ static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffe
     return true;
 }
 
-/// Verifies Milestone 11 data layout for scalar, string, DUP, ?, and QWORD declarations.
+/// Verifies Milestone 12 data layout for scalar, string, DUP, ?, and QWORD declarations.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_layout_symbols_and_initializers(void) {
@@ -350,7 +350,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 11 acceptance program executes through parser and VM.
+/// Verifies the Milestone 12 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -370,7 +370,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 11 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 12 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -464,7 +464,173 @@ static int test_data_type_aliases_and_mixed_case(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 11 error paths.
+/// Verifies TYPE symbol emits declared element-size immediates for supported declarations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_type_operator_parse_to_immediates(void) {
+    const char *source =
+        ".data\n"
+        "b BYTE 0\n"
+        "ba DB 2 DUP(0)\n"
+        "w WORD 0\n"
+        "wa DW 2 DUP(0)\n"
+        "d DWORD 0\n"
+        "da DD 2 DUP(0)\n"
+        "q QWORD 0\n"
+        "qa DQ 2 DUP(0)\n"
+        "msg BYTE \"Hi\", 0\n"
+        "dupw WORD 3 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, TYPE b\n"
+        "    mov ebx, TYPE w\n"
+        "    mov ecx, TYPE d\n"
+        "    mov edx, TYPE q\n"
+        "    mov eax, TYPE ba\n"
+        "    mov ebx, TYPE wa\n"
+        "    mov ecx, TYPE da\n"
+        "    mov edx, TYPE qa\n"
+        "    mov eax, tYpE msg\n"
+        "    mov ebx, TYPE dupw\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "TYPE operator sample should parse");
+    failures += expect_size(result.instruction_count, 10U, "TYPE sample should emit ten instructions");
+    failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_IMMEDIATE, "TYPE b should emit an immediate");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "TYPE BYTE should be 1");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 2U, "TYPE WORD should be 2");
+    failures += expect_u32(buffers.instructions[2].source.immediate, 4U, "TYPE DWORD should be 4");
+    failures += expect_u32(buffers.instructions[3].source.immediate, 8U, "TYPE QWORD should be 8");
+    failures += expect_u32(buffers.instructions[4].source.immediate, 1U, "TYPE DB array should be 1");
+    failures += expect_u32(buffers.instructions[5].source.immediate, 2U, "TYPE DW array should be 2");
+    failures += expect_u32(buffers.instructions[6].source.immediate, 4U, "TYPE DD array should be 4");
+    failures += expect_u32(buffers.instructions[7].source.immediate, 8U, "TYPE DQ array should be 8");
+    failures += expect_u32(buffers.instructions[8].source.immediate, 1U, "mixed-case TYPE BYTE string should be 1");
+    failures += expect_u32(buffers.instructions[9].source.immediate, 2U, "TYPE WORD DUP should be 2");
+    failures += expect_u32(buffers.instructions[0].source.width_bits, 32U, "TYPE immediates should use 32-bit immediate width");
+
+    return failures;
+}
+
+/// Verifies TYPE source operands execute through parser and VM integration.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_type_operator_executes_acceptance_program(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, TYPE nums\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t eax = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "TYPE acceptance source should parse");
+    failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("VM should initialize for TYPE acceptance test");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("TYPE acceptance data image should load");
+    failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("TYPE acceptance program should load");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("TYPE mov should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX should be readable after TYPE mov");
+    failures += expect_u32(eax, 4U, "TYPE nums should leave EAX = 4");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies TYPE can supply an immediate value for a memory destination.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_type_operator_executes_memory_immediate_context(void) {
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        "outval DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov outval, TYPE nums\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    Vm vm;
+    uint32_t memory_value = 0U;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "TYPE memory-immediate source should parse");
+    failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("VM should initialize for TYPE memory-immediate test");
+    failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("TYPE memory-immediate data image should load");
+    failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("TYPE memory-immediate program should load");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("TYPE memory-immediate mov should execute");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 40U, &memory_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("outval should be readable after TYPE memory-immediate mov");
+    failures += expect_u32(memory_value, 4U, "mov outval, TYPE nums should write DWORD value 4");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies TYPE preserves existing OFFSET behavior in the same program.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_type_operator_preserves_offset_source_operands(void) {
+    const char *source =
+        ".data\n"
+        "msg BYTE \"Hi\", 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET msg\n"
+        "    mov ebx, TYPE msg\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "OFFSET and TYPE source operands should parse together");
+    failures += expect_u32(buffers.instructions[0].source.immediate, VM_MEMORY_DEFAULT_DATA_BASE, "OFFSET msg should remain the symbol address");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 1U, "TYPE msg should return BYTE element size");
+
+    return failures;
+}
+
+/// Verifies structured parser diagnostics for unsupported TYPE expression forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_type_operator_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, TYPE missing\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TYPE unknown symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "TYPE unknown symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, TYPE\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TYPE without symbol should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "TYPE missing symbol diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, TYPE nums + 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TYPE arithmetic expression should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, "TYPE expression diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, TYPE [nums]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TYPE bracket expression should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, "TYPE bracket expression diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, LENGTHOF nums\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LENGTHOF should remain unimplemented");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "LENGTHOF should not be implemented by TYPE milestone");
+
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, SIZEOF nums\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SIZEOF should remain unimplemented");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "SIZEOF should not be implemented by TYPE milestone");
+
+    return failures;
+}
+
+/// Verifies parser diagnostics for new Milestone 12 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -646,7 +812,7 @@ static int test_ptr_width_overrides_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 11 acceptance program executes explicit-width writes.
+/// Verifies the Milestone 12 acceptance program executes explicit-width writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_ptr_width_overrides_execute_acceptance_program(void) {
@@ -761,7 +927,7 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 11 register-indirect acceptance program executes.
+/// Verifies the Milestone 12 register-indirect acceptance program executes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_register_indirect_acceptance_program_executes(void) {
@@ -815,7 +981,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
+    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -944,7 +1110,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
+    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -969,7 +1135,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":11", "response should identify Milestone 11");
+    failures += expect_json_contains(json, "\"phase\":12", "response should identify Milestone 12");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -982,7 +1148,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 11 tests pass.
+/// @return Zero when all Milestone 12 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -993,6 +1159,11 @@ int main(void) {
     failures += test_constant_symbol_offset_error_paths();
     failures += test_constant_symbol_offset_edge_cases();
     failures += test_data_type_aliases_and_mixed_case();
+    failures += test_type_operator_parse_to_immediates();
+    failures += test_type_operator_executes_acceptance_program();
+    failures += test_type_operator_executes_memory_immediate_context();
+    failures += test_type_operator_preserves_offset_source_operands();
+    failures += test_type_operator_error_paths();
     failures += test_data_error_paths();
     failures += test_negative_data_initializers_and_symbol_writes();
     failures += test_symbol_write_immediate_range_errors();
@@ -1015,6 +1186,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 11 data section and register-indirect tests passed.");
+    puts("Milestone 12 data section, register-indirect, and TYPE tests passed.");
     return 0;
 }

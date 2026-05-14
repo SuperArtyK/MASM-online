@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 11.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 12.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * and full MASM expression parsing remain later milestones.
+ * LENGTHOF, SIZEOF, and full MASM expression parsing remain later milestones.
  */
 
 #include "parser.h"
@@ -918,7 +918,7 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
     return vm_parser_build_symbol_offset_memory_operand(state, token, NULL, 0, 0U, NULL, out_operand);
 }
 
-/// Returns whether a register is allowed as a Milestone 11 memory base.
+/// Returns whether a register is allowed as a Milestone 12 memory base.
 ///
 /// @param token Register token to inspect.
 /// @return true for ESI, EDI, EBX, and EBP.
@@ -1699,7 +1699,53 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
     return false;
 }
 
-/// Parses a source operand that may be register, immediate, direct symbol, or OFFSET symbol.
+/// Parses a TYPE symbol expression as a 32-bit immediate element-size value.
+///
+/// The current milestone intentionally supports only the simple `TYPE symbol`
+/// form in source-immediate contexts. LENGTHOF, SIZEOF, arithmetic expression
+/// tails, bracketed operands, and other MASM expressions remain future phases.
+///
+/// @param state Parser state to mutate.
+/// @param out_operand Receives the immediate operand containing the element size.
+/// @return true when the TYPE expression was parsed successfully.
+static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *type_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || out_operand == NULL || type_token == NULL) {
+        return false;
+    }
+
+    if (symbol_token == NULL || vm_parser_is_line_end_token(symbol_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, type_token, "TYPE requires a following data symbol.");
+        return false;
+    }
+
+    if (symbol_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, symbol_token, "Unsupported TYPE expression. Only TYPE symbol is supported by the current milestone.");
+        return false;
+    }
+
+    if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, tail_token, "Unsupported TYPE expression. Only TYPE symbol is supported by the current milestone.");
+        return false;
+    }
+
+    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+    if (symbol == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "TYPE references an unknown data symbol.");
+        return false;
+    }
+
+    *out_operand = vm_ir_operand_immediate((uint32_t)symbol->element_size_bytes, 32U);
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses a source operand that may be register, immediate, direct symbol, OFFSET symbol, or TYPE symbol.
 ///
 /// @param state Parser state to mutate.
 /// @param out_operand Receives the parsed IR operand.
@@ -1728,6 +1774,10 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, or QWORD before PTR.");
         return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "TYPE")) {
+        return vm_parser_parse_type_source_operand(state, out_operand);
     }
 
     if (token->kind == VM_LEXER_TOKEN_REGISTER) {
@@ -1793,7 +1843,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, register-indirect, or OFFSET source operand.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a register, immediate, data symbol, constant symbol-offset, register-indirect, OFFSET source operand, or TYPE source operand.");
     return false;
 }
 
@@ -2560,6 +2610,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-ptr-width";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX:
             return "unsupported-scaled-index";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION:
+            return "unsupported-type-expression";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:

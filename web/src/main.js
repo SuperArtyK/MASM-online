@@ -1,6 +1,6 @@
 /*
  * @file main.js
- * @brief Browser UI wiring for Milestone 11 source execution.
+ * @brief Browser UI wiring for Milestone 12 source execution.
  *
  * This module keeps parsing and VM work in the Web Worker. The main thread only
  * sends editor source, renders final register state, and displays structured
@@ -69,7 +69,7 @@ const pingButton = document.getElementById("ping-button");
 const runButton = document.getElementById("run-button");
 
 if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton) {
-  throw new Error("Milestone 11 UI elements are missing.");
+  throw new Error("Milestone 12 UI elements are missing.");
 }
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
