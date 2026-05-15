@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 22.
+ * @brief Unit and integration tests for the parser through Milestone 25.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -16,7 +16,7 @@
 #include "../../src/parser/parser.h"
 
 /// Number of lexer tokens available to each parser test.
-#define TEST_TOKEN_CAPACITY 128U
+#define TEST_TOKEN_CAPACITY 192U
 
 /// Number of lexer diagnostics available to each parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 16U
@@ -1084,8 +1084,8 @@ static int test_phase20_instruction_parse_error_paths(void) {
     failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "NEG extra operand diagnostic should describe operand count");
 
     failures += expect_parser_status(parse_for_test(neg_ambiguous_memory_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NEG ambiguous memory should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "NEG ambiguous memory diagnostic should be operand width mismatch");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "known", "NEG ambiguous memory diagnostic should describe known width requirement");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "NEG ambiguous memory diagnostic should use stable ambiguous-memory-width code");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Memory operand width is ambiguous", "NEG ambiguous memory diagnostic should describe ambiguous width");
 
     failures += expect_parser_status(parse_for_test(nop_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOP operand should produce parser diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "NOP operand diagnostic should be unsupported syntax");
@@ -1321,6 +1321,191 @@ static int test_phase22_test_instruction_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies the shared Phase 25 memory-width resolver normalizes all current memory-capable instruction forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase25_global_memory_width_resolution_parses_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    mov [eax], bl\n"
+        "    add [eax], ebx\n"
+        "    sub [eax], ax\n"
+        "    adc [eax], al\n"
+        "    sbb [eax], ebx\n"
+        "    xchg [eax], cx\n"
+        "    test [eax], eax\n"
+        "    test [eax], ax\n"
+        "    test [eax], al\n"
+        "    test BYTE PTR [eax], 1\n"
+        "    test WORD PTR [eax], 1\n"
+        "    test DWORD PTR [eax], 1\n"
+        "    mov ebx, [eax]\n"
+        "    add ebx, [eax]\n"
+        "    sub bx, [eax]\n"
+        "    adc al, [eax]\n"
+        "    sbb ebx, [eax]\n"
+        "    xchg cx, [eax]\n"
+        "    test eax, [eax]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 25 register-supplied memory-width program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 25 register-supplied memory-width program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 20U, "Phase 25 program should emit twenty instructions");
+
+    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_MOV, "MOV [eax], bl opcode should be emitted");
+    failures += expect_u32(buffers.instructions[1].destination.width_bits, 8U, "MOV [eax], bl should infer BYTE memory width from BL");
+    failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_ADD, "ADD [eax], ebx opcode should be emitted");
+    failures += expect_u32(buffers.instructions[2].destination.width_bits, 32U, "ADD [eax], ebx should infer DWORD memory width from EBX");
+    failures += expect_u32(buffers.instructions[3].opcode, VM_IR_OPCODE_SUB, "SUB [eax], ax opcode should be emitted");
+    failures += expect_u32(buffers.instructions[3].destination.width_bits, 16U, "SUB [eax], ax should infer WORD memory width from AX");
+    failures += expect_u32(buffers.instructions[4].opcode, VM_IR_OPCODE_ADC, "ADC [eax], al opcode should be emitted");
+    failures += expect_u32(buffers.instructions[4].destination.width_bits, 8U, "ADC [eax], al should infer BYTE memory width from AL");
+    failures += expect_u32(buffers.instructions[5].opcode, VM_IR_OPCODE_SBB, "SBB [eax], ebx opcode should be emitted");
+    failures += expect_u32(buffers.instructions[5].destination.width_bits, 32U, "SBB [eax], ebx should infer DWORD memory width from EBX");
+    failures += expect_u32(buffers.instructions[6].opcode, VM_IR_OPCODE_XCHG, "XCHG [eax], cx opcode should be emitted");
+    failures += expect_u32(buffers.instructions[6].destination.width_bits, 16U, "XCHG [eax], cx should infer WORD memory width from CX");
+    failures += expect_u32(buffers.instructions[7].opcode, VM_IR_OPCODE_TEST, "TEST [eax], eax opcode should be emitted");
+    failures += expect_u32(buffers.instructions[7].destination.width_bits, 32U, "TEST [eax], eax should infer DWORD memory width from EAX");
+    failures += expect_u32(buffers.instructions[8].destination.width_bits, 16U, "TEST [eax], ax should infer WORD memory width from AX");
+    failures += expect_u32(buffers.instructions[9].destination.width_bits, 8U, "TEST [eax], al should infer BYTE memory width from AL");
+    failures += expect_u32(buffers.instructions[10].destination.width_bits, 8U, "TEST BYTE PTR [eax], 1 should preserve explicit BYTE width");
+    failures += expect_u32(buffers.instructions[11].destination.width_bits, 16U, "TEST WORD PTR [eax], 1 should preserve explicit WORD width");
+    failures += expect_u32(buffers.instructions[12].destination.width_bits, 32U, "TEST DWORD PTR [eax], 1 should preserve explicit DWORD width");
+    failures += expect_u32(buffers.instructions[13].opcode, VM_IR_OPCODE_MOV, "MOV ebx, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[13].source.width_bits, 32U, "MOV ebx, [eax] should infer DWORD memory width from EBX");
+    failures += expect_u32(buffers.instructions[14].opcode, VM_IR_OPCODE_ADD, "ADD ebx, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[14].source.width_bits, 32U, "ADD ebx, [eax] should infer DWORD memory width from EBX");
+    failures += expect_u32(buffers.instructions[15].opcode, VM_IR_OPCODE_SUB, "SUB bx, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[15].source.width_bits, 16U, "SUB bx, [eax] should infer WORD memory width from BX");
+    failures += expect_u32(buffers.instructions[16].opcode, VM_IR_OPCODE_ADC, "ADC al, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[16].source.width_bits, 8U, "ADC al, [eax] should infer BYTE memory width from AL");
+    failures += expect_u32(buffers.instructions[17].opcode, VM_IR_OPCODE_SBB, "SBB ebx, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[17].source.width_bits, 32U, "SBB ebx, [eax] should infer DWORD memory width from EBX");
+    failures += expect_u32(buffers.instructions[18].opcode, VM_IR_OPCODE_XCHG, "XCHG cx, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[18].source.width_bits, 16U, "XCHG cx, [eax] should infer WORD memory width from CX");
+    failures += expect_u32(buffers.instructions[19].opcode, VM_IR_OPCODE_TEST, "TEST eax, [eax] opcode should be emitted");
+    failures += expect_u32(buffers.instructions[19].source.width_bits, 32U, "TEST eax, [eax] should infer DWORD memory width from EAX");
+
+    return failures;
+}
+
+/// Verifies symbol-relative metadata is not overridden by a same-instruction register operand.
+///
+/// Phase 25 allows register operands to supply width only for untyped memory
+/// operands. Symbol-relative operands already carry declaration metadata, so a
+/// BYTE symbol reference paired with DX remains a width mismatch.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase25_symbol_metadata_width_precedence(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "buf BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov ecx, 2\n"
+        "    mov [buf + ecx], dx\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Symbol-relative BYTE memory paired with DX should fail parsing");
+    failures += expect_size(result.diagnostic_count, 1U, "Symbol-relative width mismatch should produce one diagnostic");
+    if (result.diagnostic_count > 0U) {
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "Symbol-relative BYTE memory should not let DX override symbol metadata");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "Source operand width does not match", "Symbol metadata precedence diagnostic should describe source width mismatch");
+    }
+
+    return failures;
+}
+
+/// Verifies explicit PTR overrides symbol metadata for register-relative symbol operands.
+///
+/// Phase 25 resolves width from explicit PTR first. A BYTE-declared symbol can
+/// therefore be intentionally accessed as a WORD when the source register width
+/// matches the explicit override.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase25_explicit_ptr_overrides_symbol_metadata(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "buf BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov ecx, 2\n"
+        "    mov dx, 1234h\n"
+        "    mov WORD PTR [buf + ecx], dx\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Explicit WORD PTR should override BYTE symbol metadata when paired with DX");
+    failures += expect_size(result.diagnostic_count, 0U, "Explicit PTR override should not produce width diagnostics");
+    failures += expect_size(result.instruction_count, 3U, "Explicit PTR override program should emit three instructions");
+    if (result.instruction_count >= 3U) {
+        failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_MOV, "Explicit PTR override should emit MOV");
+        failures += expect_u32(buffers.instructions[2].destination.width_bits, 16U, "WORD PTR [buf + ecx] should resolve to a 16-bit memory destination");
+        failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_REGISTER, "Explicit PTR override source should remain a register");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_DX, "Explicit PTR override source should remain DX");
+    }
+
+    return failures;
+}
+
+/// Verifies ambiguous memory-width diagnostics are stable for all current memory-capable instructions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase25_global_memory_width_resolution_error_paths(void) {
+    int failures = 0;
+    const char *sources[] = {
+        ".code\nmain PROC\n    mov [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    add [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    sub [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    adc [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    sbb [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    test [eax], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    test [eax + 4], 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    neg [eax]\nmain ENDP\nEND main\n"
+    };
+    const char *names[] = {
+        "MOV [eax], imm",
+        "ADD [eax], imm",
+        "SUB [eax], imm",
+        "ADC [eax], imm",
+        "SBB [eax], imm",
+        "TEST [eax], imm",
+        "TEST [eax + 4], imm",
+        "NEG [eax]"
+    };
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(sources) / sizeof(sources[0]); index += 1U) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        VmParserStatus status = parse_for_test(sources[index], &buffers, &result);
+
+        failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, names[index]);
+        failures += expect_size(result.diagnostic_count, 1U, "Ambiguous memory-width program should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "Ambiguous memory-width diagnostic should use stable code");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "Memory operand width is ambiguous", "Ambiguous memory-width diagnostic should describe ambiguity");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "BYTE PTR", "Ambiguous memory-width diagnostic should suggest PTR widths");
+    }
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1355,7 +1540,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 22.
+/// Runs all parser regression tests through Milestone 25.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1391,6 +1576,10 @@ int main(void) {
     failures += test_phase21_instruction_parse_error_paths();
     failures += test_phase22_test_instruction_parses_to_ir();
     failures += test_phase22_test_instruction_parse_error_paths();
+    failures += test_phase25_global_memory_width_resolution_parses_to_ir();
+    failures += test_phase25_symbol_metadata_width_precedence();
+    failures += test_phase25_explicit_ptr_overrides_symbol_metadata();
+    failures += test_phase25_global_memory_width_resolution_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

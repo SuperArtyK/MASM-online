@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 24. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 25. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -68,6 +68,38 @@ Implemented memory forms:
 - `QWORD PTR` and `SQWORD PTR` are recognized but executable 64-bit memory operations are rejected in MASM32 Educational Mode.
 
 Array bracket offsets are byte offsets, not element indexes.
+
+Memory operands must have a known access width before execution. The width may come from an explicit `PTR` override, declared symbol metadata, symbol-relative metadata, or a register operand in the same instruction when that register unambiguously supplies the width.
+
+Accepted examples because width is explicit or inferable:
+
+```asm
+mov [eax], bl
+add [eax], ebx
+sub [eax], ax
+adc [eax], al
+sbb [eax], ebx
+xchg [eax], cx
+test [eax], eax
+test BYTE PTR [eax], 1
+test value, 1
+test nums[8], 1
+```
+
+Rejected examples because memory width is ambiguous:
+
+```asm
+mov [eax], 1
+add [eax], 1
+sub [eax], 1
+adc [eax], 1
+sbb [eax], 1
+test [eax], 1
+test [eax + 4], 1
+neg [eax]
+```
+
+These report `ambiguous-memory-width` with guidance to use `BYTE PTR`, `WORD PTR`, or `DWORD PTR`.
 
 ### Instructions
 

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 24 Wasm-facing source execution API.
+ * @brief Tests for the Milestone 25 Wasm-facing source execution API.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -65,7 +65,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
@@ -95,7 +95,7 @@ static int test_zero_instruction_program_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 24 register-indirect source-run acceptance program.
+/// Verifies the Milestone 25 register-indirect source-run acceptance program.
 ///
 /// @return Number of failures.
 static int test_register_indirect_source_run_succeeds(void) {
@@ -112,7 +112,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
@@ -122,7 +122,7 @@ static int test_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Phase 24 acceptance program using EAX as a memory base.
+/// Verifies the Phase 25 acceptance program using EAX as a memory base.
 ///
 /// @return Number of failures.
 static int test_phase24_eax_base_acceptance_program(void) {
@@ -139,11 +139,11 @@ static int test_phase24_eax_base_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "Phase 24 EAX-base response should identify Milestone 24");
-    failures += expect_json_contains(json, "\"ok\":true", "Phase 24 EAX-base acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 24 EAX-base acceptance source should execute three instructions");
-    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "Phase 24 EAX-base acceptance source should set EBX = 100");
-    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500000h\"", "Phase 24 EAX-base memory change should resolve to nums base");
+    failures += expect_json_contains(json, "\"phase\":25", "Phase 25 EAX-base response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 25 EAX-base acceptance source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 25 EAX-base acceptance source should execute three instructions");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "Phase 25 EAX-base acceptance source should set EBX = 100");
+    failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500000h\"", "Phase 25 EAX-base memory change should resolve to nums base");
 
     return failures;
 }
@@ -179,7 +179,7 @@ static int test_all_gpr_register_indirect_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "all-GPR response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "all-GPR response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect source should load 80 through ESP");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "all-GPR register-indirect source should write through ESP + 28");
@@ -187,7 +187,7 @@ static int test_all_gpr_register_indirect_source_run_succeeds(void) {
     return failures;
 }
 
-/// Verifies the Milestone 24 TYPE acceptance program through the source-run API.
+/// Verifies the Milestone 25 TYPE acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_type_operator_source_run_acceptance_program(void) {
@@ -202,7 +202,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
@@ -238,7 +238,7 @@ static int test_type_operator_source_run_element_sizes(void) {
     return failures;
 }
 
-/// Verifies the Milestone 24 LENGTHOF acceptance program through the source-run API.
+/// Verifies the Milestone 25 LENGTHOF acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_lengthof_operator_source_run_acceptance_program(void) {
@@ -255,7 +255,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
@@ -292,7 +292,7 @@ static int test_lengthof_operator_source_run_element_counts(void) {
     return failures;
 }
 
-/// Verifies the Milestone 24 SIZEOF and character-literal acceptance program through the source-run API.
+/// Verifies the Milestone 25 SIZEOF and character-literal acceptance program through the source-run API.
 ///
 /// @return Number of failures.
 static int test_sizeof_operator_source_run_acceptance_program(void) {
@@ -313,7 +313,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
@@ -548,7 +548,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
 }
 
 
-/// Verifies the Milestone 24 constant symbol-offset acceptance program.
+/// Verifies the Milestone 25 constant symbol-offset acceptance program.
 ///
 /// @return Number of failures.
 static int test_constant_symbol_offset_source_run_succeeds(void) {
@@ -564,7 +564,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
@@ -838,7 +838,7 @@ static int test_phase22_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "Phase 22 response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "Phase 22 response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 TEST acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 22 TEST acceptance program should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "TEST acceptance should leave EAX zero");
@@ -966,7 +966,7 @@ static int test_phase22_source_run_error_paths(void) {
     failures += expect_json_contains(eax_invalid_memory_copy, "\"kind\":\"runtime-error\"", "TEST [eax], eax at address zero should be a runtime error");
     failures += expect_json_contains(eax_invalid_memory_copy, "\"code\":\"invalid-address\"", "TEST [eax], eax should expose memory status code");
     failures += expect_json_contains(eax_invalid_memory_copy, "Invalid memory read at 00000000h for 4 bytes", "TEST [eax], eax should describe address-zero invalid read");
-    failures += expect_json_not_contains(eax_invalid_memory_copy, "unsupported-register-indirect-base", "TEST [eax], eax should not produce unsupported-register-indirect-base after Phase 24");
+    failures += expect_json_not_contains(eax_invalid_memory_copy, "unsupported-register-indirect-base", "TEST [eax], eax should not produce unsupported-register-indirect-base after Phase 25");
 
     failures += expect_json_contains(invalid_memory_copy, "\"kind\":\"runtime-error\"", "TEST invalid memory access should be a runtime error");
     failures += expect_json_contains(invalid_memory_copy, "\"code\":\"invalid-address\"", "TEST invalid memory access should expose memory status code");
@@ -1092,7 +1092,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
     return failures;
 }
 
-/// Verifies Milestone 24 source-run JSON reports multiple recovered unsupported features.
+/// Verifies Milestone 25 source-run JSON reports multiple recovered unsupported features.
 ///
 /// @return Number of failures.
 static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void) {
@@ -1115,7 +1115,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":false", "unsupported recovery source should not execute");
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "unsupported recovery source should be a parse error");
     failures += expect_json_contains(json, "STRUCT declarations", "source-run should include STRUCT diagnostic");
@@ -1136,7 +1136,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     return failures;
 }
 
-/// Verifies the Milestone 24 signed declaration acceptance program.
+/// Verifies the Milestone 25 signed declaration acceptance program.
 ///
 /// @return Number of failures.
 static int test_signed_integer_source_run_acceptance_program(void) {
@@ -1157,7 +1157,7 @@ static int test_signed_integer_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "signed acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "TYPE SQWORD should produce EAX = 8");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "LENGTHOF SWORD DUP should produce EBX = 3");
@@ -1231,7 +1231,7 @@ static int test_signed_integer_source_run_error_paths(void) {
 }
 
 
-/// Verifies Milestone 24 signed PTR alias reads through the source-run API.
+/// Verifies Milestone 25 signed PTR alias reads through the source-run API.
 ///
 /// @return Number of failures.
 static int test_signed_ptr_alias_source_run_acceptance_program(void) {
@@ -1250,7 +1250,7 @@ static int test_signed_ptr_alias_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "signed PTR alias response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "signed PTR alias response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "signed PTR alias acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR b should load FFh into AL without sign extension");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR w should load FFFEh into BX without sign extension");
@@ -1259,7 +1259,7 @@ static int test_signed_ptr_alias_source_run_acceptance_program(void) {
     return failures;
 }
 
-/// Verifies Milestone 24 signed PTR alias writes through register-indirect memory.
+/// Verifies Milestone 25 signed PTR alias writes through register-indirect memory.
 ///
 /// @return Number of failures.
 static int test_signed_ptr_alias_source_run_write_program(void) {
@@ -1285,7 +1285,7 @@ static int test_signed_ptr_alias_source_run_write_program(void) {
     return failures;
 }
 
-/// Verifies Milestone 24 signed PTR alias error diagnostics through source-run.
+/// Verifies Milestone 25 signed PTR alias error diagnostics through source-run.
 ///
 /// @return Number of failures.
 static int test_signed_ptr_alias_source_run_error_paths(void) {
@@ -1327,7 +1327,7 @@ static int test_signed_ptr_alias_source_run_error_paths(void) {
     return failures;
 }
 
-/// Verifies the Milestone 24 sign/zero-extension acceptance program.
+/// Verifies the Milestone 25 sign/zero-extension acceptance program.
 ///
 /// @return Number of failures.
 static int test_extension_source_run_acceptance_program(void) {
@@ -1344,7 +1344,7 @@ static int test_extension_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "extension acceptance program should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "movsx eax, SBYTE -1 should sign-extend to FFFFFFFFh");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "movzx ebx, BYTE 0FFh should zero-extend to FFh");
@@ -1531,7 +1531,7 @@ static int test_phase20_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "source-run response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "source-run response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 20 acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 20 acceptance program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFF6h\",\"unsigned\":4294967286}", "NEG after XCHG should leave EAX = FFFFFFF6h");
@@ -1616,8 +1616,8 @@ static int test_phase20_source_run_error_paths(void) {
     failures += expect_json_contains(nop_operand_copy, "unsupported-syntax", "NOP with operand should report unsupported syntax");
     failures += expect_json_contains(nop_operand_copy, "NOP does not take operands", "NOP with operand should describe no-operand rule");
     failures += expect_json_contains(neg_ambiguous_json, "\"ok\":false", "NEG ambiguous memory should fail source-run");
-    failures += expect_json_contains(neg_ambiguous_json, "operand-width-mismatch", "NEG ambiguous memory should report operand width mismatch");
-    failures += expect_json_contains(neg_ambiguous_json, "NEG destination requires a known", "NEG ambiguous memory diagnostic should describe width requirement");
+    failures += expect_json_contains(neg_ambiguous_json, "ambiguous-memory-width", "NEG ambiguous memory should report stable ambiguous-memory-width diagnostic");
+    failures += expect_json_contains(neg_ambiguous_json, "Memory operand width is ambiguous", "NEG ambiguous memory diagnostic should describe width ambiguity");
 
     return failures;
 }
@@ -1639,7 +1639,7 @@ static int test_phase21_source_run_acceptance_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":24", "Phase 22 response should identify Milestone 24");
+    failures += expect_json_contains(json, "\"phase\":25", "Phase 22 response should identify Milestone 25");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 acceptance program should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 22 acceptance program should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 22 acceptance should leave EAX zero");
@@ -1719,6 +1719,185 @@ static int test_phase21_source_run_error_paths(void) {
     failures += expect_json_contains(clc_operand_json, "\"ok\":false", "CLC with operand should fail source-run");
     failures += expect_json_contains(clc_operand_json, "unsupported-syntax", "CLC with operand should report unsupported syntax");
     failures += expect_json_contains(clc_operand_json, "CLC does not take operands", "CLC operand diagnostic should describe no-operand rule");
+
+    return failures;
+}
+
+
+/// Verifies Phase 25 register-supplied memory-width execution through source-run.
+///
+/// @return Number of failures.
+static int test_phase25_register_supplied_memory_width_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET buf\n"
+        "    mov ebx, 5\n"
+        "    mov [eax], ebx\n"
+        "    add [eax], ebx\n"
+        "    sub [eax], ebx\n"
+        "    stc\n"
+        "    adc [eax], ebx\n"
+        "    clc\n"
+        "    sbb [eax], ebx\n"
+        "    mov cx, 1234h\n"
+        "    xchg [eax], cx\n"
+        "    mov dl, 34h\n"
+        "    test [eax], dl\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":25", "Phase 25 source-run response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 25 register-supplied memory-width source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":13", "Phase 25 register-supplied memory-width source should execute thirteen instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should continue to hold the .data address");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "XCHG [eax], cx should exchange a WORD memory value with CX");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000034h\",\"unsigned\":52}", "DL should supply BYTE width for TEST [eax], dl");
+    failures += expect_json_not_contains(json, "ambiguous-memory-width", "Register-supplied memory-width execution should not report ambiguity");
+
+    return failures;
+}
+
+/// Verifies Phase 25 register destinations can supply width for register-indirect memory sources.
+///
+/// @return Number of failures.
+static int test_phase25_register_supplied_source_memory_width_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf DWORD 7\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET buf\n"
+        "    mov ebx, [eax]\n"
+        "    add ebx, [eax]\n"
+        "    sub bx, [eax]\n"
+        "    test ebx, [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":25", "Phase 25 source-memory response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 25 register-supplied source memory-width source should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 25 source-memory program should execute five instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should hold the .data address");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000007h\",\"unsigned\":7}", "Register destinations should supply source memory widths and produce EBX = 7");
+    failures += expect_json_not_contains(json, "ambiguous-memory-width", "Register-supplied source memory-width execution should not report ambiguity");
+
+    return failures;
+}
+
+/// Verifies browser-observed Phase 25 width and flag behavior stays stable.
+///
+/// @return Number of failures.
+static int test_phase25_browser_observed_regressions(void) {
+    char mismatch_json_copy[2048];
+    const char *mismatch_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov ecx, 2\n"
+        "    mov [buf + ecx], dx\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    const char *test_flags_json = NULL;
+    int failures = 0;
+
+    if (mismatch_json == NULL) {
+        return record_failure("symbol-relative mismatch source-run result should not be NULL");
+    }
+    (void)snprintf(mismatch_json_copy, sizeof(mismatch_json_copy), "%s", mismatch_json);
+
+    test_flags_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 0F0F0F0F0h\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "    mov ebx, 0F0000000h\n"
+        "    test [eax], ebx\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+
+    failures += expect_json_contains(mismatch_json_copy, "\"ok\":false", "Symbol-relative BYTE memory paired with DX should fail source-run");
+    failures += expect_json_contains(mismatch_json_copy, "operand-width-mismatch", "Symbol metadata should produce a width mismatch, not register override");
+    failures += expect_json_not_contains(mismatch_json_copy, "ambiguous-memory-width", "Known symbol-relative BYTE width should not be ambiguous");
+
+    failures += expect_json_contains(test_flags_json, "\"ok\":true", "TEST [eax], ebx with a valid .data address should execute");
+    failures += expect_json_contains(test_flags_json, "\"EFLAGS\":{\"hex\":\"00000080h\",\"unsigned\":128}", "TEST result with sign bit set should set SF and clear CF/OF/ZF");
+    failures += expect_json_not_contains(test_flags_json, "ambiguous-memory-width", "Register-supplied TEST width should not report ambiguity");
+
+    return failures;
+}
+
+/// Verifies explicit PTR can intentionally override symbol metadata in source-run.
+///
+/// @return Number of failures.
+static int test_phase25_explicit_ptr_symbol_register_override_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov ecx, 2\n"
+        "    mov dx, 1234h\n"
+        "    mov WORD PTR [buf + ecx], dx\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":25", "Explicit PTR override source-run response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"ok\":true", "Explicit WORD PTR symbol/register program should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Explicit PTR override program should execute three instructions");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "DX should retain the written WORD value");
+    failures += expect_json_contains(json, "\"symbol\":\"buf\",\"address\":\"00500002h\",\"widthBits\":16", "Memory change should record a WORD access at buf + 2");
+    failures += expect_json_not_contains(json, "operand-width-mismatch", "Explicit PTR override should not report symbol/register width mismatch");
+    failures += expect_json_not_contains(json, "ambiguous-memory-width", "Explicit PTR override should not report ambiguous memory width");
+
+    return failures;
+}
+
+/// Verifies one source-run program reports the stable ambiguous memory-width diagnostic.
+///
+/// @param source Source program expected to fail during assembly validation.
+/// @param label Human-readable test label.
+/// @return Number of failures.
+static int expect_ambiguous_memory_width_source_run(const char *source, const char *label) {
+    const char *json = masm32_sim_wasm_run_source_json(source);
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", label);
+    failures += expect_json_contains(json, "ambiguous-memory-width", "Ambiguous source-run diagnostic should use stable code");
+    failures += expect_json_contains(json, "Memory operand width is ambiguous", "Ambiguous source-run diagnostic should describe width ambiguity");
+    failures += expect_json_contains(json, "BYTE PTR", "Ambiguous source-run diagnostic should suggest explicit PTR widths");
+    failures += expect_json_not_contains(json, "unsupported-feature", "Ambiguous memory width should not be classified as unsupported-feature");
+    failures += expect_json_not_contains(json, "unsupported by the current milestone", "Ambiguous memory width should not be described as a milestone limitation");
+
+    return failures;
+}
+
+/// Verifies Phase 25 ambiguous memory-width source-run diagnostics across memory-capable instructions.
+///
+/// @return Number of failures.
+static int test_phase25_ambiguous_memory_width_source_run_error_paths(void) {
+    int failures = 0;
+
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    mov [eax], 1\nmain ENDP\nEND main\n", "MOV [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    add [eax], 1\nmain ENDP\nEND main\n", "ADD [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    sub [eax], 1\nmain ENDP\nEND main\n", "SUB [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    adc [eax], 1\nmain ENDP\nEND main\n", "ADC [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    sbb [eax], 1\nmain ENDP\nEND main\n", "SBB [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    test [eax], 1\nmain ENDP\nEND main\n", "TEST [eax], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    test [eax + 4], 1\nmain ENDP\nEND main\n", "TEST [eax + 4], imm should fail source-run with ambiguous memory width");
+    failures += expect_ambiguous_memory_width_source_run(".code\nmain PROC\n    neg [eax]\nmain ENDP\nEND main\n", "NEG [eax] should fail source-run with ambiguous memory width");
 
     return failures;
 }
@@ -1807,6 +1986,11 @@ int main(void) {
     failures += test_phase22_source_run_acceptance_program();
     failures += test_phase22_memory_immediate_source_run_program();
     failures += test_phase22_source_run_error_paths();
+    failures += test_phase25_register_supplied_memory_width_source_run_program();
+    failures += test_phase25_register_supplied_source_memory_width_source_run_program();
+    failures += test_phase25_browser_observed_regressions();
+    failures += test_phase25_explicit_ptr_symbol_register_override_source_run_program();
+    failures += test_phase25_ambiguous_memory_width_source_run_error_paths();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -1815,6 +1999,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 24 source execution tests passed.");
+    puts("Milestone 25 source execution tests passed.");
     return 0;
 }

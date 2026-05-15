@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 24.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 25.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -86,6 +86,16 @@ typedef struct VmParserUnsupportedFeature {
     /// Stable diagnostic message explaining the unsupported construct.
     const char *message;
 } VmParserUnsupportedFeature;
+
+/// Describes the outcome of shared parser memory-width resolution.
+typedef enum VmParserMemoryWidthResolutionStatus {
+    /// All required memory widths are known or were inferred safely.
+    VM_PARSER_MEMORY_WIDTH_RESOLVED = 0,
+    /// A register-indirect memory operand has no explicit, symbol, or register-supplied width.
+    VM_PARSER_MEMORY_WIDTH_AMBIGUOUS,
+    /// The instruction shape cannot supply a supported memory access width.
+    VM_PARSER_MEMORY_WIDTH_UNSUPPORTED
+} VmParserMemoryWidthResolutionStatus;
 
 static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token);
 
@@ -2902,34 +2912,104 @@ static bool vm_parser_operand_is_memory(const VmIrOperand *operand) {
            (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER);
 }
 
-/// Infers missing register-indirect memory widths from the opposite operand.
+/// Returns whether an operand is a register-indirect memory operand with no known access width.
 ///
-/// TODO(Phase 25): replace instruction-specific width inference calls with a
-/// shared memory-width resolution helper for all memory-capable instructions.
-/// Register-only memory operands such as `[esi]` have no declaration width.
-/// This helper keeps them usable in textbook forms such as `mov eax, [esi]`
-/// and `mov [edi], al` without allowing ambiguous immediate-to-memory writes.
+/// Direct symbols and symbol-relative operands already carry declaration
+/// metadata when they are lowered. Pure register-indirect operands such as
+/// `[eax]` need a PTR override or an unambiguous register operand in the same
+/// instruction.
 ///
-/// @param destination Destination operand to update if its width is inferable.
-/// @param source Source operand to update if its width is inferable.
-static void vm_parser_infer_register_memory_widths(VmIrOperand *destination, VmIrOperand *source) {
-    uint8_t opposite_width = 0U;
+/// @param operand Operand to inspect.
+/// @return true when the memory operand still needs parser width resolution.
+static bool vm_parser_memory_operand_needs_width(const VmIrOperand *operand) {
+    return operand != NULL && operand->kind == VM_IR_OPERAND_MEMORY_REGISTER && operand->width_bits == 0U;
+}
 
-    if (destination == NULL || source == NULL) {
-        return;
+/// Reports the stable MASM-compatible ambiguous memory-width diagnostic.
+///
+/// @param state Parser state to mutate.
+/// @param token Token associated with the ambiguous memory operand.
+static void vm_parser_report_ambiguous_memory_width(VmParserState *state, const VmLexerToken *token) {
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, token, "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+}
+
+/// Resolves memory operand widths for a two-operand instruction.
+///
+/// This shared helper implements the MASM32 Educational Mode rule that memory
+/// width must come from an explicit PTR override, symbol metadata, a
+/// symbol-relative operand, or an unambiguous register operand in the same
+/// instruction. It deliberately refuses to infer widths from immediates.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Opcode whose operands are being validated.
+/// @param destination Destination operand to update when inference is valid.
+/// @param source Source operand to update when inference is valid.
+/// @param destination_token Token associated with the destination operand.
+/// @param source_token Token associated with the source operand.
+/// @return Resolution status describing whether validation may continue.
+static VmParserMemoryWidthResolutionStatus vm_parser_resolve_binary_memory_widths(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    VmIrOperand *destination,
+    VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    uint8_t opposite_width = 0U;
+    (void)opcode;
+    (void)source_token;
+
+    if (state == NULL || destination == NULL || source == NULL) {
+        return VM_PARSER_MEMORY_WIDTH_UNSUPPORTED;
     }
 
-    if (destination->kind == VM_IR_OPERAND_MEMORY_REGISTER && destination->width_bits == 0U) {
-        if (vm_parser_resolve_operand_width(source, &opposite_width)) {
+    if (vm_parser_memory_operand_needs_width(destination)) {
+        if (source->kind == VM_IR_OPERAND_REGISTER && vm_parser_resolve_operand_width(source, &opposite_width)) {
             destination->width_bits = opposite_width;
+        } else if (source->kind == VM_IR_OPERAND_IMMEDIATE) {
+            vm_parser_report_ambiguous_memory_width(state, destination_token);
+            return VM_PARSER_MEMORY_WIDTH_AMBIGUOUS;
         }
     }
 
-    if (source->kind == VM_IR_OPERAND_MEMORY_REGISTER && source->width_bits == 0U) {
-        if (vm_parser_resolve_operand_width(destination, &opposite_width)) {
+    if (vm_parser_memory_operand_needs_width(source)) {
+        if (destination->kind == VM_IR_OPERAND_REGISTER && vm_parser_resolve_operand_width(destination, &opposite_width)) {
             source->width_bits = opposite_width;
         }
     }
+
+    return VM_PARSER_MEMORY_WIDTH_RESOLVED;
+}
+
+/// Resolves memory operand width for a single-operand instruction.
+///
+/// Memory-only instructions such as `neg [eax]` have no same-instruction
+/// register source. They therefore require PTR or symbol metadata instead of
+/// guessing a default width.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Opcode whose operand is being validated.
+/// @param operand Operand to inspect.
+/// @param operand_token Token associated with the operand.
+/// @return Resolution status describing whether validation may continue.
+static VmParserMemoryWidthResolutionStatus vm_parser_resolve_unary_memory_width(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    const VmIrOperand *operand,
+    const VmLexerToken *operand_token
+) {
+    (void)opcode;
+
+    if (state == NULL || operand == NULL) {
+        return VM_PARSER_MEMORY_WIDTH_UNSUPPORTED;
+    }
+
+    if (vm_parser_memory_operand_needs_width(operand)) {
+        vm_parser_report_ambiguous_memory_width(state, operand_token);
+        return VM_PARSER_MEMORY_WIDTH_AMBIGUOUS;
+    }
+
+    return VM_PARSER_MEMORY_WIDTH_RESOLVED;
 }
 
 /// Returns the largest unsigned immediate value accepted for a destination width.
@@ -3038,6 +3118,10 @@ static bool vm_parser_validate_source_width(
     }
 
     if (!vm_parser_resolve_operand_width(destination, &destination_width)) {
+        if (vm_parser_memory_operand_needs_width(destination) && source->kind == VM_IR_OPERAND_IMMEDIATE) {
+            vm_parser_report_ambiguous_memory_width(state, source_token);
+            return false;
+        }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Destination operand width is unsupported by the current milestone.");
         return false;
     }
@@ -3387,6 +3471,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     if (vm_parser_opcode_is_single_destination_operand(opcode)) {
+        if (vm_parser_resolve_unary_memory_width(state, opcode, &destination, destination_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
         if (!vm_parser_validate_neg_operand(state, &destination, mnemonic_token)) {
             return false;
         }
@@ -3413,17 +3500,23 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             return false;
         }
     } else if (vm_parser_opcode_is_exchange(opcode)) {
-        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
         if (!vm_parser_validate_exchange_operands(state, &destination, &source, source_token)) {
             return false;
         }
     } else if (vm_parser_opcode_is_test(opcode)) {
-        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
         if (!vm_parser_validate_test_operands(state, &destination, &source, destination_token, source_token)) {
             return false;
         }
     } else {
-        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
         if (!vm_parser_validate_source_width(state, &destination, &source, source_token)) {
             return false;
         }
