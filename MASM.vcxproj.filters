@@ -13,27 +13,81 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\parser">
+      <UniqueIdentifier>{85472bbf-d63d-4407-b6a2-2552d38c4f21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\wasm">
+      <UniqueIdentifier>{9bfb6071-27ee-4121-b9d3-e8e0297a9249}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\core">
+      <UniqueIdentifier>{bca6ca9a-70a9-4caa-bb37-167be594b309}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\core">
+      <UniqueIdentifier>{cb6b22d7-71fa-4294-b531-b801c83ff81e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\wasm">
+      <UniqueIdentifier>{aa860144-e958-4a8a-bb24-261497d5613d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\parser">
+      <UniqueIdentifier>{b5a26e7b-6a56-4b09-98f4-ad9b0e628c3f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\wasm\wasm_api.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\core\masm32_sim_api.c">
-      <Filter>Source Files</Filter>
+      <Filter>Source Files\core</Filter>
     </ClCompile>
-    <ClCompile Include="tests\core\test_milestone_zero.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="src\core\vm_cpu.c">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\vm_exec.c">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\vm_ir.c">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\vm_memory.c">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\parser\lexer.c">
+      <Filter>Source Files\parser</Filter>
+    </ClCompile>
+    <ClCompile Include="src\parser\parser.c">
+      <Filter>Source Files\parser</Filter>
+    </ClCompile>
+    <ClCompile Include="src\parser\symbols.c">
+      <Filter>Source Files\parser</Filter>
+    </ClCompile>
+    <ClCompile Include="src\wasm\wasm_api.c">
+      <Filter>Source Files\wasm</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\masm32_sim_api.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\core</Filter>
     </ClInclude>
     <ClInclude Include="src\core\vm_cpu.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\vm_exec.h">
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\vm_ir.h">
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\vm_memory.h">
+      <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\parser\lexer.h">
+      <Filter>Header Files\parser</Filter>
+    </ClInclude>
+    <ClInclude Include="src\parser\parser.h">
+      <Filter>Header Files\parser</Filter>
+    </ClInclude>
+    <ClInclude Include="src\parser\symbols.h">
+      <Filter>Header Files\parser</Filter>
     </ClInclude>
     <ClInclude Include="src\wasm\wasm_api.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\wasm</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

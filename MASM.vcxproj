@@ -18,6 +18,28 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\core\masm32_sim_api.c" />
+    <ClCompile Include="src\core\vm_cpu.c" />
+    <ClCompile Include="src\core\vm_exec.c" />
+    <ClCompile Include="src\core\vm_ir.c" />
+    <ClCompile Include="src\core\vm_memory.c" />
+    <ClCompile Include="src\parser\lexer.c" />
+    <ClCompile Include="src\parser\parser.c" />
+    <ClCompile Include="src\parser\symbols.c" />
+    <ClCompile Include="src\wasm\wasm_api.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\core\masm32_sim_api.h" />
+    <ClInclude Include="src\core\vm_cpu.h" />
+    <ClInclude Include="src\core\vm_exec.h" />
+    <ClInclude Include="src\core\vm_ir.h" />
+    <ClInclude Include="src\core\vm_memory.h" />
+    <ClInclude Include="src\parser\lexer.h" />
+    <ClInclude Include="src\parser\parser.h" />
+    <ClInclude Include="src\parser\symbols.h" />
+    <ClInclude Include="src\wasm\wasm_api.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
     <ProjectGuid>{7043E02A-E9E0-95AF-ECDE-C634B382B0AE}</ProjectGuid>
@@ -110,16 +132,6 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="src\core\masm32_sim_api.c" />
-    <ClCompile Include="src\wasm\wasm_api.c" />
-    <ClCompile Include="tests\core\test_milestone_zero.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="src\core\masm32_sim_api.h" />
-    <ClInclude Include="src\core\vm_cpu.h" />
-    <ClInclude Include="src\wasm\wasm_api.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
