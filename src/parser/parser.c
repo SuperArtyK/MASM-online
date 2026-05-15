@@ -1,9 +1,9 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 26.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST and minimal .code programs through Milestone 27.
  *
- * This implementation consumes the lexer token stream, lays out a small .data
- * image with symbols, and emits only the minimal IR supported by the current
+ * This implementation consumes the lexer token stream, lays out small .data,
+ * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
  * full MASM expression parsing remain later milestones. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -33,8 +33,12 @@ typedef struct VmParserProcedureName {
 typedef enum VmParserSection {
     /// No .data or .code directive has been consumed yet.
     VM_PARSER_SECTION_NONE = 0,
-    /// Parser is currently consuming .data declarations.
+    /// Parser is currently consuming writable .data declarations.
     VM_PARSER_SECTION_DATA,
+    /// Parser is currently consuming deterministic zero-filled .DATA? declarations.
+    VM_PARSER_SECTION_DATA_UNINITIALIZED,
+    /// Parser is currently consuming read-only .CONST declarations.
+    VM_PARSER_SECTION_CONST,
     /// Parser is currently consuming .code statements.
     VM_PARSER_SECTION_CODE
 } VmParserSection;
@@ -51,15 +55,17 @@ typedef struct VmParserState {
     size_t token_index;
     /// Current write offset into source-text storage.
     size_t source_text_offset;
-    /// Current write offset into the .data image.
+    /// Current write offset into the .data/.DATA? image.
     uint32_t data_offset;
+    /// Current write offset into the .CONST image.
+    uint32_t const_offset;
     /// Current top-level parser section.
     VmParserSection section;
     /// Recorded procedure name for END validation.
     VmParserProcedureName procedure_name;
     /// Whether the required .code directive has been consumed.
     bool saw_code_directive;
-    /// Whether an optional .data directive has been consumed.
+    /// Whether an optional data-section directive has been consumed.
     bool saw_data_directive;
     /// Whether an END directive has been parsed.
     bool saw_end;
@@ -289,7 +295,6 @@ static const char *vm_parser_find_unsupported_feature_message(
 /// @return Static unsupported-feature message, or NULL when not recognized.
 static const char *vm_parser_unsupported_directive_message(const VmLexerToken *token, const VmLexerToken *next) {
     static const VmParserUnsupportedFeature directives[] = {
-        {".const", "Unsupported feature: .CONST sections are not supported yet."},
         {".if", "Unsupported feature: MASM .IF high-level flow is not supported yet."},
         {".while", "Unsupported feature: MASM .WHILE high-level flow is not supported yet."},
         {".repeat", "Unsupported feature: MASM .REPEAT high-level flow is not supported yet."},
@@ -316,9 +321,6 @@ static const char *vm_parser_unsupported_directive_message(const VmLexerToken *t
         {".fpo", "Unsupported feature: .FPO object metadata is not supported."}
     };
 
-    if (vm_parser_is_data_question_directive(token, next)) {
-        return "Unsupported feature: .DATA? uninitialized data sections are not supported yet.";
-    }
     if (vm_parser_is_question_directive(token, next, ".fardata")) {
         return "Unsupported feature: .FARDATA? sections are not supported.";
     }
@@ -578,8 +580,8 @@ static void vm_parser_recover_skip_block(
 /// Skips an unsupported section until the next known section directive or EOF.
 ///
 /// This keeps section recovery narrow: declarations inside an unsupported
-/// section are ignored, but a later recoverable section such as `.CONST` after
-/// `.DATA?` remains visible to the normal recovery loop.
+/// section are ignored, but later supported data-like sections and `.code`
+/// remain visible to the normal parser.
 ///
 /// @param state Parser state to mutate.
 static void vm_parser_recover_skip_unsupported_section(VmParserState *state) {
@@ -606,15 +608,6 @@ static void vm_parser_recover_skip_unsupported_section(VmParserState *state) {
     }
 }
 
-/// Returns whether a token pair starts a recovered `.DATA?` unsupported section.
-///
-/// @param token Candidate `.data` token.
-/// @param next Candidate contiguous question-mark token.
-/// @return true when the pair starts `.DATA?`.
-static bool vm_parser_recover_is_data_question_start(const VmLexerToken *token, const VmLexerToken *next) {
-    return vm_parser_is_data_question_directive(token, next);
-}
-
 /// Adds a recognized unsupported-feature diagnostic and skips its safe recovery span.
 ///
 /// @param state Parser state to mutate.
@@ -629,15 +622,7 @@ static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *s
         return false;
     }
 
-    if (vm_parser_recover_is_data_question_start(token, next)) {
-        message = vm_parser_unsupported_directive_message(token, next);
-        diagnostic_token = token;
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
-        vm_parser_recover_skip_unsupported_section(state);
-        return true;
-    }
-
-    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".const")) {
+    if (vm_parser_is_question_directive(token, next, ".fardata")) {
         message = vm_parser_unsupported_directive_message(token, next);
         (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
         vm_parser_recover_skip_unsupported_section(state);
@@ -920,14 +905,58 @@ static bool vm_parser_copy_source_line(VmParserState *state, const VmLexerToken 
     return true;
 }
 
-/// Returns whether a data image can receive another byte.
+/// Returns the active data image buffer for the current declaration section.
+///
+/// @param state Parser state to inspect.
+/// @param out_image Receives the active image pointer.
+/// @param out_capacity Receives active image capacity in bytes.
+/// @param out_offset Receives the active image write offset pointer.
+/// @param out_size Receives the active parser result size pointer.
+/// @return true when an active data-like section is selected.
+static bool vm_parser_get_active_data_image(
+    VmParserState *state,
+    uint8_t **out_image,
+    size_t *out_capacity,
+    uint32_t **out_offset,
+    size_t **out_size
+) {
+    if (state == NULL || state->config == NULL || state->result == NULL ||
+        out_image == NULL || out_capacity == NULL || out_offset == NULL || out_size == NULL) {
+        return false;
+    }
+
+    if (state->section == VM_PARSER_SECTION_CONST) {
+        *out_image = state->config->const_image;
+        *out_capacity = state->config->const_image_capacity;
+        *out_offset = &state->const_offset;
+        *out_size = &state->result->const_size;
+        return true;
+    }
+
+    if (state->section == VM_PARSER_SECTION_DATA || state->section == VM_PARSER_SECTION_DATA_UNINITIALIZED) {
+        *out_image = state->config->data_image;
+        *out_capacity = state->config->data_image_capacity;
+        *out_offset = &state->data_offset;
+        *out_size = &state->result->data_size;
+        return true;
+    }
+
+    return false;
+}
+
+/// Returns whether the active data image can receive another byte.
 ///
 /// @param state Parser state to inspect.
 /// @param token Token used for diagnostics on failure.
 /// @return true when a byte can be appended.
 static bool vm_parser_data_has_capacity(VmParserState *state, const VmLexerToken *token) {
-    if (state == NULL || state->config == NULL || state->config->data_image == NULL || state->data_offset >= state->config->data_image_capacity) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, token, ".data image capacity exceeded.");
+    uint8_t *image = NULL;
+    size_t capacity = 0U;
+    uint32_t *offset = NULL;
+    size_t *size = NULL;
+
+    if (!vm_parser_get_active_data_image(state, &image, &capacity, &offset, &size) || image == NULL || offset == NULL || *offset >= capacity) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, token, "Data image capacity exceeded.");
         if (state != NULL) {
             state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
         }
@@ -937,20 +966,27 @@ static bool vm_parser_data_has_capacity(VmParserState *state, const VmLexerToken
     return true;
 }
 
-/// Appends one byte to the .data image.
+/// Appends one byte to the active data image.
 ///
 /// @param state Parser state to mutate.
 /// @param value Byte value to append.
 /// @param token Token used for diagnostics on failure.
 /// @return true when the byte was appended.
 static bool vm_parser_append_data_byte(VmParserState *state, uint8_t value, const VmLexerToken *token) {
-    if (!vm_parser_data_has_capacity(state, token)) {
+    uint8_t *image = NULL;
+    size_t capacity = 0U;
+    uint32_t *offset = NULL;
+    size_t *size = NULL;
+
+    if (!vm_parser_data_has_capacity(state, token) ||
+        !vm_parser_get_active_data_image(state, &image, &capacity, &offset, &size) || image == NULL || offset == NULL || size == NULL) {
+        (void)capacity;
         return false;
     }
 
-    state->config->data_image[state->data_offset] = value;
-    state->data_offset += 1U;
-    state->result->data_size = state->data_offset;
+    image[*offset] = value;
+    *offset += 1U;
+    *size = (size_t)(*offset);
     return true;
 }
 
@@ -1271,22 +1307,25 @@ static void vm_parser_add_character_literal_diagnostic(
 /// @param data_type Declared data type.
 /// @param out_element_count Receives number of declared elements appended.
 /// @param out_has_uninitialized Receives true when `?` was parsed.
+/// @param out_is_fully_uninitialized Receives true when the initializer emits only `?` storage.
 /// @return true when the initializer was parsed.
 static bool vm_parser_parse_single_data_initializer(
     VmParserState *state,
     VmSymbolDataType data_type,
     uint32_t *out_element_count,
-    bool *out_has_uninitialized
+    bool *out_has_uninitialized,
+    bool *out_is_fully_uninitialized
 ) {
     const VmLexerToken *token = vm_parser_current_token(state);
     uint8_t element_size = vm_symbol_data_type_size_bytes(data_type);
 
-    if (state == NULL || out_element_count == NULL || out_has_uninitialized == NULL || element_size == 0U) {
+    if (state == NULL || out_element_count == NULL || out_has_uninitialized == NULL || out_is_fully_uninitialized == NULL || element_size == 0U) {
         return false;
     }
 
     *out_element_count = 0U;
     *out_has_uninitialized = false;
+    *out_is_fully_uninitialized = false;
 
     if (token == NULL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, token, "Expected .data initializer.");
@@ -1361,6 +1400,7 @@ static bool vm_parser_parse_single_data_initializer(
         vm_parser_advance(state);
         *out_element_count = 1U;
         *out_has_uninitialized = true;
+        *out_is_fully_uninitialized = true;
         return true;
     }
 
@@ -1375,23 +1415,41 @@ static bool vm_parser_parse_single_data_initializer(
 /// @param repeat_token Count token at the start of the DUP form.
 /// @param out_element_count Receives total declared element count appended.
 /// @param out_has_uninitialized Receives true when the inner initializer used `?`.
+/// @param out_is_fully_uninitialized Receives true when the DUP emits only `?` storage.
 /// @return true when the DUP initializer was parsed and expanded.
 static bool vm_parser_parse_dup_initializer(
     VmParserState *state,
     VmSymbolDataType data_type,
     const VmLexerToken *repeat_token,
     uint32_t *out_element_count,
-    bool *out_has_uninitialized
+    bool *out_has_uninitialized,
+    bool *out_is_fully_uninitialized
 ) {
     size_t instance_start = 0U;
     size_t instance_size = 0U;
+    uint8_t *active_image = NULL;
+    size_t active_capacity = 0U;
+    uint32_t *active_offset = NULL;
+    size_t *active_size = NULL;
     uint64_t repeat_count = 0U;
     uint32_t instance_elements = 0U;
     bool instance_uninitialized = false;
+    bool instance_fully_uninitialized = false;
     const VmLexerToken *token = NULL;
     uint64_t repeat_index = 0U;
 
-    if (state == NULL || repeat_token == NULL || out_element_count == NULL || out_has_uninitialized == NULL) {
+    if (state == NULL || repeat_token == NULL || out_element_count == NULL || out_has_uninitialized == NULL || out_is_fully_uninitialized == NULL) {
+        return false;
+    }
+
+    *out_has_uninitialized = false;
+    *out_is_fully_uninitialized = false;
+
+    if (!vm_parser_get_active_data_image(state, &active_image, &active_capacity, &active_offset, &active_size) || active_image == NULL || active_offset == NULL) {
+        (void)active_capacity;
+        (void)active_size;
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, repeat_token, "Data image capacity exceeded.");
+        state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
         return false;
     }
 
@@ -1416,11 +1474,11 @@ static bool vm_parser_parse_dup_initializer(
     }
     vm_parser_advance(state);
 
-    instance_start = (size_t)state->data_offset;
-    if (!vm_parser_parse_single_data_initializer(state, data_type, &instance_elements, &instance_uninitialized)) {
+    instance_start = (size_t)(*active_offset);
+    if (!vm_parser_parse_single_data_initializer(state, data_type, &instance_elements, &instance_uninitialized, &instance_fully_uninitialized)) {
         return false;
     }
-    instance_size = (size_t)state->data_offset - instance_start;
+    instance_size = (size_t)(*active_offset) - instance_start;
 
     token = vm_parser_current_token(state);
     if (token == NULL || token->kind != VM_LEXER_TOKEN_RIGHT_PAREN) {
@@ -1432,7 +1490,7 @@ static bool vm_parser_parse_dup_initializer(
     for (repeat_index = 1U; repeat_index < repeat_count; repeat_index += 1U) {
         size_t byte_index = 0U;
         for (byte_index = 0U; byte_index < instance_size; byte_index += 1U) {
-            if (!vm_parser_append_data_byte(state, state->config->data_image[instance_start + byte_index], repeat_token)) {
+            if (!vm_parser_append_data_byte(state, active_image[instance_start + byte_index], repeat_token)) {
                 return false;
             }
         }
@@ -1440,6 +1498,7 @@ static bool vm_parser_parse_dup_initializer(
 
     *out_element_count = (uint32_t)(repeat_count * (uint64_t)instance_elements);
     *out_has_uninitialized = instance_uninitialized;
+    *out_is_fully_uninitialized = instance_fully_uninitialized;
     return true;
 }
 
@@ -1449,21 +1508,88 @@ static bool vm_parser_parse_dup_initializer(
 /// @param data_type Declared data type.
 /// @param out_element_count Receives number of declared elements appended.
 /// @param out_has_uninitialized Receives true when `?` was parsed.
+/// @param out_is_fully_uninitialized Receives true when the initializer emits only `?` storage.
 /// @return true when the initializer was parsed.
 static bool vm_parser_parse_data_initializer(
     VmParserState *state,
     VmSymbolDataType data_type,
     uint32_t *out_element_count,
-    bool *out_has_uninitialized
+    bool *out_has_uninitialized,
+    bool *out_is_fully_uninitialized
 ) {
     const VmLexerToken *token = vm_parser_current_token(state);
     const VmLexerToken *next = vm_parser_peek_token(state, 1U);
 
     if (token != NULL && next != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && next->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(next, "DUP")) {
-        return vm_parser_parse_dup_initializer(state, data_type, token, out_element_count, out_has_uninitialized);
+        return vm_parser_parse_dup_initializer(state, data_type, token, out_element_count, out_has_uninitialized, out_is_fully_uninitialized);
     }
 
-    return vm_parser_parse_single_data_initializer(state, data_type, out_element_count, out_has_uninitialized);
+    return vm_parser_parse_single_data_initializer(state, data_type, out_element_count, out_has_uninitialized, out_is_fully_uninitialized);
+}
+
+/// Returns the active symbol section for a data declaration.
+///
+/// @param state Parser state to inspect.
+/// @return Symbol section matching the current parser section.
+static VmSymbolSection vm_parser_active_symbol_section(const VmParserState *state) {
+    if (state != NULL && state->section == VM_PARSER_SECTION_CONST) {
+        return VM_SYMBOL_SECTION_CONST;
+    }
+    if (state != NULL && state->section == VM_PARSER_SECTION_DATA_UNINITIALIZED) {
+        return VM_SYMBOL_SECTION_DATA_UNINITIALIZED;
+    }
+    return VM_SYMBOL_SECTION_DATA;
+}
+
+/// Returns the simulated base address for a symbol section.
+///
+/// @param section Symbol section to inspect.
+/// @return Simulated region base address for the section.
+static uint32_t vm_parser_symbol_section_base(VmSymbolSection section) {
+    return section == VM_SYMBOL_SECTION_CONST ? VM_MEMORY_DEFAULT_CONST_BASE : VM_MEMORY_DEFAULT_DATA_BASE;
+}
+
+/// Returns the number of bytes emitted for a symbol section.
+///
+/// @param state Parser state to inspect.
+/// @param section Symbol section to inspect.
+/// @return Current section image size in bytes.
+static size_t vm_parser_symbol_section_size(const VmParserState *state, VmSymbolSection section) {
+    if (state == NULL || state->result == NULL) {
+        return 0U;
+    }
+
+    return section == VM_SYMBOL_SECTION_CONST ? state->result->const_size : state->result->data_size;
+}
+
+/// Returns the active data-image write offset for declarations.
+///
+/// @param state Parser state to inspect.
+/// @return Current active section offset in bytes.
+static uint32_t vm_parser_active_data_offset(const VmParserState *state) {
+    if (state != NULL && state->section == VM_PARSER_SECTION_CONST) {
+        return state->const_offset;
+    }
+    return state != NULL ? state->data_offset : 0U;
+}
+
+/// Restores the active data-image write offset and result size after a failed declaration.
+///
+/// @param state Parser state to mutate.
+/// @param offset Offset value to restore.
+/// @param size Result section size to restore.
+static void vm_parser_restore_active_data_offset(VmParserState *state, uint32_t offset, size_t size) {
+    if (state == NULL || state->result == NULL) {
+        return;
+    }
+
+    if (state->section == VM_PARSER_SECTION_CONST) {
+        state->const_offset = offset;
+        state->result->const_size = size;
+    } else {
+        state->data_offset = offset;
+        state->result->data_size = size;
+    }
 }
 
 /// Parses one .data declaration line.
@@ -1475,10 +1601,12 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     const VmLexerToken *type_token = vm_parser_peek_token(state, 1U);
     VmSymbolDataType data_type = VM_SYMBOL_DATA_TYPE_BYTE;
     VmSymbol symbol;
+    VmSymbolSection symbol_section = VM_SYMBOL_SECTION_DATA;
     uint32_t total_elements = 0U;
     bool has_uninitialized = false;
+    bool all_initializers_uninitialized = true;
     uint32_t start_offset = 0U;
-    uint32_t start_data_size = 0U;
+    size_t start_data_size = 0U;
 
     if (state == NULL || !vm_parser_token_can_name_data_symbol(name_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_DECLARATION, name_token, "Expected symbol name in .data declaration.");
@@ -1512,14 +1640,16 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
+    symbol_section = vm_parser_active_symbol_section(state);
     symbol.data_type = data_type;
+    symbol.section = symbol_section;
     symbol.element_size_bytes = vm_symbol_data_type_size_bytes(data_type);
-    symbol.address = VM_MEMORY_DEFAULT_DATA_BASE + state->data_offset;
+    symbol.address = vm_parser_symbol_section_base(symbol_section) + vm_parser_active_data_offset(state);
 
     vm_parser_advance(state);
     vm_parser_advance(state);
-    start_offset = state->data_offset;
-    start_data_size = state->result->data_size;
+    start_offset = vm_parser_active_data_offset(state);
+    start_data_size = vm_parser_symbol_section_size(state, symbol_section);
 
     if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, type_token, "Expected at least one .data initializer.");
@@ -1529,15 +1659,16 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     while (true) {
         uint32_t initializer_elements = 0U;
         bool initializer_uninitialized = false;
+        bool initializer_fully_uninitialized = false;
         const VmLexerToken *separator = NULL;
 
-        if (!vm_parser_parse_data_initializer(state, data_type, &initializer_elements, &initializer_uninitialized)) {
-            state->data_offset = start_offset;
-            state->result->data_size = start_data_size;
+        if (!vm_parser_parse_data_initializer(state, data_type, &initializer_elements, &initializer_uninitialized, &initializer_fully_uninitialized)) {
+            vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
             return false;
         }
         total_elements += initializer_elements;
         has_uninitialized = has_uninitialized || initializer_uninitialized;
+        all_initializers_uninitialized = all_initializers_uninitialized && initializer_fully_uninitialized;
 
         separator = vm_parser_current_token(state);
         if (separator != NULL && separator->kind == VM_LEXER_TOKEN_COMMA) {
@@ -1549,14 +1680,41 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
 
     if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_LINE_END, vm_parser_current_token(state), "Expected end of line after .data declaration.");
-        state->data_offset = start_offset;
-        state->result->data_size = start_data_size;
+        vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
         return false;
     }
 
-    symbol.size_bytes = state->data_offset - start_offset;
+    if (symbol_section == VM_SYMBOL_SECTION_CONST && has_uninitialized) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, name_token, ".CONST declarations require initialized values, not ?.");
+        vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
+        return false;
+    }
+
+    if (symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED && !all_initializers_uninitialized) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, name_token, ".DATA? declarations must use ? or DUP(?) uninitialized storage.");
+        vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
+        return false;
+    }
+
+    if (symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED) {
+        uint8_t *active_image = NULL;
+        size_t active_capacity = 0U;
+        uint32_t *active_offset = NULL;
+        size_t *active_size = NULL;
+        uint32_t zero_index = 0U;
+        if (vm_parser_get_active_data_image(state, &active_image, &active_capacity, &active_offset, &active_size) && active_image != NULL && active_offset != NULL) {
+            (void)active_capacity;
+            (void)active_size;
+            for (zero_index = start_offset; zero_index < *active_offset; zero_index += 1U) {
+                active_image[zero_index] = 0U;
+            }
+        }
+    }
+
+    symbol.size_bytes = vm_parser_active_data_offset(state) - start_offset;
     symbol.element_count = total_elements;
     symbol.has_uninitialized_initializer = has_uninitialized;
+    symbol.has_uninitialized_storage = symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED;
     state->config->symbols[state->result->symbol_count] = symbol;
     state->result->symbol_count += 1U;
 
@@ -1809,11 +1967,12 @@ static bool vm_parser_build_symbol_offset_memory_operand(
     const VmSymbol *symbol = NULL;
     uint8_t width_bits = 0U;
     uint32_t width_bytes = 0U;
-    uint32_t data_relative_offset = 0U;
+    uint32_t section_relative_offset = 0U;
+    uint32_t section_base = 0U;
     uint32_t final_address = 0U;
     int64_t final_address_signed = 0;
     uint64_t access_end = 0U;
-    uint64_t data_end = 0U;
+    uint64_t section_end = 0U;
 
     if (state == NULL || symbol_token == NULL || out_operand == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         return false;
@@ -1840,18 +1999,19 @@ static bool vm_parser_build_symbol_offset_memory_operand(
         return false;
     }
 
+    section_base = vm_parser_symbol_section_base(symbol->section);
     final_address_signed = (int64_t)(uint64_t)symbol->address + (int64_t)offset;
-    if (final_address_signed < (int64_t)(uint64_t)VM_MEMORY_DEFAULT_DATA_BASE || final_address_signed > (int64_t)UINT32_MAX) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset resolves outside the current .data image.");
+    if (final_address_signed < (int64_t)(uint64_t)section_base || final_address_signed > (int64_t)UINT32_MAX) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset resolves outside the current data section image.");
         return false;
     }
 
     final_address = (uint32_t)final_address_signed;
-    data_relative_offset = final_address - VM_MEMORY_DEFAULT_DATA_BASE;
-    access_end = (uint64_t)data_relative_offset + (uint64_t)width_bytes;
-    data_end = (uint64_t)state->result->data_size;
-    if (access_end > data_end) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset access extends beyond the current .data image.");
+    section_relative_offset = final_address - section_base;
+    access_end = (uint64_t)section_relative_offset + (uint64_t)width_bytes;
+    section_end = (uint64_t)vm_parser_symbol_section_size(state, symbol->section);
+    if (access_end > section_end) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset access extends beyond the current data section image.");
         return false;
     }
 
@@ -3464,6 +3624,78 @@ static bool vm_parser_expect_line_end(VmParserState *state) {
     return true;
 }
 
+/// Returns whether an operand denotes statically known read-only `.CONST` storage.
+///
+/// Absolute symbol memory operands are checked by containing address.
+/// Symbol/register operands are treated as read-only when their static base
+/// address belongs to a `.CONST` symbol; pure register-indirect operands are
+/// left for runtime permission checks.
+///
+/// @param state Parser state whose symbol table should be inspected.
+/// @param operand Operand to classify.
+/// @return true when the operand is a statically known `.CONST` memory operand.
+static bool vm_parser_operand_targets_const_storage(const VmParserState *state, const VmIrOperand *operand) {
+    const VmSymbol *symbol = NULL;
+    uint32_t address = 0U;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || operand == NULL) {
+        return false;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+        address = operand->address;
+    } else if (operand->kind == VM_IR_OPERAND_MEMORY_REGISTER && operand->address != 0U) {
+        address = operand->address;
+    } else {
+        return false;
+    }
+
+    symbol = vm_symbol_find_by_address(state->config->symbols, state->result->symbol_count, address);
+    return vm_symbol_is_read_only(symbol);
+}
+
+/// Rejects writes to statically known `.CONST` operands.
+///
+/// Direct and symbol-relative `.CONST` destinations are assembly-time errors.
+/// Pure calculated-address writes are intentionally left to checked memory
+/// permissions at runtime.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Instruction opcode being validated.
+/// @param destination Destination operand.
+/// @param source Source operand.
+/// @param destination_token Token associated with the destination.
+/// @param source_token Token associated with the source.
+/// @return true when the instruction does not statically write `.CONST`.
+static bool vm_parser_reject_static_const_write(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    const VmIrOperand *destination,
+    const VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (opcode == VM_IR_OPCODE_TEST) {
+        return true;
+    }
+
+    if (vm_parser_operand_targets_const_storage(state, destination)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_CONST_WRITE, destination_token, "Cannot write to .CONST data. Constant data is read-only.");
+        return false;
+    }
+
+    if (opcode == VM_IR_OPCODE_XCHG && vm_parser_operand_targets_const_storage(state, source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_CONST_WRITE, source_token, "Cannot write to .CONST data. Constant data is read-only.");
+        return false;
+    }
+
+    return true;
+}
+
 /// Emits one IR instruction into the caller-provided instruction buffer.
 ///
 /// @param state Parser state to mutate.
@@ -3564,6 +3796,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (!vm_parser_validate_neg_operand(state, &destination, mnemonic_token)) {
             return false;
         }
+        if (!vm_parser_reject_static_const_write(state, opcode, &destination, &source, destination_token, source_token)) {
+            return false;
+        }
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), "NEG takes exactly one register or memory operand.");
             return false;
@@ -3609,6 +3844,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         }
     }
 
+    if (!vm_parser_reject_static_const_write(state, opcode, &destination, &source, destination_token, source_token)) {
+        return false;
+    }
+
     if (!vm_parser_expect_line_end(state)) {
         return false;
     }
@@ -3634,22 +3873,55 @@ static bool vm_parser_parse_code_directive(VmParserState *state) {
     return vm_parser_expect_line_end(state);
 }
 
-/// Parses a .data directive line.
+/// Returns whether the current token sequence starts a supported data-like section.
+///
+/// @param state Parser state to inspect.
+/// @return true for `.data`, `.DATA?`, or `.CONST`.
+static bool vm_parser_current_token_starts_data_section(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *next = vm_parser_peek_token(state, 1U);
+
+    return token != NULL && token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+           (vm_parser_token_equals(token, ".data") ||
+            vm_parser_token_equals(token, ".const") ||
+            vm_parser_is_data_question_directive(token, next));
+}
+
+/// Parses a data-like section directive line.
 ///
 /// @param state Parser state to mutate.
 /// @return true when the directive line was accepted.
 static bool vm_parser_parse_data_directive(VmParserState *state) {
     const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *next = vm_parser_peek_token(state, 1U);
 
-    if (token == NULL || token->kind != VM_LEXER_TOKEN_DIRECTIVE || !vm_parser_token_equals(token, ".data")) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Expected .data directive.");
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_DIRECTIVE) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Expected .data, .DATA?, .CONST, or .code directive.");
         return false;
     }
 
     state->saw_data_directive = true;
-    state->section = VM_PARSER_SECTION_DATA;
-    vm_parser_advance(state);
-    return vm_parser_expect_line_end(state);
+    if (vm_parser_is_data_question_directive(token, next)) {
+        state->section = VM_PARSER_SECTION_DATA_UNINITIALIZED;
+        vm_parser_advance(state);
+        vm_parser_advance(state);
+        return vm_parser_expect_line_end(state);
+    }
+
+    if (vm_parser_token_equals(token, ".const")) {
+        state->section = VM_PARSER_SECTION_CONST;
+        vm_parser_advance(state);
+        return vm_parser_expect_line_end(state);
+    }
+
+    if (vm_parser_token_equals(token, ".data")) {
+        state->section = VM_PARSER_SECTION_DATA;
+        vm_parser_advance(state);
+        return vm_parser_expect_line_end(state);
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Expected .data, .DATA?, .CONST, or .code directive.");
+    return false;
 }
 
 /// Parses a procedure-start line such as `main PROC`.
@@ -4031,11 +4303,11 @@ static bool vm_parser_parse_header_line_if_recognized(VmParserState *state) {
     return false;
 }
 
-/// Parses all data declarations until the .code directive.
+/// Parses all supported data-like declarations until the .code directive.
 ///
 /// @param state Parser state to mutate.
-/// @return true when the data section and following .code directive were parsed.
-static bool vm_parser_parse_data_section(VmParserState *state) {
+/// @return true when the data-like sections and following .code directive were parsed.
+static bool vm_parser_parse_data_sections(VmParserState *state) {
     const VmLexerToken *token = NULL;
 
     if (!vm_parser_parse_data_directive(state)) {
@@ -4046,7 +4318,7 @@ static bool vm_parser_parse_data_section(VmParserState *state) {
         vm_parser_skip_newlines(state);
         token = vm_parser_current_token(state);
         if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive after .data declarations.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive after data declarations.");
             return false;
         }
 
@@ -4061,7 +4333,13 @@ static bool vm_parser_parse_data_section(VmParserState *state) {
             if (vm_parser_token_equals(token, ".code")) {
                 return vm_parser_parse_code_directive(state);
             }
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Unsupported directive inside .data section.");
+            if (vm_parser_current_token_starts_data_section(state)) {
+                if (!vm_parser_parse_data_directive(state)) {
+                    return false;
+                }
+                continue;
+            }
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Unsupported directive inside data section.");
             return false;
         }
 
@@ -4117,6 +4395,7 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->source_text_storage == NULL && config->source_text_capacity > 0U) ||
         (config->symbols == NULL && config->symbol_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
+        (config->const_image == NULL && config->const_image_capacity > 0U) ||
         (config->diagnostics == NULL && config->diagnostic_capacity > 0U)) {
         vm_parser_init_result(out_result, VM_PARSER_STATUS_INVALID_ARGUMENT);
         return false;
@@ -4144,6 +4423,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
     if (config->data_image != NULL && config->data_image_capacity > 0U) {
         memset(config->data_image, 0, config->data_image_capacity);
+    }
+    if (config->const_image != NULL && config->const_image_capacity > 0U) {
+        memset(config->const_image, 0, config->const_image_capacity);
     }
 
     lexer_status = vm_lexer_tokenize(
@@ -4218,8 +4500,8 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
         return out_result->status;
     }
 
-    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".data")) {
-        if (!vm_parser_parse_data_section(&state)) {
+    if (vm_parser_current_token_starts_data_section(&state)) {
+        if (!vm_parser_parse_data_sections(&state)) {
             out_result->status = vm_parser_finalize_status(&state);
             return out_result->status;
         }
@@ -4362,6 +4644,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-character-literal";
         case VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH:
             return "ambiguous-memory-width";
+        case VM_PARSER_DIAGNOSTIC_CONST_WRITE:
+            return "const-write";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL:
             return "unsupported-model";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE:

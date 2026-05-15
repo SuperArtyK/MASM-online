@@ -1,14 +1,18 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 26. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 27. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
 ### Sections and procedure shape
 
 ```asm
+.DATA?
+; optional deterministic zero-filled uninitialized declarations
 .data
-; optional data declarations
+; optional writable initialized declarations
+.CONST
+; optional read-only initialized declarations
 .code
 main PROC
     ; supported instructions
@@ -18,8 +22,10 @@ END main
 
 Supported structural forms:
 
-- Optional `.data` section before `.code`.
+- Optional `.DATA?`, `.data`, and `.CONST` sections before `.code`.
 - Required `.code` section.
+- `.DATA?` declarations must use `?` or flat `DUP(?)` uninitialized initializers. They are emitted as deterministic zero-filled writable storage while retaining metadata that they were originally uninitialized.
+- `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
 - Labels are accepted syntactically, but control-flow target resolution is not implemented yet.
@@ -169,8 +175,6 @@ Signed `PTR` aliases select memory access width only. `SBYTE PTR`, `SWORD PTR`, 
 
 The parser should report `unsupported-feature` for these recognizable textbook constructs until their milestones are implemented:
 
-- `.DATA?`
-- `.CONST`
 - `EQU`
 - `TEXTEQU`
 - `STRUCT`
@@ -213,7 +217,7 @@ Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXT
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-Recovered unsupported sections include `.DATA?` and `.CONST`.
+`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27.
 
 ## Backlog notes
 

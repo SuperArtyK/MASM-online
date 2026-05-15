@@ -3,8 +3,9 @@
  * @brief Unit tests for the Milestone 3 simulated memory region model.
  *
  * These tests cover deterministic memory layout, checked reads and writes,
- * region permissions, invalid address reporting, unaligned-access warnings, and
- * raw byte-change recording without introducing parser or instruction execution.
+ * region permissions, invalid address reporting, unaligned-access warnings, raw
+ * byte-change recording, and Milestone 27 read-only .const region behavior
+ * without introducing parser or instruction execution.
  */
 
 #include <stdbool.h>
@@ -149,16 +150,22 @@ static int test_default_layout_and_metadata(void) {
 
     failures += expect_u32(config.code_size, VM_MEMORY_DEFAULT_CODE_SIZE, "default code size should match constant");
     failures += expect_u32(config.data_size, VM_MEMORY_DEFAULT_DATA_SIZE, "default data size should match constant");
+    failures += expect_u32(config.const_size, VM_MEMORY_DEFAULT_CONST_SIZE, "default const size should match constant");
     failures += expect_u32(config.heap_size, VM_MEMORY_DEFAULT_HEAP_SIZE, "default heap size should match constant");
     failures += expect_u32(config.stack_size, VM_MEMORY_DEFAULT_STACK_SIZE, "default stack size should match constant");
 
     failures += expect_region_metadata(&memory, VM_MEMORY_REGION_CODE, VM_MEMORY_DEFAULT_CODE_BASE, VM_MEMORY_DEFAULT_CODE_SIZE, true, false, true);
     failures += expect_region_metadata(&memory, VM_MEMORY_REGION_DATA, VM_MEMORY_DEFAULT_DATA_BASE, VM_MEMORY_DEFAULT_DATA_SIZE, true, true, false);
+    failures += expect_region_metadata(&memory, VM_MEMORY_REGION_CONST, VM_MEMORY_DEFAULT_CONST_BASE, VM_MEMORY_DEFAULT_CONST_SIZE, true, false, false);
     failures += expect_region_metadata(&memory, VM_MEMORY_REGION_HEAP, VM_MEMORY_DEFAULT_HEAP_BASE, VM_MEMORY_DEFAULT_HEAP_SIZE, true, true, false);
     failures += expect_region_metadata(&memory, VM_MEMORY_REGION_STACK, stack_base, VM_MEMORY_DEFAULT_STACK_SIZE, true, true, false);
 
     if (strcmp(vm_memory_region_name(VM_MEMORY_REGION_DATA), ".data") != 0) {
         failures += record_failure("region name helper should return .data");
+    }
+
+    if (strcmp(vm_memory_region_name(VM_MEMORY_REGION_CONST), ".const") != 0) {
+        failures += record_failure("region name helper should return .const");
     }
 
     if (vm_memory_region_name((VmMemoryRegionKind)-1) != NULL) {
@@ -478,6 +485,38 @@ static int test_memory_change_recording(void) {
     return failures;
 }
 
+/// Verifies read-only .const region loading, reading, and write rejection.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_const_region_load_read_and_write_rejection(void) {
+    int failures = 0;
+    VmMemory memory;
+    uint32_t value32 = 0U;
+    const uint8_t bytes[4] = { 0x0AU, 0x00U, 0x00U, 0x00U };
+    VmMemoryDiagnostic access_info;
+
+    failures += expect_status(vm_memory_init(&memory, NULL), VM_MEMORY_STATUS_OK, "memory initialization should succeed");
+    if (failures != 0) {
+        return failures;
+    }
+
+    failures += expect_region_metadata(&memory, VM_MEMORY_REGION_CONST, VM_MEMORY_DEFAULT_CONST_BASE, VM_MEMORY_DEFAULT_CONST_SIZE, true, false, false);
+    failures += expect_status(vm_memory_load_region_bytes(&memory, VM_MEMORY_REGION_CONST, 0U, bytes, 4U), VM_MEMORY_STATUS_OK, ".const loader should initialize read-only bytes");
+    failures += expect_status(vm_memory_load_region_bytes(&memory, VM_MEMORY_REGION_CONST, VM_MEMORY_DEFAULT_CONST_SIZE - 1U, bytes, 4U), VM_MEMORY_STATUS_INVALID_ADDRESS, ".const loader should reject out-of-bounds image bytes");
+    failures += expect_status(vm_memory_load_region_bytes(&memory, (VmMemoryRegionKind)-1, 0U, bytes, 4U), VM_MEMORY_STATUS_INVALID_ARGUMENT, ".const loader should reject invalid regions");
+    failures += expect_status(vm_memory_load_region_bytes(&memory, VM_MEMORY_REGION_CONST, 0U, NULL, 0U), VM_MEMORY_STATUS_OK, ".const loader should allow empty NULL input");
+    failures += expect_status(vm_memory_load_region_bytes(&memory, VM_MEMORY_REGION_CONST, 0U, NULL, 1U), VM_MEMORY_STATUS_INVALID_ARGUMENT, ".const loader should reject non-empty NULL input");
+    failures += expect_size(vm_memory_change_count(&memory), 0U, ".const image loading should not record user memory changes");
+    failures += expect_status(vm_memory_read_u32(&memory, VM_MEMORY_DEFAULT_CONST_BASE, &value32, &access_info), VM_MEMORY_STATUS_OK, ".const read should succeed");
+    failures += expect_u32(value32, 10U, ".const read should decode initialized value");
+    failures += expect_u32((uint32_t)access_info.region, (uint32_t)VM_MEMORY_REGION_CONST, ".const read should report const region");
+    failures += expect_status(vm_memory_write_u32(&memory, VM_MEMORY_DEFAULT_CONST_BASE, 20U, &access_info), VM_MEMORY_STATUS_PERMISSION_DENIED, ".const checked write should be rejected");
+    failures += expect_u32((uint32_t)access_info.region, (uint32_t)VM_MEMORY_REGION_CONST, ".const rejected write should report const region");
+
+    vm_memory_deinit(&memory);
+    return failures;
+}
+
 /// Verifies that change recording truncates without blocking valid writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -511,7 +550,7 @@ static int test_memory_change_capacity_truncates_without_blocking_writes(void) {
     return failures;
 }
 
-/// Runs all Milestone 3 memory tests.
+/// Runs all memory-region tests through Milestone 27.
 ///
 /// @return Zero when all tests pass, otherwise one.
 int main(void) {
@@ -526,6 +565,7 @@ int main(void) {
     failures += test_region_boundary_edge_cases();
     failures += test_invalid_arguments_and_config();
     failures += test_memory_change_recording();
+    failures += test_const_region_load_read_and_write_rejection();
     failures += test_memory_change_capacity_truncates_without_blocking_writes();
 
     if (failures != 0) {
@@ -533,6 +573,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Milestone 3 memory region tests passed.\n");
+    printf("Memory region tests through Milestone 27 passed.\n");
     return 0;
 }

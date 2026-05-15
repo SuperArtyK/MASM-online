@@ -2,7 +2,7 @@
  * @file vm_memory.h
  * @brief Checked simulated memory regions for the MASM32 educational VM.
  *
- * This module owns deterministic .code, .data, heap, and stack regions for
+ * This module owns deterministic .code, .data, .const, heap, and stack regions for
  * MASM32 educational mode. All VM memory reads and writes should pass through
  * these helpers so bounds checks, permissions, unaligned-access warnings, and
  * raw byte-change recording remain centralized.
@@ -21,17 +21,23 @@
 /// Default base address for the simulated .data region.
 #define VM_MEMORY_DEFAULT_DATA_BASE 0x00500000U
 
+/// Default base address for the simulated read-only .const region.
+#define VM_MEMORY_DEFAULT_CONST_BASE 0x00600000U
+
 /// Default base address for the simulated heap region.
-#define VM_MEMORY_DEFAULT_HEAP_BASE 0x00600000U
+#define VM_MEMORY_DEFAULT_HEAP_BASE 0x00700000U
 
 /// Default exclusive top address for the simulated downward-growing stack.
-#define VM_MEMORY_DEFAULT_STACK_TOP 0x00800000U
+#define VM_MEMORY_DEFAULT_STACK_TOP 0x00900000U
 
 /// Default simulated .code region size in bytes.
 #define VM_MEMORY_DEFAULT_CODE_SIZE 0x00100000U
 
 /// Default simulated .data region size in bytes.
 #define VM_MEMORY_DEFAULT_DATA_SIZE 0x00100000U
+
+/// Default simulated read-only .const region size in bytes.
+#define VM_MEMORY_DEFAULT_CONST_SIZE 0x00100000U
 
 /// Default simulated heap region size in bytes.
 #define VM_MEMORY_DEFAULT_HEAP_SIZE 0x00100000U
@@ -48,6 +54,8 @@ typedef enum VmMemoryRegionKind {
     VM_MEMORY_REGION_CODE = 0,
     /// Simulated .data region, readable and writable but not executable.
     VM_MEMORY_REGION_DATA,
+    /// Simulated .const region, readable but not writable or executable.
+    VM_MEMORY_REGION_CONST,
     /// Simulated heap region, readable and writable but not executable.
     VM_MEMORY_REGION_HEAP,
     /// Simulated stack region, readable and writable but not executable.
@@ -98,6 +106,8 @@ typedef struct VmMemoryConfig {
     uint32_t code_size;
     /// Requested .data region size in bytes.
     uint32_t data_size;
+    /// Requested .const region size in bytes.
+    uint32_t const_size;
     /// Requested heap region size in bytes.
     uint32_t heap_size;
     /// Requested stack region size in bytes.
@@ -211,6 +221,20 @@ const VmMemoryRegion *vm_memory_get_region(const VmMemory *memory, VmMemoryRegio
 /// @param permission Permission bit to check.
 /// @return true when the region is non-NULL and contains the permission bit.
 bool vm_memory_region_has_permission(const VmMemoryRegion *region, VmMemoryPermission permission);
+
+/// Loads initial bytes into a region without requiring write permission or recording changes.
+///
+/// This helper is intended for parser/data-layout loading before execution,
+/// including read-only `.CONST` storage. It performs bounds checks against the
+/// selected region but deliberately bypasses normal write permissions.
+///
+/// @param memory Memory object to mutate.
+/// @param kind Region receiving bytes.
+/// @param offset Byte offset within the region.
+/// @param bytes Source bytes to copy; may be NULL only when @p size is zero.
+/// @param size Number of bytes to copy.
+/// @return Operation status.
+VmMemoryStatus vm_memory_load_region_bytes(VmMemory *memory, VmMemoryRegionKind kind, uint32_t offset, const uint8_t *bytes, uint32_t size);
 
 /// Clears the raw byte-change recorder.
 ///

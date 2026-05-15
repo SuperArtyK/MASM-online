@@ -1,10 +1,10 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 26.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST and minimal .code programs through Milestone 27.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to implemented data declarations, OFFSET, direct symbol
+ * remains limited to implemented writable, uninitialized, and constant data declarations, OFFSET, direct symbol
  * memory operands, constant symbol-offset memory operands, signed and unsigned PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, sign and zero extension
@@ -134,6 +134,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL,
     /// A memory/immediate instruction form used register-indirect memory without explicit or inferable width.
     VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH,
+    /// A statically known instruction destination attempts to write read-only `.CONST` storage.
+    VM_PARSER_DIAGNOSTIC_CONST_WRITE,
     /// A .model directive used a form outside `.model flat, stdcall`.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL,
     /// An INCLUDE directive requested a file outside the simulator's virtual built-ins.
@@ -188,10 +190,14 @@ typedef struct VmParserConfig {
     VmSymbol *symbols;
     /// Number of entries available in @ref symbols.
     size_t symbol_capacity;
-    /// Caller-owned .data image bytes laid out from VM_MEMORY_DEFAULT_DATA_BASE.
+    /// Caller-owned .data/.DATA? image bytes laid out from VM_MEMORY_DEFAULT_DATA_BASE.
     uint8_t *data_image;
     /// Number of bytes available in @ref data_image.
     size_t data_image_capacity;
+    /// Caller-owned .CONST image bytes laid out from VM_MEMORY_DEFAULT_CONST_BASE.
+    uint8_t *const_image;
+    /// Number of bytes available in @ref const_image.
+    size_t const_image_capacity;
     /// Caller-owned parser diagnostic output buffer.
     VmParserDiagnostic *diagnostics;
     /// Number of entries available in @ref diagnostics; this also bounds recovery diagnostics.
@@ -212,8 +218,10 @@ typedef struct VmParserResult {
     size_t lexer_diagnostic_count;
     /// Number of data symbols written to the configured symbol buffer.
     size_t symbol_count;
-    /// Number of initialized bytes written to the configured .data image buffer.
+    /// Number of initialized bytes written to the configured .data/.DATA? image buffer.
     size_t data_size;
+    /// Number of initialized bytes written to the configured .CONST image buffer.
+    size_t const_size;
     /// Whether a `.stack size` directive requested a specific stack size.
     bool has_requested_stack_size;
     /// Requested stack size in bytes from `.stack size`; runtime stack behavior is deferred.
@@ -222,13 +230,13 @@ typedef struct VmParserResult {
 
 /// Parses a MASM-like source file into implemented data layout and executable IR.
 ///
-/// The parser accepts optional MASM32 header compatibility directives, optional .data declarations before .code, emits data-symbol
-/// metadata and a deterministic .data image, then parses the existing minimal
+/// The parser accepts optional MASM32 header compatibility directives, optional .data, .DATA?, and .CONST declarations before .code, emits data-symbol
+/// metadata and deterministic data images, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
 /// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR width
 /// overrides on supported memory operands; destination operands may use
 /// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR
-/// width overrides on supported memory operands. MASM32 header directives accepted in Milestone 26 are parsed as no-ops or metadata and never load host files or change runtime stack behavior.
+/// width overrides on supported memory operands. MASM32 header directives accepted in Milestone 26 are parsed as no-ops or metadata and never load host files or change runtime stack behavior. `.DATA?` storage is deterministic zero-filled storage with metadata; `.CONST` storage is read-only once loaded into VM memory.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

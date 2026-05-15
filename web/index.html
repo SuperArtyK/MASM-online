@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 26 MASM32 header compatibility UI: source editing, Run button,
+  This page provides the Milestone 27 additional data-section UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates accepted textbook header directives.
+  execution stay inside the worker/Wasm path; the default program demonstrates .DATA? and .CONST support.
 -->
 <html lang="en">
   <head>
@@ -18,19 +18,18 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 26: common MASM32 textbook headers parse as compatibility no-ops or metadata before the executable body runs.</p>
+        <p class="muted">Milestone 27: .DATA? storage is deterministic zero-filled data, and .CONST storage is read-only after loading.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.386
-.model flat, stdcall
-.stack 4096
-OPTION CASEMAP:NONE
-INCLUDE Irvine32.inc
-
+        <textarea id="editor" spellcheck="false">.DATA?
+buf BYTE 16 DUP(?)
 .data
-msg BYTE "Hello", 0
+x DWORD 1
+.CONST
+limit DWORD 10
 .code
 main PROC
-    mov edx, OFFSET msg
+    mov eax, SIZEOF buf
+    mov ebx, limit
 main ENDP
 END main</textarea>
         <div class="controls">

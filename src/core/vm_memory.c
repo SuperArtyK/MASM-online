@@ -2,8 +2,8 @@
  * @file vm_memory.c
  * @brief Checked memory access implementation for the MASM32 educational VM.
  *
- * This file implements deterministic simulated .code, .data, heap, and stack
- * regions for Milestone 3. It centralizes region lookup, bounds checks,
+ * This file implements deterministic simulated .code, .data, .const, heap, and stack
+ * regions. It centralizes region lookup, bounds checks,
  * permissions, unaligned-access warnings, little-endian integer storage, and
  * raw byte-change recording.
  */
@@ -269,7 +269,7 @@ static bool vm_memory_config_is_valid(const VmMemoryConfig *config) {
         return false;
     }
 
-    if (config->code_size == 0U || config->data_size == 0U || config->heap_size == 0U || config->stack_size == 0U) {
+    if (config->code_size == 0U || config->data_size == 0U || config->const_size == 0U || config->heap_size == 0U || config->stack_size == 0U) {
         return false;
     }
 
@@ -277,7 +277,11 @@ static bool vm_memory_config_is_valid(const VmMemoryConfig *config) {
         return false;
     }
 
-    if (config->data_size > VM_MEMORY_DEFAULT_HEAP_BASE - VM_MEMORY_DEFAULT_DATA_BASE) {
+    if (config->data_size > VM_MEMORY_DEFAULT_CONST_BASE - VM_MEMORY_DEFAULT_DATA_BASE) {
+        return false;
+    }
+
+    if (config->const_size > VM_MEMORY_DEFAULT_HEAP_BASE - VM_MEMORY_DEFAULT_CONST_BASE) {
         return false;
     }
 
@@ -497,6 +501,7 @@ VmMemoryConfig vm_memory_default_config(void) {
 
     config.code_size = VM_MEMORY_DEFAULT_CODE_SIZE;
     config.data_size = VM_MEMORY_DEFAULT_DATA_SIZE;
+    config.const_size = VM_MEMORY_DEFAULT_CONST_SIZE;
     config.heap_size = VM_MEMORY_DEFAULT_HEAP_SIZE;
     config.stack_size = VM_MEMORY_DEFAULT_STACK_SIZE;
 
@@ -539,6 +544,18 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
         VM_MEMORY_DEFAULT_DATA_BASE,
         effective_config.data_size,
         (uint8_t)(VM_MEMORY_PERMISSION_READ | VM_MEMORY_PERMISSION_WRITE)
+    );
+    if (status != VM_MEMORY_STATUS_OK) {
+        vm_memory_deinit(memory);
+        return status;
+    }
+
+    status = vm_memory_init_region(
+        &memory->regions[VM_MEMORY_REGION_CONST],
+        VM_MEMORY_REGION_CONST,
+        VM_MEMORY_DEFAULT_CONST_BASE,
+        effective_config.const_size,
+        (uint8_t)VM_MEMORY_PERMISSION_READ
     );
     if (status != VM_MEMORY_STATUS_OK) {
         vm_memory_deinit(memory);
@@ -621,6 +638,8 @@ const char *vm_memory_region_name(VmMemoryRegionKind kind) {
             return ".code";
         case VM_MEMORY_REGION_DATA:
             return ".data";
+        case VM_MEMORY_REGION_CONST:
+            return ".const";
         case VM_MEMORY_REGION_HEAP:
             return ".heap";
         case VM_MEMORY_REGION_STACK:
@@ -646,6 +665,28 @@ bool vm_memory_region_has_permission(const VmMemoryRegion *region, VmMemoryPermi
     }
 
     return (region->permissions & (uint8_t)permission) != 0U;
+}
+
+
+/// Loads an initialized byte image into a selected region without enforcing write permission.
+VmMemoryStatus vm_memory_load_region_bytes(VmMemory *memory, VmMemoryRegionKind kind, uint32_t offset, const uint8_t *bytes, uint32_t size) {
+    size_t index = 0U;
+    VmMemoryRegion *region = NULL;
+
+    if (memory == NULL || !vm_memory_region_index(kind, &index) || (bytes == NULL && size > 0U)) {
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
+
+    region = &memory->regions[index];
+    if (size > region->size || offset > region->size - size) {
+        return VM_MEMORY_STATUS_INVALID_ADDRESS;
+    }
+
+    if (size > 0U) {
+        memcpy(&region->bytes[offset], bytes, (size_t)size);
+    }
+
+    return VM_MEMORY_STATUS_OK;
 }
 
 void vm_memory_clear_changes(VmMemory *memory) {

@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 26 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
+ * @brief Tests for Milestone 27 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,28 +18,31 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 15 parser test.
+/// Number of lexer tokens available to each Milestone 27 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 15 parser test.
+/// Number of lexer diagnostics available to each Milestone 27 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 15 parser test.
+/// Number of parser diagnostics available to each Milestone 27 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 15 parser test.
+/// Number of IR instructions available to each Milestone 27 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 15 parser test.
+/// Number of source-text bytes available to each Milestone 27 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 15 parser test.
+/// Number of data symbols available to each Milestone 27 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 15 parser test.
+/// Number of data image bytes available to each Milestone 27 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 15 test.
+/// Number of const image bytes available to each Milestone 27 parser test.
+#define TEST_CONST_IMAGE_CAPACITY 512U
+
+/// Holds all caller-owned parser buffers for one Milestone 27 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -51,8 +54,10 @@ typedef struct DataSectionTestBuffers {
     VmIrInstruction instructions[TEST_INSTRUCTION_CAPACITY];
     /// Emitted data symbols.
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
-    /// Emitted .data image bytes.
+    /// Emitted .data/.DATA? image bytes.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
+    /// Emitted .CONST image bytes.
+    uint8_t const_image[TEST_CONST_IMAGE_CAPACITY];
     /// Null-terminated source-text copies used by emitted IR.
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
 } DataSectionTestBuffers;
@@ -122,6 +127,20 @@ static int expect_parser_status(VmParserStatus actual, VmParserStatus expected, 
     return 0;
 }
 
+/// Verifies that two VM execution statuses are equal.
+///
+/// @param actual Actual execution status.
+/// @param expected Expected execution status.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_exec_status(VmExecStatus actual, VmExecStatus expected, const char *message) {
+    if (actual != expected) {
+        fprintf(stderr, "FAIL: %s (actual=%s expected=%s)\n", message, vm_exec_status_name(actual), vm_exec_status_name(expected));
+        return 1;
+    }
+    return 0;
+}
+
 /// Verifies that two parser diagnostic codes are equal.
 ///
 /// @param actual Actual diagnostic code.
@@ -165,7 +184,7 @@ static int expect_json_not_contains(const char *json, const char *unexpected, co
     return 0;
 }
 
-/// Parses source with full Milestone 15 buffers.
+/// Parses source with full Milestone 27 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -192,6 +211,8 @@ static VmParserStatus parse_for_test(const char *source, DataSectionTestBuffers 
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
+    config.const_image = buffers->const_image;
+    config.const_image_capacity = TEST_CONST_IMAGE_CAPACITY;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
@@ -205,12 +226,15 @@ static VmParserStatus parse_for_test(const char *source, DataSectionTestBuffers 
 /// @param result Parser result containing data size.
 /// @return true when all bytes were written.
 static bool load_data_image_for_test(Vm *vm, const DataSectionTestBuffers *buffers, const VmParserResult *result) {
-    size_t index = 0U;
+    if (vm == NULL || buffers == NULL || result == NULL) {
+        return false;
+    }
 
-    for (index = 0U; index < result->data_size; index += 1U) {
-        if (!vm_memory_status_succeeded(vm_memory_write_u8(&vm->memory, VM_MEMORY_DEFAULT_DATA_BASE + (uint32_t)index, buffers->data_image[index], NULL))) {
-            return false;
-        }
+    if (!vm_memory_status_succeeded(vm_memory_load_region_bytes(&vm->memory, VM_MEMORY_REGION_DATA, 0U, buffers->data_image, (uint32_t)result->data_size))) {
+        return false;
+    }
+    if (!vm_memory_status_succeeded(vm_memory_load_region_bytes(&vm->memory, VM_MEMORY_REGION_CONST, 0U, buffers->const_image, (uint32_t)result->const_size))) {
+        return false;
     }
     vm_memory_clear_changes(&vm->memory);
     return true;
@@ -369,7 +393,7 @@ static int test_constant_symbol_offsets_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 acceptance program executes through parser and VM.
+/// Verifies the Milestone 27 acceptance program executes through parser and VM.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offsets_execute_acceptance_program(void) {
@@ -389,7 +413,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     uint32_t memory_value = 0U;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 15 acceptance source should parse");
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Milestone 27 acceptance source should parse");
     failures += vm_init(&vm, NULL) == VM_EXEC_STATUS_OK ? 0 : record_failure("vm init should succeed");
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("program should load");
@@ -1086,7 +1110,7 @@ static int test_type_operator_error_paths(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for new Milestone 15 error paths.
+/// Verifies parser diagnostics for new Milestone 27 error paths.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_data_error_paths(void) {
@@ -1271,7 +1295,7 @@ static int test_ptr_width_overrides_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 acceptance program executes explicit-width writes.
+/// Verifies the Milestone 27 acceptance program executes explicit-width writes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_ptr_width_overrides_execute_acceptance_program(void) {
@@ -1390,7 +1414,7 @@ static int test_register_indirect_operands_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies the Milestone 15 register-indirect acceptance program executes.
+/// Verifies the Milestone 27 register-indirect acceptance program executes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_register_indirect_acceptance_program_executes(void) {
@@ -1504,7 +1528,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":26", "all-GPR response should identify Milestone 26");
+    failures += expect_json_contains(json, "\"phase\":27", "all-GPR response should identify Milestone 27");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect read should set EAX = 80");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "ESP-based write should reach nums + 28");
@@ -1529,7 +1553,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
+    failures += expect_json_contains(json, "\"phase\":27", "response should identify Milestone 27");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1666,7 +1690,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
+    failures += expect_json_contains(json, "\"phase\":27", "response should identify Milestone 27");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1691,7 +1715,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
+    failures += expect_json_contains(json, "\"phase\":27", "response should identify Milestone 27");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1909,7 +1933,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "END main\n"
     );
 
-    failures += expect_json_contains(read_copy, "\"phase\":26", "signed PTR read response should identify Milestone 26");
+    failures += expect_json_contains(read_copy, "\"phase\":27", "signed PTR read response should identify Milestone 27");
     failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
     failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
     failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
@@ -1918,6 +1942,236 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
     failures += expect_json_contains(write_json, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR write should be readable as BYTE PTR");
     failures += expect_json_contains(write_json, "\"symbol\":\"buf\",\"address\":\"00500000h\",\"widthBits\":8", "signed PTR write should report 8-bit memory change");
     failures += expect_json_contains(write_json, "\"newHex\":\"FFh\"", "signed PTR write should store FFh");
+
+    return failures;
+}
+
+/// Verifies `.DATA?` and `.CONST` layout, execution, and read-only diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_additional_data_sections_layout_and_const_protection(void) {
+    DataSectionTestBuffers buffers;
+    DataSectionTestBuffers scalar_buffers;
+    VmParserResult result;
+    VmParserResult scalar_result;
+    Vm vm;
+    VmExecStatus exec_status = VM_EXEC_STATUS_OK;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const char *acceptance_json = NULL;
+    const char *direct_write_json = NULL;
+    const char *indirect_write_json = NULL;
+    const char *direct_offset_write_json = NULL;
+    const char *bracketed_const_write_json = NULL;
+    const char *xchg_const_write_json = NULL;
+    const char *calculated_offset_write_json = NULL;
+    const char *initialized_data_question_json = NULL;
+    const char *mixed_data_question_json = NULL;
+    const char *const_uninitialized_json = NULL;
+    const char *add_const_write_json = NULL;
+    const char *neg_const_write_json = NULL;
+    int failures = 0;
+
+    const char *source =
+        ".DATA?\n"
+        "buf BYTE 16 DUP(?)\n"
+        ".data\n"
+        "x DWORD 1\n"
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF buf\n"
+        "    mov ebx, limit\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "additional data sections should parse");
+    failures += expect_size(result.symbol_count, 3U, "additional data sections should preserve source-order symbols");
+    failures += expect_size(result.data_size, 20U, ".DATA? and .data should share writable data image bytes");
+    failures += expect_size(result.const_size, 4U, ".CONST should emit separate const image bytes");
+    failures += expect_u32((uint32_t)buffers.symbols[0].section, (uint32_t)VM_SYMBOL_SECTION_DATA_UNINITIALIZED, "buf should be marked .DATA?");
+    failures += expect_u32((uint32_t)buffers.symbols[1].section, (uint32_t)VM_SYMBOL_SECTION_DATA, "x should be marked .data");
+    failures += expect_u32((uint32_t)buffers.symbols[2].section, (uint32_t)VM_SYMBOL_SECTION_CONST, "limit should be marked .CONST");
+    failures += expect_u32(buffers.symbols[0].has_uninitialized_storage ? 1U : 0U, 1U, ".DATA? symbol should retain uninitialized metadata");
+    failures += expect_u32(vm_symbol_is_uninitialized_storage(&buffers.symbols[0]) ? 1U : 0U, 1U, ".DATA? helper should identify uninitialized storage");
+    failures += expect_u32(vm_symbol_is_read_only(&buffers.symbols[2]) ? 1U : 0U, 1U, ".CONST helper should identify read-only symbols");
+    if (strcmp(vm_symbol_section_name(VM_SYMBOL_SECTION_DATA_UNINITIALIZED), ".DATA?") != 0) {
+        failures += record_failure("section helper should name .DATA?");
+    }
+    if (strcmp(vm_symbol_section_name(VM_SYMBOL_SECTION_CONST), ".CONST") != 0) {
+        failures += record_failure("section helper should name .CONST");
+    }
+    failures += expect_u32(buffers.data_image[0], 0U, ".DATA? storage should be deterministic zero-filled");
+    failures += expect_u32(buffers.data_image[16], 1U, ".data bytes should follow .DATA? bytes");
+    failures += expect_u32(buffers.const_image[0], 10U, ".CONST bytes should be initialized");
+    failures += expect_u32(buffers.symbols[2].address, VM_MEMORY_DEFAULT_CONST_BASE, ".CONST symbol should use const region base");
+
+    failures += expect_parser_status(parse_for_test(
+        ".DATA?\n"
+        "first BYTE ?\n"
+        "second WORD ?, ?\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &scalar_buffers,
+        &scalar_result), VM_PARSER_STATUS_OK, ".DATA? should accept scalar ? and comma-separated ? initializers");
+    failures += expect_size(scalar_result.symbol_count, 2U, ".DATA? scalar initializer source should emit two symbols");
+    failures += expect_size(scalar_result.data_size, 5U, ".DATA? scalar and comma initializers should reserve expected bytes");
+    failures += expect_u32(scalar_buffers.symbols[0].element_count, 1U, ".DATA? scalar ? should count one element");
+    failures += expect_u32(scalar_buffers.symbols[1].element_count, 2U, ".DATA? comma ? should count two WORD elements");
+    failures += expect_u32(vm_symbol_is_uninitialized_storage(&scalar_buffers.symbols[1]) ? 1U : 0U, 1U, ".DATA? comma ? symbol should retain uninitialized metadata");
+
+    memset(&vm, 0, sizeof(vm));
+    exec_status = vm_init(&vm, NULL);
+    failures += expect_exec_status(exec_status, VM_EXEC_STATUS_OK, "VM should initialize for additional data section execution");
+    if (exec_status == VM_EXEC_STATUS_OK) {
+        failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("additional data images should load into VM memory");
+        exec_status = vm_load_program(&vm, buffers.instructions, result.instruction_count);
+        failures += expect_exec_status(exec_status, VM_EXEC_STATUS_OK, "additional data program should load");
+        while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+            exec_status = vm_step(&vm);
+        }
+        failures += expect_exec_status(exec_status, VM_EXEC_STATUS_OK, "additional data program should execute");
+        (void)vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax);
+        (void)vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx);
+        failures += expect_u32(eax, 16U, "SIZEOF .DATA? buffer should be 16");
+        failures += expect_u32(ebx, 10U, ".CONST read should load value 10");
+        vm_deinit(&vm);
+    }
+
+    acceptance_json = masm32_sim_wasm_run_source_json(source);
+    failures += expect_json_contains(acceptance_json, "\"phase\":27", "additional data source-run should identify Milestone 27");
+    failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "source-run should report SIZEOF buf in EAX");
+    failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "source-run should report .CONST read in EBX");
+
+    direct_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov limit, 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(direct_write_json, "\"ok\":false", "direct .CONST write should fail assembly");
+    failures += expect_json_contains(direct_write_json, "const-write", "direct .CONST write should use const-write diagnostic");
+
+    direct_offset_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR limit[0], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(direct_offset_write_json, "const-write", "direct .CONST offset write should use const-write diagnostic");
+
+    bracketed_const_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov DWORD PTR [limit], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(bracketed_const_write_json, "const-write", "bracketed .CONST write should use const-write diagnostic");
+
+    xchg_const_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 20\n"
+        "    xchg eax, limit\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(xchg_const_write_json, "const-write", "xchg with .CONST memory should use const-write diagnostic because xchg writes both operands");
+
+    add_const_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    add limit, 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(add_const_write_json, "const-write", "add with .CONST destination should use const-write diagnostic");
+
+    neg_const_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    neg limit\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(neg_const_write_json, "const-write", "neg with .CONST destination should use const-write diagnostic");
+
+    indirect_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(indirect_write_json, "\"ok\":false", "indirect .CONST write should fail at runtime");
+    failures += expect_json_contains(indirect_write_json, "permission-denied", "indirect .CONST write should fail through memory permissions");
+    failures += expect_json_contains(indirect_write_json, ".const", "indirect .CONST write diagnostic should name .const region");
+
+    calculated_offset_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov BYTE PTR [eax + 3], 0FFh\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(calculated_offset_write_json, "permission-denied", "calculated .CONST offset write should fail through memory permissions");
+
+    initialized_data_question_json = masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        "buf DWORD 5\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(initialized_data_question_json, "\"ok\":false", ".DATA? initialized numeric storage should be rejected");
+    failures += expect_json_contains(initialized_data_question_json, ".DATA? declarations must use ? or DUP(?)", ".DATA? numeric rejection should explain uninitialized syntax");
+
+    mixed_data_question_json = masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        "buf BYTE ?, 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(mixed_data_question_json, "\"ok\":false", ".DATA? mixed initialized storage should be rejected");
+    failures += expect_json_contains(mixed_data_question_json, ".DATA? declarations must use ? or DUP(?)", ".DATA? mixed rejection should explain uninitialized syntax");
+
+    const_uninitialized_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(const_uninitialized_json, "\"ok\":false", ".CONST uninitialized storage should be rejected");
+    failures += expect_json_contains(const_uninitialized_json, ".CONST declarations require initialized values", ".CONST ? rejection should explain initialized requirement");
 
     return failures;
 }
@@ -1973,7 +2227,7 @@ static int test_signed_ptr_width_alias_error_paths(void) {
 
 /// Test entry point.
 ///
-/// @return Zero when all Milestone 15 tests pass.
+/// @return Zero when all Milestone 27 tests pass.
 int main(void) {
     int failures = 0;
 
@@ -2022,6 +2276,7 @@ int main(void) {
     failures += test_signed_integer_data_declarations_layout_and_metadata();
     failures += test_signed_integer_range_errors();
     failures += test_signed_integer_metadata_and_64bit_execution_limits();
+    failures += test_additional_data_sections_layout_and_const_protection();
     failures += test_signed_ptr_width_aliases_parse_to_ir();
     failures += test_signed_ptr_width_aliases_source_run_programs();
     failures += test_signed_ptr_width_alias_error_paths();
@@ -2030,6 +2285,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 26 data section, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 27 data section, .DATA?/.CONST, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

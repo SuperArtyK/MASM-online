@@ -17,6 +17,18 @@
 /// Maximum bytes retained for one symbol name, including the null terminator.
 #define VM_SYMBOL_NAME_CAPACITY 64U
 
+/// Identifies the simplified data section that owns a symbol.
+typedef enum VmSymbolSection {
+    /// Initialized writable `.data` storage.
+    VM_SYMBOL_SECTION_DATA = 0,
+    /// Deterministic zero-filled `.DATA?` storage that was originally uninitialized.
+    VM_SYMBOL_SECTION_DATA_UNINITIALIZED,
+    /// Initialized read-only `.CONST` storage.
+    VM_SYMBOL_SECTION_CONST,
+    /// Number of supported symbol sections.
+    VM_SYMBOL_SECTION_COUNT
+} VmSymbolSection;
+
 /// Identifies the scalar storage type of one MASM data declaration.
 typedef enum VmSymbolDataType {
     /// 8-bit BYTE or DB data element.
@@ -45,6 +57,8 @@ typedef struct VmSymbol {
     char name[VM_SYMBOL_NAME_CAPACITY];
     /// Scalar element type declared for the symbol.
     VmSymbolDataType data_type;
+    /// Simplified data section that owns the symbol.
+    VmSymbolSection section;
     /// Simulated address of the first byte of the symbol.
     uint32_t address;
     /// Total bytes occupied by this symbol.
@@ -55,7 +69,27 @@ typedef struct VmSymbol {
     uint32_t element_count;
     /// Whether any initializer used MASM's uninitialized marker `?`.
     bool has_uninitialized_initializer;
+    /// Whether storage came from `.DATA?` and was originally uninitialized.
+    bool has_uninitialized_storage;
 } VmSymbol;
+
+/// Returns the stable source spelling for a symbol section.
+///
+/// @param section Section identifier to inspect.
+/// @return Static section name, or NULL for invalid values.
+const char *vm_symbol_section_name(VmSymbolSection section);
+
+/// Returns whether a symbol belongs to read-only `.CONST` storage.
+///
+/// @param symbol Symbol to inspect.
+/// @return true when @p symbol is non-NULL and read-only.
+bool vm_symbol_is_read_only(const VmSymbol *symbol);
+
+/// Returns whether a symbol came from originally uninitialized `.DATA?` storage.
+///
+/// @param symbol Symbol to inspect.
+/// @return true when @p symbol is non-NULL and came from `.DATA?`.
+bool vm_symbol_is_uninitialized_storage(const VmSymbol *symbol);
 
 /// Returns the byte width of a supported data type.
 ///

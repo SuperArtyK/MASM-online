@@ -10,6 +10,30 @@
 
 #include <string.h>
 
+/// Returns the stable display name for a symbol storage section.
+const char *vm_symbol_section_name(VmSymbolSection section) {
+    switch (section) {
+        case VM_SYMBOL_SECTION_DATA:
+            return ".data";
+        case VM_SYMBOL_SECTION_DATA_UNINITIALIZED:
+            return ".DATA?";
+        case VM_SYMBOL_SECTION_CONST:
+            return ".CONST";
+        default:
+            return NULL;
+    }
+}
+
+/// Returns whether a symbol is stored in read-only `.CONST` storage.
+bool vm_symbol_is_read_only(const VmSymbol *symbol) {
+    return symbol != NULL && symbol->section == VM_SYMBOL_SECTION_CONST;
+}
+
+/// Returns whether a symbol originated in deterministic `.DATA?` storage.
+bool vm_symbol_is_uninitialized_storage(const VmSymbol *symbol) {
+    return symbol != NULL && symbol->has_uninitialized_storage;
+}
+
 /// Converts an ASCII byte to lowercase without depending on locale.
 ///
 /// @param ch Source byte to convert.

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 26.
+ * @brief Unit and integration tests for the parser through Milestone 27.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -33,8 +33,11 @@
 /// Number of data symbols available to parser tests that include .data.
 #define TEST_SYMBOL_CAPACITY 16U
 
-/// Number of .data image bytes available to parser tests that include .data.
+/// Number of .data/.DATA? image bytes available to parser tests.
 #define TEST_DATA_IMAGE_CAPACITY 512U
+
+/// Number of .CONST image bytes available to parser tests.
+#define TEST_CONST_IMAGE_CAPACITY 512U
 
 /// Holds all caller-owned parser buffers for one test.
 typedef struct ParserTestBuffers {
@@ -50,8 +53,10 @@ typedef struct ParserTestBuffers {
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
     /// Data symbols emitted from optional .data declarations.
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
-    /// Data image emitted from optional .data declarations.
+    /// Data image emitted from optional .data/.DATA? declarations.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
+    /// Constant image emitted from optional .CONST declarations.
+    uint8_t const_image[TEST_CONST_IMAGE_CAPACITY];
 } ParserTestBuffers;
 
 /// Records a parser test failure.
@@ -193,6 +198,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
+    config.const_image = buffers->const_image;
+    config.const_image_capacity = TEST_CONST_IMAGE_CAPACITY;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
@@ -376,8 +383,6 @@ static int test_error_path_diagnostics(void) {
 static int test_textbook_unsupported_directives_are_stable(void) {
     int failures = 0;
 
-    failures += expect_unsupported_feature_source(".DATA?\n.code\nmain PROC\nmain ENDP\nEND main\n", ".DATA?");
-    failures += expect_unsupported_feature_source(".CONST\nvalue DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", ".CONST");
     failures += expect_unsupported_feature_source(".code\nmain PROC\nmov eax, 1\n.IF eax == 1\nmov ebx, 2\nmain ENDP\nEND main\n", ".IF");
     failures += expect_unsupported_feature_source(".code\nmain PROC\nmov ecx, 3\n.WHILE ecx > 0\nsub ecx, 1\nmain ENDP\nEND main\n", ".WHILE");
     failures += expect_unsupported_feature_source(".code\nmain PROC\n.REPEAT\nmov eax, 1\n.UNTIL eax == 1\nmain ENDP\nEND main\n", ".REPEAT");
@@ -479,23 +484,34 @@ static int test_unsupported_section_recovery_resumes_at_code(void) {
     VmParserResult result;
     int failures = 0;
 
-    failures += expect_parser_status(parse_for_test(".DATA?\nx DWORD ?\n.code\nmain PROC\nmov eax, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".DATA? should recover to .code");
-    failures += expect_size(result.diagnostic_count, 1U, ".DATA? should produce one diagnostic");
-    failures += expect_size(result.instruction_count, 1U, ".DATA? recovery should parse following code");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".DATA? diagnostic code should match");
+    failures += expect_parser_status(parse_for_test(".FARDATA?\nx DWORD ?\n.code\nmain PROC\nmov eax, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".FARDATA? should remain recoverable unsupported section");
+    failures += expect_size(result.diagnostic_count, 1U, ".FARDATA? should produce one diagnostic");
+    failures += expect_size(result.instruction_count, 1U, ".FARDATA? recovery should parse following code");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".FARDATA? diagnostic code should match");
 
-    failures += expect_parser_status(parse_for_test(".CONST\nvalue DWORD 1\n.code\nmain PROC\nmov eax, 2\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".CONST should recover to .code");
-    failures += expect_size(result.diagnostic_count, 1U, ".CONST should produce one diagnostic");
-    failures += expect_size(result.instruction_count, 1U, ".CONST recovery should parse following code");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".CONST diagnostic code should match");
+    return failures;
+}
 
-    failures += expect_parser_status(parse_for_test(".DATA?\nbuffer BYTE 64 DUP(?)\n\n.CONST\nlimit DWORD 10\n\n.code\nmain PROC\nmov eax, 3\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".DATA? followed by .CONST should recover both sections");
-    failures += expect_size(result.diagnostic_count, 2U, ".DATA? and .CONST should each produce a diagnostic");
-    failures += expect_size(result.instruction_count, 1U, "combined unsupported section recovery should parse following code");
-    failures += expect_string_contains(buffers.diagnostics[0].message, ".DATA?", "first section diagnostic should describe .DATA?");
-    failures += expect_string_contains(buffers.diagnostics[1].message, ".CONST", "second section diagnostic should describe .CONST");
-    failures += expect_u32(buffers.diagnostics[0].location.line, 1U, ".DATA? diagnostic line should be preserved in combined section recovery");
-    failures += expect_u32(buffers.diagnostics[1].location.line, 4U, ".CONST diagnostic line should be preserved in combined section recovery");
+/// Verifies implemented .DATA? and .CONST sections emit symbols and images.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_additional_data_sections_parse_successfully(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(".DATA?\nbuf BYTE 16 DUP(?)\n.data\nx DWORD 1\n.CONST\nlimit DWORD 10\n.code\nmain PROC\nmov eax, SIZEOF buf\nmov ebx, limit\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, ".DATA? and .CONST should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "additional data sections should not produce diagnostics");
+    failures += expect_size(result.symbol_count, 3U, "additional data sections should emit all symbols in source order");
+    failures += expect_size(result.data_size, 20U, ".DATA? and .data should share writable data image ordering");
+    failures += expect_size(result.const_size, 4U, ".CONST should emit a separate const image");
+    failures += expect_u32(buffers.symbols[0].address, VM_MEMORY_DEFAULT_DATA_BASE, ".DATA? symbol should start at .data base");
+    failures += expect_u32(buffers.symbols[1].address, VM_MEMORY_DEFAULT_DATA_BASE + 16U, ".data symbol should follow .DATA? bytes");
+    failures += expect_u32(buffers.symbols[2].address, VM_MEMORY_DEFAULT_CONST_BASE, ".CONST symbol should start at .const base");
+    failures += expect_u32((uint32_t)buffers.symbols[0].section, (uint32_t)VM_SYMBOL_SECTION_DATA_UNINITIALIZED, ".DATA? symbol metadata should preserve section");
+    failures += expect_u32((uint32_t)buffers.symbols[2].section, (uint32_t)VM_SYMBOL_SECTION_CONST, ".CONST symbol metadata should preserve section");
+    failures += expect_u32(buffers.data_image[0], 0U, ".DATA? bytes should be deterministic zero-filled");
+    failures += expect_u32(buffers.const_image[0], 10U, ".CONST DWORD low byte should be initialized");
 
     return failures;
 }
@@ -1683,6 +1699,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE), "unsupported-register-indirect-base") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported register-indirect base diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_CONST_WRITE), "const-write") != 0) {
+        failures += record_failure("parser diagnostic helper should name const-write diagnostics");
+    }
     if (vm_parser_status_name((VmParserStatus)999) != NULL) {
         failures += record_failure("invalid parser status name should be NULL");
     }
@@ -1693,7 +1712,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 26.
+/// Runs all parser regression tests through Milestone 27.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1710,6 +1729,7 @@ int main(void) {
     failures += test_scheduled_and_backlog_data_types_are_documented_diagnostics();
     failures += test_multi_diagnostic_unsupported_feature_recovery();
     failures += test_unsupported_section_recovery_resumes_at_code();
+    failures += test_additional_data_sections_parse_successfully();
     failures += test_unsupported_block_recovery_avoids_body_cascades();
     failures += test_line_level_unsupported_feature_recovery_covers_required_constructs();
     failures += test_block_recovery_covers_required_terminators();

@@ -3,7 +3,7 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 26 source execution export parses optional `.data`, initializes
+ * Milestone 27 source execution export parses optional `.data`, `.DATA?`, and `.CONST`, initializes
  * simulated memory, runs the currently supported `.code` subset including TYPE,
  * LENGTHOF, SIZEOF, packed character literals, sign/zero-extension instructions,
  * accumulator conversions, exchange/negation/no-op instructions, carry/borrow arithmetic, carry-flag control, and recovered
@@ -36,13 +36,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 26 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 27 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 26 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 27 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 26 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 27 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -51,8 +51,11 @@
 /// Maximum data symbols retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_SYMBOLS 128U
 
-/// Maximum .data bytes laid out by the source-run API.
+/// Maximum .data/.DATA? bytes laid out by the source-run API.
 #define MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES VM_MEMORY_DEFAULT_DATA_SIZE
+
+/// Maximum .CONST bytes laid out by the source-run API.
+#define MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES VM_MEMORY_DEFAULT_CONST_SIZE
 
 /// Maximum symbol-aware memory changes retained for one source run.
 #define MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES 64U
@@ -63,7 +66,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 26 JSON response.
+/// Bytes available for the returned Milestone 27 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -124,7 +127,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 26 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 27 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -136,8 +139,10 @@ typedef struct Masm32SimWasmRunStorage {
     VmIrInstruction instructions[MASM32_SIM_WASM_MAX_RUN_INSTRUCTIONS];
     /// Data symbols emitted by the parser.
     VmSymbol symbols[MASM32_SIM_WASM_MAX_RUN_SYMBOLS];
-    /// Data image bytes emitted by the parser.
+    /// Data image bytes emitted by the parser for `.data` and `.DATA?`.
     uint8_t data_image[MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES];
+    /// Constant image bytes emitted by the parser for `.CONST`.
+    uint8_t const_image[MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES];
     /// Symbol-aware memory changes collected during execution.
     Masm32SimSymbolicMemoryChange memory_changes[MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES];
     /// Number of valid entries in @ref memory_changes.
@@ -343,7 +348,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 26 UI.
+/// Appends the canonical 32-bit register object used by the Milestone 27 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -497,28 +502,22 @@ static bool masm32_sim_json_append_memory_changes(Masm32SimJsonWriter *writer, c
     return masm32_sim_json_append(writer, "]");
 }
 
-/// Loads parser-produced .data image bytes into VM memory.
+/// Loads parser-produced section image bytes into VM memory.
 ///
-/// @param vm VM whose .data region should be initialized.
-/// @param data_image Parser-produced data image bytes.
-/// @param data_size Number of bytes to write.
+/// @param vm VM whose memory region should be initialized.
+/// @param region Region that receives the parser-produced bytes.
+/// @param image Parser-produced image bytes.
+/// @param size Number of bytes to write.
 /// @return Executor status representing the load result.
-static VmExecStatus masm32_sim_wasm_load_data_image(Vm *vm, const uint8_t *data_image, uint32_t data_size) {
-    uint32_t index = 0U;
+static VmExecStatus masm32_sim_wasm_load_section_image(Vm *vm, VmMemoryRegionKind region, const uint8_t *image, uint32_t size) {
+    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
 
-    if (vm == NULL || (data_image == NULL && data_size > 0U)) {
+    if (vm == NULL || (image == NULL && size > 0U)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
-    for (index = 0U; index < data_size; index += 1U) {
-        VmMemoryStatus memory_status = vm_memory_write_u8(&vm->memory, VM_MEMORY_DEFAULT_DATA_BASE + index, data_image[index], NULL);
-        if (!vm_memory_status_succeeded(memory_status)) {
-            return VM_EXEC_STATUS_MEMORY_ERROR;
-        }
-    }
-
-    vm_memory_clear_changes(&vm->memory);
-    return VM_EXEC_STATUS_OK;
+    memory_status = vm_memory_load_region_bytes(&vm->memory, region, 0U, image, size);
+    return vm_memory_status_succeeded(memory_status) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_MEMORY_ERROR;
 }
 
 /// Combines little-endian bytes into a 32-bit unsigned value.
@@ -968,7 +967,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":26,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":27,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -1007,7 +1006,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":26,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":27,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 
@@ -1059,6 +1058,8 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
     config.symbol_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_SYMBOLS;
     config.data_image = g_masm32_sim_wasm_run_storage.data_image;
     config.data_image_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
+    config.const_image = g_masm32_sim_wasm_run_storage.const_image;
+    config.const_image_capacity = (size_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES;
     config.diagnostics = g_masm32_sim_wasm_run_storage.parser_diagnostics;
     config.diagnostic_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS;
 
@@ -1080,12 +1081,21 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
     }
     vm_initialized = true;
 
-    exec_status = masm32_sim_wasm_load_data_image(&vm, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
+    exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
         const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
         vm_deinit(&vm);
         return json;
     }
+
+    exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
+    if (exec_status != VM_EXEC_STATUS_OK) {
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
+        vm_deinit(&vm);
+        return json;
+    }
+
+    vm_memory_clear_changes(&vm.memory);
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
