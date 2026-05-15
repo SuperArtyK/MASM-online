@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 21.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 22.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
@@ -131,6 +131,10 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION,
     /// A character literal was used outside a supported byte-compatible context or had unsupported shape.
     VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL,
+    /// A memory/immediate instruction form used register-indirect memory without explicit or inferable width.
+    VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH,
+    /// A bracketed memory operand used a valid register that is not yet supported as an address base.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE,
     /// A DUP initializer was malformed or unsupported.
     VM_PARSER_DIAGNOSTIC_INVALID_DUP,
     /// Number of parser diagnostic codes.

@@ -3,7 +3,7 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 21 source execution export parses optional `.data`, initializes
+ * Milestone 22 source execution export parses optional `.data`, initializes
  * simulated memory, runs the currently supported `.code` subset including TYPE,
  * LENGTHOF, SIZEOF, packed character literals, sign/zero-extension instructions,
  * accumulator conversions, exchange/negation/no-op instructions, carry/borrow arithmetic, carry-flag control, and recovered
@@ -36,13 +36,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 21 source-run API.
+/// Maximum lexer tokens accepted by the Milestone 22 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 21 source-run API.
+/// Maximum lexer diagnostics retained by the Milestone 22 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 21 source-run API.
+/// Maximum parser diagnostics retained by the Milestone 22 source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -63,7 +63,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 21 JSON response.
+/// Bytes available for the returned Milestone 22 JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -124,7 +124,7 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 21 parse-and-run request.
+/// Stores all fixed buffers needed for one Milestone 22 parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -343,7 +343,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 21 UI.
+/// Appends the canonical 32-bit register object used by the Milestone 22 UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -761,7 +761,8 @@ static const char *masm32_sim_wasm_parser_diagnostic_kind(VmParserDiagnosticCode
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION ||
-        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION) {
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE) {
         return "unsupported-feature";
     }
 
@@ -809,6 +810,105 @@ static bool masm32_sim_json_append_parser_messages(
     return true;
 }
 
+/// Returns a stable lowercase name for a memory access type.
+///
+/// @param access_type Memory access type to describe.
+/// @return Static lowercase access-type name.
+static const char *masm32_sim_wasm_memory_access_name(VmMemoryAccessType access_type) {
+    switch (access_type) {
+        case VM_MEMORY_ACCESS_READ:
+            return "read";
+        case VM_MEMORY_ACCESS_WRITE:
+            return "write";
+        case VM_MEMORY_ACCESS_EXECUTE:
+            return "execute";
+        default:
+            return "access";
+    }
+}
+
+/// Builds a user-facing memory error summary from structured executor diagnostics.
+///
+/// @param diagnostic Executor diagnostic containing memory failure context.
+/// @param buffer Destination buffer for the formatted message.
+/// @param buffer_size Number of bytes available in @p buffer.
+/// @return Stable diagnostic code to use for the simulator message.
+static const char *masm32_sim_wasm_format_memory_error_message(
+    const VmExecDiagnostic *diagnostic,
+    char *buffer,
+    size_t buffer_size
+) {
+    const char *memory_status_name = "memory-error";
+    const char *access_name = "access";
+    const VmMemoryDiagnostic *memory_diagnostic = NULL;
+
+    if (buffer != NULL && buffer_size > 0U) {
+        buffer[0] = '\0';
+    }
+
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_MEMORY_ERROR) {
+        if (buffer != NULL && buffer_size > 0U) {
+            (void)snprintf(buffer, buffer_size, "Execution failed during a simulated memory access.");
+        }
+        return "memory-error";
+    }
+
+    memory_status_name = vm_memory_status_name(diagnostic->memory_status);
+    if (memory_status_name == NULL) {
+        memory_status_name = "memory-error";
+    }
+
+    memory_diagnostic = &diagnostic->memory_diagnostic;
+    access_name = masm32_sim_wasm_memory_access_name(memory_diagnostic->access_type);
+
+    if (diagnostic->memory_status == VM_MEMORY_STATUS_INVALID_ADDRESS) {
+        if (buffer != NULL && buffer_size > 0U) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Invalid memory %s at %08Xh for %u byte%s. The address is outside the simulator's configured memory regions.",
+                access_name,
+                (unsigned int)memory_diagnostic->address,
+                (unsigned int)memory_diagnostic->size,
+                memory_diagnostic->size == 1U ? "" : "s"
+            );
+        }
+        return memory_status_name;
+    }
+
+    if (diagnostic->memory_status == VM_MEMORY_STATUS_PERMISSION_DENIED) {
+        const char *region_name = memory_diagnostic->has_region ? vm_memory_region_name(memory_diagnostic->region) : NULL;
+        if (buffer != NULL && buffer_size > 0U) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s at %08Xh for %u byte%s is not permitted%s%s.",
+                access_name,
+                (unsigned int)memory_diagnostic->address,
+                (unsigned int)memory_diagnostic->size,
+                memory_diagnostic->size == 1U ? "" : "s",
+                region_name != NULL ? " in " : "",
+                region_name != NULL ? region_name : ""
+            );
+        }
+        return memory_status_name;
+    }
+
+    if (buffer != NULL && buffer_size > 0U) {
+        (void)snprintf(
+            buffer,
+            buffer_size,
+            "Memory %s failed at %08Xh for %u byte%s.",
+            access_name,
+            (unsigned int)memory_diagnostic->address,
+            (unsigned int)memory_diagnostic->size,
+            memory_diagnostic->size == 1U ? "" : "s"
+        );
+    }
+
+    return memory_status_name;
+}
+
 /// Appends an executor diagnostic to the simulatorMessages array.
 ///
 /// @param writer Writer to mutate.
@@ -817,17 +917,25 @@ static bool masm32_sim_json_append_parser_messages(
 /// @return true when the diagnostic fit without overflowing the buffer.
 static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, const VmExecDiagnostic *diagnostic, VmExecStatus status) {
     const char *status_name = vm_exec_status_name(status);
+    const char *message_code = status_name != NULL ? status_name : "execution-error";
+    const char *message_text = "Execution failed while running the parsed program.";
+    char memory_message[256];
     uint32_t line = 0U;
 
     if (diagnostic != NULL && diagnostic->has_instruction) {
         line = diagnostic->instruction.source_line;
     }
 
+    if (diagnostic != NULL && diagnostic->status == VM_EXEC_STATUS_MEMORY_ERROR) {
+        message_code = masm32_sim_wasm_format_memory_error_message(diagnostic, memory_message, sizeof(memory_message));
+        message_text = memory_message;
+    }
+
     return masm32_sim_json_append_message(
         writer,
         "runtime-error",
-        status_name != NULL ? status_name : "execution-error",
-        "Execution failed while running the parsed program.",
+        message_code,
+        message_text,
         line,
         0U
     );
@@ -860,7 +968,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":21,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":22,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
 
@@ -899,7 +1007,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":21,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":22,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

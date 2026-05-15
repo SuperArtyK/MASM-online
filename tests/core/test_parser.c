@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 21.
+ * @brief Unit and integration tests for the parser through Milestone 22.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -30,6 +30,12 @@
 /// Number of source-text storage bytes available to each parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 512U
 
+/// Number of data symbols available to parser tests that include .data.
+#define TEST_SYMBOL_CAPACITY 16U
+
+/// Number of .data image bytes available to parser tests that include .data.
+#define TEST_DATA_IMAGE_CAPACITY 512U
+
 /// Holds all caller-owned parser buffers for one test.
 typedef struct ParserTestBuffers {
     /// Lexer token buffer.
@@ -42,6 +48,10 @@ typedef struct ParserTestBuffers {
     VmIrInstruction instructions[TEST_INSTRUCTION_CAPACITY];
     /// Null-terminated source-text copies used by emitted IR.
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
+    /// Data symbols emitted from optional .data declarations.
+    VmSymbol symbols[TEST_SYMBOL_CAPACITY];
+    /// Data image emitted from optional .data declarations.
+    uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
 } ParserTestBuffers;
 
 /// Records a parser test failure.
@@ -179,6 +189,10 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers->source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.symbols = buffers->symbols;
+    config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.data_image = buffers->data_image;
+    config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
@@ -1191,6 +1205,123 @@ static int test_phase21_instruction_parse_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies TEST instruction forms parse into expected IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase22_test_instruction_parses_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 0F0F0F0Fh\n"
+        "nums DWORD 10 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET nums\n"
+        "    test eax, eax\n"
+        "    test eax, 0FFh\n"
+        "    test eax, value\n"
+        "    test value, eax\n"
+        "    test value, 0FFh\n"
+        "    test nums[0], 0FFh\n"
+        "    test DWORD PTR [esi], 1\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "TEST instruction program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "TEST instruction program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 8U, "TEST instruction program should emit eight instructions");
+    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_TEST, "TEST reg/reg opcode should be emitted");
+    failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_REGISTER, "TEST reg/reg destination should be register");
+    failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_REGISTER, "TEST reg/reg source should be register");
+    failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_TEST, "TEST reg/imm opcode should be emitted");
+    failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_IMMEDIATE, "TEST reg/imm source should be immediate");
+    failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "TEST reg/mem source should be direct memory");
+    failures += expect_u32(buffers.instructions[4].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "TEST mem/reg destination should be direct memory");
+    failures += expect_u32(buffers.instructions[5].destination.width_bits, 32U, "TEST direct symbol memory/immediate should infer DWORD width");
+    failures += expect_u32(buffers.instructions[6].destination.width_bits, 32U, "TEST nums[0] memory/immediate should infer symbol width");
+    failures += expect_u32(buffers.instructions[7].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "TEST PTR [esi] destination should be register-indirect memory");
+    failures += expect_u32(buffers.instructions[7].destination.width_bits, 32U, "TEST DWORD PTR [esi] should emit DWORD width");
+
+    return failures;
+}
+
+/// Verifies parser diagnostics for malformed TEST operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase22_test_instruction_parse_error_paths(void) {
+    int failures = 0;
+    const char *ambiguous_source =
+        ".code\n"
+        "main PROC\n"
+        "    test [esi], 1\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *ambiguous_displacement_source =
+        ".code\n"
+        "main PROC\n"
+        "    test [esi + 4], 1\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *width_mismatch_source =
+        ".code\n"
+        "main PROC\n"
+        "    test eax, al\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *immediate_overflow_source =
+        ".code\n"
+        "main PROC\n"
+        "    test al, 256\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *missing_comma_source =
+        ".code\n"
+        "main PROC\n"
+        "    test eax eax\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *unsupported_base_source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    test [eax], eax\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(ambiguous_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST [esi], imm should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "TEST [esi], imm diagnostic should be ambiguous memory width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 10U, "TEST [esi], imm diagnostic should point to the ambiguous memory operand");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Memory operand width is ambiguous", "TEST ambiguous diagnostic should describe width ambiguity");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "BYTE PTR", "TEST ambiguous diagnostic should suggest PTR widths");
+
+    failures += expect_parser_status(parse_for_test(ambiguous_displacement_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST [esi + 4], imm should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "TEST [esi + 4], imm diagnostic should be ambiguous memory width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 10U, "TEST [esi + 4], imm diagnostic should point to the ambiguous memory operand");
+
+    failures += expect_parser_status(parse_for_test(width_mismatch_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST width mismatch should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "TEST width mismatch diagnostic should be operand width mismatch");
+
+    failures += expect_parser_status(parse_for_test(immediate_overflow_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST immediate overflow should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, "TEST immediate overflow diagnostic should be immediate out of range");
+
+    failures += expect_parser_status(parse_for_test(missing_comma_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST missing comma should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "TEST missing comma diagnostic should be expected comma");
+
+    failures += expect_parser_status(parse_for_test(unsupported_base_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST [eax], eax should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, "TEST [eax], eax diagnostic should identify unsupported memory base register");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 11U, "TEST [eax], eax diagnostic should point to the unsupported base register");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "bracketed memory operands", "TEST unsupported base diagnostic should clarify bracketed memory use");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "remove the brackets", "TEST unsupported base diagnostic should clarify register operand use");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1209,6 +1340,12 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL), "invalid-hex-literal") != 0) {
         failures += record_failure("parser diagnostic helper should name surfaced lexer invalid hex diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH), "ambiguous-memory-width") != 0) {
+        failures += record_failure("parser diagnostic helper should name ambiguous memory-width diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE), "unsupported-register-indirect-base") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported register-indirect base diagnostics");
+    }
     if (vm_parser_status_name((VmParserStatus)999) != NULL) {
         failures += record_failure("invalid parser status name should be NULL");
     }
@@ -1219,7 +1356,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all minimal parser regression tests.
+/// Runs all parser regression tests through Milestone 22.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1253,6 +1390,8 @@ int main(void) {
     failures += test_phase20_instruction_parse_error_paths();
     failures += test_phase21_instructions_parse_to_ir();
     failures += test_phase21_instruction_parse_error_paths();
+    failures += test_phase22_test_instruction_parses_to_ir();
+    failures += test_phase22_test_instruction_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

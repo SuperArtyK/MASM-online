@@ -122,6 +122,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "stc";
         case VM_IR_OPCODE_CMC:
             return "cmc";
+        case VM_IR_OPCODE_TEST:
+            return "test";
         default:
             return NULL;
     }

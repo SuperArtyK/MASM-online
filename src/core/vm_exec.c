@@ -3,7 +3,7 @@
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
- * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, and cmc over the
+ * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc, and test over the
  * currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
@@ -504,6 +504,51 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
     }
 
     return status;
+}
+
+/// Executes one TEST instruction and updates flags from a bitwise AND result.
+///
+/// TEST reads both operands at the selected execution width, computes the
+/// masked bitwise AND, updates ZF and SF from that transient result, clears CF
+/// and OF, and deliberately does not write the result back to either operand.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param width_bits Execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_test(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t left = 0U;
+    uint32_t right = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &left);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &right);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    result = (left & right) & mask;
+
+    if (!vm_cpu_clear_flag(&vm->cpu, VM_FLAG_CF) ||
+        !vm_cpu_clear_flag(&vm->cpu, VM_FLAG_OF) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_SF, (result & sign_bit) != 0U)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 
@@ -1220,6 +1265,7 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_SUB:
         case VM_IR_OPCODE_ADC:
         case VM_IR_OPCODE_SBB:
+        case VM_IR_OPCODE_TEST:
             if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
@@ -1241,7 +1287,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             if (instruction->opcode == VM_IR_OPCODE_ADC) {
                 return vm_exec_execute_adc(vm, instruction, width_bits);
             }
-            return vm_exec_execute_sbb(vm, instruction, width_bits);
+            if (instruction->opcode == VM_IR_OPCODE_SBB) {
+                return vm_exec_execute_sbb(vm, instruction, width_bits);
+            }
+            return vm_exec_execute_test(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:
             return vm_exec_execute_movx(vm, instruction, true);
         case VM_IR_OPCODE_MOVZX:

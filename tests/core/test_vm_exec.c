@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 21.
+ * @brief Unit tests for the VM executor through Milestone 22.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
@@ -1044,6 +1044,142 @@ static int test_phase20_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies TEST updates flags from a transient AND result without changing registers.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_test_register_immediate_flags_and_non_mutation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x0F0F0F0FU, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "test eax, 0F0F0F0Fh", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for TEST register/immediate");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "TEST register/immediate program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xF0F0F0F0U) ? 0 : record_failure("EAX setup should succeed"));
+    failures += (vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("CF setup should succeed"));
+    failures += (vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("OF setup should succeed"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST register/immediate should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after TEST"));
+    failures += expect_u32(eax, 0xF0F0F0F0U, "TEST should not modify register operand");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "zero TEST result should set ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "zero TEST result should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "TEST should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "TEST should clear OF");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL) {
+        failures += record_failure("TEST should produce a delta");
+    } else {
+        failures += expect_size(delta->register_change_count, 0U, "TEST should not report register changes");
+        failures += expect_size(delta->memory_change_count, 0U, "TEST register/immediate should not report memory changes");
+        if (find_flag_change(delta, VM_FLAG_ZF) == NULL) {
+            failures += record_failure("TEST delta should include ZF change");
+        }
+        if (find_flag_change(delta, VM_FLAG_CF) == NULL) {
+            failures += record_failure("TEST delta should include CF clear");
+        }
+        if (find_flag_change(delta, VM_FLAG_OF) == NULL) {
+            failures += record_failure("TEST delta should include OF clear");
+        }
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies TEST handles 8-bit sign results without mutating aliases.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_test_alias_sign_flag_edge_case(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U}, "main.asm", 1U, "test al, 80h", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for TEST alias");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "TEST alias program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x12345680U) ? 0 : record_failure("EAX setup should succeed for TEST alias"));
+    failures += (vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("CF setup should succeed for TEST alias"));
+    failures += (vm_cpu_set_flag(&vm.cpu, VM_FLAG_OF) ? 0 : record_failure("OF setup should succeed for TEST alias"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST alias should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after TEST alias"));
+    failures += expect_u32(eax, 0x12345680U, "TEST alias should not modify EAX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "nonzero TEST alias result should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "8-bit sign-bit TEST result should set SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "TEST alias should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "TEST alias should clear OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies TEST register/memory and memory/immediate forms do not mutate memory.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_test_memory_forms_and_non_mutation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const uint32_t address = VM_MEMORY_DEFAULT_DATA_BASE;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U}, "main.asm", 1U, "test eax, ebx", 0U},
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, address}, "main.asm", 2U, "test eax, value", 1U},
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, address}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, "main.asm", 3U, "test value, eax", 2U},
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, address}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000000U, VM_REGISTER_COUNT, 0U}, "main.asm", 4U, "test value, 80000000h", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for TEST memory forms");
+    failures += expect_status(vm_memory_write_u32(&vm.memory, address, 0x80000001U, NULL) == VM_MEMORY_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_MEMORY_ERROR, VM_EXEC_STATUS_OK, "memory setup should succeed for TEST");
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "TEST memory forms program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x80000001U) ? 0 : record_failure("EAX setup should succeed for TEST memory forms"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x00000001U) ? 0 : record_failure("EBX setup should succeed for TEST memory forms"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST reg/reg should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "TEST reg/reg should clear ZF for nonzero result");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST reg/mem should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST mem/reg should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST mem/imm should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "TEST mem/imm should set SF from bit 31");
+    failures += expect_status(vm_memory_read_u32(&vm.memory, address, &value, NULL) == VM_MEMORY_STATUS_OK ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_MEMORY_ERROR, VM_EXEC_STATUS_OK, "memory read should succeed after TEST");
+    failures += expect_u32(value, 0x80000001U, "TEST should not modify memory operand");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "TEST memory/immediate should not record memory writes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies invalid hardcoded TEST operands are rejected by the executor.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_test_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction immediate_destination[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, "main.asm", 1U, "test 1, eax", 0U}
+    };
+    const VmIrInstruction width_mismatch[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U}, "main.asm", 1U, "test eax, al", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for TEST error paths");
+    failures += expect_status(vm_load_program(&vm, immediate_destination, 1U), VM_EXEC_STATUS_OK, "TEST immediate-destination program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "TEST immediate destination should be unsupported");
+    failures += expect_status(vm_load_program(&vm, width_mismatch, 1U), VM_EXEC_STATUS_OK, "TEST width-mismatch program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "TEST width mismatch should be unsupported");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1072,7 +1208,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 21.
+/// Runs all executor tests through Milestone 22.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -1101,6 +1237,10 @@ int main(void) {
     failures += test_sbb_signed_overflow_edge_case();
     failures += test_carry_flag_control_instructions();
     failures += test_phase21_error_paths();
+    failures += test_test_register_immediate_flags_and_non_mutation();
+    failures += test_test_alias_sign_flag_edge_case();
+    failures += test_test_memory_forms_and_non_mutation();
+    failures += test_test_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -1108,6 +1248,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 21 passed.");
+    puts("Executor tests through Milestone 22 passed.");
     return 0;
 }

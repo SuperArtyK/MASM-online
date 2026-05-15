@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 21.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 22.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -1547,6 +1547,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_CMC;
         return true;
     }
+    if (vm_parser_token_equals(token, "test")) {
+        *out_opcode = VM_IR_OPCODE_TEST;
+        return true;
+    }
 
     return false;
 }
@@ -1589,6 +1593,14 @@ static bool vm_parser_opcode_is_single_destination_operand(VmIrOpcode opcode) {
 /// @return true for XCHG.
 static bool vm_parser_opcode_is_exchange(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_XCHG;
+}
+
+/// Returns whether an opcode uses TEST operand validation rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for TEST.
+static bool vm_parser_opcode_is_test(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_TEST;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -1949,7 +1961,7 @@ static bool vm_parser_parse_bracketed_register_memory_operand(
         return false;
     }
     if (!vm_parser_token_is_register_indirect_base(base_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register-indirect base register. Use ESI, EDI, EBX, or EBP.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, base_token, "This register is not supported as a register-indirect memory base yet. Use ESI, EDI, EBX, or EBP for bracketed memory operands, or remove the brackets to use the register value directly.");
         return false;
     }
 
@@ -3167,6 +3179,54 @@ static bool vm_parser_validate_exchange_operands(
     return true;
 }
 
+/// Validates source and destination widths for TEST.
+///
+/// TEST accepts register/register, register/immediate, register/memory,
+/// memory/register, and memory/immediate forms when widths are known. Untyped
+/// register-indirect memory with an immediate source remains ambiguous in
+/// MASM32 Educational Mode and must be rejected with a width-specific
+/// diagnostic rather than an unsupported-feature diagnostic.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination First TEST operand.
+/// @param source Second TEST operand.
+/// @param destination_token Token associated with the first operand for diagnostics.
+/// @param source_token Token associated with the second operand for diagnostics.
+/// @return true when the TEST operand pair is supported.
+static bool vm_parser_validate_test_operands(
+    VmParserState *state,
+    const VmIrOperand *destination,
+    VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, destination_token, "TEST requires a register or memory first operand.");
+        return false;
+    }
+
+    if (source->kind != VM_IR_OPERAND_IMMEDIATE && source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, source_token, "TEST requires a register, immediate, or memory second operand.");
+        return false;
+    }
+
+    if (vm_parser_operand_is_memory(destination) && vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "TEST does not support memory-to-memory operands.");
+        return false;
+    }
+
+    if (vm_parser_operand_is_memory(destination) && source->kind == VM_IR_OPERAND_IMMEDIATE && destination->width_bits == 0U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, destination_token, "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+        return false;
+    }
+
+    return vm_parser_validate_source_width(state, destination, source, source_token);
+}
+
 /// Validates the destination operand for NEG.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
@@ -3284,6 +3344,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     VmIrOpcode opcode = VM_IR_OPCODE_MOV;
     VmIrOperand destination = vm_ir_operand_none();
     VmIrOperand source = vm_ir_operand_none();
+    const VmLexerToken *destination_token = NULL;
     const VmLexerToken *source_token = NULL;
 
     if (!vm_parser_parse_opcode(mnemonic_token, &opcode)) {
@@ -3314,6 +3375,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
     }
 
+    destination_token = vm_parser_current_token(state);
     if (!vm_parser_parse_destination_operand(state, &destination)) {
         return false;
     }
@@ -3347,6 +3409,11 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     } else if (vm_parser_opcode_is_exchange(opcode)) {
         vm_parser_infer_register_memory_widths(&destination, &source);
         if (!vm_parser_validate_exchange_operands(state, &destination, &source, source_token)) {
+            return false;
+        }
+    } else if (vm_parser_opcode_is_test(opcode)) {
+        vm_parser_infer_register_memory_widths(&destination, &source);
+        if (!vm_parser_validate_test_operands(state, &destination, &source, destination_token, source_token)) {
             return false;
         }
     } else {
@@ -3869,6 +3936,10 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-sizeof-expression";
         case VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL:
             return "invalid-character-literal";
+        case VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH:
+            return "ambiguous-memory-width";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:
+            return "unsupported-register-indirect-base";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
         default:

@@ -150,6 +150,21 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     return 0;
 }
 
+
+/// Verifies that returned JSON does not contain a forbidden fragment.
+///
+/// @param json JSON string to inspect.
+/// @param unexpected Forbidden substring.
+/// @param message Failure message when present.
+/// @return Zero on success, otherwise one failure.
+static int expect_json_not_contains(const char *json, const char *unexpected, const char *message) {
+    if (json != NULL && strstr(json, unexpected) != NULL) {
+        fprintf(stderr, "FAIL: %s\nUnexpected: %s\nJSON: %s\n", message, unexpected, json);
+        return 1;
+    }
+    return 0;
+}
+
 /// Parses source with full Milestone 15 buffers.
 ///
 /// @param source Source text to parse.
@@ -1429,7 +1444,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
+    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1450,7 +1465,7 @@ static int test_register_indirect_error_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX, "scaled-index diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, DWORD PTR [eax]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported base register should fail");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "unsupported base register diagnostic should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, "unsupported base register diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov QWORD PTR [esi], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "QWORD PTR register-indirect should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "QWORD PTR register-indirect diagnostic should match");
@@ -1477,7 +1492,9 @@ static int test_register_indirect_runtime_error_path(void) {
 
     failures += expect_json_contains(json, "\"ok\":false", "invalid register-indirect read should fail");
     failures += expect_json_contains(json, "\"status\":\"execution-error\"", "invalid register-indirect read should be execution-error");
-    failures += expect_json_contains(json, "memory-error", "invalid register-indirect read should include memory diagnostic");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "invalid register-indirect read should include memory status diagnostic");
+    failures += expect_json_contains(json, "Invalid memory read at 00000000h for 4 bytes", "invalid register-indirect read should describe address and width");
+    failures += expect_json_not_contains(json, "Execution failed while running the parsed program", "invalid register-indirect read should not use vague execution failure wording");
 
     return failures;
 }
@@ -1558,7 +1575,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
+    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1583,7 +1600,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":21", "response should identify Milestone 21");
+    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1780,6 +1797,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 21 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 22 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }
