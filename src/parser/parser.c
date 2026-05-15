@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 25.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 26.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -238,6 +238,24 @@ static bool vm_parser_is_data_question_directive(const VmLexerToken *directive_t
            vm_parser_tokens_are_contiguous(directive_token, question_token);
 }
 
+/// Returns whether a token pair spells a specific deferred `.<name>?` directive.
+///
+/// @param directive_token Candidate dot-prefixed directive token.
+/// @param question_token Candidate question-mark token immediately after it.
+/// @param directive_spelling Dot-prefixed directive spelling without the trailing question mark.
+/// @return true when the pair represents the requested question-suffixed directive.
+static bool vm_parser_is_question_directive(
+    const VmLexerToken *directive_token,
+    const VmLexerToken *question_token,
+    const char *directive_spelling
+) {
+    return directive_token != NULL && question_token != NULL && directive_spelling != NULL &&
+           directive_token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+           question_token->kind == VM_LEXER_TOKEN_QUESTION &&
+           vm_parser_token_equals(directive_token, directive_spelling) &&
+           vm_parser_tokens_are_contiguous(directive_token, question_token);
+}
+
 /// Looks up a static unsupported-feature message by exact token spelling.
 ///
 /// @param token Candidate token to classify.
@@ -276,11 +294,33 @@ static const char *vm_parser_unsupported_directive_message(const VmLexerToken *t
         {".while", "Unsupported feature: MASM .WHILE high-level flow is not supported yet."},
         {".repeat", "Unsupported feature: MASM .REPEAT high-level flow is not supported yet."},
         {".break", "Unsupported feature: MASM .BREAK high-level flow is not supported yet."},
-        {".continue", "Unsupported feature: MASM .CONTINUE high-level flow is not supported yet."}
+        {".continue", "Unsupported feature: MASM .CONTINUE high-level flow is not supported yet."},
+        {".startup", "Unsupported feature: .STARTUP is not supported yet."},
+        {".exit", "Unsupported feature: .EXIT is not supported yet."},
+        {".dosseg", "Unsupported feature: .DOSSEG segmented-layout compatibility is not supported."},
+        {".fardata", "Unsupported feature: .FARDATA sections are not supported."},
+        {".list", "Unsupported feature: .LIST listing control is not supported yet."},
+        {".nolist", "Unsupported feature: .NOLIST listing control is not supported yet."},
+        {".cref", "Unsupported feature: .CREF listing control is not supported yet."},
+        {".nocref", "Unsupported feature: .NOCREF listing control is not supported yet."},
+        {".tfcond", "Unsupported feature: .TFCOND listing control is not supported yet."},
+        {".err", "Unsupported feature: .ERR conditional error directives are not supported yet."},
+        {".errb", "Unsupported feature: .ERRB conditional error directives are not supported yet."},
+        {".errdef", "Unsupported feature: .ERRDEF conditional error directives are not supported yet."},
+        {".erre", "Unsupported feature: .ERRE conditional error directives are not supported yet."},
+        {".errnz", "Unsupported feature: .ERRNZ conditional error directives are not supported yet."},
+        {".mmx", "Unsupported feature: .MMX processor extensions are not modeled in MASM32 Educational Mode."},
+        {".xmm", "Unsupported feature: .XMM processor extensions are not modeled in MASM32 Educational Mode."},
+        {".k3d", "Unsupported feature: .K3D processor extensions are not modeled in MASM32 Educational Mode."},
+        {".safeseh", "Unsupported feature: .SAFESEH object metadata is not supported."},
+        {".fpo", "Unsupported feature: .FPO object metadata is not supported."}
     };
 
     if (vm_parser_is_data_question_directive(token, next)) {
         return "Unsupported feature: .DATA? uninitialized data sections are not supported yet.";
+    }
+    if (vm_parser_is_question_directive(token, next, ".fardata")) {
+        return "Unsupported feature: .FARDATA? sections are not supported.";
     }
 
     return vm_parser_find_unsupported_feature_message(token, directives, sizeof(directives) / sizeof(directives[0]));
@@ -304,8 +344,34 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
         {"endm", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"includelib", "Unsupported feature: INCLUDELIB linker declarations are not supported yet."},
         {"extern", "Unsupported feature: EXTERN declarations are not supported yet."},
+        {"externdef", "Unsupported feature: EXTERNDEF declarations are not supported yet."},
+        {"extrn", "Unsupported feature: EXTRN declarations are not supported yet."},
         {"public", "Unsupported feature: PUBLIC declarations are not supported yet."},
-        {"comm", "Unsupported feature: COMM declarations are not supported yet."}
+        {"comm", "Unsupported feature: COMM declarations are not supported yet."},
+        {"assume", "Unsupported feature: ASSUME segment assumptions are not supported."},
+        {"align", "Unsupported feature: ALIGN is not supported yet."},
+        {"even", "Unsupported feature: EVEN alignment is not supported yet."},
+        {"label", "Unsupported feature: LABEL declarations are not supported yet."},
+        {"org", "Unsupported feature: ORG location control is not supported."},
+        {"comment", "Unsupported feature: COMMENT block comments are not supported yet."},
+        {"echo", "Unsupported feature: ECHO listing output is not supported yet."},
+        {"if", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"if2", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"ifdef", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"ifndef", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"ife", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"ifb", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"ifnb", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"else", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"elseif", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"endif", "Unsupported feature: conditional assembly directives are not supported yet."},
+        {"exitm", "Unsupported feature: MASM macro exit directives are not supported yet."},
+        {"purge", "Unsupported feature: MASM macro purge directives are not supported yet."},
+        {"for", "Unsupported feature: MASM macro repeat directives are not supported yet."},
+        {"forc", "Unsupported feature: MASM macro repeat directives are not supported yet."},
+        {"goto", "Unsupported feature: MASM macro GOTO directives are not supported yet."},
+        {"pushcontext", "Unsupported feature: PUSHCONTEXT assembler context directives are not supported."},
+        {"popcontext", "Unsupported feature: POPCONTEXT assembler context directives are not supported."}
     };
 
     return vm_parser_find_unsupported_feature_message(token, keywords, sizeof(keywords) / sizeof(keywords[0]));
@@ -603,6 +669,27 @@ static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *s
         (vm_parser_token_equals(token, ".break") || vm_parser_token_equals(token, ".continue"))) {
         message = vm_parser_unsupported_directive_message(token, next);
         (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        message = vm_parser_unsupported_directive_message(token, next);
+        if (message != NULL) {
+            (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DOT && next != NULL && next->kind == VM_LEXER_TOKEN_NUMBER &&
+        !next->number_is_negative && next->number_value == 387U && vm_parser_tokens_are_contiguous(token, next)) {
+        (void)vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE,
+            token,
+            "Unsupported feature: .387 floating-point processor compatibility is not modeled in MASM32 Educational Mode."
+        );
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -3724,6 +3811,226 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
     return false;
 }
 
+/// Returns whether a token can be used as a header operand word.
+///
+/// @param token Token to inspect.
+/// @param spelling Case-insensitive spelling to match.
+/// @return true when the token exists and its lexeme matches @p spelling.
+static bool vm_parser_header_token_equals(const VmLexerToken *token, const char *spelling) {
+    return token != NULL && spelling != NULL && vm_parser_token_equals(token, spelling);
+}
+
+/// Consumes a fixed number of parser tokens.
+///
+/// @param state Parser state to mutate.
+/// @param count Number of tokens to consume.
+static void vm_parser_advance_many(VmParserState *state, size_t count) {
+    size_t index = 0U;
+
+    for (index = 0U; index < count; index += 1U) {
+        vm_parser_advance(state);
+    }
+}
+
+/// Parses a processor compatibility directive accepted as a no-op.
+///
+/// @param state Parser state to mutate.
+/// @return true when the line was accepted.
+static bool vm_parser_parse_processor_directive(VmParserState *state) {
+    vm_parser_advance(state);
+    if (!vm_parser_expect_line_end(state)) {
+        vm_parser_recover_skip_line(state);
+        return false;
+    }
+
+    return true;
+}
+
+/// Parses `.model flat, stdcall` as MASM32 compatibility syntax.
+///
+/// @param state Parser state to mutate.
+/// @return true when a `.model` line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_model_directive(VmParserState *state) {
+    const VmLexerToken *model_token = vm_parser_current_token(state);
+    const VmLexerToken *flat_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *comma_token = vm_parser_peek_token(state, 2U);
+    const VmLexerToken *stdcall_token = vm_parser_peek_token(state, 3U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 4U);
+
+    if (vm_parser_header_token_equals(flat_token, "flat") && comma_token != NULL && comma_token->kind == VM_LEXER_TOKEN_COMMA &&
+        vm_parser_header_token_equals(stdcall_token, "stdcall") && vm_parser_is_line_end_token(tail_token)) {
+        vm_parser_advance_many(state, 4U);
+        (void)vm_parser_expect_line_end(state);
+        return true;
+    }
+
+    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL, model_token, ".model form is unsupported. Use `.model flat, stdcall` in MASM32 Educational Mode.");
+    vm_parser_recover_skip_line(state);
+    return true;
+}
+
+/// Parses `.stack` with an optional size as metadata only.
+///
+/// @param state Parser state to mutate.
+/// @return true when a `.stack` line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_stack_directive(VmParserState *state) {
+    const VmLexerToken *stack_token = vm_parser_current_token(state);
+    const VmLexerToken *size_token = vm_parser_peek_token(state, 1U);
+
+    vm_parser_advance(state);
+    if (vm_parser_is_line_end_token(size_token)) {
+        return vm_parser_expect_line_end(state);
+    }
+
+    if (size_token == NULL || size_token->kind != VM_LEXER_TOKEN_NUMBER || size_token->number_is_negative || size_token->number_value > UINT32_MAX) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, size_token != NULL ? size_token : stack_token, ".stack accepts no operand or one non-negative 32-bit size literal.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    state->result->has_requested_stack_size = true;
+    state->result->requested_stack_size = (uint32_t)size_token->number_value;
+    vm_parser_advance(state);
+    if (!vm_parser_expect_line_end(state)) {
+        vm_parser_recover_skip_line(state);
+    }
+
+    return true;
+}
+
+/// Returns whether tokens after INCLUDE match a supported virtual include name.
+///
+/// @param state Parser state positioned at INCLUDE.
+/// @param basename Expected include basename without `.inc`.
+/// @return true when the next three tokens spell `<basename>.inc`.
+static bool vm_parser_include_path_matches(const VmParserState *state, const char *basename) {
+    const VmLexerToken *base_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *dot_or_extension_token = vm_parser_peek_token(state, 2U);
+    const VmLexerToken *extension_token = vm_parser_peek_token(state, 3U);
+    const VmLexerToken *tail_after_split_extension = vm_parser_peek_token(state, 4U);
+
+    if (!vm_parser_header_token_equals(base_token, basename)) {
+        return false;
+    }
+
+    if (dot_or_extension_token != NULL && dot_or_extension_token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
+        vm_parser_token_equals(dot_or_extension_token, ".inc") && vm_parser_is_line_end_token(extension_token)) {
+        return true;
+    }
+
+    return dot_or_extension_token != NULL && dot_or_extension_token->kind == VM_LEXER_TOKEN_DOT &&
+           vm_parser_header_token_equals(extension_token, "inc") && vm_parser_is_line_end_token(tail_after_split_extension);
+}
+
+/// Parses supported virtual INCLUDE directives and rejects real include files.
+///
+/// @param state Parser state to mutate.
+/// @return true when an INCLUDE line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_include_directive(VmParserState *state) {
+    const VmLexerToken *include_token = vm_parser_current_token(state);
+
+    if (vm_parser_include_path_matches(state, "irvine32") || vm_parser_include_path_matches(state, "macros")) {
+        const VmLexerToken *extension_token = vm_parser_peek_token(state, 2U);
+        if (extension_token != NULL && extension_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+            vm_parser_advance_many(state, 3U);
+        } else {
+            vm_parser_advance_many(state, 4U);
+        }
+        (void)vm_parser_expect_line_end(state);
+        return true;
+    }
+
+    const VmLexerToken *path_token = vm_parser_peek_token(state, 1U);
+    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, path_token != NULL ? path_token : include_token, "Unsupported include file. Only virtual INCLUDE Irvine32.inc and INCLUDE Macros.inc are accepted.");
+    vm_parser_recover_skip_line(state);
+    return true;
+}
+
+/// Parses `OPTION CASEMAP:NONE` as a compatibility no-op.
+///
+/// @param state Parser state to mutate.
+/// @return true when an OPTION line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_option_directive(VmParserState *state) {
+    const VmLexerToken *option_token = vm_parser_current_token(state);
+    const VmLexerToken *casemap_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *colon_token = vm_parser_peek_token(state, 2U);
+    const VmLexerToken *none_token = vm_parser_peek_token(state, 3U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 4U);
+
+    if (vm_parser_header_token_equals(casemap_token, "casemap") && colon_token != NULL && colon_token->kind == VM_LEXER_TOKEN_COLON &&
+        vm_parser_header_token_equals(none_token, "none") && vm_parser_is_line_end_token(tail_token)) {
+        vm_parser_advance_many(state, 4U);
+        (void)vm_parser_expect_line_end(state);
+        return true;
+    }
+
+    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, option_token, "Unsupported OPTION form. Only OPTION CASEMAP:NONE is accepted.");
+    vm_parser_recover_skip_line(state);
+    return true;
+}
+
+/// Parses listing/documentation directives accepted as no-ops.
+///
+/// @param state Parser state to mutate.
+/// @return true after the directive line is consumed.
+static bool vm_parser_parse_listing_noop_directive(VmParserState *state) {
+    vm_parser_recover_skip_line(state);
+    return true;
+}
+
+/// Parses one accepted MASM32 header compatibility line before `.data` or `.code`.
+///
+/// @param state Parser state to mutate.
+/// @return true when a known header line was consumed; false when the line is not a Phase 26 header.
+static bool vm_parser_parse_header_line_if_recognized(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DOT) {
+        const VmLexerToken *processor_token = vm_parser_peek_token(state, 1U);
+        if (processor_token != NULL && processor_token->kind == VM_LEXER_TOKEN_NUMBER && !processor_token->number_is_negative &&
+            (processor_token->number_value == 386U || processor_token->number_value == 486U ||
+             processor_token->number_value == 586U || processor_token->number_value == 686U)) {
+            vm_parser_advance_many(state, 2U);
+            if (!vm_parser_expect_line_end(state)) {
+                vm_parser_recover_skip_line(state);
+            }
+            return true;
+        }
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        if (vm_parser_token_equals(token, ".386") || vm_parser_token_equals(token, ".486") ||
+            vm_parser_token_equals(token, ".586") || vm_parser_token_equals(token, ".686")) {
+            return vm_parser_parse_processor_directive(state);
+        }
+        if (vm_parser_token_equals(token, ".model")) {
+            return vm_parser_parse_model_directive(state);
+        }
+        if (vm_parser_token_equals(token, ".stack")) {
+            return vm_parser_parse_stack_directive(state);
+        }
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        if (vm_parser_token_equals(token, "include")) {
+            return vm_parser_parse_include_directive(state);
+        }
+        if (vm_parser_token_equals(token, "option")) {
+            return vm_parser_parse_option_directive(state);
+        }
+        if (vm_parser_token_equals(token, "title") || vm_parser_token_equals(token, "subtitle") ||
+            vm_parser_token_equals(token, "page")) {
+            return vm_parser_parse_listing_noop_directive(state);
+        }
+    }
+
+    return false;
+}
+
 /// Parses all data declarations until the .code directive.
 ///
 /// @param state Parser state to mutate.
@@ -3870,12 +4177,26 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     vm_parser_skip_newlines(&state);
     token = vm_parser_current_token(&state);
     if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        if (out_result->diagnostic_count > 0U) {
+            out_result->status = vm_parser_finalize_status(&state);
+            return out_result->status;
+        }
         vm_parser_add_diagnostic(&state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive.");
         out_result->status = vm_parser_finalize_status(&state);
         return out_result->status;
     }
 
-    while (vm_parser_recover_unsupported_feature_if_recognized(&state)) {
+    while (true) {
+        bool consumed_preamble_line = false;
+
+        consumed_preamble_line = vm_parser_parse_header_line_if_recognized(&state);
+        if (!consumed_preamble_line) {
+            consumed_preamble_line = vm_parser_recover_unsupported_feature_if_recognized(&state);
+        }
+
+        if (!consumed_preamble_line) {
+            break;
+        }
         if (state.diagnostic_overflowed) {
             out_result->status = vm_parser_finalize_status(&state);
             return out_result->status;
@@ -3888,6 +4209,10 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
 
     if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        if (out_result->diagnostic_count > 0U) {
+            out_result->status = vm_parser_finalize_status(&state);
+            return out_result->status;
+        }
         vm_parser_add_diagnostic(&state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive.");
         out_result->status = vm_parser_finalize_status(&state);
         return out_result->status;
@@ -4037,6 +4362,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-character-literal";
         case VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH:
             return "ambiguous-memory-width";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL:
+            return "unsupported-model";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE:
+            return "unsupported-include";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION:
+            return "unsupported-option";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:
             return "unsupported-register-indirect-base";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:

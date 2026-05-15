@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 25.
+ * @brief Unit and integration tests for the parser through Milestone 26.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -339,8 +339,6 @@ static int test_error_path_diagnostics(void) {
     ParserTestBuffers buffers;
     VmParserResult result;
 
-    failures += expect_parser_status(parse_for_test(".stack\n.code\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, ".stack before .code should be rejected by the minimal parser");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, ".stack-before-code diagnostic should request .code");
 
     failures += expect_parser_status(parse_for_test("main PROC\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing .code should produce diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, "missing .code diagnostic should match");
@@ -1321,7 +1319,7 @@ static int test_phase22_test_instruction_parse_error_paths(void) {
     return failures;
 }
 
-/// Verifies the shared Phase 25 memory-width resolver normalizes all current memory-capable instruction forms.
+/// Verifies the shared Phase 26 memory-width resolver normalizes all current memory-capable instruction forms.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase25_global_memory_width_resolution_parses_to_ir(void) {
@@ -1355,9 +1353,9 @@ static int test_phase25_global_memory_width_resolution_parses_to_ir(void) {
     VmParserResult result;
     VmParserStatus status = parse_for_test(source, &buffers, &result);
 
-    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 25 register-supplied memory-width program should parse successfully");
-    failures += expect_size(result.diagnostic_count, 0U, "Phase 25 register-supplied memory-width program should not produce diagnostics");
-    failures += expect_size(result.instruction_count, 20U, "Phase 25 program should emit twenty instructions");
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 26 register-supplied memory-width program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 26 register-supplied memory-width program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 20U, "Phase 26 program should emit twenty instructions");
 
     failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_MOV, "MOV [eax], bl opcode should be emitted");
     failures += expect_u32(buffers.instructions[1].destination.width_bits, 8U, "MOV [eax], bl should infer BYTE memory width from BL");
@@ -1398,7 +1396,7 @@ static int test_phase25_global_memory_width_resolution_parses_to_ir(void) {
 
 /// Verifies symbol-relative metadata is not overridden by a same-instruction register operand.
 ///
-/// Phase 25 allows register operands to supply width only for untyped memory
+/// Phase 26 allows register operands to supply width only for untyped memory
 /// operands. Symbol-relative operands already carry declaration metadata, so a
 /// BYTE symbol reference paired with DX remains a width mismatch.
 ///
@@ -1430,7 +1428,7 @@ static int test_phase25_symbol_metadata_width_precedence(void) {
 
 /// Verifies explicit PTR overrides symbol metadata for register-relative symbol operands.
 ///
-/// Phase 25 resolves width from explicit PTR first. A BYTE-declared symbol can
+/// Phase 26 resolves width from explicit PTR first. A BYTE-declared symbol can
 /// therefore be intentionally accessed as a WORD when the source register width
 /// matches the explicit override.
 ///
@@ -1506,6 +1504,152 @@ static int test_phase25_global_memory_width_resolution_error_paths(void) {
     return failures;
 }
 
+/// Verifies MASM32 textbook header directives are accepted before source sections.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase26_header_directives_parse_before_sections(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        ".386\n"
+        ".486\n"
+        ".586\n"
+        ".686\n"
+        ".model flat, stdcall\n"
+        ".stack 1000h\n"
+        "OPTION CASEMAP:NONE\n"
+        "INCLUDE Irvine32.inc\n"
+        "INCLUDE Macros.inc\n"
+        "TITLE Example Program\n"
+        "SUBTITLE Header compatibility\n"
+        "PAGE 60, 132\n"
+        ".data\n"
+        "msg BYTE \"Hello\", 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov edx, OFFSET msg\n"
+        "main ENDP\n"
+        "END main\n";
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 26 headers should parse before .data/.code");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 26 accepted headers should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 1U, "Phase 26 header sample should emit one instruction");
+    failures += expect_size(result.symbol_count, 1U, "Phase 26 header sample should retain data symbols");
+    if (!result.has_requested_stack_size) {
+        failures += record_failure(".stack size should be stored as parser metadata");
+    }
+    failures += expect_u32(result.requested_stack_size, 0x1000U, ".stack 1000h should store requested stack size metadata");
+
+    return failures;
+}
+
+/// Verifies no-size and mixed-case header compatibility forms are accepted.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase26_header_directive_edge_cases(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        ".386\n"
+        ".MODEL FLAT, STDCALL\n"
+        ".stack\n"
+        "option casemap:none\n"
+        "include irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Mixed-case Phase 26 headers should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "Mixed-case Phase 26 headers should not produce diagnostics");
+    if (result.has_requested_stack_size) {
+        failures += record_failure(".stack without size should not request a runtime stack size yet");
+    }
+
+    return failures;
+}
+
+/// Verifies unsupported Phase 26 header forms produce structured diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase26_header_directive_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(".model small, c\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported .model form should produce diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL, "Unsupported .model diagnostic code should match");
+    failures += expect_size(buffers.diagnostics[0].location.line, 1U, "Unsupported .model diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "Unsupported .model diagnostic should preserve column");
+
+    failures += expect_parser_status(parse_for_test("INCLUDE Windows.inc\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported include should produce diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, "Unsupported include diagnostic code should match");
+    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "Unsupported include diagnostic should point at the include path");
+
+    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:ALL\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported OPTION form should produce diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, "Unsupported OPTION diagnostic code should match");
+
+    failures += expect_parser_status(parse_for_test(".stack -1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Invalid .stack size should produce diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "Invalid .stack diagnostic code should match");
+
+    failures += expect_parser_status(parse_for_test("ASSUME cs:code\n.STARTUP\n.LIST\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported directive families should be recovered together");
+    failures += expect_size(result.diagnostic_count, 3U, "Unsupported directive families should report three diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "ASSUME should remain an unsupported-feature diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".STARTUP should remain an unsupported-feature diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".LIST should remain an unsupported-feature diagnostic");
+
+    return failures;
+}
+
+/// Verifies broader Phase 26 directive backlog forms produce unsupported-feature diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase26_broader_directive_backlog_diagnostics(void) {
+    static const char *const sources[] = {
+        "IFDEF DEBUG\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "ELSEIF 1\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        ".ERRNZ 1\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        ".387\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        ".MMX\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        ".SAFESEH handler\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "EXITM <0>\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "FOR item, <1,2>\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "PUSHCONTEXT\n.code\nmain PROC\nmain ENDP\nEND main\n"
+    };
+    static const char *const names[] = {
+        "IFDEF conditional assembly should be unsupported-feature",
+        "ELSEIF conditional assembly should be unsupported-feature",
+        ".ERRNZ conditional error directive should be unsupported-feature",
+        ".387 processor directive should be unsupported-feature",
+        ".MMX processor directive should be unsupported-feature",
+        ".SAFESEH object directive should be unsupported-feature",
+        "EXITM macro directive should be unsupported-feature",
+        "FOR macro repeat directive should be unsupported-feature",
+        "PUSHCONTEXT assembler context directive should be unsupported-feature"
+    };
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(sources) / sizeof(sources[0]); index += 1U) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        VmParserStatus status = parse_for_test(sources[index], &buffers, &result);
+
+        failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, names[index]);
+        failures += expect_size(result.diagnostic_count, 1U, "Broader Phase 26 directive backlog source should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "Broader Phase 26 directive backlog diagnostic should use unsupported-feature");
+        failures += expect_size(buffers.diagnostics[0].location.line, 1U, "Broader Phase 26 directive backlog diagnostic should preserve line");
+        failures += expect_size(buffers.diagnostics[0].location.column, 1U, "Broader Phase 26 directive backlog diagnostic should preserve column");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "Unsupported feature", "Broader Phase 26 directive backlog diagnostic should explain unsupported feature");
+    }
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1527,6 +1671,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH), "ambiguous-memory-width") != 0) {
         failures += record_failure("parser diagnostic helper should name ambiguous memory-width diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL), "unsupported-model") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported .model diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE), "unsupported-include") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported include diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION), "unsupported-option") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported option diagnostics");
+    }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE), "unsupported-register-indirect-base") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported register-indirect base diagnostics");
     }
@@ -1540,7 +1693,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 25.
+/// Runs all parser regression tests through Milestone 26.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1580,6 +1733,10 @@ int main(void) {
     failures += test_phase25_symbol_metadata_width_precedence();
     failures += test_phase25_explicit_ptr_overrides_symbol_metadata();
     failures += test_phase25_global_memory_width_resolution_error_paths();
+    failures += test_phase26_header_directives_parse_before_sections();
+    failures += test_phase26_header_directive_edge_cases();
+    failures += test_phase26_header_directive_error_paths();
+    failures += test_phase26_broader_directive_backlog_diagnostics();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

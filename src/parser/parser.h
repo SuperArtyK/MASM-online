@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 25.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 26.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
@@ -16,6 +16,7 @@
 #ifndef MASM32_SIM_PARSER_H
 #define MASM32_SIM_PARSER_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -133,6 +134,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_CHARACTER_LITERAL,
     /// A memory/immediate instruction form used register-indirect memory without explicit or inferable width.
     VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH,
+    /// A .model directive used a form outside `.model flat, stdcall`.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL,
+    /// An INCLUDE directive requested a file outside the simulator's virtual built-ins.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE,
+    /// An OPTION directive used a form outside the accepted compatibility subset.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION,
     /// A bracketed memory operand used a valid register that is not yet supported as an address base.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE,
     /// A DUP initializer was malformed or unsupported.
@@ -207,17 +214,21 @@ typedef struct VmParserResult {
     size_t symbol_count;
     /// Number of initialized bytes written to the configured .data image buffer.
     size_t data_size;
+    /// Whether a `.stack size` directive requested a specific stack size.
+    bool has_requested_stack_size;
+    /// Requested stack size in bytes from `.stack size`; runtime stack behavior is deferred.
+    uint32_t requested_stack_size;
 } VmParserResult;
 
 /// Parses a MASM-like source file into implemented data layout and executable IR.
 ///
-/// The parser accepts optional .data declarations before .code, emits data-symbol
+/// The parser accepts optional MASM32 header compatibility directives, optional .data declarations before .code, emits data-symbol
 /// metadata and a deterministic .data image, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
 /// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR width
 /// overrides on supported memory operands; destination operands may use
 /// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR
-/// width overrides on supported memory operands.
+/// width overrides on supported memory operands. MASM32 header directives accepted in Milestone 26 are parsed as no-ops or metadata and never load host files or change runtime stack behavior.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

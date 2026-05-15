@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 25 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
+ * @brief Tests for Milestone 26 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -1504,7 +1504,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":25", "all-GPR response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"phase\":26", "all-GPR response should identify Milestone 26");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect read should set EAX = 80");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "ESP-based write should reach nums + 28");
@@ -1529,7 +1529,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1666,7 +1666,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1691,7 +1691,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":25", "response should identify Milestone 25");
+    failures += expect_json_contains(json, "\"phase\":26", "response should identify Milestone 26");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1909,7 +1909,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "END main\n"
     );
 
-    failures += expect_json_contains(read_copy, "\"phase\":25", "signed PTR read response should identify Milestone 25");
+    failures += expect_json_contains(read_copy, "\"phase\":26", "signed PTR read response should identify Milestone 26");
     failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
     failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
     failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
@@ -2030,6 +2030,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 25 data section, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 26 data section, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

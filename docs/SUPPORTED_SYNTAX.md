@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 25. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 26. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -23,6 +23,22 @@ Supported structural forms:
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
 - Labels are accepted syntactically, but control-flow target resolution is not implemented yet.
+
+### MASM32 header compatibility directives
+
+Accepted before `.data` or `.code` as compatibility no-ops or metadata:
+
+- `.386`, `.486`, `.586`, `.686` processor compatibility declarations.
+- `.model flat, stdcall`. Other `.model` forms report `unsupported-model`.
+- `.stack` and `.stack size`, where the optional size is stored as parser metadata only. Runtime stack behavior is still deferred.
+- `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. Other include files report `unsupported-include`.
+- `OPTION CASEMAP:NONE` as a compatibility no-op documenting the simulator case policy. Other `OPTION` forms report `unsupported-option`.
+- `TITLE`, `SUBTITLE`, and `PAGE` as listing/documentation no-ops.
+
+Case policy:
+
+- Instructions, registers, directives, operators, and data type names are case-insensitive.
+- User-defined symbols are case-sensitive in MASM32 Educational Mode.
 
 ### Data declarations
 
@@ -171,15 +187,29 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 - `MACRO` / `ENDM`
 - `INCLUDELIB`
 - `EXTERN`
+- `EXTERNDEF`
+- `EXTRN`
 - `PUBLIC`
 - `COMM`
+- `ASSUME`
+- `.STARTUP`
+- `.EXIT`
+- `.DOSSEG`
+- `.FARDATA` / `.FARDATA?`
+- `ALIGN`
+- `EVEN`
+- `LABEL`
+- `ORG`
+- `COMMENT`
+- `ECHO`
+- `.LIST`, `.NOLIST`, `.CREF`, `.NOCREF`, `.TFCOND`
 
 
 ## Diagnostic recovery behavior
 
 Milestone 17 and later can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
-Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
+Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
