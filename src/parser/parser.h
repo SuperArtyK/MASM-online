@@ -1,10 +1,10 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data/.DATA?/.CONST and minimal .code programs through Milestone 27.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 28.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to implemented writable, uninitialized, and constant data declarations, OFFSET, direct symbol
+ * remains limited to implemented writable, uninitialized, and constant data declarations, numeric equates, simple constant expressions, OFFSET, direct symbol
  * memory operands, constant symbol-offset memory operands, signed and unsigned PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, sign and zero extension
@@ -146,6 +146,14 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE,
     /// A DUP initializer was malformed or unsupported.
     VM_PARSER_DIAGNOSTIC_INVALID_DUP,
+    /// A numeric equate declaration was malformed or duplicated.
+    VM_PARSER_DIAGNOSTIC_INVALID_EQUATE,
+    /// A constant expression referenced an unknown equate symbol.
+    VM_PARSER_DIAGNOSTIC_UNKNOWN_EQUATE,
+    /// A numeric equate references itself while being evaluated.
+    VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE,
+    /// A constant expression used syntax outside the implemented Stage A subset.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -230,13 +238,21 @@ typedef struct VmParserResult {
 
 /// Parses a MASM-like source file into implemented data layout and executable IR.
 ///
-/// The parser accepts optional MASM32 header compatibility directives, optional .data, .DATA?, and .CONST declarations before .code, emits data-symbol
-/// metadata and deterministic data images, then parses the existing minimal
-/// .code grammar. Source operands may use registers, immediates, direct symbols,
-/// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR width
-/// overrides on supported memory operands; destination operands may use
-/// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR
-/// width overrides on supported memory operands. MASM32 header directives accepted in Milestone 26 are parsed as no-ops or metadata and never load host files or change runtime stack behavior. `.DATA?` storage is deterministic zero-filled storage with metadata; `.CONST` storage is read-only once loaded into VM memory.
+/// The parser accepts optional MASM32 header compatibility directives, numeric
+/// equates, optional .data, .DATA?, and .CONST declarations before .code, emits
+/// data-symbol metadata and deterministic data images, then parses the existing
+/// minimal .code grammar. Source operands may use registers, immediates, simple
+/// constant expressions, direct symbols, `OFFSET symbol + constant`, `TYPE
+/// symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant
+/// symbol-offset memory operands, register-indirect memory operands, or
+/// signed/unsigned PTR width overrides on supported memory operands; destination
+/// operands may use registers, direct symbols, constant symbol-offset memory
+/// operands, register-indirect memory operands, or signed/unsigned PTR width
+/// overrides on supported memory operands. MASM32 header directives accepted in
+/// Milestone 26 are parsed as no-ops or metadata and never load host files or
+/// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
+/// storage with metadata; `.CONST` storage is read-only once loaded into VM
+/// memory.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

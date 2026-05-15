@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 27. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 28. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -46,6 +46,40 @@ Case policy:
 - Instructions, registers, directives, operators, and data type names are case-insensitive.
 - User-defined symbols are case-sensitive in MASM32 Educational Mode.
 
+
+### Numeric equates and Stage A constant expressions
+
+Implemented numeric equate forms:
+
+```asm
+COUNT = 4
+EXTRA EQU 2
+```
+
+Numeric equates are compile-time constants. They are stored separately from data labels and are not addressable storage symbols. Supported Stage A constant-expression syntax includes:
+
+- numeric literals already supported by the lexer;
+- numeric equate identifiers;
+- unary `+` and unary `-`;
+- parentheses;
+- binary `+` and binary `-`.
+
+Supported constant-expression contexts include:
+
+- instruction immediates, such as `mov eax, COUNT + EXTRA`;
+- data initializers, such as `value DWORD COUNT + 1`;
+- `DUP` counts, such as `arr DWORD COUNT DUP(0)`;
+- constant symbol offsets, such as `nums[COUNT + 4]`;
+- `.stack` size metadata, such as `.stack COUNT + 1024`;
+- static `OFFSET symbol + constant` forms.
+
+Unsupported in this milestone:
+
+- `TEXTEQU` and text substitution;
+- text or macro-style `EQU` values such as `NAME EQU <text>`;
+- recursive or unknown equate references;
+- Stage B operators such as `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, `NOT`, `HIGH`, and `LOW`.
+
 ### Data declarations
 
 Implemented data types:
@@ -67,14 +101,15 @@ Implemented initializer forms:
 - Single-quoted character literals.
 - Packed character literals such as `'AB'`, `'ABC'`, and `'ABCD'` where they fit the destination/data width.
 - Comma-separated initializers.
-- Flat `DUP`, such as `10 DUP(0)`.
+- Flat `DUP`, such as `10 DUP(0)` or `COUNT DUP(0)`.
 - `?`, represented deterministically as zero-filled storage while retaining uninitialized metadata.
+- Stage A constant expressions where a numeric initializer is valid.
 
 ### Operators and memory operands
 
 Implemented operators:
 
-- `OFFSET symbol`
+- `OFFSET symbol` and static `OFFSET symbol + constant`
 - `TYPE symbol`
 - `LENGTHOF symbol`
 - `SIZEOF symbol`
@@ -82,7 +117,7 @@ Implemented operators:
 Implemented memory forms:
 
 - Direct symbols: `mov var, 100`, `mov eax, var`.
-- Constant byte offsets: `nums[8]`, `[nums + 8]`, `[nums - 4]`, `[nums]`, `[nums + 0]`, `nums[0]`.
+- Constant byte offsets: `nums[8]`, `nums[COUNT + 4]`, `[nums + 8]`, `[nums - 4]`, `[nums]`, `[nums + 0]`, `nums[0]`.
 - Register-indirect forms: `[eax]`, `[ebx]`, `[ecx]`, `[edx]`, `[esi]`, `[edi]`, `[ebp]`, `[esp]`.
 - Simple displacements for all 32-bit general-purpose base registers, such as `[eax + 4]`, `[ecx - 4]`, and `[esp + 8]`.
 - Simple symbol/register forms: `array[reg32]`, `[array + reg32]`, where `reg32` is a supported 32-bit general-purpose base register.
@@ -175,7 +210,6 @@ Signed `PTR` aliases select memory access width only. `SBYTE PTR`, `SWORD PTR`, 
 
 The parser should report `unsupported-feature` for these recognizable textbook constructs until their milestones are implemented:
 
-- `EQU`
 - `TEXTEQU`
 - `STRUCT`
 - `UNION`
@@ -213,11 +247,11 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 
 Milestone 17 and later can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
-Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `EQU`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
+Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27.
+`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28.
 
 ## Backlog notes
 
@@ -231,10 +265,9 @@ Additional data types tracked for later compatibility work:
 
 Expression parser expansion tracked for later compatibility work:
 
-- Arithmetic expressions.
+- Extended arithmetic expressions beyond binary `+` and `-`, including `*`, `/`, and `MOD`.
 - Logical expressions.
 - Relational expressions.
-- Parenthesized expressions.
 - Binary and octal literals.
 - `.RADIX`.
 - `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, and `THIS`.

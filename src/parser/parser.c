@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data/.DATA?/.CONST and minimal .code programs through Milestone 27.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 28.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * full MASM expression parsing remain later milestones. Recognizable textbook
+ * extended MASM expression parsing remain later milestones. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
  * unsupported-feature diagnostics, safely skipped when recoverable, and surfaced
  * lexer diagnostics remain specific instead of generic umbrella errors.
@@ -18,6 +18,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+/// Maximum numeric equates retained during one parse operation.
+#define VM_PARSER_EQUATE_CAPACITY 128U
 
 /// Stores the first parsed procedure name so END can validate the entry point.
 typedef struct VmParserProcedureName {
@@ -42,6 +45,26 @@ typedef enum VmParserSection {
     /// Parser is currently consuming .code statements.
     VM_PARSER_SECTION_CODE
 } VmParserSection;
+
+/// Describes one numeric equate known during parsing.
+typedef struct VmParserEquate {
+    /// Null-terminated equate name copied from source.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Evaluated signed 64-bit constant value.
+    int64_t value;
+    /// Whether this slot contains a valid equate.
+    bool is_defined;
+    /// Whether this equate is currently being evaluated.
+    bool is_resolving;
+} VmParserEquate;
+
+/// Carries the result of a Stage A constant-expression parse.
+typedef struct VmParserConstantExpression {
+    /// Evaluated signed 64-bit expression value.
+    int64_t value;
+    /// Token that started the expression for diagnostics.
+    const VmLexerToken *start_token;
+} VmParserConstantExpression;
 
 /// Owns mutable parser state for one parse operation.
 typedef struct VmParserState {
@@ -71,6 +94,12 @@ typedef struct VmParserState {
     bool saw_end;
     /// Specific non-OK status requested by a hard failure, or OK when unset.
     VmParserStatus stop_status;
+    /// Numeric equates parsed before or during source traversal.
+    VmParserEquate equates[VM_PARSER_EQUATE_CAPACITY];
+    /// Number of valid entries in @ref equates.
+    size_t equate_count;
+    /// Name token for the equate currently being parsed, or NULL outside equate parsing.
+    const VmLexerToken *active_equate_name;
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
@@ -105,6 +134,12 @@ typedef enum VmParserMemoryWidthResolutionStatus {
 
 static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token);
 
+static const VmLexerToken *vm_parser_current_token(const VmParserState *state);
+
+static const VmLexerToken *vm_parser_peek_token(const VmParserState *state, size_t offset);
+
+static void vm_parser_advance(VmParserState *state);
+
 static bool vm_parser_add_diagnostic(
     VmParserState *state,
     VmParserDiagnosticCode code,
@@ -122,6 +157,10 @@ static bool vm_parser_add_lexer_status_diagnostic(
     VmLexerStatus status
 );
 
+static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+
+static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state);
+
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
 /// Positive literals may use the full unsigned width. Negative literals must
@@ -133,16 +172,7 @@ static bool vm_parser_add_lexer_status_diagnostic(
 /// @return true when the token fits the requested width.
 static bool vm_parser_encode_number_for_width(const VmLexerToken *token, uint8_t width_bits, uint32_t *out_value);
 
-/// Encodes a numeric initializer for a declared data type.
-///
-/// Signed declarations require positive and negative literals to fit the signed
-/// range; unsigned declarations keep the existing unsigned-positive behavior.
-///
-/// @param token Number token to encode.
-/// @param data_type Declared data type controlling range validation.
-/// @param out_value Receives the encoded unsigned storage value.
-/// @return true when the token fits the requested declaration type.
-static bool vm_parser_encode_number_for_data_type(const VmLexerToken *token, VmSymbolDataType data_type, uint64_t *out_value);
+static uint64_t vm_parser_signed_positive_max_for_size(uint8_t size_bytes);
 
 /// Returns whether a byte is an ASCII whitespace byte other than line endings.
 ///
@@ -210,6 +240,316 @@ static bool vm_parser_token_lexemes_equal(const VmLexerToken *left, const VmLexe
     }
 
     return true;
+}
+
+/// Returns whether a token can begin a Stage A constant expression.
+///
+/// @param token Token to inspect.
+/// @return true for numbers, equate identifiers, unary signs, and left parentheses.
+static bool vm_parser_token_starts_constant_expression(const VmLexerToken *token) {
+    return token != NULL &&
+           (token->kind == VM_LEXER_TOKEN_NUMBER ||
+            token->kind == VM_LEXER_TOKEN_IDENTIFIER ||
+            token->kind == VM_LEXER_TOKEN_PLUS ||
+            token->kind == VM_LEXER_TOKEN_MINUS ||
+            token->kind == VM_LEXER_TOKEN_LEFT_PAREN);
+}
+
+/// Compares an equate slot name with a source token case-insensitively.
+///
+/// @param equate Equate slot to inspect.
+/// @param token Source token containing the candidate name.
+/// @return true when the names match.
+static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmLexerToken *token) {
+    size_t index = 0U;
+
+    if (equate == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    while (index < token->lexeme_length && equate->name[index] != '\0') {
+        if (vm_parser_ascii_lower(equate->name[index]) != vm_parser_ascii_lower(token->lexeme[index])) {
+            return false;
+        }
+        index += 1U;
+    }
+
+    return index == token->lexeme_length && equate->name[index] == '\0';
+}
+
+/// Finds a numeric equate by source token name.
+///
+/// @param state Parser state whose equate table should be searched.
+/// @param token Source token containing the equate name.
+/// @return Matching equate, or NULL when no equate is defined.
+static VmParserEquate *vm_parser_find_equate(VmParserState *state, const VmLexerToken *token) {
+    size_t index = 0U;
+
+    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->equate_count; index += 1U) {
+        if (state->equates[index].is_defined && vm_parser_equate_name_equals(&state->equates[index], token)) {
+            return &state->equates[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Copies an equate name into an internal fixed-capacity slot.
+///
+/// @param equate Destination equate slot.
+/// @param token Source name token.
+/// @return true when the name was copied.
+static bool vm_parser_set_equate_name(VmParserEquate *equate, const VmLexerToken *token) {
+    if (equate == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER ||
+        token->lexeme_length == 0U || token->lexeme_length >= (size_t)VM_SYMBOL_NAME_CAPACITY) {
+        return false;
+    }
+
+    memcpy(equate->name, token->lexeme, token->lexeme_length);
+    equate->name[token->lexeme_length] = '\0';
+    return true;
+}
+
+/// Converts a lexer number token to a signed 64-bit expression value.
+///
+/// Stage A constant expressions use signed 64-bit evaluation and leave final
+/// storage-width validation to the consuming instruction or data declaration.
+///
+/// @param token Number token to convert.
+/// @param out_value Receives the signed expression value.
+/// @return true when the token fits signed 64-bit expression evaluation.
+static bool vm_parser_number_token_to_i64_expression(const VmLexerToken *token, int64_t *out_value) {
+    if (token == NULL || out_value == NULL || token->kind != VM_LEXER_TOKEN_NUMBER) {
+        return false;
+    }
+
+    if (token->number_is_negative) {
+        if (token->number_value > ((uint64_t)INT64_MAX + 1ULL)) {
+            return false;
+        }
+        if (token->number_value == ((uint64_t)INT64_MAX + 1ULL)) {
+            *out_value = INT64_MIN;
+        } else {
+            *out_value = -(int64_t)token->number_value;
+        }
+        return true;
+    }
+
+    if (token->number_value > (uint64_t)INT64_MAX) {
+        return false;
+    }
+
+    *out_value = (int64_t)token->number_value;
+    return true;
+}
+
+/// Adds two signed 64-bit expression values with overflow detection.
+///
+/// @param left Left operand.
+/// @param right Right operand.
+/// @param out_value Receives the sum.
+/// @return true when no signed overflow occurred.
+static bool vm_parser_add_i64_checked(int64_t left, int64_t right, int64_t *out_value) {
+    if (out_value == NULL) {
+        return false;
+    }
+    if ((right > 0 && left > INT64_MAX - right) || (right < 0 && left < INT64_MIN - right)) {
+        return false;
+    }
+    *out_value = left + right;
+    return true;
+}
+
+/// Subtracts two signed 64-bit expression values with overflow detection.
+///
+/// @param left Left operand.
+/// @param right Right operand.
+/// @param out_value Receives the difference.
+/// @return true when no signed overflow occurred.
+static bool vm_parser_sub_i64_checked(int64_t left, int64_t right, int64_t *out_value) {
+    if (out_value == NULL) {
+        return false;
+    }
+    if ((right < 0 && left > INT64_MAX + right) || (right > 0 && left < INT64_MIN + right)) {
+        return false;
+    }
+    *out_value = left - right;
+    return true;
+}
+
+static bool vm_parser_parse_constant_additive_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+
+/// Parses a primary Stage A constant-expression term.
+///
+/// @param state Parser state positioned at the term.
+/// @param out_expression Receives the parsed value.
+/// @return true when a term was parsed.
+static bool vm_parser_parse_constant_primary_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+
+    memset(out_expression, 0, sizeof(*out_expression));
+    out_expression->start_token = token;
+
+    if (token == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected a constant expression.");
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_NUMBER) {
+        if (!vm_parser_number_token_to_i64_expression(token, &out_expression->value)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, "Constant expression value is outside the supported signed 64-bit range.");
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        VmParserEquate *equate = NULL;
+        if (state->active_equate_name != NULL && vm_parser_token_lexemes_equal(state->active_equate_name, token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE, token, "Numeric equate cannot reference itself.");
+            return false;
+        }
+        equate = vm_parser_find_equate(state, token);
+        if (equate == NULL) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_EQUATE, token, "Constant expression references an unknown numeric equate.");
+            return false;
+        }
+        if (equate->is_resolving) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE, token, "Recursive numeric equate reference is not allowed.");
+            return false;
+        }
+        out_expression->value = equate->value;
+        vm_parser_advance(state);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_LEFT_PAREN) {
+        vm_parser_advance(state);
+        if (!vm_parser_parse_constant_additive_expression(state, out_expression)) {
+            return false;
+        }
+        token = vm_parser_current_token(state);
+        if (token == NULL || token->kind != VM_LEXER_TOKEN_RIGHT_PAREN) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected ')' after constant expression.");
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected a numeric literal, equate identifier, unary sign, or parenthesized constant expression.");
+    return false;
+}
+
+/// Parses a unary Stage A constant expression.
+///
+/// @param state Parser state positioned at the unary expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when a unary expression was parsed.
+static bool vm_parser_parse_constant_unary_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    VmParserConstantExpression inner;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+
+    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
+        memset(&inner, 0, sizeof(inner));
+        vm_parser_advance(state);
+        if (!vm_parser_parse_constant_unary_expression(state, &inner)) {
+            return false;
+        }
+        *out_expression = inner;
+        out_expression->start_token = token;
+        if (token->kind == VM_LEXER_TOKEN_MINUS) {
+            if (inner.value == INT64_MIN) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, "Constant expression unary minus overflowed signed 64-bit range.");
+                return false;
+            }
+            out_expression->value = -inner.value;
+        }
+        return true;
+    }
+
+    return vm_parser_parse_constant_primary_expression(state, out_expression);
+}
+
+/// Parses binary plus/minus Stage A constant expressions.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_additive_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+
+    if (!vm_parser_parse_constant_unary_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        int64_t combined = 0;
+
+        if (operator_token == NULL || (operator_token->kind != VM_LEXER_TOKEN_PLUS && operator_token->kind != VM_LEXER_TOKEN_MINUS)) {
+            break;
+        }
+
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_unary_expression(state, &right)) {
+            return false;
+        }
+
+        if (operator_token->kind == VM_LEXER_TOKEN_PLUS) {
+            if (!vm_parser_add_i64_checked(out_expression->value, right.value, &combined)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, operator_token, "Constant expression addition overflowed signed 64-bit range.");
+                return false;
+            }
+        } else {
+            if (!vm_parser_sub_i64_checked(out_expression->value, right.value, &combined)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, operator_token, "Constant expression subtraction overflowed signed 64-bit range.");
+                return false;
+            }
+        }
+        out_expression->value = combined;
+    }
+
+
+    return true;
+}
+
+/// Parses a Stage A constant expression from the current token.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed and left at a natural terminator.
+static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+
+    if (!vm_parser_token_starts_constant_expression(token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected a constant expression.");
+        return false;
+    }
+
+    return vm_parser_parse_constant_additive_expression(state, out_expression);
 }
 
 /// Returns whether two tokens are contiguous bytes on the same source line.
@@ -334,7 +674,6 @@ static const char *vm_parser_unsupported_directive_message(const VmLexerToken *t
 /// @return Static unsupported-feature message, or NULL when not recognized.
 static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *token) {
     static const VmParserUnsupportedFeature keywords[] = {
-        {"equ", "Unsupported feature: EQU constants are not supported yet."},
         {"textequ", "Unsupported feature: TEXTEQU text constants are not supported yet."},
         {"struct", "Unsupported feature: STRUCT declarations are not supported yet."},
         {"union", "Unsupported feature: UNION declarations are not supported yet."},
@@ -1047,36 +1386,6 @@ static uint64_t vm_parser_max_negative_magnitude_for_size(uint8_t size_bytes) {
     }
 }
 
-/// Encodes a signed or unsigned lexer number token for a data element size.
-///
-/// Positive literals may use the full unsigned width. Negative literals must
-/// fit the signed range and are encoded in two's-complement form.
-///
-/// @param token Number token to encode.
-/// @param size_bytes Destination size in bytes.
-/// @param out_value Receives the encoded unsigned value.
-/// @return true when the token fits the requested size.
-static bool vm_parser_encode_number_for_size(const VmLexerToken *token, uint8_t size_bytes, uint64_t *out_value) {
-    if (token == NULL || out_value == NULL || token->kind != VM_LEXER_TOKEN_NUMBER || size_bytes == 0U || size_bytes > 8U) {
-        return false;
-    }
-
-    if (token->number_is_negative) {
-        uint64_t max_magnitude = vm_parser_max_negative_magnitude_for_size(size_bytes);
-        if (token->number_value > max_magnitude) {
-            return false;
-        }
-        *out_value = 0ULL - token->number_value;
-        return true;
-    }
-
-    if (token->number_value > vm_parser_max_value_for_size(size_bytes)) {
-        return false;
-    }
-    *out_value = token->number_value;
-    return true;
-}
-
 /// Returns the largest positive value accepted by a signed data declaration.
 ///
 /// @param size_bytes Element size in bytes.
@@ -1096,30 +1405,119 @@ static uint64_t vm_parser_signed_positive_max_for_size(uint8_t size_bytes) {
     }
 }
 
-static bool vm_parser_encode_number_for_data_type(const VmLexerToken *token, VmSymbolDataType data_type, uint64_t *out_value) {
+/// Returns the magnitude of a negative signed 64-bit expression value.
+///
+/// @param value Negative expression value to inspect.
+/// @return Absolute magnitude as an unsigned value.
+static uint64_t vm_parser_negative_i64_magnitude(int64_t value) {
+    return value == INT64_MIN ? 0x8000000000000000ULL : (uint64_t)(-value);
+}
+
+/// Encodes a signed 64-bit expression value for a data element size.
+///
+/// Positive values may use the full unsigned width. Negative values must fit
+/// the signed negative range for the destination size and are encoded in
+/// two's-complement form.
+///
+/// @param value Constant-expression value to encode.
+/// @param size_bytes Destination element size in bytes.
+/// @param out_value Receives the encoded storage value.
+/// @return true when the value fits the destination size.
+static bool vm_parser_encode_i64_for_size(int64_t value, uint8_t size_bytes, uint64_t *out_value) {
+    if (out_value == NULL || size_bytes == 0U || size_bytes > 8U) {
+        return false;
+    }
+
+    if (value < 0) {
+        uint64_t magnitude = vm_parser_negative_i64_magnitude(value);
+        if (magnitude > vm_parser_max_negative_magnitude_for_size(size_bytes)) {
+            return false;
+        }
+        *out_value = 0ULL - magnitude;
+        return true;
+    }
+
+    if ((uint64_t)value > vm_parser_max_value_for_size(size_bytes)) {
+        return false;
+    }
+    *out_value = (uint64_t)value;
+    return true;
+}
+
+/// Encodes a signed 64-bit expression value for a declared data type.
+///
+/// Signed declarations validate both positive and negative values against the
+/// signed range. Unsigned declarations preserve existing two's-complement
+/// negative-literal behavior after width validation.
+///
+/// @param value Constant-expression value to encode.
+/// @param data_type Declared data type controlling validation.
+/// @param out_value Receives the encoded storage value.
+/// @return true when the expression fits the declaration type.
+static bool vm_parser_encode_i64_for_data_type(int64_t value, VmSymbolDataType data_type, uint64_t *out_value) {
     uint8_t size_bytes = vm_symbol_data_type_size_bytes(data_type);
 
-    if (token == NULL || out_value == NULL || token->kind != VM_LEXER_TOKEN_NUMBER || size_bytes == 0U || size_bytes > 8U) {
+    if (out_value == NULL || size_bytes == 0U || size_bytes > 8U) {
         return false;
     }
 
     if (!vm_symbol_data_type_is_signed(data_type)) {
-        return vm_parser_encode_number_for_size(token, size_bytes, out_value);
+        return vm_parser_encode_i64_for_size(value, size_bytes, out_value);
     }
 
-    if (token->number_is_negative) {
-        uint64_t max_magnitude = vm_parser_max_negative_magnitude_for_size(size_bytes);
-        if (token->number_value > max_magnitude) {
+    if (value < 0) {
+        uint64_t magnitude = vm_parser_negative_i64_magnitude(value);
+        if (magnitude > vm_parser_max_negative_magnitude_for_size(size_bytes)) {
             return false;
         }
-        *out_value = 0ULL - token->number_value;
+        *out_value = 0ULL - magnitude;
         return true;
     }
 
-    if (token->number_value > vm_parser_signed_positive_max_for_size(size_bytes)) {
+    if ((uint64_t)value > vm_parser_signed_positive_max_for_size(size_bytes)) {
         return false;
     }
-    *out_value = token->number_value;
+    *out_value = (uint64_t)value;
+    return true;
+}
+
+/// Encodes a signed 64-bit expression as a 32-bit immediate value.
+///
+/// @param value Constant-expression value to encode.
+/// @param out_value Receives the encoded immediate value.
+/// @return true when the value is representable in the current 32-bit IR.
+static bool vm_parser_encode_i64_for_u32_immediate(int64_t value, uint32_t *out_value) {
+    if (out_value == NULL) {
+        return false;
+    }
+
+    if (value < 0) {
+        uint64_t magnitude = vm_parser_negative_i64_magnitude(value);
+        if (magnitude > 0x80000000ULL) {
+            return false;
+        }
+        *out_value = 0U - (uint32_t)magnitude;
+        return true;
+    }
+
+    if ((uint64_t)value > 0xFFFFFFFFULL) {
+        return false;
+    }
+
+    *out_value = (uint32_t)value;
+    return true;
+}
+
+/// Converts a signed 64-bit expression value to a signed 32-bit byte offset.
+///
+/// @param value Expression value to convert.
+/// @param out_offset Receives the signed 32-bit offset.
+/// @return true when @p value fits int32_t.
+static bool vm_parser_i64_to_i32_offset(int64_t value, int32_t *out_offset) {
+    if (out_offset == NULL || value < (int64_t)INT32_MIN || value > (int64_t)INT32_MAX) {
+        return false;
+    }
+    *out_offset = (int32_t)value;
     return true;
 }
 
@@ -1332,16 +1730,25 @@ static bool vm_parser_parse_single_data_initializer(
         return false;
     }
 
-    if (token->kind == VM_LEXER_TOKEN_NUMBER) {
+    if (vm_parser_token_starts_constant_expression(token)) {
+        VmParserConstantExpression expression;
         uint64_t encoded_value = 0U;
-        if (!vm_parser_encode_number_for_data_type(token, data_type, &encoded_value)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, vm_symbol_data_type_is_signed(data_type) ? "Data initializer exceeds the signed range for the declared type." : "Data initializer exceeds the declared element width.");
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
             return false;
         }
-        if (!vm_parser_append_data_integer(state, encoded_value, element_size, token)) {
+        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+            vm_parser_token_equals(vm_parser_current_token(state), "DUP")) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, vm_parser_current_token(state), "Nested DUP initializers are not supported by this milestone.");
             return false;
         }
-        vm_parser_advance(state);
+        if (!vm_parser_encode_i64_for_data_type(expression.value, data_type, &encoded_value)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, vm_symbol_data_type_is_signed(data_type) ? "Data initializer exceeds the signed range for the declared type." : "Data initializer exceeds the declared element width.");
+            return false;
+        }
+        if (!vm_parser_append_data_integer(state, encoded_value, element_size, expression.start_token)) {
+            return false;
+        }
         *out_element_count = 1U;
         return true;
     }
@@ -1421,6 +1828,7 @@ static bool vm_parser_parse_dup_initializer(
     VmParserState *state,
     VmSymbolDataType data_type,
     const VmLexerToken *repeat_token,
+    uint64_t repeat_count,
     uint32_t *out_element_count,
     bool *out_has_uninitialized,
     bool *out_is_fully_uninitialized
@@ -1431,7 +1839,6 @@ static bool vm_parser_parse_dup_initializer(
     size_t active_capacity = 0U;
     uint32_t *active_offset = NULL;
     size_t *active_size = NULL;
-    uint64_t repeat_count = 0U;
     uint32_t instance_elements = 0U;
     bool instance_uninitialized = false;
     bool instance_fully_uninitialized = false;
@@ -1453,13 +1860,11 @@ static bool vm_parser_parse_dup_initializer(
         return false;
     }
 
-    repeat_count = repeat_token->number_value;
-    if (repeat_token->number_is_negative || repeat_count == 0U || repeat_count > UINT32_MAX) {
+    if (repeat_count == 0U || repeat_count > UINT32_MAX) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, repeat_token, "DUP repeat count must be between 1 and UINT32_MAX.");
         return false;
     }
 
-    vm_parser_advance(state);
     token = vm_parser_current_token(state);
     if (token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(token, "DUP")) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, token, "Expected DUP after repeat count.");
@@ -1520,10 +1925,43 @@ static bool vm_parser_parse_data_initializer(
     const VmLexerToken *token = vm_parser_current_token(state);
     const VmLexerToken *next = vm_parser_peek_token(state, 1U);
 
-    if (token != NULL && next != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && next->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(next, "DUP")) {
-        return vm_parser_parse_dup_initializer(state, data_type, token, out_element_count, out_has_uninitialized, out_is_fully_uninitialized);
+    if (token != NULL && vm_parser_token_starts_constant_expression(token)) {
+        VmParserConstantExpression expression;
+        uint64_t repeat_count = 0U;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+            vm_parser_token_equals(vm_parser_current_token(state), "DUP")) {
+            if (expression.value <= 0 || (uint64_t)expression.value > UINT32_MAX) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, expression.start_token, "DUP repeat count must be between 1 and UINT32_MAX.");
+                return false;
+            }
+            repeat_count = (uint64_t)expression.value;
+            return vm_parser_parse_dup_initializer(state, data_type, expression.start_token, repeat_count, out_element_count, out_has_uninitialized, out_is_fully_uninitialized);
+        }
+
+        /* Rewind is deliberately avoided: parse_single_data_initializer handles strings,
+         * character literals, and ?, while this path has already appended no bytes. */
+        {
+            uint64_t encoded_value = 0U;
+            uint8_t element_size = vm_symbol_data_type_size_bytes(data_type);
+            if (!vm_parser_encode_i64_for_data_type(expression.value, data_type, &encoded_value)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, vm_symbol_data_type_is_signed(data_type) ? "Data initializer exceeds the signed range for the declared type." : "Data initializer exceeds the declared element width.");
+                return false;
+            }
+            if (!vm_parser_append_data_integer(state, encoded_value, element_size, expression.start_token)) {
+                return false;
+            }
+            *out_element_count = 1U;
+            *out_has_uninitialized = false;
+            *out_is_fully_uninitialized = false;
+            return true;
+        }
     }
 
+    (void)next;
     return vm_parser_parse_single_data_initializer(state, data_type, out_element_count, out_has_uninitialized, out_is_fully_uninitialized);
 }
 
@@ -1623,8 +2061,9 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
-    if (vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, name_token->lexeme, name_token->lexeme_length) != NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate data symbol name.");
+    if (vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, name_token->lexeme, name_token->lexeme_length) != NULL ||
+        vm_parser_find_equate(state, name_token) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate data symbol or numeric equate name.");
         return false;
     }
 
@@ -2379,6 +2818,7 @@ static bool vm_parser_parse_bracketed_symbol_register_memory_operand(
 /// @return true when an offset suffix was parsed.
 static bool vm_parser_parse_bracket_symbol_offset_suffix(VmParserState *state, int32_t *out_offset, const VmLexerToken **out_offset_token) {
     const VmLexerToken *token = vm_parser_current_token(state);
+    VmParserConstantExpression expression;
     int32_t offset = 0;
 
     if (state == NULL || out_offset == NULL || out_offset_token == NULL) {
@@ -2394,41 +2834,21 @@ static bool vm_parser_parse_bracket_symbol_offset_suffix(VmParserState *state, i
         return true;
     }
 
-    if (token != NULL && token->kind == VM_LEXER_TOKEN_NUMBER && (token->number_is_negative || vm_parser_number_token_has_leading_plus(token))) {
-        if (!vm_parser_number_to_i32_offset(token, &offset)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, token, "Symbol offset is outside the supported signed 32-bit range.");
+    if (vm_parser_token_starts_constant_expression(token)) {
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (!vm_parser_i64_to_i32_offset(expression.value, &offset)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, expression.start_token, "Symbol offset is outside the supported signed 32-bit range.");
             return false;
         }
         *out_offset = offset;
-        *out_offset_token = token;
-        vm_parser_advance(state);
+        *out_offset_token = expression.start_token;
         return true;
     }
 
-    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
-        const VmLexerToken *operator_token = token;
-        const VmLexerToken *number_token = NULL;
-        int32_t magnitude = 0;
-
-        vm_parser_advance(state);
-        number_token = vm_parser_current_token(state);
-        if (number_token == NULL || number_token->kind != VM_LEXER_TOKEN_NUMBER || number_token->number_is_negative) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, number_token != NULL ? number_token : operator_token, "Expected a non-negative numeric symbol offset after + or -." );
-            return false;
-        }
-
-        if (!vm_parser_number_to_i32_offset(number_token, &magnitude)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, number_token, "Symbol offset is outside the supported signed 32-bit range.");
-            return false;
-        }
-
-        *out_offset = operator_token->kind == VM_LEXER_TOKEN_MINUS ? -magnitude : magnitude;
-        *out_offset_token = number_token;
-        vm_parser_advance(state);
-        return true;
-    }
-
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected + offset or - offset after bracketed data symbol.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "Expected a constant byte offset after bracketed data symbol.");
     return false;
 }
 
@@ -2490,16 +2910,22 @@ static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, Vm
     vm_parser_advance(state);
     vm_parser_advance(state);
     offset_token = vm_parser_current_token(state);
-    if (offset_token == NULL || offset_token->kind != VM_LEXER_TOKEN_NUMBER) {
+    if (!vm_parser_token_starts_constant_expression(offset_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, offset_token != NULL ? offset_token : left_token, "Expected a constant byte offset inside symbol brackets.");
         return false;
     }
-
-    if (!vm_parser_number_to_i32_offset(offset_token, &offset)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token, "Symbol offset is outside the supported signed 32-bit range.");
-        return false;
+    {
+        VmParserConstantExpression expression;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (!vm_parser_i64_to_i32_offset(expression.value, &offset)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, expression.start_token, "Symbol offset is outside the supported signed 32-bit range.");
+            return false;
+        }
+        offset_token = expression.start_token;
     }
-    vm_parser_advance(state);
 
     if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
@@ -2692,16 +3118,22 @@ static bool vm_parser_parse_symbol_index_memory_operand_with_width(
     vm_parser_advance(state);
     vm_parser_advance(state);
     offset_token = vm_parser_current_token(state);
-    if (offset_token == NULL || offset_token->kind != VM_LEXER_TOKEN_NUMBER) {
+    if (!vm_parser_token_starts_constant_expression(offset_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, offset_token != NULL ? offset_token : left_token, "Expected a constant byte offset inside symbol brackets.");
         return false;
     }
-
-    if (!vm_parser_number_to_i32_offset(offset_token, &offset)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token, "Symbol offset is outside the supported signed 32-bit range.");
-        return false;
+    {
+        VmParserConstantExpression expression;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (!vm_parser_i64_to_i32_offset(expression.value, &offset)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, expression.start_token, "Symbol offset is outside the supported signed 32-bit range.");
+            return false;
+        }
+        offset_token = expression.start_token;
     }
-    vm_parser_advance(state);
 
     if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, vm_parser_current_token(state), "Expected ']' after symbol offset operand.");
@@ -3076,37 +3508,63 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
     }
 
-    if (token->kind == VM_LEXER_TOKEN_NUMBER) {
-        uint32_t encoded_value = 0U;
-        if (!vm_parser_encode_number_for_width(token, 32U, &encoded_value)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, token, "Immediate value exceeds the current 32-bit IR range.");
-            return false;
-        }
-        *out_operand = vm_ir_operand_immediate(encoded_value, 0U);
-        vm_parser_advance(state);
-        return true;
-    }
-
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET")) {
         const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
         const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
         const VmSymbol *symbol = NULL;
+        int64_t address_value = 0;
+        uint32_t encoded_address = 0U;
         if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "OFFSET requires a following data symbol.");
             return false;
         }
-        if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, tail_token, "Unsupported OFFSET expression. Only OFFSET symbol is supported by the current milestone.");
-            return false;
-        }
         symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
         if (symbol == NULL) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "OFFSET references an unknown data symbol.");
+            if (vm_parser_find_equate(state, symbol_token) != NULL) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, symbol_token, "OFFSET requires a data symbol, not a numeric equate.");
+            } else {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "OFFSET references an unknown data symbol.");
+            }
             return false;
         }
-        *out_operand = vm_ir_operand_immediate(symbol->address, 32U);
+
+        address_value = (int64_t)symbol->address;
         vm_parser_advance(state);
         vm_parser_advance(state);
+        if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
+            VmParserConstantExpression offset_expression;
+            memset(&offset_expression, 0, sizeof(offset_expression));
+            if (!vm_parser_parse_constant_expression(state, &offset_expression)) {
+                return false;
+            }
+            if (!vm_parser_add_i64_checked(address_value, offset_expression.value, &address_value)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_expression.start_token, "OFFSET expression is outside the supported 32-bit address range.");
+                return false;
+            }
+        }
+        if (address_value < 0 || address_value > (int64_t)UINT32_MAX) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, symbol_token, "OFFSET expression is outside the supported 32-bit address range.");
+            return false;
+        }
+        encoded_address = (uint32_t)address_value;
+        *out_operand = vm_ir_operand_immediate(encoded_address, 32U);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_NUMBER || token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS ||
+        token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
+        (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_find_equate(state, token) != NULL)) {
+        VmParserConstantExpression expression;
+        uint32_t encoded_value = 0U;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression)) {
+            return false;
+        }
+        if (!vm_parser_encode_i64_for_u32_immediate(expression.value, &encoded_value)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, "Immediate constant expression exceeds the current 32-bit IR range.");
+            return false;
+        }
+        *out_operand = vm_ir_operand_immediate(encoded_value, 0U);
         return true;
     }
 
@@ -4046,6 +4504,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_parse_equate_line_if_recognized(state)) {
+        return !state->diagnostic_overflowed;
+    }
+
     if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
         return !state->diagnostic_overflowed;
     }
@@ -4154,15 +4616,25 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
         return vm_parser_expect_line_end(state);
     }
 
-    if (size_token == NULL || size_token->kind != VM_LEXER_TOKEN_NUMBER || size_token->number_is_negative || size_token->number_value > UINT32_MAX) {
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, size_token != NULL ? size_token : stack_token, ".stack accepts no operand or one non-negative 32-bit size literal.");
+    if (size_token == NULL || !vm_parser_token_starts_constant_expression(size_token)) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, size_token != NULL ? size_token : stack_token, ".stack accepts no operand or one non-negative 32-bit constant expression.");
         vm_parser_recover_skip_line(state);
         return true;
     }
 
-    state->result->has_requested_stack_size = true;
-    state->result->requested_stack_size = (uint32_t)size_token->number_value;
-    vm_parser_advance(state);
+    {
+        VmParserConstantExpression expression;
+        memset(&expression, 0, sizeof(expression));
+        if (!vm_parser_parse_constant_expression(state, &expression) || expression.value < 0 || expression.value > (int64_t)UINT32_MAX) {
+            if (state->result->diagnostic_count == 0U || state->config->diagnostics[state->result->diagnostic_count - 1U].location.offset != size_token->location.offset) {
+                (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, size_token, ".stack size must be a non-negative 32-bit constant expression.");
+            }
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+        state->result->has_requested_stack_size = true;
+        state->result->requested_stack_size = (uint32_t)expression.value;
+    }
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);
     }
@@ -4250,6 +4722,96 @@ static bool vm_parser_parse_listing_noop_directive(VmParserState *state) {
     return true;
 }
 
+/// Parses a numeric equate declaration when the current line starts one.
+///
+/// Supported forms are `name = expression` and `name EQU expression`. The
+/// resulting constants are stored in an internal table distinct from data
+/// symbols.
+///
+/// @param state Parser state to mutate.
+/// @return true when an equate-like line was consumed; false when the current
+/// line does not start a numeric equate.
+static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
+    const VmLexerToken *name_token = vm_parser_current_token(state);
+    const VmLexerToken *operator_token = vm_parser_peek_token(state, 1U);
+    VmParserConstantExpression expression;
+    VmParserEquate *equate = NULL;
+
+    if (state == NULL || name_token == NULL || operator_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (!(operator_token->kind == VM_LEXER_TOKEN_EQUALS ||
+          (operator_token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(operator_token, "EQU")))) {
+        return false;
+    }
+
+    if (vm_parser_find_equate(state, name_token) != NULL ||
+        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, name_token->lexeme, name_token->lexeme_length) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, name_token, "Duplicate numeric equate or data symbol name.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (state->equate_count >= (size_t)VM_PARSER_EQUATE_CAPACITY) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, name_token, "Numeric equate capacity exceeded.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    equate = &state->equates[state->equate_count];
+    memset(equate, 0, sizeof(*equate));
+    if (!vm_parser_set_equate_name(equate, name_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, name_token, "Numeric equate name is too long for the current fixed table.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, operator_token, "Numeric equate requires a constant expression.");
+        return true;
+    }
+
+    if (vm_parser_current_token(state) != NULL &&
+        (vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_LESS_THAN ||
+         vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_STRING)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, vm_parser_current_token(state),
+                                 "Text EQU constants are not supported in this milestone; use numeric constant expressions only.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    memset(&expression, 0, sizeof(expression));
+    state->active_equate_name = name_token;
+    equate->is_resolving = true;
+    if (!vm_parser_parse_constant_expression(state, &expression)) {
+        equate->is_resolving = false;
+        state->active_equate_name = NULL;
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+    equate->is_resolving = false;
+    state->active_equate_name = NULL;
+
+    if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, vm_parser_current_token(state),
+                                 "Unsupported operator or trailing token in numeric equate expression.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+    if (!vm_parser_expect_line_end(state)) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    equate->value = expression.value;
+    equate->is_defined = true;
+    state->equate_count += 1U;
+    return true;
+}
+
 /// Parses one accepted MASM32 header compatibility line before `.data` or `.code`.
 ///
 /// @param state Parser state to mutate.
@@ -4320,6 +4882,13 @@ static bool vm_parser_parse_data_sections(VmParserState *state) {
         if (token == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, token, "Expected .code directive after data declarations.");
             return false;
+        }
+
+        if (vm_parser_parse_equate_line_if_recognized(state)) {
+            if (state->diagnostic_overflowed) {
+                return false;
+            }
+            continue;
         }
 
         if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
@@ -4471,7 +5040,10 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     while (true) {
         bool consumed_preamble_line = false;
 
-        consumed_preamble_line = vm_parser_parse_header_line_if_recognized(&state);
+        consumed_preamble_line = vm_parser_parse_equate_line_if_recognized(&state);
+        if (!consumed_preamble_line) {
+            consumed_preamble_line = vm_parser_parse_header_line_if_recognized(&state);
+        }
         if (!consumed_preamble_line) {
             consumed_preamble_line = vm_parser_recover_unsupported_feature_if_recognized(&state);
         }
@@ -4656,6 +5228,14 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-register-indirect-base";
         case VM_PARSER_DIAGNOSTIC_INVALID_DUP:
             return "invalid-dup";
+        case VM_PARSER_DIAGNOSTIC_INVALID_EQUATE:
+            return "invalid-equate";
+        case VM_PARSER_DIAGNOSTIC_UNKNOWN_EQUATE:
+            return "unknown-equate";
+        case VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE:
+            return "recursive-equate";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION:
+            return "unsupported-constant-expression";
         default:
             return NULL;
     }

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 27.
+ * @brief Unit and integration tests for the parser through Milestone 28.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -398,7 +398,6 @@ static int test_textbook_unsupported_directives_are_stable(void) {
 static int test_textbook_unsupported_keywords_are_stable(void) {
     int failures = 0;
 
-    failures += expect_unsupported_feature_source("COUNT EQU 10\n.code\nmain PROC\nmain ENDP\nEND main\n", "EQU");
     failures += expect_unsupported_feature_source("NAME TEXTEQU <main>\n.code\nmain PROC\nmain ENDP\nEND main\n", "TEXTEQU");
     failures += expect_unsupported_feature_source("Point STRUCT\nx DWORD ?\nPoint ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "STRUCT");
     failures += expect_unsupported_feature_source("Choice UNION\nx DWORD ?\nChoice ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "UNION");
@@ -550,7 +549,6 @@ static int test_line_level_unsupported_feature_recovery_covers_required_construc
         "    INVOKE SomeProc\n"
         "    SomeProc PROTO\n"
         "    LOCAL temp:DWORD\n"
-        "    Count EQU 1\n"
         "    Greeting TEXTEQU <Hello>\n"
         "    INCLUDELIB Irvine32.lib\n"
         "    EXTERN SomeProc:PROC\n"
@@ -563,16 +561,15 @@ static int test_line_level_unsupported_feature_recovery_covers_required_construc
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "all line-level unsupported constructs should recover");
-    failures += expect_size(result.diagnostic_count, 9U, "all required line-level constructs should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 8U, "all required line-level constructs should produce diagnostics");
     failures += expect_string_contains(buffers.diagnostics[0].message, "INVOKE", "line diagnostic should describe INVOKE");
     failures += expect_string_contains(buffers.diagnostics[1].message, "PROTO", "line diagnostic should describe PROTO");
     failures += expect_string_contains(buffers.diagnostics[2].message, "LOCAL", "line diagnostic should describe LOCAL");
-    failures += expect_string_contains(buffers.diagnostics[3].message, "EQU", "line diagnostic should describe EQU");
-    failures += expect_string_contains(buffers.diagnostics[4].message, "TEXTEQU", "line diagnostic should describe TEXTEQU");
-    failures += expect_string_contains(buffers.diagnostics[5].message, "INCLUDELIB", "line diagnostic should describe INCLUDELIB");
-    failures += expect_string_contains(buffers.diagnostics[6].message, "EXTERN", "line diagnostic should describe EXTERN");
-    failures += expect_string_contains(buffers.diagnostics[7].message, "PUBLIC", "line diagnostic should describe PUBLIC");
-    failures += expect_string_contains(buffers.diagnostics[8].message, "COMM", "line diagnostic should describe COMM");
+    failures += expect_string_contains(buffers.diagnostics[3].message, "TEXTEQU", "line diagnostic should describe TEXTEQU");
+    failures += expect_string_contains(buffers.diagnostics[4].message, "INCLUDELIB", "line diagnostic should describe INCLUDELIB");
+    failures += expect_string_contains(buffers.diagnostics[5].message, "EXTERN", "line diagnostic should describe EXTERN");
+    failures += expect_string_contains(buffers.diagnostics[6].message, "PUBLIC", "line diagnostic should describe PUBLIC");
+    failures += expect_string_contains(buffers.diagnostics[7].message, "COMM", "line diagnostic should describe COMM");
     failures += expect_size(result.instruction_count, 0U, "unsupported line-level constructs should not emit instructions");
 
     return failures;
@@ -1712,7 +1709,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 27.
+/// Runs all parser regression tests through Milestone 28.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
