@@ -1,6 +1,6 @@
 /*
  * @file test_protocol.mjs
- * @brief Unit tests for the worker message protocol through Milestone 23.
+ * @brief Unit tests for the worker message protocol through Milestone 24.
  *
  * The protocol tests run in Node.js and avoid browser automation while covering
  * readiness, ping/pong, source-run dispatch, and structured error responses.
@@ -22,7 +22,7 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 23);
+  assert.equal(IMPLEMENTED_PHASE, 24);
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -32,7 +32,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 23
+      phase: 24
     }
   });
 });
@@ -48,7 +48,7 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 23
+      phase: 24
     }
   });
 });
@@ -115,7 +115,7 @@ test("RUN_SOURCE without runtime returns unavailable error", () => {
     type: "ERROR",
     payload: {
       code: "wasm-run-source-unavailable",
-      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 23."
+      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 24."
     }
   });
 });

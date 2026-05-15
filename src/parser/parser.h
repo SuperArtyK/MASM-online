@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 23.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 24.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally

@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 23 signed PTR alias UI: source editing, Run button,
+  This page provides the Milestone 24 all-GPR register-indirect base UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates signed PTR aliases without implicit sign extension.
+  execution stay inside the worker/Wasm path; the default program demonstrates EAX as a bracketed memory base.
 -->
 <html lang="en">
   <head>
@@ -18,17 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 23: signed PTR width aliases. The default program demonstrates SBYTE/SWORD/SDWORD PTR reads without implicit sign extension.</p>
+        <p class="muted">Milestone 24: all 32-bit general-purpose registers are valid simple memory bases. The default program demonstrates DWORD PTR [eax].</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.data
-b SBYTE -1
-w SWORD -2
-d SDWORD -3
+nums DWORD 4 DUP(0)
 .code
 main PROC
-    mov al, SBYTE PTR b
-    mov bx, SWORD PTR w
-    mov ecx, SDWORD PTR d
+    mov eax, OFFSET nums
+    mov DWORD PTR [eax], 100
+    mov ebx, DWORD PTR [eax]
 main ENDP
 END main</textarea>
         <div class="controls">

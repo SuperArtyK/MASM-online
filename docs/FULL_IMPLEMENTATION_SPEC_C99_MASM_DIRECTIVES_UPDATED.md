@@ -181,21 +181,198 @@ This enables high-quality debugging and diagnostics.
 
 The numbered subsections in this section, such as `8.1` and `8.5`, are specification sections only. They are not implementation phase numbers. The incremental implementation guide owns phase numbering.
 
+
+### 8.0 MASM Compatibility Classification Policy
+
+Every MASM construct encountered by the parser should be classified explicitly. This prevents the implementation from accidentally treating a MASM-valid construct as a temporary limitation, or treating a simulator non-goal as a future promise.
+
+Each feature should be documented as one of:
+
+- **implemented**: fully parsed and executed or otherwise modeled by the simulator.
+- **accepted no-op**: accepted for textbook compatibility but does not affect VM behavior, for example selected listing directives.
+- **metadata-only**: parsed and stored for later behavior, for example `.stack size` before stack runtime behavior is active.
+- **virtual built-in**: provided by the simulator without host file loading or linking, for example `INCLUDE Irvine32.inc` and supported Irvine32 intrinsics.
+- **planned later**: recognized as important to textbook MASM/Irvine compatibility and assigned to a later implementation phase.
+- **explicitly unsupported in v1**: recognized and diagnosed clearly, but not planned for the first complete educational version.
+- **non-goal**: intentionally outside the simulator, for example real Windows API execution, PE loading, object linking, and host filesystem access.
+
+Diagnostics should distinguish:
+
+- MASM-invalid syntax, such as ambiguous memory width where real MASM also requires a `PTR` override.
+- planned-but-not-yet-implemented syntax, reported as `unsupported-feature` or a more specific unsupported code.
+- unsupported runtime behavior, such as executable QWORD memory operations in MASM32 Educational Mode.
+- explicit non-goals, such as `INCLUDE Windows.inc` or `INCLUDELIB kernel32.lib`.
+
+Core classification rule:
+
+```text
+Do not describe MASM-invalid code as "unsupported for now".
+Do not describe simulator non-goals as if they are scheduled features.
+Do not silently accept no-op compatibility constructs unless the spec says they are accepted no-ops.
+```
+
 ### 8.1 Directives
 
-Initial supported directives:
+The simulator supports a staged subset of MASM directives. Directives fall into these categories:
 
-- `.386`
-- `.model`
-- `.stack`
+1. accepted structural directives;
+2. accepted compatibility no-op directives;
+3. metadata-only directives;
+4. virtual built-in directives;
+5. planned compatibility directives;
+6. recognized unsupported directives with clear diagnostics;
+7. explicit non-goal directives.
+
+#### 8.1.1 Accepted Structural Directives
+
+Initial supported structural directives:
+
 - `.data`
 - `.code`
 - `PROC`
 - `ENDP`
 - `END`
-- `INCLUDE`, initially for built-in virtual includes only
 
-Unsupported directives should produce explicit unsupported-feature diagnostics rather than generic syntax errors.
+These affect source structure, symbol layout, procedure boundaries, or entry-point validation.
+
+`PROC` starts as a simple structural marker. Later procedure phases add `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, and calling-convention metadata.
+
+#### 8.1.2 Additional Data Sections
+
+Textbook MASM compatibility should include these simplified sections as planned v1 features:
+
+- `.DATA?`
+- `.CONST`
+
+Required behavior when implemented:
+
+- `.DATA?` creates deterministic zero-filled storage while retaining metadata that the storage was originally uninitialized.
+- `.CONST` creates initialized read-only data metadata or a read-only data region.
+- Statically known writes to `.CONST` should produce assembly diagnostics when practical.
+- Runtime writes to `.CONST` should fail through checked memory permission diagnostics if `.CONST` is modeled as a separate read-only region.
+- Reads from originally uninitialized `.DATA?` storage may initially be allowed without warning; optional uninitialized-read warnings may be added later.
+
+Until implemented, `.DATA?` and `.CONST` must be recognized and reported as planned unsupported features, not vague parse errors.
+
+#### 8.1.3 Accepted MASM32 Header / Compatibility Directives
+
+Common MASM32 textbook headers should be accepted so students do not need to delete standard setup lines.
+
+Accepted as no-op, virtual, or metadata-only directives in MASM32 Educational Mode:
+
+- `.386`
+- `.486`
+- `.586`
+- `.686`
+- `.model flat, stdcall`
+- `.stack`
+- `.stack size`
+- `INCLUDE Irvine32.inc`
+- `INCLUDE Macros.inc`
+- `OPTION CASEMAP:NONE`
+- `TITLE text`
+- `SUBTITLE text`
+- `PAGE`
+
+Behavior:
+
+- `.386`, `.486`, `.586`, and `.686` are accepted as processor-mode compatibility declarations. They do not change the VM execution model.
+- `.model flat, stdcall` is accepted as MASM32 textbook compatibility syntax. Other `.model` forms produce structured diagnostics.
+- `.stack` optionally records a requested stack size. Runtime stack behavior is applied by the later stack milestone.
+- `INCLUDE Irvine32.inc` is accepted as a built-in virtual include. The simulator does not read the host filesystem.
+- `INCLUDE Macros.inc` is accepted as a virtual no-op for paste compatibility. Macro invocations remain unsupported until selected Irvine macro compatibility is implemented.
+- `OPTION CASEMAP:NONE` is accepted as a compatibility directive documenting the simulator's user-symbol case policy.
+- `TITLE`, `SUBTITLE`, and `PAGE` are accepted as listing/documentation no-ops.
+
+Default case policy:
+
+- Instructions, registers, directives, operators, and data type names are case-insensitive.
+- User-defined symbols are case-sensitive in MASM32 Educational Mode.
+- `OPTION CASEMAP:NONE` is accepted as documenting that policy.
+- Other `OPTION CASEMAP` forms are rejected unless a later phase explicitly adds them.
+
+Examples:
+
+```asm
+.386
+.model flat, stdcall
+.stack 4096
+OPTION CASEMAP:NONE
+INCLUDE Irvine32.inc
+
+.data
+msg BYTE "Hello", 0
+
+.code
+main PROC
+    mov edx, OFFSET msg
+main ENDP
+END main
+```
+
+#### 8.1.4 Recognized Unsupported or Deferred Directives
+
+Unsupported or deferred directives should produce explicit diagnostics rather than generic syntax errors.
+
+Recognized unsupported or deferred directives include:
+
+- `.STARTUP`
+- `.EXIT`
+- `.DOSSEG`
+- `.FARDATA`
+- `.FARDATA?`
+- `ASSUME`
+- `ALIGN`
+- `EVEN`
+- `LABEL`
+- `ORG`
+- `EQU`, `=`, and `TEXTEQU` until the equate/expression phases
+- `STRUCT`
+- `UNION`
+- `RECORD`
+- `TYPEDEF`
+- `INVOKE`
+- `PROTO`
+- `LOCAL`
+- `INCLUDELIB`
+- `EXTERN`
+- `EXTERNDEF`
+- `EXTRN`
+- `PUBLIC`
+- `COMM`
+- `COMMENT`, until block-comment skipping is implemented
+- `ECHO`, until listing/build-output behavior is defined
+- `MACRO`
+- `ENDM`
+- `EXITM`
+- `PURGE`
+- `FOR`
+- `FORC`
+- `GOTO`
+- `OPTION NOKEYWORD`
+- `OPTION DOTNAME` and `OPTION NODOTNAME`
+- unsupported `OPTION LANGUAGE` forms
+- conditional assembly directives such as `IF`, `IF2`, `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ELSEIF`, and `ENDIF`
+- conditional error directives such as `.ERR`, `.ERRB`, `.ERRDEF`, `.ERRE`, and `.ERRNZ`
+- listing-control directives such as `.LIST`, `.NOLIST`, `.CREF`, `.NOCREF`, and `.TFCOND`, unless later accepted as no-ops
+- advanced processor/vector directives such as `.387`, `.MMX`, `.XMM`, and `.K3D`
+- safety/object-format directives such as `.SAFESEH`, `.FPO`, `PUSHCONTEXT`, and `POPCONTEXT`
+
+Unsupported directive diagnostics should include the directive name, source line, column, byte offset, span length, and a short explanation.
+
+#### 8.1.5 Explicit Directive Non-Goals
+
+The following should not be implemented as real host or Windows behavior in v1:
+
+- real host include-file loading;
+- object-file linking;
+- `INCLUDELIB` linking;
+- Windows import libraries;
+- Windows API declarations through `Windows.inc`;
+- PE sections or loader behavior;
+- true segmented or far-data behavior.
+
+Such directives may be recognized only to produce clear non-goal diagnostics.
 
 ### 8.2 Data Declarations
 
@@ -294,15 +471,7 @@ For signed declarations, positive values must fit the signed positive range. For
 
 Out-of-range literals should produce structured assembly diagnostics instead of silent truncation.
 
-Supported numeric literal forms also include unary-plus numeric literals:
-
-- positive decimal: `+42`
-- positive C-style hexadecimal: `+0x2A`
-- positive MASM-style hexadecimal: `+2Ah`
-
-Unary plus is treated only as part of a numeric literal. General expression forms such as `1 + 2`, `OFFSET label + 4`, `+(42)`, and parenthesized expressions remain later expression-parser features.
-
-Parenthesized expressions, arithmetic expressions, binary/octal literals, radix-changing directives such as `.RADIX`, and symbolic expressions such as `OFFSET label - 4` are later expression-parser features.
+Unary plus, parenthesized expressions, arithmetic expressions, binary/octal literals, radix-changing directives such as `.RADIX`, and symbolic expressions such as `OFFSET label - 4` are later expression-parser features.
 
 
 ### 8.3.1 Character and Packed Character Literals
@@ -346,13 +515,35 @@ Initial supported operators:
 - `LENGTHOF`
 - `TYPE`
 
-Memory type overrides should be supported in staged form:
+Additional textbook operators are staged later:
+
+- `ADDR`, with `INVOKE` and procedure-argument lowering;
+- `LENGTH` and `SIZE`, as MASM compatibility aliases or explicitly diagnosed alternatives to `LENGTHOF` and `SIZEOF`;
+- `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD`, with extended constant-expression support;
+- `SHORT`, with control-flow and jump encoding diagnostics where applicable;
+- `THIS`, with expression/type metadata support.
+
+Memory type overrides supported in MASM32 Educational Mode:
 
 - `BYTE PTR`
+- `SBYTE PTR`
 - `WORD PTR`
+- `SWORD PTR`
 - `DWORD PTR`
-- `QWORD PTR`, for data layout and Extended 32-bit Mode where applicable
-- `SQWORD PTR`, for signed 64-bit metadata and Extended 32-bit Mode where applicable
+- `SDWORD PTR`
+- `QWORD PTR`, recognized but executable 64-bit memory operations remain deferred in MASM32 Educational Mode
+- `SQWORD PTR`, recognized but executable 64-bit memory operations remain deferred in MASM32 Educational Mode
+
+Signed `PTR` aliases resolve to the same access widths as their unsigned counterparts:
+
+```text
+SBYTE PTR  -> 1 byte
+SWORD PTR  -> 2 bytes
+SDWORD PTR -> 4 bytes
+SQWORD PTR -> 8 bytes, metadata only until Extended 32-bit Mode supports executable 64-bit memory operations
+```
+
+Signedness metadata may be preserved for diagnostics, type display, and future high-level constructs, but ordinary memory reads and writes do not sign-extend automatically. Use `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, or `cdq` for explicit extension behavior.
 
 Examples:
 
@@ -362,12 +553,42 @@ mov ecx, LENGTHOF arr
 mov ebx, TYPE arr
 mov eax, SIZEOF arr
 mov BYTE PTR nums[3], 100
-mov DWORD PTR [esi], 12345678h
+mov SBYTE PTR [esi], -1
+mov DWORD PTR [eax], 12345678h
 ```
 
-`SIZEOF`, `LENGTHOF`, and `TYPE` are core textbook MASM operators and should be implemented shortly after data symbols and indexed memory operands.
+`QWORD PTR` and `SQWORD PTR` should be recognized in MASM32 Educational Mode, but executable 64-bit memory reads/writes should produce structured unsupported-runtime diagnostics until Extended 32-bit Mode enables them.
 
-`QWORD PTR` and `SQWORD PTR` should be recognized in MASM32 Educational Mode, but executable 64-bit memory reads/writes should produce structured unsupported diagnostics until Extended 32-bit Mode enables them.
+#### 8.4.1 Expression and Equate Roadmap
+
+The expression parser should be implemented in stages:
+
+Stage A - simple constant expressions:
+
+- numeric literals;
+- equate symbols;
+- unary `+` and `-`;
+- parentheses;
+- binary `+` and `-`.
+
+Stage B - extended constant expressions:
+
+- `*`, `/`, `MOD`;
+- `SHL`, `SHR`;
+- `AND`, `OR`, `XOR`, `NOT` as compile-time operators;
+- `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`.
+
+Stage C - runtime/high-level condition expressions:
+
+- relational operators such as `==`, `!=`, `<`, `<=`, `>`, `>=`;
+- logical operators such as `&&`, `||`, and `!` where MASM-compatible;
+- condition predicates such as `ZERO?`, `CARRY?`, `SIGN?`, and `OVERFLOW?` if high-level MASM flow uses them.
+
+Equates should also be staged:
+
+- numeric `name = expression`;
+- numeric `name EQU expression`;
+- limited or explicit rejection for `TEXTEQU` until text substitution or macro compatibility exists.
 
 ### 8.5 Memory Operands and Addressing Forms
 
@@ -388,19 +609,39 @@ mov nums[8], 100
 mov eax, nums[8]
 mov BYTE PTR nums[3], 100
 mov DWORD PTR [nums + 8], 100
+mov eax, [nums]
+mov eax, [nums + 0]
+mov eax, nums[0]
 ```
 
 For MASM-style source syntax in this simulator, bracketed array offsets are byte offsets. For example, `nums DWORD 10 DUP(0)` followed by `nums[8]` addresses byte offset `8`, which is DWORD element index `2`.
 
-Stage C - register-indirect and simple displacement forms:
+Stage C - simple register-indirect and displacement forms:
 
 ```asm
+mov eax, [eax]
+mov eax, [ebx]
+mov eax, [ecx]
+mov eax, [edx]
 mov eax, [esi]
-mov eax, [esi + 4]
-mov eax, [esi - 4]
+mov eax, [edi]
+mov eax, [ebp]
+mov eax, [esp]
+mov eax, [eax + 4]
+mov eax, [ecx - 4]
+mov eax, [esp + 8]
 mov [edi], al
 mov array[esi], al
+mov eax, [array + esi]
 ```
+
+All 32-bit general-purpose registers are valid simple base registers in MASM32 Educational Mode:
+
+```text
+EAX EBX ECX EDX ESI EDI EBP ESP
+```
+
+`ESP` is valid as a base register. `ESP` remains invalid as an index register when scaled-index addressing is added later.
 
 Stage D - later scaled-index forms:
 
@@ -409,7 +650,74 @@ mov eax, [base + index * scale + displacement]
 mov eax, array[esi * 4]
 ```
 
-Stage D is a later compatibility feature and should not block textbook examples that use constant byte offsets.
+Stage D is a later compatibility feature and should not block textbook examples that use constant byte offsets or simple base/displacement forms.
+
+#### Memory Access Width Resolution
+
+Memory operands must have a known access width before execution. Width resolution must be centralized and reused by every instruction parser that accepts memory operands.
+
+A memory operand width may come from:
+
+- an explicit `PTR` override, such as `BYTE PTR`, `SBYTE PTR`, `WORD PTR`, `SWORD PTR`, `DWORD PTR`, or `SDWORD PTR`;
+- a declared data symbol, such as `value DWORD 0`;
+- a symbol-relative operand whose base symbol has known metadata, such as `nums[8]`;
+- a register operand in the same instruction when the instruction form unambiguously determines the memory width;
+- an instruction-specific implicit width, when the instruction defines one.
+
+The simulator must reject ambiguous memory forms instead of guessing.
+
+Valid examples because width is explicit or inferable:
+
+```asm
+test eax, 1
+test al, 1
+test [eax], eax
+test [eax], ax
+test [eax], al
+test DWORD PTR [eax], 1
+test WORD PTR [eax], 1
+test BYTE PTR [eax], 1
+test value, 1
+test nums[8], 1
+mov [eax], bl
+add [eax], ebx
+xchg [eax], cx
+```
+
+Rejected examples because memory width is ambiguous:
+
+```asm
+test [eax], 1
+test [eax + 4], 1
+mov [eax], 1
+add [eax], 1
+sbb [eax], 1
+```
+
+Reason: an immediate operand does not determine memory access width, and an untyped register-indirect memory operand has no declaration metadata.
+
+The diagnostic should classify this as `ambiguous-memory-width` or `invalid-instruction-operands`, not as a temporarily unsupported feature.
+
+Suggested user-facing message:
+
+```text
+Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+```
+
+A future non-MASM convenience mode may choose to infer widths, but MASM32 Educational Mode should preserve MASM-compatible rejection.
+
+Runtime-invalid addresses should be runtime errors, not assembly errors. For example:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    test [eax], eax
+main ENDP
+END main
+```
+
+This is syntactically valid because `EAX` supplies DWORD width. It should parse, then fail at runtime because address `00000000h` is outside the simulated memory regions.
 
 ### 8.6 Instructions
 
@@ -557,24 +865,30 @@ Initially unsupported:
 
 ### 8.8 MASM Compatibility Coverage Notes
 
-The current target is **educational MASM32/Irvine32 compatibility**, not full MASM. Microsoft documents MASM as including many directive families and operators beyond the initial subset, including conditional assembly, high-level conditional control-flow directives, equates, macros, procedure/prototype directives, segment directives, structure/record directives, repeat blocks, and simplified segment directives. These should be treated as staged roadmap items rather than implicit v1 behavior.
+The current target is **educational MASM32/Irvine32 compatibility**, not full MASM. MASM includes many directive families and operators beyond the initial subset, including conditional assembly, high-level conditional control-flow directives, equates, macros, procedure/prototype directives, segment directives, structure/record directives, repeat blocks, listing controls, and simplified segment directives. These should be treated as staged roadmap items or explicit non-goals, not implicit behavior.
 
 Important textbook/compatibility areas to track explicitly:
 
-- Equates and constants: `=`, `EQU`, `TEXTEQU`, `LABEL`.
-- Additional non-integer data types: `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`. Signed integer data types `SBYTE`, `SWORD`, `SDWORD`, and `SQWORD` are part of the planned textbook subset rather than a distant backlog item.
-- `.CONST` and `.DATA?`, with deterministic simulator behavior for uninitialized storage.
-- Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, and structure initializers.
-- Procedure metadata: `PROTO`, `INVOKE`, `LOCAL`, parameters, and calling-convention modeling.
-- High-level MASM flow: `.IF`, `.ELSE`, `.ELSEIF`, `.ENDIF`, `.WHILE`, `.REPEAT`, `.UNTIL`, `.BREAK`, `.CONTINUE`.
+- Compatibility corrections for existing syntax: signed `PTR` aliases, all-GPR base registers, and global memory-width resolution.
+- Equates and constants: `=`, `EQU`, limited `TEXTEQU`, and expression-backed constants.
+- Additional data sections: `.DATA?` and `.CONST`, with deterministic simulator behavior for uninitialized storage and optional read-only metadata for constants.
+- Additional non-integer data declarations: `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`. These remain deferred unless a floating-point/data-layout phase explicitly adds them.
+- Nested `DUP` and initializer expressions.
+- Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, `WIDTH`, `MASK`, and structure initializers.
+- Procedure metadata: `USES`, `PROTO`, `INVOKE`, `LOCAL`, parameters, `ADDR`, calling-convention modeling, and root procedure termination.
+- High-level MASM flow: `.IF`, `.ELSE`, `.ELSEIF`, `.ENDIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, `.CONTINUE`.
+- Anonymous labels: `@@`, `@B`, and `@F`.
 - Conditional assembly: `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ENDIF`, and related compile-time directives.
 - Macro system: `MACRO`, `ENDM`, macro parameters, `LOCAL`, `EXITM`, `PURGE`, repeat/for blocks, expansion limits, and recursion protection.
-- Include/library declarations: broader `INCLUDE`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `PUBLIC`, and `COMM` handling.
+- Selected Irvine/Macros.inc convenience macros may be added as built-ins, but the full MASM macro language is not a v1 requirement.
+- MASM32 header compatibility: `.386`, `.486`, `.586`, `.686`, `.model flat, stdcall`, `.stack`, `INCLUDE Irvine32.inc`, `INCLUDE Macros.inc`, `OPTION CASEMAP:NONE`, `TITLE`, `SUBTITLE`, and `PAGE` should be accepted as compatibility/header directives. They should not imply full processor, listing, object-file, or OS behavior.
+- Include/library declarations: broader `INCLUDE`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, and `COMM` handling. Only built-in virtual includes are accepted initially.
 - Expression parser: `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, `NOT`, relational operators, parentheses, `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, `THIS`, and segment-related operators where applicable.
-- Instruction prefixes and string instructions: `REP`, `REPE`, `REPNE`, `LOCK`, `movsb`, `movsd`, `stosb`, `stosd`, `lodsb`, `cmpsb`, and direction-flag behavior.
-- Additional textbook instructions now tracked in the v1 roadmap: `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, `cdq`, `neg`, `adc`, `sbb`, `clc`, `stc`, `cmc`, `test`, `xchg`, `nop`, `sal`, `rol`, `ror`, extended loop helpers, `leave`, `ret imm16`, and the `setcc` family.
+- Instruction prefixes and string instructions: `REP`, `REPE`, `REPNE`, `LOCK`, `movsb`, `movsd`, `stosb`, `stosd`, `lodsb`, `cmpsb`, `scasb`, and direction-flag behavior through `cld` and `std`.
+- Extended flag model: `PF`, `AF`, and `DF`, with updated arithmetic/logical/test helpers and debugger/Irvine display.
+- Irvine32 runtime compatibility: virtual include symbols, `exit`, output routines, input routines with flag semantics, debug routines, random routines, console-control policy, and explicit unsupported diagnostics for file routines and Windows-specific routines.
 
-These features should not be silently accepted before they are implemented. Unsupported forms should produce explicit `unsupported-feature` diagnostics with source location.
+These features should not be silently accepted before they are implemented. Unsupported forms should produce explicit diagnostics with source location.
 
 ## 9. Register Model
 
@@ -821,26 +1135,107 @@ When the VM sees:
 call WriteString
 ```
 
-it should intercept the call and execute the corresponding simulated routine.
+it should intercept the call and execute the corresponding simulated routine if `WriteString` is a supported Irvine32 intrinsic.
 
-### 13.1 Initial Supported Routines
+### 13.1 Virtual Irvine32 Include
 
-Recommended v1 routines:
+`INCLUDE Irvine32.inc` is a built-in virtual include. It should not read host files. When this include is present, the parser should register known Irvine32 routine names as virtual intrinsic procedure symbols.
 
+Known Irvine32 symbols should be classified as:
+
+- supported intrinsic;
+- known but unsupported Irvine32 routine;
+- unsupported file I/O routine;
+- unsupported Windows/console-control routine;
+- unknown symbol.
+
+Unsupported known Irvine32 routines should produce diagnostics such as `unsupported-irvine32-routine`, not generic `unknown-symbol` diagnostics.
+
+`INCLUDE Macros.inc` is accepted as a virtual no-op for paste compatibility. Macro invocations remain unsupported until selected Irvine macro compatibility is implemented.
+
+### 13.2 Program Termination and Irvine `exit`
+
+Many Irvine32 textbook programs end with:
+
+```asm
+exit
+main ENDP
+END main
+```
+
+The simulator should treat `exit` as a built-in Irvine32 compatibility pseudo-instruction or virtual macro that terminates VM execution successfully.
+
+`exit` must not imply real `ExitProcess`, Windows API execution, PE loading, or process behavior.
+
+Program termination policy:
+
+- execution starts at the `END` entry symbol;
+- falling off the synthetic end of the entry procedure may terminate successfully in educational mode;
+- `exit` terminates successfully;
+- `RET` from the entry procedure should terminate successfully in educational mode once `RET` exists, unless a later phase deliberately chooses a root-return diagnostic policy;
+- `RET` from a non-entry procedure must obey the call stack model;
+- calls to `ExitProcess` or other Windows API routines remain unsupported unless explicitly shimmed later.
+
+### 13.3 Supported Irvine32 Routine Groups
+
+The implementation guide owns exact phase ordering. The v1 compatibility target should include these groups.
+
+Basic output:
+
+- `Crlf`
 - `WriteString`
 - `WriteChar`
+
+Numeric output:
+
 - `WriteInt`
 - `WriteDec`
 - `WriteHex`
-- `Crlf`
-- `ReadString`
-- `ReadInt`
+- `WriteBin`
+
+Input:
+
 - `ReadChar`
+- `ReadInt`
+- `ReadDec`
+- `ReadHex`
+- `ReadString`
+
+Debug and utility routines:
+
 - `DumpRegs`
 - `DumpMem`
+- `Randomize`
 - `RandomRange`
+- `Random32`
+- `WaitMsg`
 
-### 13.2 Routine Contracts
+Console-control routines should have an explicit policy:
+
+- `Clrscr`: either clear Program Console or emit a deterministic console-control event.
+- `Gotoxy`: either model cursor metadata or no-op with an informational simulator warning.
+- `SetTextColor`: either model text-style metadata or no-op with an informational simulator warning.
+- `Delay`: must not block the browser thread; simulate deterministically or no-op with a warning.
+
+String helper routines may be added later:
+
+- `Str_length`
+- `Str_copy`
+- `Str_compare`
+- `Str_trim`
+- `Str_ucase`
+
+File-related Irvine32 routines are unsupported in v1 unless a virtual filesystem phase explicitly adds them:
+
+- `OpenInputFile`
+- `CreateOutputFile`
+- `ReadFromFile`
+- `WriteToFile`
+- `CloseFile`
+
+File-routine diagnostics should say that real host filesystem access is unavailable to simulated programs.
+
+### 13.4 Routine Contracts
 
 Each routine must have a documented contract.
 
@@ -878,6 +1273,36 @@ Errors:
   ECX too large for writable memory.
   Input cancelled by user.
 ```
+
+Input routines must define flag behavior because textbook validation loops depend on flags.
+
+Example: `ReadInt`
+
+```text
+Input:
+  program console input line
+
+Effect:
+  Parses a signed 32-bit integer.
+  EAX receives the parsed value on success.
+  OF is cleared on valid input.
+  OF is set on invalid or out-of-range input.
+```
+
+Example: `ReadDec`
+
+```text
+Input:
+  program console input line
+
+Effect:
+  Parses an unsigned 32-bit integer.
+  EAX receives the parsed value on success.
+  CF is cleared on valid input.
+  CF is set on invalid or out-of-range input.
+```
+
+`DumpRegs` and `DumpMem` write to Program Console, not Simulator Messages. `DumpRegs` should use current VM state and initially show the modeled flags `CF`, `ZF`, `SF`, and `OF`; after the extended flag phase it should also include newly modeled flags where appropriate.
 
 ## 14. Console and Input Model
 
@@ -1612,43 +2037,66 @@ OF = 0
 
 The incremental implementation guide intentionally splits large simulator/editor features into small numbered phases. This specification defines the final behavior; the guide defines the order and granularity of implementation.
 
+Large multi-feature implementation passes should be avoided. Each implementation phase should remain independently testable and should preserve previous milestone behavior.
+
 Important split areas:
 
-- Memory operand support should be implemented incrementally: constant symbol offsets, `PTR` width overrides, then register-indirect operands.
-- Data operators and literals should be implemented incrementally: `TYPE`, then `LENGTHOF`, then `SIZEOF` together with single-character and packed multi-character literals.
-- Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs.
-- Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then `LOOP` and instruction limits.
-- Stack support should be implemented incrementally: stack initialization with `PUSH`/`POP`, then `CALL`/`RET`, then call-depth diagnostics.
-- Irvine32 support should be implemented incrementally: console infrastructure, basic text output, numeric output, diagnostic output/randomness, input protocol, simple input, then string input.
+- Compatibility corrections should be implemented before new instruction groups when they affect already-implemented syntax. Signed `PTR` aliases, all-GPR base registers, and global memory-width resolution are corrections to existing memory-operand behavior.
+- Header directives should remain separate from memory/addressing corrections. `.386`, `.model`, `.stack`, `INCLUDE Irvine32.inc`, `OPTION CASEMAP:NONE`, `TITLE`, `SUBTITLE`, and `PAGE` are compatibility/header work, not instruction work.
+- Data compatibility should be staged: `.DATA?` and `.CONST`, then equates and simple constant expressions, then extended expressions, then nested `DUP` and initializer expressions.
+- Memory operand support should be implemented incrementally: constant symbol offsets, `PTR` width overrides, register-indirect operands, all-GPR bases, global width resolution, and later scaled-index addressing.
+- Data operators and literals should be implemented incrementally: `TYPE`, then `LENGTHOF`, then `SIZEOF` together with single-character and packed multi-character literals, then compatibility aliases such as `LENGTH` and `SIZE`.
+- Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
+- Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
+- Stack and procedure support should be implemented incrementally: stack initialization with `PUSH`/`POP`, then `CALL`/`RET`, then root termination and call-target classification, then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`.
+- Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
+- Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
+- High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
+- Structures and records should be implemented after data layout, expression support, and `TYPE`/`SIZEOF` behavior are stable.
 - Debugger support should be implemented incrementally: Step Into backend, current-state UI, last-step delta UI, execution stats, breakpoints, Continue, Step Over backend, and Step Over aggregate delta display.
 - CodeMirror editor support should be implemented incrementally: source editor replacement, MASM highlighting, indentation, dark/light local preferences, diagnostics integration, and debugger/breakpoint integration.
 
-Large multi-feature implementation passes should be avoided. Each implementation phase should remain independently testable and should preserve previous milestone behavior.
+Every guide phase should specify:
+
+- exact syntax accepted;
+- exact syntax rejected;
+- whether behavior is runtime, metadata-only, accepted no-op, or virtual built-in;
+- expected diagnostic codes and wording category;
+- acceptance programs;
+- regression tests for previously implemented behavior.
 
 ## 28. Future Roadmap
 
-Possible future features:
+The implementation guide now assigns most v1-relevant textbook MASM/Irvine32 features to concrete phases. Features below remain either late roadmap, optional post-v1 work, or explicit non-goals unless a later specification revision promotes them.
 
-- CodeMirror 6 source editor integration with line numbers, MASM highlighting, dark/light themes, and local-only editor preferences.
-- CodeMirror diagnostic markers, clickable Simulator Messages, current execution-line highlighting, and breakpoint gutter integration.
-- Multi-diagnostic parser recovery that reports several unsupported constructs in one pass while still refusing execution.
-- Optional CodeMirror autocomplete for instructions, registers, directives, data symbols, labels, and Irvine32 routines.
-- More MASM directives, especially `.CONST`, `.DATA?`, `ALIGN`, `LABEL`, and `.RADIX`.
-- MASM equates and constants: `=`, `EQU`, `TEXTEQU`.
-- Additional numeric literal forms: binary/octal suffixes and radix prefixes where useful.
-- Full expression parser with arithmetic, logical, relational, and parenthesized expressions.
-- `.data?` support.
-- Nested `DUP` initializers.
-- Broader expression parsing, including `OFFSET symbol + constant`.
-- Full scaled-index addressing.
-- `ADDR` and later `INVOKE` / `PROTO` support.
-- Calling convention support.
-- High-level MASM control-flow directives.
-- Macro expansion.
-- Include depth and macro expansion safeguards.
-- More Irvine32 routines.
+Concrete v1 roadmap themes:
+
+- MASM compatibility corrections for existing memory syntax.
+- MASM32 header directives.
+- `.DATA?` and `.CONST` data sections.
+- Numeric equates and constant expressions.
+- Nested `DUP` and initializer expressions.
+- Virtual Irvine32 include symbols and `exit`.
+- Core instruction expansion.
+- Control flow, anonymous labels, and loop helpers.
+- Stack, calls, procedures, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`.
+- Program console and Irvine32 output/input/debug routines.
+- Extended flags and string instructions.
+- COMMENT/listing no-ops and compatibility operators.
+- High-level MASM flow lowering.
+- STRUCT/RECORD data modeling.
+- Selected Irvine/Macros.inc convenience macros.
+- Debugger and editor polish.
+
+Optional or post-v1 roadmap:
+
+- Full MASM macro language.
+- Full conditional assembly.
+- Full text substitution semantics for `TEXTEQU`.
+- Complete listing file generation.
+- Complete object/linkage model.
 - FPU support.
-- SSE subset.
+- SSE/AVX subset.
 - Watch variables.
 - Data breakpoints/watchpoints.
 - Raw memory hex editor.
@@ -1658,3 +2106,12 @@ Possible future features:
 - Backend snippet sharing with short URLs.
 - Optional UASM/JWasm investigation.
 
+Explicit non-goals unless the project definition changes:
+
+- native x86 binary execution;
+- PE loading;
+- real Windows API execution;
+- real host filesystem access from simulated programs;
+- object-file linking;
+- full Windows process or console emulation;
+- full x64/ml64 compatibility.

@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 23. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 24. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -61,9 +61,9 @@ Implemented memory forms:
 
 - Direct symbols: `mov var, 100`, `mov eax, var`.
 - Constant byte offsets: `nums[8]`, `[nums + 8]`, `[nums - 4]`, `[nums]`, `[nums + 0]`, `nums[0]`.
-- Register-indirect forms: `[esi]`, `[edi]`, `[ebx]`, `[ebp]`.
-- Simple displacements: `[esi + 4]`, `[esi - 4]`.
-- Simple symbol/register forms: `array[esi]`, `[array + esi]`.
+- Register-indirect forms: `[eax]`, `[ebx]`, `[ecx]`, `[edx]`, `[esi]`, `[edi]`, `[ebp]`, `[esp]`.
+- Simple displacements for all 32-bit general-purpose base registers, such as `[eax + 4]`, `[ecx - 4]`, and `[esp + 8]`.
+- Simple symbol/register forms: `array[reg32]`, `[array + reg32]`, where `reg32` is a supported 32-bit general-purpose base register.
 - Width overrides: `BYTE PTR`, `WORD PTR`, `DWORD PTR`, `SBYTE PTR`, `SWORD PTR`, and `SDWORD PTR`.
 - `QWORD PTR` and `SQWORD PTR` are recognized but executable 64-bit memory operations are rejected in MASM32 Educational Mode.
 

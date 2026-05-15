@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 23.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 24.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -1781,16 +1781,20 @@ static bool vm_parser_parse_symbol_memory_operand(VmParserState *state, const Vm
 /// Returns whether a register is allowed as a register-indirect memory base.
 ///
 /// @param token Register token to inspect.
-/// @return true for ESI, EDI, EBX, and EBP.
+/// @return true for 32-bit general-purpose registers accepted as memory bases.
 static bool vm_parser_token_is_register_indirect_base(const VmLexerToken *token) {
     if (token == NULL || token->kind != VM_LEXER_TOKEN_REGISTER) {
         return false;
     }
 
-    return token->register_id == VM_REGISTER_ESI ||
-           token->register_id == VM_REGISTER_EDI ||
+    return token->register_id == VM_REGISTER_EAX ||
            token->register_id == VM_REGISTER_EBX ||
-           token->register_id == VM_REGISTER_EBP;
+           token->register_id == VM_REGISTER_ECX ||
+           token->register_id == VM_REGISTER_EDX ||
+           token->register_id == VM_REGISTER_ESI ||
+           token->register_id == VM_REGISTER_EDI ||
+           token->register_id == VM_REGISTER_EBP ||
+           token->register_id == VM_REGISTER_ESP;
 }
 
 /// Records the stable diagnostic for unsupported scaled-index memory syntax.
@@ -1961,7 +1965,7 @@ static bool vm_parser_parse_bracketed_register_memory_operand(
         return false;
     }
     if (!vm_parser_token_is_register_indirect_base(base_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, base_token, "This register is not supported as a register-indirect memory base yet. Use ESI, EDI, EBX, or EBP for bracketed memory operands, or remove the brackets to use the register value directly.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, base_token, "This register is not supported as a register-indirect memory base. Use a 32-bit general-purpose register such as EAX, EBX, ECX, EDX, ESI, EDI, EBP, or ESP for bracketed memory operands, or remove the brackets to use the register value directly.");
         return false;
     }
 
@@ -2017,7 +2021,7 @@ static bool vm_parser_parse_symbol_register_index_memory_operand(
         return false;
     }
     if (!vm_parser_token_is_register_indirect_base(base_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use ESI, EDI, EBX, or EBP.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use a 32-bit general-purpose register such as EAX, EBX, ECX, EDX, ESI, EDI, EBP, or ESP.");
         return false;
     }
 
@@ -2075,7 +2079,7 @@ static bool vm_parser_parse_bracketed_symbol_register_memory_operand(
         return false;
     }
     if (!vm_parser_token_is_register_indirect_base(base_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use ESI, EDI, EBX, or EBP.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use a 32-bit general-purpose register such as EAX, EBX, ECX, EDX, ESI, EDI, EBP, or ESP.");
         return false;
     }
 
@@ -2900,6 +2904,8 @@ static bool vm_parser_operand_is_memory(const VmIrOperand *operand) {
 
 /// Infers missing register-indirect memory widths from the opposite operand.
 ///
+/// TODO(Phase 25): replace instruction-specific width inference calls with a
+/// shared memory-width resolution helper for all memory-capable instructions.
 /// Register-only memory operands such as `[esi]` have no declaration width.
 /// This helper keeps them usable in textbook forms such as `mov eax, [esi]`
 /// and `mov [edi], al` without allowing ambiguous immediate-to-memory writes.

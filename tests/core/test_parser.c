@@ -1287,8 +1287,7 @@ static int test_phase22_test_instruction_parse_error_paths(void) {
     const char *unsupported_base_source =
         ".code\n"
         "main PROC\n"
-        "    mov eax, 0\n"
-        "    test [eax], eax\n"
+        "    test [ax], eax\n"
         "main ENDP\n"
         "END main\n";
     ParserTestBuffers buffers;
@@ -1313,9 +1312,9 @@ static int test_phase22_test_instruction_parse_error_paths(void) {
     failures += expect_parser_status(parse_for_test(missing_comma_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST missing comma should produce parser diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "TEST missing comma diagnostic should be expected comma");
 
-    failures += expect_parser_status(parse_for_test(unsupported_base_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST [eax], eax should produce parser diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, "TEST [eax], eax diagnostic should identify unsupported memory base register");
-    failures += expect_u32(buffers.diagnostics[0].location.column, 11U, "TEST [eax], eax diagnostic should point to the unsupported base register");
+    failures += expect_parser_status(parse_for_test(unsupported_base_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "TEST [ax], eax should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE, "TEST [ax], eax diagnostic should identify unsupported memory base register");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 11U, "TEST [ax], eax diagnostic should point to the unsupported base register");
     failures += expect_string_contains(buffers.diagnostics[0].message, "bracketed memory operands", "TEST unsupported base diagnostic should clarify bracketed memory use");
     failures += expect_string_contains(buffers.diagnostics[0].message, "remove the brackets", "TEST unsupported base diagnostic should clarify register operand use");
 
