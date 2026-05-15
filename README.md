@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 22.
+Static, browser-based MASM32 educational simulator through Milestone 23.
 
 ## Current scope
 
@@ -13,6 +13,7 @@ Implemented through the current milestone:
 - Executable `mov`, `add`, `sub`, `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, `cdq`, `xchg`, `neg`, `nop`, `adc`, `sbb`, `clc`, `stc`, `cmc`, and `test` for the currently supported operand forms.
 - Explicit `unsupported-feature` diagnostics for common textbook MASM constructs tracked by the Milestone 15 backlog checkpoint.
 - Milestone 22 `test` instruction support, including MASM-compatible ambiguous memory-width diagnostics for `test [reg], imm` forms.
+- Milestone 23 signed `PTR` width aliases: `SBYTE PTR`, `SWORD PTR`, `SDWORD PTR`, and recognized-but-deferred `SQWORD PTR` executable memory operations.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 

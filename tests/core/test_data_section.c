@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 15 .data declarations, symbols, PTR, and register-indirect memory operands, and TYPE, LENGTHOF, SIZEOF, and character-literal support.
+ * @brief Tests for Milestone 23 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -1444,7 +1444,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
+    failures += expect_json_contains(json, "\"phase\":23", "response should identify Milestone 23");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1575,7 +1575,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
+    failures += expect_json_contains(json, "\"phase\":23", "response should identify Milestone 23");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1600,7 +1600,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":22", "response should identify Milestone 22");
+    failures += expect_json_contains(json, "\"phase\":23", "response should identify Milestone 23");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1743,6 +1743,143 @@ static int test_signed_integer_metadata_and_64bit_execution_limits(void) {
     return failures;
 }
 
+
+/// Verifies signed PTR aliases parse as executable 8-, 16-, and 32-bit memory widths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_ptr_width_aliases_parse_to_ir(void) {
+    const char *source =
+        ".data\n"
+        "b SBYTE -1\n"
+        "w SWORD -2\n"
+        "d SDWORD -3\n"
+        "buf BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov al, sbyte ptr b\n"
+        "    mov bx, SwOrD Ptr w\n"
+        "    mov ecx, sdword ptr d\n"
+        "    mov sbyte ptr buf[0], -1\n"
+        "    mov SWORD PTR buf[2], -2\n"
+        "    mov SDWORD PTR buf[4], -3\n"
+        "main ENDP\n"
+        "END main\n";
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "signed PTR alias source should parse");
+    failures += expect_size(result.instruction_count, 6U, "signed PTR source should emit six instructions");
+    failures += expect_u32(buffers.instructions[0].source.width_bits, 8U, "SBYTE PTR source should emit 8-bit width");
+    failures += expect_u32(buffers.instructions[1].source.width_bits, 16U, "SWORD PTR source should emit 16-bit width");
+    failures += expect_u32(buffers.instructions[2].source.width_bits, 32U, "SDWORD PTR source should emit 32-bit width");
+    failures += expect_u32(buffers.instructions[3].destination.width_bits, 8U, "SBYTE PTR destination should emit 8-bit width");
+    failures += expect_u32(buffers.instructions[4].destination.width_bits, 16U, "SWORD PTR destination should emit 16-bit width");
+    failures += expect_u32(buffers.instructions[5].destination.width_bits, 32U, "SDWORD PTR destination should emit 32-bit width");
+
+    return failures;
+}
+
+/// Verifies signed PTR aliases execute through the source-run path.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_ptr_width_aliases_source_run_programs(void) {
+    const char *read_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "b SBYTE -1\n"
+        "w SWORD -2\n"
+        "d SDWORD -3\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov al, SBYTE PTR b\n"
+        "    mov bx, SWORD PTR w\n"
+        "    mov ecx, SDWORD PTR d\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    char read_copy[1024];
+    const char *write_json = NULL;
+    int failures = 0;
+
+    if (read_json == NULL) {
+        return record_failure("signed PTR read source-run result should not be NULL");
+    }
+    (void)snprintf(read_copy, sizeof(read_copy), "%s", read_json);
+
+    write_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "buf BYTE 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esi, OFFSET buf\n"
+        "    mov SBYTE PTR [esi], -1\n"
+        "    mov al, BYTE PTR [esi]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+
+    failures += expect_json_contains(read_copy, "\"phase\":23", "signed PTR read response should identify Milestone 23");
+    failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
+    failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
+    failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
+    failures += expect_json_contains(read_copy, "\"ECX\":{\"hex\":\"FFFFFFFDh\",\"unsigned\":4294967293}", "SDWORD PTR read into ECX should preserve raw 32-bit value");
+    failures += expect_json_contains(write_json, "\"ok\":true", "signed PTR write source should execute");
+    failures += expect_json_contains(write_json, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR write should be readable as BYTE PTR");
+    failures += expect_json_contains(write_json, "\"symbol\":\"buf\",\"address\":\"00500000h\",\"widthBits\":8", "signed PTR write should report 8-bit memory change");
+    failures += expect_json_contains(write_json, "\"newHex\":\"FFh\"", "signed PTR write should store FFh");
+
+    return failures;
+}
+
+/// Verifies signed PTR alias error paths remain structured.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_signed_ptr_width_alias_error_paths(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    const char *sqword_json = NULL;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "buf BYTE 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "mov SBYTE PTR [esi], -129\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SBYTE PTR negative overflow should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, "SBYTE PTR overflow diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD -1\n"
+        ".code\n"
+        "main PROC\n"
+        "mov eax, SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SQWORD PTR source use should fail in MASM32 mode");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SQWORD PTR diagnostic should match");
+
+    sqword_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "q SQWORD -1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(sqword_json, "\"ok\":false", "SQWORD PTR source-run should fail");
+    failures += expect_json_contains(sqword_json, "unsupported-ptr-width", "SQWORD PTR source-run diagnostic should be unsupported-ptr-width");
+    failures += expect_json_contains(sqword_json, "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode", "SQWORD PTR diagnostic should mention Extended 32-bit Mode deferral");
+
+    return failures;
+}
+
 /// Test entry point.
 ///
 /// @return Zero when all Milestone 15 tests pass.
@@ -1792,11 +1929,14 @@ int main(void) {
     failures += test_signed_integer_data_declarations_layout_and_metadata();
     failures += test_signed_integer_range_errors();
     failures += test_signed_integer_metadata_and_64bit_execution_limits();
+    failures += test_signed_ptr_width_aliases_parse_to_ir();
+    failures += test_signed_ptr_width_aliases_source_run_programs();
+    failures += test_signed_ptr_width_alias_error_paths();
 
     if (failures != 0) {
         return 1;
     }
 
-    puts("Milestone 22 data section, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
+    puts("Milestone 23 data section, signed PTR alias, register-indirect, TYPE, LENGTHOF, SIZEOF, and character literal tests passed.");
     return 0;
 }

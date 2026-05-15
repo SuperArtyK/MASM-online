@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 22.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 23.
  *
  * This implementation consumes the lexer token stream, lays out a small .data
  * image with symbols, and emits only the minimal IR supported by the current
@@ -71,7 +71,7 @@ typedef struct VmParserState {
 
 /// Describes one parsed PTR width override prefix.
 typedef struct VmParserPtrWidth {
-    /// Width in bits requested by BYTE/WORD/DWORD/QWORD PTR.
+    /// Width in bits requested by unsigned or signed BYTE/WORD/DWORD/QWORD PTR aliases.
     uint8_t width_bits;
     /// Token containing the width keyword for diagnostics.
     const VmLexerToken *width_token;
@@ -2257,21 +2257,21 @@ static bool vm_parser_parse_symbol_index_memory_operand(VmParserState *state, Vm
 ///
 /// @param token Token to inspect.
 /// @param out_width_bits Receives 8, 16, 32, or 64 on success.
-/// @return true when @p token is BYTE, WORD, DWORD, QWORD, or SQWORD.
+/// @return true when @p token is a supported signed or unsigned PTR width keyword.
 static bool vm_parser_parse_ptr_width_keyword(const VmLexerToken *token, uint8_t *out_width_bits) {
     if (token == NULL || out_width_bits == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
         return false;
     }
 
-    if (vm_parser_token_equals(token, "BYTE")) {
+    if (vm_parser_token_equals(token, "BYTE") || vm_parser_token_equals(token, "SBYTE")) {
         *out_width_bits = 8U;
         return true;
     }
-    if (vm_parser_token_equals(token, "WORD")) {
+    if (vm_parser_token_equals(token, "WORD") || vm_parser_token_equals(token, "SWORD")) {
         *out_width_bits = 16U;
         return true;
     }
-    if (vm_parser_token_equals(token, "DWORD")) {
+    if (vm_parser_token_equals(token, "DWORD") || vm_parser_token_equals(token, "SDWORD")) {
         *out_width_bits = 32U;
         return true;
     }
@@ -2299,7 +2299,7 @@ static bool vm_parser_current_token_starts_ptr_width(const VmParserState *state)
 ///
 /// @param state Parser state to inspect.
 /// @return true when the current token is an identifier followed by PTR but is
-/// not one of BYTE, WORD, DWORD, QWORD, or SQWORD.
+/// not one of BYTE/SBYTE, WORD/SWORD, DWORD/SDWORD, or QWORD/SQWORD.
 static bool vm_parser_current_token_is_malformed_ptr_prefix(const VmParserState *state) {
     const VmLexerToken *token = vm_parser_current_token(state);
     const VmLexerToken *next_token = vm_parser_peek_token(state, 1U);
@@ -2314,7 +2314,7 @@ static bool vm_parser_current_token_is_malformed_ptr_prefix(const VmParserState 
 
 /// Parses a PTR width prefix without parsing its following memory operand.
 ///
-/// @param state Parser state positioned at BYTE, WORD, DWORD, or QWORD.
+/// @param state Parser state positioned at a signed or unsigned PTR width keyword.
 /// @param out_width Receives the parsed width metadata.
 /// @return true when WIDTH PTR was consumed.
 static bool vm_parser_parse_ptr_width_prefix(VmParserState *state, VmParserPtrWidth *out_width) {
@@ -2532,7 +2532,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
     }
 
     if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, QWORD, or SQWORD before PTR.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, SBYTE, WORD, SWORD, DWORD, SDWORD, QWORD, or SQWORD before PTR.");
         return false;
     }
 
@@ -2748,7 +2748,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     }
 
     if (vm_parser_current_token_is_malformed_ptr_prefix(state)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, WORD, DWORD, QWORD, or SQWORD before PTR.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, token, "Unsupported PTR width override. Expected BYTE, SBYTE, WORD, SWORD, DWORD, SDWORD, QWORD, or SQWORD before PTR.");
         return false;
     }
 

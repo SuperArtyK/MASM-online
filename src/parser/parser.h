@@ -1,11 +1,11 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data and minimal .code programs through Milestone 22.
+ * @brief Parser for MASM-like .data and minimal .code programs through Milestone 23.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
  * remains limited to implemented data declarations, OFFSET, direct symbol
- * memory operands, constant symbol-offset memory operands, PTR width overrides,
+ * memory operands, constant symbol-offset memory operands, signed and unsigned PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, sign and zero extension
  * instructions, and explicit unsupported-feature
@@ -214,9 +214,9 @@ typedef struct VmParserResult {
 /// The parser accepts optional .data declarations before .code, emits data-symbol
 /// metadata and a deterministic .data image, then parses the existing minimal
 /// .code grammar. Source operands may use registers, immediates, direct symbols,
-/// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant symbol-offset memory operands, register-indirect memory operands, or PTR width
+/// `OFFSET symbol`, `TYPE symbol`, `LENGTHOF symbol`, `SIZEOF symbol`, character literals, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR width
 /// overrides on supported memory operands; destination operands may use
-/// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or PTR
+/// registers, direct symbols, constant symbol-offset memory operands, register-indirect memory operands, or signed/unsigned PTR
 /// width overrides on supported memory operands.
 ///
 /// @param config Parse configuration and caller-owned output buffers.

@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 22 TEST instruction UI: source editing, Run button,
+  This page provides the Milestone 23 signed PTR alias UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates TEST flag updates without modifying operands.
+  execution stay inside the worker/Wasm path; the default program demonstrates signed PTR aliases without implicit sign extension.
 -->
 <html lang="en">
   <head>
@@ -18,12 +18,17 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 22: TEST instruction flag updates. The default program demonstrates zero-flag behavior without modifying EAX.</p>
+        <p class="muted">Milestone 23: signed PTR width aliases. The default program demonstrates SBYTE/SWORD/SDWORD PTR reads without implicit sign extension.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.code
+        <textarea id="editor" spellcheck="false">.data
+b SBYTE -1
+w SWORD -2
+d SDWORD -3
+.code
 main PROC
-    mov eax, 0
-    test eax, eax
+    mov al, SBYTE PTR b
+    mov bx, SWORD PTR w
+    mov ecx, SDWORD PTR d
 main ENDP
 END main</textarea>
         <div class="controls">

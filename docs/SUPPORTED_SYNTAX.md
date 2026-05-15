@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 22. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 23. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -64,7 +64,7 @@ Implemented memory forms:
 - Register-indirect forms: `[esi]`, `[edi]`, `[ebx]`, `[ebp]`.
 - Simple displacements: `[esi + 4]`, `[esi - 4]`.
 - Simple symbol/register forms: `array[esi]`, `[array + esi]`.
-- Width overrides: `BYTE PTR`, `WORD PTR`, `DWORD PTR`.
+- Width overrides: `BYTE PTR`, `WORD PTR`, `DWORD PTR`, `SBYTE PTR`, `SWORD PTR`, and `SDWORD PTR`.
 - `QWORD PTR` and `SQWORD PTR` are recognized but executable 64-bit memory operations are rejected in MASM32 Educational Mode.
 
 Array bracket offsets are byte offsets, not element indexes.
@@ -102,6 +102,8 @@ Accumulator conversions are no-operand instructions:
 - `cdq`: sign-extend `EAX` into `EDX:EAX`
 
 Ordinary `mov` from signed memory does not sign-extend automatically; use `movsx` when sign extension is required.
+
+Signed `PTR` aliases select memory access width only. `SBYTE PTR`, `SWORD PTR`, and `SDWORD PTR` read and write 8-bit, 16-bit, and 32-bit raw values respectively; they do not make ordinary `mov` sign-extend.
 
 `xchg` supports register/register, register/memory, and memory/register exchanges when both operands have matching widths. Memory operands must use existing direct-symbol, symbol-offset, or `PTR`/register-indirect forms that make the access width unambiguous. `xchg` does not modify tracked flags.
 
