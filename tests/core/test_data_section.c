@@ -1965,6 +1965,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     const char *bracketed_const_write_json = NULL;
     const char *xchg_const_write_json = NULL;
     const char *calculated_offset_write_json = NULL;
+    const char *partial_overlap_const_write_json = NULL;
     const char *initialized_data_question_json = NULL;
     const char *mixed_data_question_json = NULL;
     const char *const_uninitialized_json = NULL;
@@ -2140,6 +2141,20 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     );
     failures += expect_json_contains(calculated_offset_write_json, "permission-denied", "calculated .CONST offset write should fail through memory permissions");
 
+    partial_overlap_const_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax - 1], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(partial_overlap_const_write_json, "\"ok\":false", "partial-overlap write crossing into .CONST should fail");
+    failures += expect_json_contains(partial_overlap_const_write_json, "invalid-address", "partial-overlap write crossing into .CONST should be rejected by checked memory range validation");
+    failures += expect_json_contains(partial_overlap_const_write_json, "\"memoryChanges\":[]", "failed partial-overlap .CONST write should not report successful memory changes");
+
     initialized_data_question_json = masm32_sim_wasm_run_source_json(
         ".DATA?\n"
         "buf DWORD 5\n"
@@ -2172,6 +2187,73 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":false", ".CONST uninitialized storage should be rejected");
     failures += expect_json_contains(const_uninitialized_json, ".CONST declarations require initialized values", ".CONST ? rejection should explain initialized requirement");
+
+    return failures;
+}
+
+
+/// Verifies Phase 28 expression and equate forms are still rejected in Milestone 27.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase28_expression_features_remain_rejected(void) {
+    const char *numeric_equate_json = NULL;
+    const char *equ_json = NULL;
+    const char *lengthof_expression_json = NULL;
+    const char *offset_expression_json = NULL;
+    const char *parenthesized_expression_json = NULL;
+    int failures = 0;
+
+    numeric_equate_json = masm32_sim_wasm_run_source_json(
+        "COUNT = 4\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(numeric_equate_json, "\"ok\":false", "numeric = equates should remain rejected before Phase 28");
+
+    equ_json = masm32_sim_wasm_run_source_json(
+        "MAX EQU 10\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(equ_json, "\"ok\":false", "EQU constants should remain rejected before Phase 28");
+    failures += expect_json_contains(equ_json, "unsupported-feature", "EQU constants should remain classified as unsupported before Phase 28");
+
+    lengthof_expression_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "nums DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, LENGTHOF nums + 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(lengthof_expression_json, "\"ok\":false", "LENGTHOF arithmetic expressions should remain rejected before Phase 28");
+    failures += expect_json_contains(lengthof_expression_json, "unsupported-lengthof-expression", "LENGTHOF arithmetic expression diagnostic should remain structured");
+
+    offset_expression_json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value + 4\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(offset_expression_json, "\"ok\":false", "OFFSET arithmetic expressions should remain rejected before Phase 28");
+    failures += expect_json_contains(offset_expression_json, "Unsupported OFFSET expression", "OFFSET arithmetic expression diagnostic should remain explicit");
+
+    parenthesized_expression_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, (4)\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(parenthesized_expression_json, "\"ok\":false", "parenthesized expressions should remain rejected before Phase 28");
 
     return failures;
 }
@@ -2280,6 +2362,7 @@ int main(void) {
     failures += test_signed_ptr_width_aliases_parse_to_ir();
     failures += test_signed_ptr_width_aliases_source_run_programs();
     failures += test_signed_ptr_width_alias_error_paths();
+    failures += test_phase28_expression_features_remain_rejected();
 
     if (failures != 0) {
         return 1;
