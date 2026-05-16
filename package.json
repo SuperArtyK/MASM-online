@@ -1,0 +1,29 @@
+{
+  "name": "masm-online",
+  "version": "1.0.0",
+  "description": "Static, browser-based MASM32 educational simulator through Milestone 23.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MattMarkYT/MASM-online.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MattMarkYT/MASM-online/issues"
+  },
+  "homepage": "https://github.com/MattMarkYT/MASM-online#readme",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.0",
+    "tailwindcss": "^4.3.0"
+  }
+}
