@@ -4,7 +4,7 @@
  *
  * The lexer recognizes the token set needed by the current parser: identifiers,
  * MASM32 registers, signed decimal and hexadecimal numbers, strings, commas,
- * square brackets, parentheses, question marks, plus, minus, asterisk,
+ * square brackets, parentheses, question marks, plus, minus, asterisk, slash,
  * comparison punctuation needed to classify unsupported textbook constructs,
  * single-quoted character and packed character literal spans, colons, comments, directives, and line endings.
  */
@@ -757,6 +757,8 @@ VmLexerStatus vm_lexer_tokenize(
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_MINUS);
         } else if (ch == '*') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_ASTERISK);
+        } else if (ch == '/') {
+            status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_SLASH);
         } else if (ch == '<') {
             status = lexer_emit_single_character_token(&cursor, &writer, VM_LEXER_TOKEN_LESS_THAN);
         } else if (ch == '>') {
@@ -817,6 +819,7 @@ const char *vm_lexer_token_kind_name(VmLexerTokenKind kind) {
         "PLUS",
         "MINUS",
         "ASTERISK",
+        "SLASH",
         "LESS_THAN",
         "GREATER_THAN",
         "EQUALS",

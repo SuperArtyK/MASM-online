@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 28 numeric-equate and constant-expression UI: source editing, Run button,
+  This page provides the Milestone 29 numeric-equate and constant-expression UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates numeric equates and Stage A expressions.
+  execution stay inside the worker/Wasm path; the default program demonstrates numeric equates and extended constant expressions.
 -->
 <html lang="en">
   <head>
@@ -18,16 +18,17 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 28: numeric equates and simple constant expressions in supported compile-time contexts.</p>
+        <p class="muted">Milestone 29: extended compile-time constant expressions in supported constant contexts.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">COUNT = 4
-EXTRA EQU 2
+        <textarea id="editor" spellcheck="false">COUNT = 4 * 3
+MASK  EQU 1 SHL 7
 .data
-arr DWORD COUNT DUP(0)
+arr BYTE COUNT DUP(0)
 .code
 main PROC
-    mov eax, COUNT + EXTRA
-    mov ebx, SIZEOF arr
+    mov eax, COUNT
+    mov ebx, MASK
+    mov ecx, LOWWORD 12345678h
 main ENDP
 END main</textarea>
         <div class="controls">

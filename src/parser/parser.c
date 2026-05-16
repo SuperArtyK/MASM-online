@@ -1,11 +1,11 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 28.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 29.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * extended MASM expression parsing remain later milestones. Recognizable textbook
+ * full MASM expression parsing remains a later milestone. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
  * unsupported-feature diagnostics, safely skipped when recoverable, and surfaced
  * lexer diagnostics remain specific instead of generic umbrella errors.
@@ -54,11 +54,13 @@ typedef struct VmParserEquate {
     int64_t value;
     /// Whether this slot contains a valid equate.
     bool is_defined;
+    /// Whether this name was seen but its equate expression was invalid.
+    bool is_invalid;
     /// Whether this equate is currently being evaluated.
     bool is_resolving;
 } VmParserEquate;
 
-/// Carries the result of a Stage A constant-expression parse.
+/// Carries the result of a compile-time constant-expression parse.
 typedef struct VmParserConstantExpression {
     /// Evaluated signed 64-bit expression value.
     int64_t value;
@@ -242,7 +244,7 @@ static bool vm_parser_token_lexemes_equal(const VmLexerToken *left, const VmLexe
     return true;
 }
 
-/// Returns whether a token can begin a Stage A constant expression.
+/// Returns whether a token can begin a compile-time constant expression.
 ///
 /// @param token Token to inspect.
 /// @return true for numbers, equate identifiers, unary signs, and left parentheses.
@@ -281,7 +283,8 @@ static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmL
 ///
 /// @param state Parser state whose equate table should be searched.
 /// @param token Source token containing the equate name.
-/// @return Matching equate, or NULL when no equate is defined.
+/// @return Matching equate slot, including invalid definitions retained for
+/// diagnostic suppression, or NULL when no equate with that name was seen.
 static VmParserEquate *vm_parser_find_equate(VmParserState *state, const VmLexerToken *token) {
     size_t index = 0U;
 
@@ -290,7 +293,7 @@ static VmParserEquate *vm_parser_find_equate(VmParserState *state, const VmLexer
     }
 
     for (index = 0U; index < state->equate_count; index += 1U) {
-        if (state->equates[index].is_defined && vm_parser_equate_name_equals(&state->equates[index], token)) {
+        if (vm_parser_equate_name_equals(&state->equates[index], token)) {
             return &state->equates[index];
         }
     }
@@ -316,7 +319,7 @@ static bool vm_parser_set_equate_name(VmParserEquate *equate, const VmLexerToken
 
 /// Converts a lexer number token to a signed 64-bit expression value.
 ///
-/// Stage A constant expressions use signed 64-bit evaluation and leave final
+/// Compile-time constant expressions use signed 64-bit evaluation and leave final
 /// storage-width validation to the consuming instruction or data declaration.
 ///
 /// @param token Number token to convert.
@@ -381,9 +384,123 @@ static bool vm_parser_sub_i64_checked(int64_t left, int64_t right, int64_t *out_
     return true;
 }
 
-static bool vm_parser_parse_constant_additive_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+/// Returns whether an identifier token names a unary compile-time operator.
+///
+/// @param token Token to inspect.
+/// @return true for Phase 29 unary constant-expression operators.
+static bool vm_parser_token_is_constant_unary_operator(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           (vm_parser_token_equals(token, "NOT") ||
+            vm_parser_token_equals(token, "HIGH") ||
+            vm_parser_token_equals(token, "LOW") ||
+            vm_parser_token_equals(token, "HIGHWORD") ||
+            vm_parser_token_equals(token, "LOWWORD"));
+}
 
-/// Parses a primary Stage A constant-expression term.
+/// Returns whether an identifier token names a deferred high-level condition operator.
+///
+/// @param token Token to inspect.
+/// @return true for MASM-style relational operators that are not Phase 29
+/// compile-time operators.
+static bool vm_parser_token_is_deferred_condition_operator(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           (vm_parser_token_equals(token, "EQ") ||
+            vm_parser_token_equals(token, "NE") ||
+            vm_parser_token_equals(token, "LT") ||
+            vm_parser_token_equals(token, "LE") ||
+            vm_parser_token_equals(token, "GT") ||
+            vm_parser_token_equals(token, "GE"));
+}
+
+/// Multiplies two signed 64-bit expression values with overflow detection.
+///
+/// @param left Left operand.
+/// @param right Right operand.
+/// @param out_value Receives the product.
+/// @return true when no signed overflow occurred.
+static bool vm_parser_mul_i64_checked(int64_t left, int64_t right, int64_t *out_value) {
+    if (out_value == NULL) {
+        return false;
+    }
+    if (left == 0 || right == 0) {
+        *out_value = 0;
+        return true;
+    }
+    if ((left == INT64_MIN && right == -1) || (right == INT64_MIN && left == -1)) {
+        return false;
+    }
+    if (left > 0) {
+        if ((right > 0 && left > INT64_MAX / right) ||
+            (right < 0 && right < INT64_MIN / left)) {
+            return false;
+        }
+    } else {
+        if ((right > 0 && left < INT64_MIN / right) ||
+            (right < 0 && left < INT64_MAX / right)) {
+            return false;
+        }
+    }
+    *out_value = left * right;
+    return true;
+}
+
+/// Divides two signed 64-bit expression values with error checks.
+///
+/// @param left Dividend.
+/// @param right Divisor.
+/// @param out_value Receives the quotient.
+/// @return true when the division is valid for signed 64-bit values.
+static bool vm_parser_div_i64_checked(int64_t left, int64_t right, int64_t *out_value) {
+    if (out_value == NULL || right == 0 || (left == INT64_MIN && right == -1)) {
+        return false;
+    }
+    *out_value = left / right;
+    return true;
+}
+
+/// Computes a signed 64-bit remainder with error checks.
+///
+/// @param left Dividend.
+/// @param right Divisor.
+/// @param out_value Receives the remainder.
+/// @return true when the modulo operation is valid for signed 64-bit values.
+static bool vm_parser_mod_i64_checked(int64_t left, int64_t right, int64_t *out_value) {
+    if (out_value == NULL || right == 0 || (left == INT64_MIN && right == -1)) {
+        return false;
+    }
+    *out_value = left % right;
+    return true;
+}
+
+/// Applies a logical shift to a folded 64-bit expression value.
+///
+/// @param left Value to shift, interpreted as an unsigned 64-bit bit pattern.
+/// @param right Shift count, which must be in the range 0 through 63.
+/// @param is_left_shift Whether to perform SHL instead of SHR.
+/// @param out_value Receives the shifted bit pattern as a signed 64-bit value.
+/// @return true when the shift count is supported.
+static bool vm_parser_shift_i64_checked(int64_t left, int64_t right, bool is_left_shift, int64_t *out_value) {
+    uint64_t bits = 0ULL;
+    uint32_t count = 0U;
+
+    if (out_value == NULL || right < 0 || right >= 64) {
+        return false;
+    }
+    bits = (uint64_t)left;
+    count = (uint32_t)right;
+    bits = is_left_shift ? (bits << count) : (bits >> count);
+    *out_value = (int64_t)bits;
+    return true;
+}
+
+/// Parses one complete Phase 29 constant expression.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_bitwise_or_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+
+/// Parses a primary constant-expression term.
 ///
 /// @param state Parser state positioned at the term.
 /// @param out_expression Receives the parsed value.
@@ -427,6 +544,9 @@ static bool vm_parser_parse_constant_primary_expression(VmParserState *state, Vm
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE, token, "Recursive numeric equate reference is not allowed.");
             return false;
         }
+        if (equate->is_invalid || !equate->is_defined) {
+            return false;
+        }
         out_expression->value = equate->value;
         vm_parser_advance(state);
         return true;
@@ -434,7 +554,7 @@ static bool vm_parser_parse_constant_primary_expression(VmParserState *state, Vm
 
     if (token->kind == VM_LEXER_TOKEN_LEFT_PAREN) {
         vm_parser_advance(state);
-        if (!vm_parser_parse_constant_additive_expression(state, out_expression)) {
+        if (!vm_parser_parse_constant_bitwise_or_expression(state, out_expression)) {
             return false;
         }
         token = vm_parser_current_token(state);
@@ -446,11 +566,11 @@ static bool vm_parser_parse_constant_primary_expression(VmParserState *state, Vm
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected a numeric literal, equate identifier, unary sign, or parenthesized constant expression.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token, "Expected a numeric literal, equate identifier, unary operator, or parenthesized constant expression.");
     return false;
 }
 
-/// Parses a unary Stage A constant expression.
+/// Parses a unary constant expression, including Phase 29 unary operators.
 ///
 /// @param state Parser state positioned at the unary expression.
 /// @param out_expression Receives the parsed value.
@@ -463,7 +583,7 @@ static bool vm_parser_parse_constant_unary_expression(VmParserState *state, VmPa
         return false;
     }
 
-    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS)) {
+    if (token != NULL && (token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS || vm_parser_token_is_constant_unary_operator(token))) {
         memset(&inner, 0, sizeof(inner));
         vm_parser_advance(state);
         if (!vm_parser_parse_constant_unary_expression(state, &inner)) {
@@ -477,6 +597,16 @@ static bool vm_parser_parse_constant_unary_expression(VmParserState *state, VmPa
                 return false;
             }
             out_expression->value = -inner.value;
+        } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "NOT")) {
+            out_expression->value = (int64_t)(~(uint64_t)inner.value);
+        } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LOW")) {
+            out_expression->value = (int64_t)((uint64_t)inner.value & 0xFFULL);
+        } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "HIGH")) {
+            out_expression->value = (int64_t)(((uint64_t)inner.value >> 8U) & 0xFFULL);
+        } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LOWWORD")) {
+            out_expression->value = (int64_t)((uint64_t)inner.value & 0xFFFFULL);
+        } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "HIGHWORD")) {
+            out_expression->value = (int64_t)(((uint64_t)inner.value >> 16U) & 0xFFFFULL);
         }
         return true;
     }
@@ -484,7 +614,61 @@ static bool vm_parser_parse_constant_unary_expression(VmParserState *state, VmPa
     return vm_parser_parse_constant_primary_expression(state, out_expression);
 }
 
-/// Parses binary plus/minus Stage A constant expressions.
+/// Parses multiplicative constant expressions: `*`, `/`, and `MOD`.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_multiplicative_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+    if (!vm_parser_parse_constant_unary_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        int64_t combined = 0;
+        bool is_mod = false;
+
+        if (operator_token == NULL ||
+            !(operator_token->kind == VM_LEXER_TOKEN_ASTERISK || operator_token->kind == VM_LEXER_TOKEN_SLASH ||
+              (operator_token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(operator_token, "MOD")))) {
+            break;
+        }
+        is_mod = operator_token->kind == VM_LEXER_TOKEN_IDENTIFIER;
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_unary_expression(state, &right)) {
+            return false;
+        }
+
+        if (operator_token->kind == VM_LEXER_TOKEN_ASTERISK) {
+            if (!vm_parser_mul_i64_checked(out_expression->value, right.value, &combined)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, operator_token, "Constant expression multiplication overflowed signed 64-bit range.");
+                return false;
+            }
+        } else if (is_mod) {
+            if (!vm_parser_mod_i64_checked(out_expression->value, right.value, &combined)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, operator_token, "Constant expression MOD requires a non-zero divisor.");
+                return false;
+            }
+        } else {
+            if (!vm_parser_div_i64_checked(out_expression->value, right.value, &combined)) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, operator_token, "Constant expression division requires a non-zero divisor and non-overflowing quotient.");
+                return false;
+            }
+        }
+        out_expression->value = combined;
+    }
+
+    return true;
+}
+
+/// Parses additive constant expressions: `+` and `-`.
 ///
 /// @param state Parser state positioned at the expression.
 /// @param out_expression Receives the parsed value.
@@ -495,8 +679,7 @@ static bool vm_parser_parse_constant_additive_expression(VmParserState *state, V
     if (state == NULL || out_expression == NULL) {
         return false;
     }
-
-    if (!vm_parser_parse_constant_unary_expression(state, out_expression)) {
+    if (!vm_parser_parse_constant_multiplicative_expression(state, out_expression)) {
         return false;
     }
 
@@ -510,7 +693,7 @@ static bool vm_parser_parse_constant_additive_expression(VmParserState *state, V
 
         vm_parser_advance(state);
         memset(&right, 0, sizeof(right));
-        if (!vm_parser_parse_constant_unary_expression(state, &right)) {
+        if (!vm_parser_parse_constant_multiplicative_expression(state, &right)) {
             return false;
         }
 
@@ -528,11 +711,143 @@ static bool vm_parser_parse_constant_additive_expression(VmParserState *state, V
         out_expression->value = combined;
     }
 
+    return true;
+}
+
+/// Parses shift constant expressions: `SHL` and `SHR`.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_shift_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+    if (!vm_parser_parse_constant_additive_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        int64_t combined = 0;
+        bool is_left_shift = false;
+
+        if (operator_token == NULL || operator_token->kind != VM_LEXER_TOKEN_IDENTIFIER ||
+            !(vm_parser_token_equals(operator_token, "SHL") || vm_parser_token_equals(operator_token, "SHR"))) {
+            break;
+        }
+        is_left_shift = vm_parser_token_equals(operator_token, "SHL");
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_additive_expression(state, &right)) {
+            return false;
+        }
+        if (!vm_parser_shift_i64_checked(out_expression->value, right.value, is_left_shift, &combined)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, operator_token, "Constant expression shift count must be in the range 0 through 63.");
+            return false;
+        }
+        out_expression->value = combined;
+    }
 
     return true;
 }
 
-/// Parses a Stage A constant expression from the current token.
+/// Parses bitwise AND constant expressions.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_bitwise_and_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+    if (!vm_parser_parse_constant_shift_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        if (operator_token == NULL || operator_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(operator_token, "AND")) {
+            break;
+        }
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_shift_expression(state, &right)) {
+            return false;
+        }
+        out_expression->value = (int64_t)((uint64_t)out_expression->value & (uint64_t)right.value);
+    }
+
+    return true;
+}
+
+/// Parses bitwise XOR constant expressions.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_bitwise_xor_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+    if (!vm_parser_parse_constant_bitwise_and_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        if (operator_token == NULL || operator_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(operator_token, "XOR")) {
+            break;
+        }
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_bitwise_and_expression(state, &right)) {
+            return false;
+        }
+        out_expression->value = (int64_t)((uint64_t)out_expression->value ^ (uint64_t)right.value);
+    }
+
+    return true;
+}
+
+/// Parses bitwise OR constant expressions.
+///
+/// @param state Parser state positioned at the expression.
+/// @param out_expression Receives the parsed value.
+/// @return true when the expression was parsed.
+static bool vm_parser_parse_constant_bitwise_or_expression(VmParserState *state, VmParserConstantExpression *out_expression) {
+    VmParserConstantExpression right;
+
+    if (state == NULL || out_expression == NULL) {
+        return false;
+    }
+    if (!vm_parser_parse_constant_bitwise_xor_expression(state, out_expression)) {
+        return false;
+    }
+
+    while (true) {
+        const VmLexerToken *operator_token = vm_parser_current_token(state);
+        if (operator_token == NULL || operator_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(operator_token, "OR")) {
+            break;
+        }
+        vm_parser_advance(state);
+        memset(&right, 0, sizeof(right));
+        if (!vm_parser_parse_constant_bitwise_xor_expression(state, &right)) {
+            return false;
+        }
+        out_expression->value = (int64_t)((uint64_t)out_expression->value | (uint64_t)right.value);
+    }
+
+    return true;
+}
+
+/// Parses a compile-time constant expression from the current token.
 ///
 /// @param state Parser state positioned at the expression.
 /// @param out_expression Receives the parsed value.
@@ -549,7 +864,7 @@ static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserCo
         return false;
     }
 
-    return vm_parser_parse_constant_additive_expression(state, out_expression);
+    return vm_parser_parse_constant_bitwise_or_expression(state, out_expression);
 }
 
 /// Returns whether two tokens are contiguous bytes on the same source line.
@@ -1739,7 +2054,7 @@ static bool vm_parser_parse_single_data_initializer(
         }
         if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_IDENTIFIER &&
             vm_parser_token_equals(vm_parser_current_token(state), "DUP")) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, vm_parser_current_token(state), "Nested DUP initializers are not supported by this milestone.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, vm_parser_current_token(state), "Nested DUP initializers are planned for the next milestone and are not supported yet.");
             return false;
         }
         if (!vm_parser_encode_i64_for_data_type(expression.value, data_type, &encoded_value)) {
@@ -2806,11 +3121,12 @@ static bool vm_parser_parse_bracketed_symbol_register_memory_operand(
     return true;
 }
 
-/// Parses an optional signed offset after a bracketed symbol token.
+/// Parses an optional constant-expression offset after a bracketed symbol token.
 ///
-/// Supported forms are empty offset-zero brackets, `+ number`, `- number`,
-/// and a negative number token used by compact forms such as `[nums-4]`. Full
-/// arithmetic expression parsing remains a later milestone.
+/// Supported forms include empty offset-zero brackets, signed constant
+/// expressions such as `+ 4`, `- 4`, compact negative number tokens such as
+/// `[nums-4]`, and Milestone 29 compile-time expressions such as
+/// `[nums + COUNT * 4]`.
 ///
 /// @param state Parser state positioned after the symbol token.
 /// @param out_offset Receives the signed offset.
@@ -3553,7 +3869,8 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
 
     if (token->kind == VM_LEXER_TOKEN_NUMBER || token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS ||
         token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
-        (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_find_equate(state, token) != NULL)) {
+        (token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+         (vm_parser_find_equate(state, token) != NULL || vm_parser_token_is_constant_unary_operator(token)))) {
         VmParserConstantExpression expression;
         uint32_t encoded_value = 0U;
         memset(&expression, 0, sizeof(expression));
@@ -4072,6 +4389,11 @@ static bool vm_parser_expect_line_end(VmParserState *state) {
     const VmLexerToken *token = vm_parser_current_token(state);
 
     if (!vm_parser_is_line_end_token(token)) {
+        if (vm_parser_token_is_deferred_condition_operator(token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, token,
+                                     "High-level condition operators such as EQ are not supported in runtime instruction operands or Milestone 29 constant expressions.");
+            return false;
+        }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_LINE_END, token, "Expected end of line after statement.");
         return false;
     }
@@ -4766,11 +5088,13 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         vm_parser_recover_skip_line(state);
         return true;
     }
+    state->equate_count += 1U;
 
     vm_parser_advance(state);
     vm_parser_advance(state);
     if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, operator_token, "Numeric equate requires a constant expression.");
+        equate->is_invalid = true;
         return true;
     }
 
@@ -4779,6 +5103,7 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
          vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_STRING)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, vm_parser_current_token(state),
                                  "Text EQU constants are not supported in this milestone; use numeric constant expressions only.");
+        equate->is_invalid = true;
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -4788,6 +5113,7 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
     equate->is_resolving = true;
     if (!vm_parser_parse_constant_expression(state, &expression)) {
         equate->is_resolving = false;
+        equate->is_invalid = true;
         state->active_equate_name = NULL;
         vm_parser_recover_skip_line(state);
         return true;
@@ -4796,19 +5122,25 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
     state->active_equate_name = NULL;
 
     if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, vm_parser_current_token(state),
-                                 "Unsupported operator or trailing token in numeric equate expression.");
+        if (vm_parser_token_is_deferred_condition_operator(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, vm_parser_current_token(state),
+                                     "High-level condition operators such as EQ are not supported in Milestone 29 constant expressions.");
+        } else {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, vm_parser_current_token(state),
+                                     "Unsupported operator or trailing token in numeric equate expression.");
+        }
+        equate->is_invalid = true;
         vm_parser_recover_skip_line(state);
         return true;
     }
     if (!vm_parser_expect_line_end(state)) {
+        equate->is_invalid = true;
         vm_parser_recover_skip_line(state);
         return true;
     }
 
     equate->value = expression.value;
     equate->is_defined = true;
-    state->equate_count += 1U;
     return true;
 }
 

@@ -2,7 +2,7 @@
  * @file protocol.js
  * @brief Worker message protocol for the MASM32 educational simulator.
  *
- * The protocol supports readiness, ping/pong diagnostics, and the Milestone 28
+ * The protocol supports readiness, ping/pong diagnostics, and the Milestone 29
  * source-run request. Execution remains in the worker/Wasm path; this module
  * only validates request shape and formats structured worker responses.
  */
@@ -14,7 +14,7 @@
 /** @typedef {{runSource?: (source: string) => unknown}} WorkerRuntime */
 
 /** Latest implemented milestone announced through the worker readiness message. */
-export const IMPLEMENTED_PHASE = 28;
+export const IMPLEMENTED_PHASE = 29;
 
 /**
  * Creates the initial worker readiness response.
@@ -75,8 +75,36 @@ function createRunSourceUnavailableError() {
     type: "ERROR",
     payload: {
       code: "wasm-run-source-unavailable",
-      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 28."
+      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 29."
     }
+  };
+}
+
+/**
+ * Adds a diagnostic when a stale generated Wasm artifact runs newer UI source.
+ *
+ * @param {unknown} runResult Parsed source-run result from the Wasm export.
+ * @returns {unknown} The original result, with a warning message inserted when stale.
+ */
+function addStaleWasmDiagnosticIfNeeded(runResult) {
+  if (!runResult || typeof runResult !== "object") {
+    return runResult;
+  }
+
+  if (typeof runResult.phase !== "number" || runResult.phase >= IMPLEMENTED_PHASE) {
+    return runResult;
+  }
+
+  const diagnostic = {
+    kind: "internal-simulator-error",
+    code: "stale-wasm-artifact",
+    message: `The loaded Wasm artifact reports Milestone ${runResult.phase}, but the UI/source files expect Milestone ${IMPLEMENTED_PHASE}. Rebuild web/dist with the Emscripten build script.`
+  };
+
+  const messages = Array.isArray(runResult.simulatorMessages) ? runResult.simulatorMessages : [];
+  return {
+    ...runResult,
+    simulatorMessages: [diagnostic, ...messages]
   };
 }
 
@@ -101,7 +129,7 @@ function handleRunSourceRequest(request, runtime) {
   try {
     return {
       type: "RUN_RESULT",
-      payload: runtime.runSource(payload.source)
+      payload: addStaleWasmDiagnosticIfNeeded(runtime.runSource(payload.source))
     };
   } catch (error) {
     return {
