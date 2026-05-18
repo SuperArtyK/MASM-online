@@ -34,24 +34,123 @@ END main</textarea>
           <button id="run-button" type="button">Run</button>
           <button id="ping-button" type="button">Ping worker</button>
         </div>
-      </section>
-      <section class="panel">
-        <h2>Simulator Messages</h2>
-        <pre id="simulator-messages" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Final Registers</h2>
-        <pre id="final-registers" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Memory Changes</h2>
-        <pre id="memory-changes" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Program Console</h2>
-        <pre id="program-console" aria-live="polite"></pre>
-      </section>
-    </main>
-    <script type="module" src="./src/main.js"></script>
-  </body>
+
+        <!-- Rest of Page -->
+        <div class="flex flex-col gap-4 m-4">
+
+            <!-- Milestone Announcement -->
+            <div class="bg-blue-100 border border-gray-300 rounded-xl">
+                <h1 class="text-xl p-4">
+                    Milestone 28: numeric equates and simple constant expressions in supported compile-time contexts.
+                </h1>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex flex-row gap-4 mt-3 mx-auto">
+
+                <!-- Run Button -->
+                <button id="run-button" type="button" class="text-white">
+                    <span class="flex items-center justify-center rounded-md bg-emerald-600 py-2 w-30">
+                        ▶&ensp;Run
+                    </span>
+                </button>
+
+                <!-- Ping Worker Button -->
+                <button id="ping-button" type="button" class="text-white">
+                    <span class="flex items-center justify-center rounded-md bg-sky-600 py-2 w-30">
+                        Ping worker
+                    </span>
+                </button>
+
+            </div>
+
+            <!-- Interface -->
+            <main class="flex flex-row gap-4 my-0 mx-auto px-4 pb-4">
+
+                <!-- Left Column -->
+                <div class="flex flex-col gap-4 w-full md:w-1/2">
+                    <!-- Editor -->
+                    <section class="flex flex-col bg-white border border-gray-300 rounded-xl overflow-hidden max-h-[60vh] w-full">
+                        <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                            <label for="editor" class="font-semibold">Editor</label>
+                        </div>
+                        <div class="flex flex-row gap-2 overflow-hidden w-full">
+                            <!-- Line Numbers -->
+                            <div id="lineNumbers" class="bg-gray-100 font-light text-gray-500 p-2 text-right overflow-y-auto scrollbar-none">1</div>
+                            <!-- Code Editor -->
+                            <textarea id="editor" spellcheck="false" class="resize-none overflow-y-auto flex-1 outline-0">COUNT = 4
+            EXTRA EQU 2
+            .data
+            arr DWORD COUNT DUP(0)
+            .code
+            main PROC
+                mov eax, COUNT + EXTRA
+                mov ebx, SIZEOF arr
+            main ENDP
+            END main</textarea>
+                        </div>
+                    </section>
+                    <!-- Program Console -->
+                    <section class="flex flex-col bg-white border border-gray-300 rounded-xl overflow-hidden max-h-[60vh]">
+                        <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                            <h2 class="font-semibold">Program Console</h2>
+                        </div>
+                        <pre class="p-2 overflow-y-scroll" id="program-console" aria-live="polite"></pre>
+                    </section>
+                </div>
+
+                <!-- Right Column -->
+                <div class="flex flex-col gap-4 w-full md:w-1/2">
+
+                    <!-- Simulator Messages -->
+                    <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                        <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                            <h2 class="font-semibold">Simulator Messages</h2>
+                        </div>
+                        <pre class="p-2" id="simulator-messages" aria-live="polite"></pre>
+                    </section>
+
+                    <!-- Final Registers -->
+                    <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                        <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                            <h2 class="font-semibold">Final Registers</h2>
+                        </div>
+                        <pre class="p-2" id="final-registers" aria-live="polite"></pre>
+                    </section>
+
+                    <!-- Memory Changes -->
+                    <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                        <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                            <h2 class="font-semibold">Memory Changes</h2>
+                        </div>
+                        <pre class="p-2" id="memory-changes" aria-live="polite"></pre>
+                    </section>
+
+                </div>
+            </main>
+        </div>
+        <script type="module" src="./src/main.js"></script>
+    </body>
 </html>
+
+<script>
+    const textarea = document.getElementById("editor");
+    const lineNumbers = document.getElementById("lineNumbers");
+
+    function updateLineNumbers() {
+        const lines = textarea.value.split("\n").length;
+
+        lineNumbers.innerHTML = Array.from(
+            { length: lines },
+            (_, i) => i + 1
+        ).join("<br>");
+    }
+
+    textarea.addEventListener("input", updateLineNumbers);
+
+    textarea.addEventListener("scroll", () => {
+        lineNumbers.scrollTop = textarea.scrollTop;
+    });
+
+    updateLineNumbers();
+</script>
