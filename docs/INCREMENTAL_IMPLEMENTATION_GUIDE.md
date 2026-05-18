@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This guide preserves completed Phases 0-30, then defines the canonical post-30 phase roadmap and required implementation/test work.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This guide preserves completed Phases 0-30, then defines the canonical post-30 phase roadmap and required implementation/test work.
 
 
 ## 1. Purpose
@@ -9,7 +9,7 @@ This guide breaks the simulator into small implementation phases suitable for in
 
 The goal is to avoid attempting full MASM compatibility at once. Each phase should produce a working, testable improvement.
 
-The guide assumes the final target described in `FULL_IMPLEMENTATION_SPEC_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md`.
+The guide assumes the final target described in `FULL_IMPLEMENTATION_SPEC.md`.
 
 ## 2. General Development Rules
 
@@ -162,8 +162,8 @@ Suggested structure:
     parser/
     programs/
   /docs
-    FULL_IMPLEMENTATION_SPEC_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md
-    INCREMENTAL_IMPLEMENTATION_GUIDE_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md
+    FULL_IMPLEMENTATION_SPEC.md
+    INCREMENTAL_IMPLEMENTATION_GUIDE.md
 ```
 
 Actual file names may vary, but module boundaries should remain clear.

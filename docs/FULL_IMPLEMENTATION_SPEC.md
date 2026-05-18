@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This specification owns product boundaries and stable behavior; the paired implementation guide owns phase numbering, implementation tasks, and required tests.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This specification owns product boundaries and stable behavior; the paired implementation guide owns phase numbering, implementation tasks, and required tests.
 
 
 ## 1. Project Goal
