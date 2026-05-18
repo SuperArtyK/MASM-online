@@ -3,7 +3,7 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * Milestone 30 source execution export parses numeric equates, extended
+ * The source execution export parses numeric equates, extended
  * constant expressions, optional `.data`, `.DATA?`, and `.CONST`, initializes
  * simulated memory, runs the currently supported `.code` subset including
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
@@ -17,6 +17,7 @@
 #include "../core/masm32_sim_api.h"
 #include "../core/vm_cpu.h"
 #include "../core/vm_exec.h"
+#include "../core/vm_layout.h"
 #include "../core/vm_memory.h"
 #include "../parser/parser.h"
 #include "../parser/symbols.h"
@@ -37,13 +38,13 @@
 #define MASM32_SIM_EXPORT
 #endif
 
-/// Maximum lexer tokens accepted by the Milestone 30 source-run API.
+/// Maximum lexer tokens accepted by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_TOKENS 512U
 
-/// Maximum lexer diagnostics retained by the Milestone 30 source-run API.
+/// Maximum lexer diagnostics retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_LEXER_DIAGNOSTICS 64U
 
-/// Maximum parser diagnostics retained by the Milestone 30 source-run API.
+/// Maximum parser diagnostics retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS 64U
 
 /// Maximum IR instructions emitted and executed by the source-run API.
@@ -67,7 +68,7 @@
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
-/// Bytes available for the returned Milestone 30 JSON response.
+/// Bytes available for the returned source-run JSON response.
 #define MASM32_SIM_WASM_RUN_JSON_BYTES 32768U
 
 /// Identifies the high-level source-run outcome used in JSON responses.
@@ -80,6 +81,8 @@ typedef enum Masm32SimWasmRunOutcome {
     MASM32_SIM_WASM_RUN_OUTCOME_PARSE_ERROR,
     /// VM initialization, loading, or execution failed.
     MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR,
+    /// Automatic deterministic layout exceeded configured resource limits.
+    MASM32_SIM_WASM_RUN_OUTCOME_RESOURCE_LIMIT,
     /// A required response could not fit in the fixed JSON buffer.
     MASM32_SIM_WASM_RUN_OUTCOME_TRUNCATED
 } Masm32SimWasmRunOutcome;
@@ -128,7 +131,23 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Stores all fixed buffers needed for one Milestone 30 parse-and-run request.
+/// Describes one source-mapped automatic layout resource-limit message.
+typedef struct Masm32SimWasmLayoutMessage {
+    /// Human-readable diagnostic message.
+    char message[256];
+    /// One-based source line, or zero when unavailable.
+    uint32_t line;
+    /// One-based source column, or zero when unavailable.
+    uint32_t column;
+    /// Zero-based byte offset of the relevant source span.
+    size_t byte_offset;
+    /// Source span length in bytes.
+    size_t span_length;
+    /// Whether byte offset and span length are available.
+    bool has_source_span;
+} Masm32SimWasmLayoutMessage;
+
+/// Stores all fixed buffers needed for one parse-and-run request.
 typedef struct Masm32SimWasmRunStorage {
     /// Lexer tokens produced during parsing.
     VmLexerToken tokens[MASM32_SIM_WASM_MAX_RUN_TOKENS];
@@ -259,6 +278,8 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
             return "parse-error";
         case MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR:
             return "execution-error";
+        case MASM32_SIM_WASM_RUN_OUTCOME_RESOURCE_LIMIT:
+            return "resource-limit-exceeded";
         case MASM32_SIM_WASM_RUN_OUTCOME_TRUNCATED:
             return "response-truncated";
         default:
@@ -349,7 +370,7 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
 }
 
-/// Appends the canonical 32-bit register object used by the Milestone 30 UI.
+/// Appends the canonical 32-bit register object used by the UI.
 ///
 /// @param writer Writer to mutate.
 /// @param cpu CPU state to inspect.
@@ -956,7 +977,8 @@ static const char *masm32_sim_wasm_build_run_json(
     const VmParserResult *parser_result,
     const VmParserDiagnostic *parser_diagnostics,
     VmExecStatus exec_status,
-    const Masm32SimWasmRunStorage *storage
+    const Masm32SimWasmRunStorage *storage,
+    const Masm32SimWasmLayoutMessage *layout_message
 ) {
     Masm32SimJsonWriter writer;
     uint64_t instruction_count = vm != NULL ? vm->instruction_count : 0U;
@@ -998,6 +1020,19 @@ static const char *masm32_sim_wasm_build_run_json(
         );
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR) {
         (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
+    } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_RESOURCE_LIMIT) {
+        const char *message = layout_message != NULL ? layout_message->message : "Automatic layout exceeded the configured resource limits.";
+        (void)masm32_sim_json_append_message_with_span(
+            &writer,
+            "resource-limit-error",
+            "resource-limit-exceeded",
+            message,
+            layout_message != NULL ? layout_message->line : 0U,
+            layout_message != NULL ? layout_message->column : 0U,
+            layout_message != NULL ? layout_message->byte_offset : 0U,
+            layout_message != NULL ? layout_message->span_length : 0U,
+            layout_message != NULL && layout_message->has_source_span
+        );
     } else {
         (void)masm32_sim_json_append_message(&writer, "internal-simulator-error", "response-truncated", "The simulator response exceeded its fixed buffer.", 0U, 0U);
     }
@@ -1028,22 +1063,255 @@ MASM32_SIM_EXPORT int masm32_sim_wasm_milestone4_hardcoded_result(void) {
     return (int)eax;
 }
 
-MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
+
+/// Safely converts a size_t value to uint32_t with saturation.
+///
+/// @param value Size value to convert.
+/// @return Converted value, or UINT32_MAX when @p value is too large.
+static uint32_t masm32_sim_wasm_size_to_u32_saturating(size_t value) {
+    return value > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)value;
+}
+
+/// Returns the layout-region name used in resource-limit messages.
+///
+/// @param region Layout region to name.
+/// @return Static user-facing region name.
+static const char *masm32_sim_wasm_layout_region_display_name(VmLayoutRegionKind region) {
+    switch (region) {
+        case VM_LAYOUT_REGION_CODE:
+            return ".code";
+        case VM_LAYOUT_REGION_DATA:
+            return ".data/.DATA?";
+        case VM_LAYOUT_REGION_CONST:
+            return ".CONST";
+        case VM_LAYOUT_REGION_HEAP:
+            return ".heap";
+        case VM_LAYOUT_REGION_STACK:
+            return ".stack";
+        default:
+            return "memory";
+    }
+}
+
+/// Returns whether a parser symbol belongs to a layout region.
+///
+/// @param symbol Symbol to inspect.
+/// @param region Layout region being checked.
+/// @return true when the symbol is stored in the selected layout region.
+static bool masm32_sim_wasm_symbol_matches_layout_region(const VmSymbol *symbol, VmLayoutRegionKind region) {
+    if (symbol == NULL) {
+        return false;
+    }
+
+    if (region == VM_LAYOUT_REGION_DATA) {
+        return symbol->section == VM_SYMBOL_SECTION_DATA || symbol->section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED;
+    }
+
+    if (region == VM_LAYOUT_REGION_CONST) {
+        return symbol->section == VM_SYMBOL_SECTION_CONST;
+    }
+
+    return false;
+}
+
+/// Returns the symbol whose declared byte range first exceeds a layout limit.
+///
+/// @param result Parser result containing symbol count metadata.
+/// @param storage Source-run storage containing symbols.
+/// @param diagnostic Layout diagnostic containing region and limit.
+/// @return Matching symbol with source location, or NULL when no symbol applies.
+static const VmSymbol *masm32_sim_wasm_find_resource_limit_symbol(
+    const VmParserResult *result,
+    const Masm32SimWasmRunStorage *storage,
+    const VmLayoutDiagnostic *diagnostic
+) {
+    size_t index = 0U;
+
+    if (result == NULL || storage == NULL || diagnostic == NULL || !diagnostic->has_region) {
+        return NULL;
+    }
+
+    for (index = 0U; index < result->symbol_count; index += 1U) {
+        const VmSymbol *symbol = &storage->symbols[index];
+        uint32_t section_offset = 0U;
+        uint32_t section_end = 0U;
+
+        if (!masm32_sim_wasm_symbol_matches_layout_region(symbol, diagnostic->region)) {
+            continue;
+        }
+
+        if (symbol->section == VM_SYMBOL_SECTION_CONST) {
+            section_offset = symbol->address - VM_MEMORY_DEFAULT_CONST_BASE;
+        } else {
+            section_offset = symbol->address - VM_MEMORY_DEFAULT_DATA_BASE;
+        }
+
+        if (symbol->size_bytes > UINT32_MAX - section_offset) {
+            return symbol;
+        }
+        section_end = section_offset + symbol->size_bytes;
+        if (section_end > diagnostic->limit) {
+            return symbol;
+        }
+    }
+
+    return NULL;
+}
+
+/// Counts parser-produced `.DATA?` bytes by summing uninitialized-storage symbols.
+///
+/// @param result Parser result containing symbol count metadata.
+/// @param storage Source-run storage containing symbols.
+/// @return Total `.DATA?` bytes, saturated to UINT32_MAX.
+static uint32_t masm32_sim_wasm_count_uninitialized_data_bytes(const VmParserResult *result, const Masm32SimWasmRunStorage *storage) {
+    uint64_t total = 0U;
+    size_t index = 0U;
+
+    if (result == NULL || storage == NULL) {
+        return 0U;
+    }
+
+    for (index = 0U; index < result->symbol_count; index += 1U) {
+        const VmSymbol *symbol = &storage->symbols[index];
+        if (symbol->section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED) {
+            total += (uint64_t)symbol->size_bytes;
+            if (total > (uint64_t)UINT32_MAX) {
+                return UINT32_MAX;
+            }
+        }
+    }
+
+    return (uint32_t)total;
+}
+
+/// Builds automatic-layout metadata from parser output.
+///
+/// @param result Parser result to inspect.
+/// @param storage Source-run storage containing parser symbols.
+/// @param out_metadata Receives automatic layout metadata.
+static void masm32_sim_wasm_build_layout_metadata(
+    const VmParserResult *result,
+    const Masm32SimWasmRunStorage *storage,
+    VmLayoutProgramMetadata *out_metadata
+) {
+    uint32_t total_data_size = 0U;
+    uint32_t uninitialized_data_size = 0U;
+
+    if (out_metadata == NULL) {
+        return;
+    }
+
+    memset(out_metadata, 0, sizeof(*out_metadata));
+    if (result == NULL) {
+        return;
+    }
+
+    total_data_size = masm32_sim_wasm_size_to_u32_saturating(result->data_size);
+    uninitialized_data_size = masm32_sim_wasm_count_uninitialized_data_bytes(result, storage);
+    if (uninitialized_data_size > total_data_size) {
+        uninitialized_data_size = 0U;
+    }
+
+    out_metadata->code_size = masm32_sim_wasm_size_to_u32_saturating(result->instruction_count);
+    out_metadata->initialized_data_size = total_data_size - uninitialized_data_size;
+    out_metadata->uninitialized_data_size = uninitialized_data_size;
+    out_metadata->const_size = masm32_sim_wasm_size_to_u32_saturating(result->const_size);
+
+    /* Phase 33 keeps .stack source metadata out of runtime sizing. Phase 34
+       applies parsed stack/heap metadata to the automatic layout. */
+    out_metadata->has_stack_size_request = false;
+    out_metadata->has_heap_size_request = false;
+}
+
+/// Builds a source-mapped resource-limit message from a layout diagnostic.
+///
+/// @param result Parser result used for source locations.
+/// @param storage Source-run storage containing symbols.
+/// @param diagnostic Layout diagnostic to render.
+/// @param out_message Receives the source-mapped message.
+static void masm32_sim_wasm_build_layout_message(
+    const VmParserResult *result,
+    const Masm32SimWasmRunStorage *storage,
+    const VmLayoutDiagnostic *diagnostic,
+    Masm32SimWasmLayoutMessage *out_message
+) {
+    const VmSymbol *symbol = NULL;
+    const char *region_name = "memory";
+
+    if (out_message == NULL) {
+        return;
+    }
+
+    memset(out_message, 0, sizeof(*out_message));
+    if (diagnostic == NULL) {
+        (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout exceeded the configured resource limits.");
+        return;
+    }
+
+    if (diagnostic->status == VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED && diagnostic->has_region) {
+        region_name = masm32_sim_wasm_layout_region_display_name(diagnostic->region);
+        (void)snprintf(
+            out_message->message,
+            sizeof(out_message->message),
+            "Automatic layout requested %s region size %u bytes, exceeding configured limit %u bytes.",
+            region_name,
+            (unsigned int)diagnostic->requested_size,
+            (unsigned int)diagnostic->limit
+        );
+    } else if (diagnostic->status == VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED) {
+        (void)snprintf(
+            out_message->message,
+            sizeof(out_message->message),
+            "Automatic layout requested %u total bytes, exceeding configured total reservation limit %u bytes.",
+            (unsigned int)diagnostic->total_size,
+            (unsigned int)diagnostic->total_limit
+        );
+    } else if (diagnostic->status == VM_LAYOUT_STATUS_INTEGER_OVERFLOW) {
+        (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout size calculation overflowed.");
+    } else {
+        (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout policy was invalid.");
+    }
+
+    symbol = masm32_sim_wasm_find_resource_limit_symbol(result, storage, diagnostic);
+    if (symbol != NULL && symbol->source_location.line > 0U) {
+        out_message->line = symbol->source_location.line;
+        out_message->column = symbol->source_location.column;
+        out_message->byte_offset = symbol->source_location.offset;
+        out_message->span_length = symbol->source_span_length;
+        out_message->has_source_span = true;
+    }
+}
+
+/// Parses, optionally applies automatic layout sizing, and executes source.
+///
+/// @param source Source text to run.
+/// @param use_automatic_layout Whether to compute automatic layout sizes.
+/// @param base_policy Optional base policy for automatic layout mode.
+/// @return Pointer to the static JSON result buffer.
+static const char *masm32_sim_wasm_run_source_json_internal(const char *source, bool use_automatic_layout, const VmLayoutPolicy *base_policy) {
     VmParserConfig config;
     VmParserResult parser_result;
     Vm vm;
     VmExecStatus exec_status = VM_EXEC_STATUS_OK;
     VmParserStatus parser_status = VM_PARSER_STATUS_OK;
+    VmLayoutPolicy automatic_policy;
+    VmLayoutProgramMetadata layout_metadata;
+    VmLayoutDiagnostic layout_diagnostic;
+    Masm32SimWasmLayoutMessage layout_message;
     bool vm_initialized = false;
 
     if (source == NULL) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL);
     }
 
     memset(&g_masm32_sim_wasm_run_storage, 0, sizeof(g_masm32_sim_wasm_run_storage));
     memset(&config, 0, sizeof(config));
     memset(&parser_result, 0, sizeof(parser_result));
     memset(&vm, 0, sizeof(vm));
+    memset(&automatic_policy, 0, sizeof(automatic_policy));
+    memset(&layout_metadata, 0, sizeof(layout_metadata));
+    memset(&layout_diagnostic, 0, sizeof(layout_diagnostic));
+    memset(&layout_message, 0, sizeof(layout_message));
 
     config.source = source;
     config.source_file = "main.asm";
@@ -1072,26 +1340,47 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
             &parser_result,
             g_masm32_sim_wasm_run_storage.parser_diagnostics,
             VM_EXEC_STATUS_INVALID_ARGUMENT,
-            &g_masm32_sim_wasm_run_storage
+            &g_masm32_sim_wasm_run_storage,
+            NULL
         );
     }
 
-    exec_status = vm_init(&vm, NULL);
+    if (use_automatic_layout) {
+        VmLayoutStatus layout_status = VM_LAYOUT_STATUS_OK;
+        masm32_sim_wasm_build_layout_metadata(&parser_result, &g_masm32_sim_wasm_run_storage, &layout_metadata);
+        layout_status = vm_layout_build_automatic_policy(base_policy, &layout_metadata, &automatic_policy, &layout_diagnostic);
+        if (!vm_layout_status_succeeded(layout_status)) {
+            masm32_sim_wasm_build_layout_message(&parser_result, &g_masm32_sim_wasm_run_storage, &layout_diagnostic, &layout_message);
+            return masm32_sim_wasm_build_run_json(
+                MASM32_SIM_WASM_RUN_OUTCOME_RESOURCE_LIMIT,
+                NULL,
+                &parser_result,
+                NULL,
+                VM_EXEC_STATUS_INVALID_ARGUMENT,
+                &g_masm32_sim_wasm_run_storage,
+                &layout_message
+            );
+        }
+        exec_status = vm_init_with_layout_policy(&vm, &automatic_policy);
+    } else {
+        exec_status = vm_init(&vm, NULL);
+    }
+
     if (exec_status != VM_EXEC_STATUS_OK) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
     }
     vm_initialized = true;
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
         vm_deinit(&vm);
         return json;
     }
@@ -1112,7 +1401,7 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -1120,12 +1409,20 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source
     }
 
     {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, NULL, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, NULL, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
         return json;
     }
+}
+
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
+    return masm32_sim_wasm_run_source_json_internal(source, false, NULL);
+}
+
+const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
+    return masm32_sim_wasm_run_source_json_internal(source, true, base_policy);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

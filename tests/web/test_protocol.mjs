@@ -1,6 +1,6 @@
 /*
  * @file test_protocol.mjs
- * @brief Unit tests for the worker message protocol through Milestone 30.
+ * @brief Unit tests for the worker message protocol and source-run error path.
  *
  * The protocol tests run in Node.js and avoid browser automation while covering
  * readiness, ping/pong, source-run dispatch, and structured error responses.
@@ -138,7 +138,7 @@ test("RUN_SOURCE without runtime returns unavailable error", () => {
     type: "ERROR",
     payload: {
       code: "wasm-run-source-unavailable",
-      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 30."
+      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after the latest C/Wasm changes."
     }
   });
 });

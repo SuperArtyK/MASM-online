@@ -10,6 +10,7 @@
 #ifndef MASM32_SIM_WASM_API_H
 #define MASM32_SIM_WASM_API_H
 
+#include "../core/vm_layout.h"
 
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
 ///
@@ -21,7 +22,7 @@ int masm32_sim_wasm_test_value(void);
 /// @return Final EAX value on success, or -1 on failure.
 int masm32_sim_wasm_milestone4_hardcoded_result(void);
 
-/// Parses and executes a Milestone 30 MASM-like source string and returns JSON.
+/// Parses and executes a MASM-like source string and returns JSON.
 ///
 /// The returned pointer refers to an internal static buffer that is overwritten
 /// by each subsequent call. This is intended for single-request Web Worker use
@@ -30,6 +31,19 @@ int masm32_sim_wasm_milestone4_hardcoded_result(void);
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @return Pointer to a null-terminated JSON result string.
 const char *masm32_sim_wasm_run_source_json(const char *source);
+
+/// Parses and executes source using automatic deterministic layout sizing.
+///
+/// This test/configuration-facing helper keeps the normal browser export in
+/// fixed-layout mode while allowing native tests to select Phase 33 automatic
+/// sizing. Passing NULL for @p base_policy uses @ref vm_layout_default_policy.
+/// The returned pointer refers to the same internal static buffer as
+/// @ref masm32_sim_wasm_run_source_json.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param base_policy Optional policy supplying automatic layout limits/defaults.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy);
 
 /// Copies the simulator version string through the WebAssembly export boundary.
 ///

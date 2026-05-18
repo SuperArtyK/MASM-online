@@ -189,8 +189,8 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config);
 
 /// Initializes simulated memory regions from an explicit layout policy.
 ///
-/// Passing NULL for @p policy uses @ref vm_layout_default_policy. Phase 32
-/// supports only fixed-layout policies and preserves existing default behavior.
+/// Passing NULL for @p policy uses @ref vm_layout_default_policy. Phase 33
+/// supports fixed and automatic deterministic policies while preserving default behavior.
 ///
 /// @param memory Memory object to initialize.
 /// @param policy Optional layout policy.

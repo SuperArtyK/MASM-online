@@ -14,6 +14,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lexer.h"
+
 /// Maximum bytes retained for one symbol name, including the null terminator.
 #define VM_SYMBOL_NAME_CAPACITY 64U
 
@@ -67,6 +69,10 @@ typedef struct VmSymbol {
     uint8_t element_size_bytes;
     /// Number of declared elements represented by this symbol.
     uint32_t element_count;
+    /// Source location of the declaration symbol token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the declaration symbol token in bytes.
+    size_t source_span_length;
     /// Whether any initializer used MASM's uninitialized marker `?`.
     bool has_uninitialized_initializer;
     /// Whether storage came from `.DATA?` and was originally uninitialized.

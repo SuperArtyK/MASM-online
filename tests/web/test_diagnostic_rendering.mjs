@@ -62,10 +62,11 @@ function fixtureContext(name, source, rawJson, rendered) {
  *
  * @param {string} name Fixture name used in failure output.
  * @param {string} source MASM-like source text to pass on stdin.
+ * @param {Record<string, string>} [extraEnv] Additional environment variables for the producer.
  * @returns {{json: any, rawJson: string, rendered: string}} Parsed and rendered result.
  */
-function runFixture(name, source) {
-  const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8" });
+function runFixture(name, source, extraEnv = {}) {
+  const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: { ...process.env, ...extraEnv } });
   assert.equal(result.status, 0, `producer failed for ${name}: ${result.stderr}`);
   assert.equal(result.stderr, "", `producer wrote unexpected stderr for ${name}`);
   assert.match(result.stdout, /^\{/, `producer stdout must contain raw JSON only for ${name}`);
@@ -250,6 +251,16 @@ main ENDP
 END main
 `,
     reason: "Successful execution-complete informational fixture."
+  },
+  automaticLayoutResourceLimit: {
+    source: `.data
+big BYTE 4097 DUP(0)
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Automatic layout resource-limit diagnostic fixture."
   },
   multiDiagnostic: {
     source: `.data
@@ -444,6 +455,30 @@ test("renders unaligned warning followed by successful execution exactly", () =>
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+});
+
+
+test("renders automatic layout resource-limit diagnostic exactly", () => {
+  const name = "automaticLayoutResourceLimit";
+  const source = fixtureSource("automaticLayoutResourceLimit");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_LAYOUT_MODE: "automatic",
+    MASM32_DIAGNOSTIC_AUTO_DATA_LIMIT: "4096"
+  });
+  assertRunStatus(json, false, "resource-limit-exceeded");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "resource-limit-error",
+      code: "resource-limit-exceeded",
+      message: "Automatic layout requested .data/.DATA? region size 8192 bytes, exceeding configured limit 4096 bytes.",
+      line: 2,
+      column: 1,
+      byteOffset: 6,
+      spanLength: 3
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[resource-limit-error] resource-limit-exceeded line 2, column 1, byte offset 6, span length 3: Automatic layout requested .data/.DATA? region size 8192 bytes, exceeding configured limit 4096 bytes.");
 });
 
 test("renders multi-diagnostic ordering exactly without execution-complete", () => {

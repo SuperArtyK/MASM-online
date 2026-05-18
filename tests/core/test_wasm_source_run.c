@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 32 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 33 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -45,6 +45,45 @@ static int expect_json_contains(const char *json, const char *expected, const ch
 static int expect_json_not_contains(const char *json, const char *unexpected, const char *message) {
     if (json != NULL && strstr(json, unexpected) != NULL) {
         fprintf(stderr, "FAIL: %s\nUnexpected fragment: %s\nJSON: %s\n", message, unexpected, json);
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Counts non-overlapping occurrences of a fragment in a JSON string.
+///
+/// @param json JSON string to inspect.
+/// @param fragment Substring to count.
+/// @return Number of non-overlapping occurrences.
+static size_t count_json_fragment_occurrences(const char *json, const char *fragment) {
+    size_t count = 0U;
+    size_t fragment_length = 0U;
+    const char *cursor = json;
+
+    if (json == NULL || fragment == NULL || fragment[0] == '\0') {
+        return 0U;
+    }
+
+    fragment_length = strlen(fragment);
+    while ((cursor = strstr(cursor, fragment)) != NULL) {
+        count += 1U;
+        cursor += fragment_length;
+    }
+
+    return count;
+}
+
+/// Verifies that a returned JSON string contains a fragment exactly once.
+///
+/// @param json JSON string to inspect.
+/// @param fragment Substring expected once.
+/// @param message Failure message when the occurrence count differs.
+/// @return Zero on success, otherwise one failure.
+static int expect_json_contains_once(const char *json, const char *fragment, const char *message) {
+    size_t count = count_json_fragment_occurrences(json, fragment);
+    if (count != 1U) {
+        fprintf(stderr, "FAIL: %s\nExpected exactly one occurrence of: %s\nActual count: %lu\nJSON: %s\n", message, fragment, (unsigned long)count, json != NULL ? json : "(null)");
         return 1;
     }
 
@@ -2200,6 +2239,125 @@ static int test_phase32_fixed_layout_source_run_regression_program(void) {
 
 /// Test entry point.
 ///
+
+/// Verifies automatic layout can execute representative data/const programs.
+///
+/// @return Number of failures.
+static int test_phase33_automatic_layout_source_run_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".DATA?\n"
+        "buf BYTE 16 DUP(?)\n"
+        ".data\n"
+        "x DWORD 1\n"
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF buf\n"
+        "    mov ebx, limit\n"
+        "    mov x, 2\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "automatic layout source should execute");
+    failures += expect_json_contains(json, "\"status\":\"ok\"", "automatic layout source should report ok status");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "automatic layout source should execute three instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "automatic layout should preserve .DATA? metadata");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "automatic layout should load .CONST bytes");
+    failures += expect_json_contains(json, "\"symbol\":\"x\"", "automatic layout should report writable data memory changes");
+    failures += expect_json_contains_once(json, "\"symbol\":\"x\"", "automatic layout should report the logical memory write once");
+
+    return failures;
+}
+
+/// Verifies automatic layout preserves read-only `.CONST` runtime protection.
+///
+/// @return Number of failures.
+static int test_phase33_automatic_layout_const_write_rejected(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic .CONST write should fail");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "automatic .CONST write should be an execution error");
+    failures += expect_json_contains(json, "\"kind\":\"runtime-error\"", "automatic .CONST write should return runtime diagnostic");
+    failures += expect_json_contains(json, "\"code\":\"permission-denied\"", "automatic .CONST write should preserve permission diagnostic");
+    failures += expect_json_not_contains(json, "\"symbol\":\"limit\"", "failed automatic .CONST write should not produce memory change row");
+
+    return failures;
+}
+
+/// Verifies automatic layout does not grow regions on demand after program load.
+///
+/// @return Number of failures.
+static int test_phase33_automatic_layout_invalid_access_does_not_grow(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".data\n"
+        "x BYTE 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    add eax, 4096\n"
+        "    mov bl, BYTE PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic out-of-range access should fail");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "automatic out-of-range access should be execution error");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "automatic out-of-range access should preserve invalid-address diagnostic");
+    failures += expect_json_contains(json, "00501000h", "automatic out-of-range access should target one byte past aligned data region");
+
+    return failures;
+}
+
+/// Verifies automatic layout returns source-mapped resource-limit JSON.
+///
+/// @return Number of failures.
+static int test_phase33_automatic_layout_resource_limit_json(void) {
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    const char *json = NULL;
+    int failures = 0;
+
+    base_policy.regions[VM_LAYOUT_REGION_DATA].maximum_size_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = 4096U;
+    json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".data\n"
+        "big BYTE 4097 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &base_policy
+    );
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic resource-limit result should fail");
+    failures += expect_json_contains(json, "\"status\":\"resource-limit-exceeded\"", "automatic resource-limit result should report resource status");
+    failures += expect_json_contains(json, "\"kind\":\"resource-limit-error\"", "automatic resource-limit result should use resource-limit message kind");
+    failures += expect_json_contains(json, "\"code\":\"resource-limit-exceeded\"", "automatic resource-limit result should use stable code");
+    failures += expect_json_contains(json, "Automatic layout requested .data/.DATA? region size 8192 bytes, exceeding configured limit 4096 bytes.", "automatic resource-limit message should report aligned request and limit");
+    failures += expect_json_contains(json, "\"line\":2", "automatic resource-limit message should point at oversized declaration line");
+    failures += expect_json_contains(json, "\"column\":1", "automatic resource-limit message should point at oversized declaration column");
+    failures += expect_json_contains(json, "\"byteOffset\":6", "automatic resource-limit message should include declaration byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":3", "automatic resource-limit message should include declaration span length");
+    failures += expect_json_not_contains(json, "execution-complete", "automatic resource-limit result should not report execution complete");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -2268,6 +2426,10 @@ int main(void) {
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
     failures += test_phase30_large_dup_count_capacity_diagnostic_source_run_program();
     failures += test_phase32_fixed_layout_source_run_regression_program();
+    failures += test_phase33_automatic_layout_source_run_program();
+    failures += test_phase33_automatic_layout_const_write_rejected();
+    failures += test_phase33_automatic_layout_invalid_access_does_not_grow();
+    failures += test_phase33_automatic_layout_resource_limit_json();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -2276,6 +2438,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 32 regression coverage passed.");
+    puts("Source execution tests through Phase 33 regression coverage passed.");
     return 0;
 }

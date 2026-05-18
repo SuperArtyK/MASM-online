@@ -3,8 +3,8 @@
  * @brief Memory layout policy defaults for the MASM32 educational VM.
  *
  * This module centralizes fixed educational memory layout defaults and the
- * policy object that later layout phases can extend. Phase 32 uses only the
- * fixed layout mode and deliberately keeps automatic sizing, randomized bases,
+ * policy object that layout phases can extend. Phase 33 adds automatic
+ * deterministic sizing while deliberately keeping randomized bases,
  * object-bounds diagnostics, stack behavior, and heap allocation out of scope.
  */
 
@@ -80,7 +80,9 @@
 /// Identifies a selectable memory layout mode.
 typedef enum VmLayoutMode {
     /// Current fixed educational layout mode.
-    VM_LAYOUT_MODE_FIXED = 0
+    VM_LAYOUT_MODE_FIXED = 0,
+    /// Automatic deterministic sizing mode used by tests and future configuration.
+    VM_LAYOUT_MODE_AUTOMATIC
 } VmLayoutMode;
 
 /// Identifies a memory-layout safety tier.
@@ -111,6 +113,57 @@ typedef enum VmLayoutRegionKind {
     VM_LAYOUT_REGION_COUNT
 } VmLayoutRegionKind;
 
+
+/// Describes program metadata used to compute automatic deterministic region sizes.
+typedef struct VmLayoutProgramMetadata {
+    /// Deterministic code metadata size in bytes.
+    uint32_t code_size;
+    /// Initialized writable `.data` byte count.
+    uint32_t initialized_data_size;
+    /// Zero-filled originally-uninitialized `.DATA?` byte count.
+    uint32_t uninitialized_data_size;
+    /// Initialized read-only `.CONST` byte count.
+    uint32_t const_size;
+    /// Requested heap size in bytes from configuration, when present.
+    uint32_t heap_size_request;
+    /// Whether @ref heap_size_request should override the policy default request.
+    bool has_heap_size_request;
+    /// Requested stack size in bytes from configuration, when present.
+    uint32_t stack_size_request;
+    /// Whether @ref stack_size_request should override the policy default request.
+    bool has_stack_size_request;
+} VmLayoutProgramMetadata;
+
+/// Identifies the result of automatic layout-policy construction.
+typedef enum VmLayoutStatus {
+    /// Layout policy was built successfully.
+    VM_LAYOUT_STATUS_OK = 0,
+    /// A required argument or policy field was invalid.
+    VM_LAYOUT_STATUS_INVALID_ARGUMENT,
+    /// A size, alignment, or address calculation overflowed.
+    VM_LAYOUT_STATUS_INTEGER_OVERFLOW,
+    /// A computed region or total reservation exceeded the selected safety tier.
+    VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED
+} VmLayoutStatus;
+
+/// Describes a failed automatic layout-policy calculation.
+typedef struct VmLayoutDiagnostic {
+    /// Status describing the failure.
+    VmLayoutStatus status;
+    /// Region associated with the failure when @ref has_region is true.
+    VmLayoutRegionKind region;
+    /// Whether @ref region contains meaningful data.
+    bool has_region;
+    /// Requested or computed region size in bytes.
+    uint32_t requested_size;
+    /// Configured limit in bytes that rejected the request.
+    uint32_t limit;
+    /// Computed total reserved memory in bytes.
+    uint32_t total_size;
+    /// Configured total reservation limit in bytes.
+    uint32_t total_limit;
+} VmLayoutDiagnostic;
+
 /// Describes bounds and size policy for one memory region.
 typedef struct VmLayoutRegionPolicy {
     /// Region kind described by this entry.
@@ -129,7 +182,7 @@ typedef struct VmLayoutRegionPolicy {
 
 /// Describes the selected VM memory layout policy.
 typedef struct VmLayoutPolicy {
-    /// Selected layout mode. Phase 32 supports only fixed layout.
+    /// Selected layout mode.
     VmLayoutMode mode;
     /// Selected safety tier used for maximum-size validation.
     VmLayoutSafetyTier safety_tier;
@@ -170,11 +223,42 @@ const VmLayoutRegionPolicy *vm_layout_policy_get_region(const VmLayoutPolicy *po
 /// @return true when the range is valid and @p out_size was written.
 bool vm_layout_region_size(const VmLayoutRegionPolicy *region, uint32_t *out_size);
 
-/// Validates a layout policy for the currently supported fixed layout mode.
+/// Validates a layout policy for supported fixed or automatic layout modes.
 ///
 /// @param policy Layout policy to validate.
 /// @return true when the policy can initialize VM memory safely.
 bool vm_layout_policy_is_valid(const VmLayoutPolicy *policy);
+
+
+/// Builds an automatic deterministic layout policy from program metadata.
+///
+/// Passing NULL for @p base_policy uses @ref vm_layout_default_policy. The
+/// resulting policy keeps fixed educational base addresses while replacing
+/// region sizes with deterministic aligned sizes derived from @p metadata.
+///
+/// @param base_policy Optional base policy containing limits and defaults.
+/// @param metadata Program metadata used for automatic sizing.
+/// @param out_policy Receives the computed automatic policy on success.
+/// @param out_diagnostic Optional structured diagnostic for failures.
+/// @return VM_LAYOUT_STATUS_OK on success, otherwise a status describing failure.
+VmLayoutStatus vm_layout_build_automatic_policy(
+    const VmLayoutPolicy *base_policy,
+    const VmLayoutProgramMetadata *metadata,
+    VmLayoutPolicy *out_policy,
+    VmLayoutDiagnostic *out_diagnostic
+);
+
+/// Returns whether a layout status represents success.
+///
+/// @param status Layout status to inspect.
+/// @return true only for VM_LAYOUT_STATUS_OK.
+bool vm_layout_status_succeeded(VmLayoutStatus status);
+
+/// Returns a stable lowercase name for a layout status.
+///
+/// @param status Layout status to inspect.
+/// @return Static status name, or NULL for invalid status values.
+const char *vm_layout_status_name(VmLayoutStatus status);
 
 /// Returns a stable lowercase name for a layout mode.
 ///

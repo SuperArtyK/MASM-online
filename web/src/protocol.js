@@ -2,7 +2,7 @@
  * @file protocol.js
  * @brief Worker message protocol for the MASM32 educational simulator.
  *
- * The protocol supports readiness, ping/pong diagnostics, and the Milestone 30
+ * The protocol supports readiness, ping/pong diagnostics, and the
  * source-run request. Execution remains in the worker/Wasm path; this module
  * only validates request shape and formats structured worker responses.
  */
@@ -13,7 +13,7 @@
 /** @typedef {{source: string}} RunSourcePayload */
 /** @typedef {{runSource?: (source: string) => unknown}} WorkerRuntime */
 
-/** Latest implemented milestone announced through the worker readiness message. */
+/** Latest user-visible MASM source-run phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE = 30;
 
 /**
@@ -75,7 +75,7 @@ function createRunSourceUnavailableError() {
     type: "ERROR",
     payload: {
       code: "wasm-run-source-unavailable",
-      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after Milestone 30."
+      message: "The Wasm source execution export is unavailable. Rebuild the Wasm artifact after the latest C/Wasm changes."
     }
   };
 }

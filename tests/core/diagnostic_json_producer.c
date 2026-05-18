@@ -147,18 +147,97 @@ static int diagnostic_json_producer_read_source(FILE *stream, char **out_source)
     return 0;
 }
 
+
+/// Parses an optional unsigned environment variable into a uint32_t value.
+///
+/// @param name Environment variable name.
+/// @param out_value Receives parsed value when present and valid.
+/// @param out_present Receives whether the variable was present.
+/// @return Zero on success, otherwise nonzero.
+static int diagnostic_json_producer_parse_u32_env(const char *name, uint32_t *out_value, int *out_present) {
+    const char *text = NULL;
+    char *end = NULL;
+    unsigned long value = 0UL;
+
+    if (name == NULL || out_value == NULL || out_present == NULL) {
+        return diagnostic_json_producer_fail("invalid environment parse argument");
+    }
+
+    *out_present = 0;
+    text = getenv(name);
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+
+    value = strtoul(text, &end, 0);
+    if (end == text || end == NULL || *end != '\0' || value > 0xFFFFFFFFUL) {
+        return diagnostic_json_producer_fail("invalid unsigned environment value");
+    }
+
+    *out_value = (uint32_t)value;
+    *out_present = 1;
+    return 0;
+}
+
+/// Returns whether the producer should select automatic layout mode.
+///
+/// @return Nonzero when MASM32_DIAGNOSTIC_LAYOUT_MODE=automatic.
+static int diagnostic_json_producer_use_automatic_layout(void) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_LAYOUT_MODE");
+    return mode != NULL && strcmp(mode, "automatic") == 0;
+}
+
+/// Applies optional automatic layout limit environment overrides.
+///
+/// @param policy Policy to mutate.
+/// @return Zero on success, otherwise nonzero.
+static int diagnostic_json_producer_apply_layout_env(VmLayoutPolicy *policy) {
+    uint32_t value = 0U;
+    int present = 0;
+
+    if (policy == NULL) {
+        return diagnostic_json_producer_fail("invalid layout policy argument");
+    }
+
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_DATA_LIMIT", &value, &present) != 0) {
+        return 1;
+    }
+    if (present) {
+        policy->regions[VM_LAYOUT_REGION_DATA].maximum_size_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = value;
+    }
+
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT", &value, &present) != 0) {
+        return 1;
+    }
+    if (present) {
+        policy->maximum_total_reservation_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = value;
+    }
+
+    return 0;
+}
+
 /// Runs one source fixture through the source-run JSON path and prints raw JSON.
 ///
 /// @param source Null-terminated source fixture text.
 /// @return Zero on success, otherwise nonzero.
 static int diagnostic_json_producer_emit_json(const char *source) {
     const char *json = NULL;
+    VmLayoutPolicy policy;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
     }
 
-    json = masm32_sim_wasm_run_source_json(source);
+    if (diagnostic_json_producer_use_automatic_layout()) {
+        policy = vm_layout_default_policy();
+        if (diagnostic_json_producer_apply_layout_env(&policy) != 0) {
+            return 1;
+        }
+        json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(source, &policy);
+    } else {
+        json = masm32_sim_wasm_run_source_json(source);
+    }
+
     if (json == NULL) {
         return diagnostic_json_producer_fail("source-run API returned NULL JSON");
     }

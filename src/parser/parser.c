@@ -2571,6 +2571,8 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     symbol.section = symbol_section;
     symbol.element_size_bytes = vm_symbol_data_type_size_bytes(data_type);
     symbol.address = vm_parser_symbol_section_base(symbol_section) + vm_parser_active_data_offset(state);
+    symbol.source_location = name_token->location;
+    symbol.source_span_length = name_token->lexeme_length;
 
     vm_parser_advance(state);
     vm_parser_advance(state);
