@@ -1,6 +1,6 @@
 /*
  * @file test_data_section.c
- * @brief Tests for Milestone 29 data declarations, symbols, signed/unsigned PTR aliases, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, and character-literal support.
+ * @brief Tests data declarations, symbols, memory operands, metadata operators, constant expressions, and nested DUP support through Milestone 30.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
@@ -18,31 +18,31 @@
 #include "../../src/parser/symbols.h"
 #include "../../src/wasm/wasm_api.h"
 
-/// Number of lexer tokens available to each Milestone 29 parser test.
+/// Number of lexer tokens available to each Milestone 30 parser test.
 #define TEST_TOKEN_CAPACITY 256U
 
-/// Number of lexer diagnostics available to each Milestone 29 parser test.
+/// Number of lexer diagnostics available to each Milestone 30 parser test.
 #define TEST_LEXER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of parser diagnostics available to each Milestone 29 parser test.
+/// Number of parser diagnostics available to each Milestone 30 parser test.
 #define TEST_PARSER_DIAGNOSTIC_CAPACITY 32U
 
-/// Number of IR instructions available to each Milestone 29 parser test.
+/// Number of IR instructions available to each Milestone 30 parser test.
 #define TEST_INSTRUCTION_CAPACITY 64U
 
-/// Number of source-text bytes available to each Milestone 29 parser test.
+/// Number of source-text bytes available to each Milestone 30 parser test.
 #define TEST_SOURCE_TEXT_CAPACITY 1024U
 
-/// Number of data symbols available to each Milestone 29 parser test.
+/// Number of data symbols available to each Milestone 30 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
-/// Number of data image bytes available to each Milestone 29 parser test.
+/// Number of data image bytes available to each Milestone 30 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
-/// Number of const image bytes available to each Milestone 29 parser test.
+/// Number of const image bytes available to each Milestone 30 parser test.
 #define TEST_CONST_IMAGE_CAPACITY 512U
 
-/// Holds all caller-owned parser buffers for one Milestone 29 test.
+/// Holds all caller-owned parser buffers for one Milestone 30 test.
 typedef struct DataSectionTestBuffers {
     /// Lexer token buffer.
     VmLexerToken tokens[TEST_TOKEN_CAPACITY];
@@ -155,6 +155,20 @@ static int expect_parser_diagnostic_code(VmParserDiagnosticCode actual, VmParser
     return 0;
 }
 
+/// Verifies that a string contains an expected fragment.
+///
+/// @param actual Actual string to inspect.
+/// @param expected_fragment Fragment that must be present.
+/// @param message Failure message when the fragment is missing.
+/// @return Zero on success, otherwise one failure.
+static int expect_string_contains(const char *actual, const char *expected_fragment, const char *message) {
+    if (actual == NULL || expected_fragment == NULL || strstr(actual, expected_fragment) == NULL) {
+        fprintf(stderr, "FAIL: %s\nExpected fragment: %s\nActual: %s\n", message, expected_fragment != NULL ? expected_fragment : "(null)", actual != NULL ? actual : "(null)");
+        return 1;
+    }
+    return 0;
+}
+
 /// Verifies that returned JSON contains a required fragment.
 ///
 /// @param json JSON string to inspect.
@@ -184,7 +198,7 @@ static int expect_json_not_contains(const char *json, const char *unexpected, co
     return 0;
 }
 
-/// Parses source with full Milestone 29 buffers.
+/// Parses source with full Milestone 30 buffers.
 ///
 /// @param source Source text to parse.
 /// @param buffers Test buffers to use.
@@ -1528,7 +1542,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":29", "all-GPR response should identify Milestone 29");
+    failures += expect_json_contains(json, "\"phase\":30", "all-GPR response should identify Milestone 30");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect read should set EAX = 80");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "ESP-based write should reach nums + 28");
@@ -1553,7 +1567,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":29", "response should identify Milestone 29");
+    failures += expect_json_contains(json, "\"phase\":30", "response should identify Milestone 30");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1690,7 +1704,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":29", "response should identify Milestone 29");
+    failures += expect_json_contains(json, "\"phase\":30", "response should identify Milestone 30");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1715,7 +1729,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":29", "response should identify Milestone 29");
+    failures += expect_json_contains(json, "\"phase\":30", "response should identify Milestone 30");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1933,7 +1947,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "END main\n"
     );
 
-    failures += expect_json_contains(read_copy, "\"phase\":29", "signed PTR read response should identify Milestone 29");
+    failures += expect_json_contains(read_copy, "\"phase\":30", "signed PTR read response should identify Milestone 30");
     failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
     failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
     failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
@@ -2043,7 +2057,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     }
 
     acceptance_json = masm32_sim_wasm_run_source_json(source);
-    failures += expect_json_contains(acceptance_json, "\"phase\":29", "additional data source-run should identify Milestone 29");
+    failures += expect_json_contains(acceptance_json, "\"phase\":30", "additional data source-run should identify Milestone 30");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "source-run should report SIZEOF buf in EAX");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "source-run should report .CONST read in EBX");
 
@@ -2402,10 +2416,250 @@ static int test_phase29_extended_constant_expressions(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 29 acceptance source should execute");
-    failures += expect_json_contains(json, "\"phase\":29", "Milestone 29 response should identify phase 29");
+    failures += expect_json_contains(json, "\"phase\":30", "Milestone 30 response should identify phase 30");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "COUNT should fold to 12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000080h\",\"unsigned\":128}", "MASK should fold to 128");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00005678h\",\"unsigned\":22136}", "LOWWORD should fold to 5678h");
+
+    return failures;
+}
+
+/// Verifies Milestone 30 nested DUP expansion for dword arrays and metadata operators.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase30_nested_dup_acceptance_program(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    const char *json = NULL;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "ROWS = 3\n"
+        "COLS = 4\n"
+        ".data\n"
+        "matrix DWORD ROWS DUP(COLS DUP(0))\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, LENGTHOF matrix\n"
+        "    mov ebx, SIZEOF matrix\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK, "Milestone 30 nested DUP acceptance source should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "nested DUP acceptance source should not produce diagnostics");
+    failures += expect_u32(buffers.symbols[0].element_count, 12U, "nested DUP should expand ROWS * COLS elements");
+    failures += expect_u32(buffers.symbols[0].size_bytes, 48U, "nested DWORD DUP should report expanded byte size");
+    failures += expect_size(result.data_size, 48U, "nested DWORD DUP should emit 48 data bytes");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 12U, "LENGTHOF should see expanded nested DUP element count");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 48U, "SIZEOF should see expanded nested DUP byte size");
+
+    json = masm32_sim_wasm_run_source_json(
+        "ROWS = 3\n"
+        "COLS = 4\n"
+        ".data\n"
+        "matrix DWORD ROWS DUP(COLS DUP(0))\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, LENGTHOF matrix\n"
+        "    mov ebx, SIZEOF matrix\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Milestone 30 acceptance source should execute");
+    failures += expect_json_contains(json, "\"phase\":30", "Milestone 30 response should identify phase 30");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "LENGTHOF matrix should be 12");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000030h\",\"unsigned\":48}", "SIZEOF matrix should be 48");
+
+    return failures;
+}
+
+/// Verifies Milestone 30 nested DUP handles byte strings, WORD data, signed data, and uninitialized storage.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase30_nested_dup_initializer_variants(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "bytes BYTE 2 DUP(\"AB\")\n"
+        "chars BYTE 2 DUP('CD')\n"
+        "uninit BYTE 2 DUP(3 DUP(?))\n"
+        "signed SWORD 2 DUP(3 DUP(-1))\n"
+        "mix BYTE 1, 2 DUP(3 DUP(4)), 5\n"
+        "words WORD 2 DUP(3 DUP(1234h))\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK, "nested DUP initializer variants should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "nested DUP initializer variants should not produce diagnostics");
+    failures += expect_size(result.symbol_count, 6U, "nested DUP variant source should emit six symbols");
+
+    failures += expect_u32(buffers.symbols[0].element_count, 4U, "string DUP should expand byte element count");
+    failures += expect_u8(buffers.data_image[0], 'A', "string DUP first byte should be A");
+    failures += expect_u8(buffers.data_image[1], 'B', "string DUP second byte should be B");
+    failures += expect_u8(buffers.data_image[2], 'A', "string DUP repeated first byte should be A");
+    failures += expect_u8(buffers.data_image[3], 'B', "string DUP repeated second byte should be B");
+
+    failures += expect_u32(buffers.symbols[1].element_count, 4U, "packed character DUP should expand byte element count for BYTE");
+    failures += expect_u8(buffers.data_image[4], 'C', "character DUP first byte should be C");
+    failures += expect_u8(buffers.data_image[5], 'D', "character DUP second byte should be D");
+    failures += expect_u8(buffers.data_image[6], 'C', "character DUP repeated first byte should be C");
+    failures += expect_u8(buffers.data_image[7], 'D', "character DUP repeated second byte should be D");
+
+    failures += expect_u32(buffers.symbols[2].element_count, 6U, "nested ? DUP should expand six bytes");
+    failures += expect_u32(buffers.symbols[2].has_uninitialized_initializer ? 1U : 0U, 1U, "nested ? DUP should retain uninitialized metadata");
+    failures += expect_u8(buffers.data_image[8], 0U, "nested ? DUP should zero-fill first byte");
+    failures += expect_u8(buffers.data_image[13], 0U, "nested ? DUP should zero-fill last byte");
+
+    failures += expect_u32(buffers.symbols[3].element_count, 6U, "signed nested DUP should expand six SWORD elements");
+    failures += expect_u32(buffers.symbols[3].size_bytes, 12U, "signed nested DUP should occupy twelve bytes");
+    failures += expect_u8(buffers.data_image[14], 0xFFU, "signed nested DUP should encode -1 low byte");
+    failures += expect_u8(buffers.data_image[15], 0xFFU, "signed nested DUP should encode -1 high byte");
+    failures += expect_u8(buffers.data_image[25], 0xFFU, "signed nested DUP should encode repeated -1 high byte");
+
+    failures += expect_u32(buffers.symbols[4].element_count, 8U, "mixed declaration should include elements around nested DUP");
+    failures += expect_u8(buffers.data_image[26], 1U, "mixed initializer first scalar should remain first");
+    failures += expect_u8(buffers.data_image[27], 4U, "mixed initializer nested DUP first byte should follow scalar");
+    failures += expect_u8(buffers.data_image[32], 4U, "mixed initializer nested DUP last repeated byte should be present");
+    failures += expect_u8(buffers.data_image[33], 5U, "mixed initializer trailing scalar should remain last");
+
+    failures += expect_u32(buffers.symbols[5].element_count, 6U, "unsigned WORD nested DUP should expand six elements");
+    failures += expect_u32(buffers.symbols[5].size_bytes, 12U, "unsigned WORD nested DUP should occupy twelve bytes");
+    failures += expect_u8(buffers.data_image[34], 0x34U, "unsigned WORD nested DUP should encode low byte");
+    failures += expect_u8(buffers.data_image[35], 0x12U, "unsigned WORD nested DUP should encode high byte");
+    failures += expect_u8(buffers.data_image[45], 0x12U, "unsigned WORD nested DUP should repeat final high byte");
+
+    return failures;
+}
+
+/// Verifies Milestone 30 DUP initializer lists expand each comma-separated item.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase30_nested_dup_initializer_lists(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "msg BYTE 2 DUP(\"Hi\", 0)\n"
+        "nested BYTE 2 DUP(1, 2 DUP(3), 4)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK, "DUP initializer lists should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "DUP initializer lists should not produce diagnostics");
+    failures += expect_size(result.symbol_count, 2U, "DUP initializer list source should emit two symbols");
+
+    failures += expect_u32(buffers.symbols[0].element_count, 6U, "string plus NUL DUP should expand six BYTE elements");
+    failures += expect_u32(buffers.symbols[0].size_bytes, 6U, "string plus NUL DUP should occupy six bytes");
+    failures += expect_u8(buffers.data_image[0], 'H', "string plus NUL DUP first byte should be H");
+    failures += expect_u8(buffers.data_image[1], 'i', "string plus NUL DUP second byte should be i");
+    failures += expect_u8(buffers.data_image[2], 0U, "string plus NUL DUP third byte should be NUL");
+    failures += expect_u8(buffers.data_image[3], 'H', "string plus NUL DUP repeated first byte should be H");
+    failures += expect_u8(buffers.data_image[4], 'i', "string plus NUL DUP repeated second byte should be i");
+    failures += expect_u8(buffers.data_image[5], 0U, "string plus NUL DUP repeated third byte should be NUL");
+
+    failures += expect_u32(buffers.symbols[1].element_count, 8U, "mixed DUP initializer list should expand eight elements");
+    failures += expect_u8(buffers.data_image[6], 1U, "mixed DUP list first scalar should be present");
+    failures += expect_u8(buffers.data_image[7], 3U, "mixed DUP list nested DUP first byte should be present");
+    failures += expect_u8(buffers.data_image[8], 3U, "mixed DUP list nested DUP second byte should be present");
+    failures += expect_u8(buffers.data_image[9], 4U, "mixed DUP list trailing scalar should be present");
+    failures += expect_u8(buffers.data_image[13], 4U, "mixed DUP list final repeated scalar should be present");
+
+    return failures;
+}
+
+/// Verifies Milestone 30 nested DUP error paths and regressions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase30_nested_dup_error_paths_and_regressions(void) {
+    DataSectionTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "bad BYTE (-1) DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "negative DUP count should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_DUP, "negative DUP count diagnostic should be invalid-dup");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "1 or greater", "negative DUP count diagnostic should state the lower bound");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "active declaration image capacity", "negative DUP count diagnostic should mention configured capacity");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "512 bytes", "negative DUP count diagnostic should show parser test capacity");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "bad BYTE 0 DUP(1)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "zero DUP count should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_DUP, "zero DUP count diagnostic should be invalid-dup");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "1 or greater", "zero DUP count diagnostic should state the lower bound");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "active declaration image capacity", "zero DUP count diagnostic should mention configured capacity");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "512 bytes", "zero DUP count diagnostic should show parser test capacity");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "bad BYTE 2 DUP(3 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "malformed nested DUP should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_DUP, "malformed nested DUP diagnostic should be invalid-dup");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "huge BYTE 20 DUP(30 DUP(0))\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED, "excessive nested DUP expansion should fail with data capacity status");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, "excessive nested DUP diagnostic should be data-capacity-exceeded");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "DUP expansion requires", "excessive nested DUP diagnostic should show required byte count");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "only 512 bytes", "excessive nested DUP diagnostic should show available parser capacity");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "bad SBYTE 2 DUP(3 DUP(128))\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "out-of-range nested DUP initializer should fail");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "out-of-range nested DUP diagnostic should be number-out-of-range");
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 2 + 2\n"
+        ".data\n"
+        "arr BYTE COUNT DUP(1 + 1)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result), VM_PARSER_STATUS_OK, "flat DUP with expression count and initializer should remain supported");
+    failures += expect_u32(buffers.symbols[0].element_count, 4U, "flat DUP regression should keep expression count");
+    failures += expect_u8(buffers.data_image[0], 2U, "flat DUP regression should keep expression initializer");
+    failures += expect_u8(buffers.data_image[3], 2U, "flat DUP regression should repeat expression initializer");
 
     return failures;
 }
@@ -2598,11 +2852,15 @@ int main(void) {
     failures += test_phase29_expression_and_equate_error_paths();
     failures += test_phase29_extended_constant_expressions();
     failures += test_phase29_extended_expression_error_paths();
+    failures += test_phase30_nested_dup_acceptance_program();
+    failures += test_phase30_nested_dup_initializer_variants();
+    failures += test_phase30_nested_dup_initializer_lists();
+    failures += test_phase30_nested_dup_error_paths_and_regressions();
 
     if (failures != 0) {
         return 1;
     }
 
-    puts("Milestone 29 data section, .DATA?/.CONST, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, character literal, and extended constant-expression tests passed.");
+    puts("Data section, .DATA?/.CONST, signed PTR alias, all-GPR register-indirect, TYPE, LENGTHOF, SIZEOF, character literal, extended constant-expression, and nested DUP tests through Milestone 30 passed.");
     return 0;
 }

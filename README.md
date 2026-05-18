@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 29.
+Static, browser-based MASM32 educational simulator through Milestone 30.
 
 ## Current scope
 
@@ -19,12 +19,13 @@ Implemented through the current milestone:
 - Milestone 26 MASM32 header compatibility directives: `.386`, `.model flat, stdcall`, `.stack`, `OPTION CASEMAP:NONE`, virtual `INCLUDE Irvine32.inc` / `INCLUDE Macros.inc`, and listing no-ops parse before the program body.
 - Milestone 27 additional data sections: `.DATA?` accepts `?`/`DUP(?)` uninitialized declarations and emits deterministic zero-filled writable storage with uninitialized metadata; `.CONST` emits initialized read-only storage with direct and indirect write protection.
 - Milestone 29 extended constant expressions: numeric equates now support unary `+`/`-`/`NOT`, parentheses, binary `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, and extraction operators `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD` in supported compile-time constant contexts.
+- Milestone 30 nested `DUP`: data declarations now support nested `DUP` expansion such as `ROWS DUP(COLS DUP(0))`, expression-backed counts and initializer values, deterministic `?` storage, and expansion-capacity diagnostics.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 
 Not implemented yet:
 
-- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, nested DUP, runtime high-level condition expressions, and full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
+- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, runtime high-level condition expressions, and full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
 - Extended 32-bit / 64-bit register behavior.
 
 See `docs/SUPPORTED_SYNTAX.md` for the current supported subset, scheduled features, and recognized unsupported constructs.

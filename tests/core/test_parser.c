@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 29.
+ * @brief Unit and integration tests for the parser through Milestone 30.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -1709,7 +1709,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 29.
+/// Runs all parser regression tests through Milestone 30.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {

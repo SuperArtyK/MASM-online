@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 29.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 30.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
@@ -15,12 +15,55 @@
 
 #include "vm_memory.h"
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 /// Maximum numeric equates retained during one parse operation.
 #define VM_PARSER_EQUATE_CAPACITY 128U
+
+
+/// Formats an unsigned integer with comma group separators for diagnostics.
+///
+/// @param value Value to format.
+/// @param buffer Destination buffer.
+/// @param buffer_size Number of bytes available in @p buffer.
+static void vm_parser_format_u64_with_commas(uint64_t value, char *buffer, size_t buffer_size) {
+    char raw[32];
+    char grouped[48];
+    size_t raw_length = 0U;
+    size_t first_group = 0U;
+    size_t raw_index = 0U;
+    size_t grouped_index = 0U;
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+
+    (void)snprintf(raw, sizeof(raw), "%llu", (unsigned long long)value);
+    raw_length = strlen(raw);
+    first_group = raw_length % 3U;
+    if (first_group == 0U) {
+        first_group = 3U;
+    }
+
+    for (raw_index = 0U; raw_index < raw_length && grouped_index + 1U < sizeof(grouped); raw_index += 1U) {
+        if (raw_index > 0U && raw_index % 3U == first_group % 3U) {
+            grouped[grouped_index] = ',';
+            grouped_index += 1U;
+            if (grouped_index + 1U >= sizeof(grouped)) {
+                break;
+            }
+        }
+        grouped[grouped_index] = raw[raw_index];
+        grouped_index += 1U;
+    }
+    grouped[grouped_index] = '\0';
+
+    (void)snprintf(buffer, buffer_size, "%s", grouped);
+}
 
 /// Stores the first parsed procedure name so END can validate the entry point.
 typedef struct VmParserProcedureName {
@@ -160,6 +203,14 @@ static bool vm_parser_add_lexer_status_diagnostic(
 );
 
 static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+
+static bool vm_parser_parse_data_initializer(
+    VmParserState *state,
+    VmSymbolDataType data_type,
+    uint32_t *out_element_count,
+    bool *out_has_uninitialized,
+    bool *out_is_fully_uninitialized
+);
 
 static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state);
 
@@ -1151,6 +1202,50 @@ static bool vm_parser_add_diagnostic(
     return true;
 }
 
+/// Records one parser diagnostic whose message includes parse-specific values.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Optional token associated with the diagnostic.
+/// @param format printf-style message format.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_formatted_diagnostic(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *format,
+    ...
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+    va_list args;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || format == NULL) {
+        return false;
+    }
+
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+
+    va_start(args, format);
+    (void)vsnprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), format, args);
+    va_end(args);
+    diagnostic->message = diagnostic->message_storage;
+
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
 /// Skips tokens through the end of the current source line.
 ///
 /// @param state Parser state to mutate.
@@ -2052,11 +2147,6 @@ static bool vm_parser_parse_single_data_initializer(
         if (!vm_parser_parse_constant_expression(state, &expression)) {
             return false;
         }
-        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_IDENTIFIER &&
-            vm_parser_token_equals(vm_parser_current_token(state), "DUP")) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, vm_parser_current_token(state), "Nested DUP initializers are planned for the next milestone and are not supported yet.");
-            return false;
-        }
         if (!vm_parser_encode_i64_for_data_type(expression.value, data_type, &encoded_value)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, vm_symbol_data_type_is_signed(data_type) ? "Data initializer exceeds the signed range for the declared type." : "Data initializer exceeds the declared element width.");
             return false;
@@ -2156,7 +2246,7 @@ static bool vm_parser_parse_dup_initializer(
     size_t *active_size = NULL;
     uint32_t instance_elements = 0U;
     bool instance_uninitialized = false;
-    bool instance_fully_uninitialized = false;
+    bool instance_fully_uninitialized = true;
     const VmLexerToken *token = NULL;
     uint64_t repeat_index = 0U;
 
@@ -2176,7 +2266,15 @@ static bool vm_parser_parse_dup_initializer(
     }
 
     if (repeat_count == 0U || repeat_count > UINT32_MAX) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, repeat_token, "DUP repeat count must be between 1 and UINT32_MAX.");
+        char capacity_text[48];
+        vm_parser_format_u64_with_commas((uint64_t)active_capacity, capacity_text, sizeof(capacity_text));
+        vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_DUP,
+            repeat_token,
+            "DUP repeat count must be 1 or greater. The active declaration image capacity is %s bytes; usable repeat counts also depend on initializer size and remaining capacity.",
+            capacity_text
+        );
         return false;
     }
 
@@ -2195,10 +2293,66 @@ static bool vm_parser_parse_dup_initializer(
     vm_parser_advance(state);
 
     instance_start = (size_t)(*active_offset);
-    if (!vm_parser_parse_single_data_initializer(state, data_type, &instance_elements, &instance_uninitialized, &instance_fully_uninitialized)) {
-        return false;
+    while (true) {
+        uint32_t initializer_elements = 0U;
+        bool initializer_uninitialized = false;
+        bool initializer_fully_uninitialized = false;
+        const VmLexerToken *separator = NULL;
+
+        if (!vm_parser_parse_data_initializer(state, data_type, &initializer_elements, &initializer_uninitialized, &initializer_fully_uninitialized)) {
+            return false;
+        }
+        if (initializer_elements > UINT32_MAX - instance_elements) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, repeat_token, "DUP initializer expands to too many elements.");
+            state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
+            return false;
+        }
+        instance_elements += initializer_elements;
+        instance_uninitialized = instance_uninitialized || initializer_uninitialized;
+        instance_fully_uninitialized = instance_fully_uninitialized && initializer_fully_uninitialized;
+
+        separator = vm_parser_current_token(state);
+        if (separator != NULL && separator->kind == VM_LEXER_TOKEN_COMMA) {
+            vm_parser_advance(state);
+            continue;
+        }
+        break;
     }
     instance_size = (size_t)(*active_offset) - instance_start;
+
+    if (instance_elements == 0U || instance_size == 0U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, repeat_token, "DUP initializer must expand to at least one element.");
+        return false;
+    }
+    if (repeat_count > UINT32_MAX / (uint64_t)instance_elements) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, repeat_token, "DUP expansion exceeds the maximum representable element count.");
+        state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
+        return false;
+    }
+    if (repeat_count > 1U) {
+        uint64_t remaining_bytes = (repeat_count - 1U) * (uint64_t)instance_size;
+        if (remaining_bytes > (uint64_t)(active_capacity - (size_t)(*active_offset))) {
+            char required_text[48];
+            char available_text[48];
+            char capacity_text[48];
+            uint64_t required_bytes = repeat_count * (uint64_t)instance_size;
+            uint64_t available_from_start = (uint64_t)(active_capacity - instance_start);
+            vm_parser_format_u64_with_commas(required_bytes, required_text, sizeof(required_text));
+            vm_parser_format_u64_with_commas(available_from_start, available_text, sizeof(available_text));
+            vm_parser_format_u64_with_commas((uint64_t)active_capacity, capacity_text, sizeof(capacity_text));
+            vm_parser_add_formatted_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED,
+                repeat_token,
+                "DUP expansion requires %s bytes, but only %s bytes are available from this declaration position in the active declaration image (%s total bytes configured).",
+                required_text,
+                available_text,
+                capacity_text
+            );
+            state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
+            return false;
+        }
+    }
 
     token = vm_parser_current_token(state);
     if (token == NULL || token->kind != VM_LEXER_TOKEN_RIGHT_PAREN) {
@@ -2222,7 +2376,7 @@ static bool vm_parser_parse_dup_initializer(
     return true;
 }
 
-/// Parses one .data initializer, including flat DUP forms.
+/// Parses one .data initializer, including nested DUP forms.
 ///
 /// @param state Parser state to mutate.
 /// @param data_type Declared data type.
@@ -2250,7 +2404,25 @@ static bool vm_parser_parse_data_initializer(
         if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_IDENTIFIER &&
             vm_parser_token_equals(vm_parser_current_token(state), "DUP")) {
             if (expression.value <= 0 || (uint64_t)expression.value > UINT32_MAX) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_DUP, expression.start_token, "DUP repeat count must be between 1 and UINT32_MAX.");
+                uint8_t *active_image = NULL;
+                size_t active_capacity = 0U;
+                uint32_t *active_offset = NULL;
+                size_t *active_size = NULL;
+                char capacity_text[48];
+                if (!vm_parser_get_active_data_image(state, &active_image, &active_capacity, &active_offset, &active_size)) {
+                    active_capacity = state->config != NULL ? state->config->data_image_capacity : 0U;
+                }
+                (void)active_image;
+                (void)active_offset;
+                (void)active_size;
+                vm_parser_format_u64_with_commas((uint64_t)active_capacity, capacity_text, sizeof(capacity_text));
+                vm_parser_add_formatted_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_INVALID_DUP,
+                    expression.start_token,
+                    "DUP repeat count must be 1 or greater. The active declaration image capacity is %s bytes; usable repeat counts also depend on initializer size and remaining capacity.",
+                    capacity_text
+                );
                 return false;
             }
             repeat_count = (uint64_t)expression.value;
