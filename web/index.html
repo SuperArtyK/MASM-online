@@ -8,19 +8,62 @@
   execution stay inside the worker/Wasm path; the default program demonstrates nested DUP and metadata operators.
 -->
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MASM32 Educational Simulator</title>
-    <link rel="stylesheet" href="./src/styles.css">
-  </head>
-  <body>
-    <main class="app-shell">
-      <section class="panel">
-        <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 30: nested DUP expansion in supported data declarations.</p>
-        <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">ROWS = 3
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>MASM32 Educational Simulator</title>
+        <link rel="stylesheet" href="./src/styles.css">
+        <link rel="stylesheet" href="./src/custom.css">
+    </head>
+
+    <body class="bg-[#f5f7fb] text-[#172033] font-['Inter', sans-serif]">
+
+        <!-- Navbar -->
+        <div class="sticky top-0 flex flex-row items-center justify-between bg-black h-16 w-full">
+            <h1 class="font-bold text-3xl ml-4 text-yellow-500"><span class="text-red-900">MASM32</span> Educational Simulator</h1>
+            <a href="https://github.com/SuperArtyK/MASM-online" target="_blank" class="text-white mr-4 font-bold text-3xl ml-auto">&lt;/&gt; Source</a>
+        </div>
+
+        <!-- Rest of Page -->
+        <div class="flex flex-col gap-4 m-4">
+
+            <!-- Milestone Announcement -->
+            <div class="bg-blue-100 border border-gray-300 rounded-xl">
+                <h1 class="text-xl p-4">
+                    Milestone 30: nested DUP expansion in supported data declarations.
+                </h1>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex flex-row gap-4 mt-3 mx-auto">
+                <button id="run-button" type="button" class="text-white">
+                    <span class="flex items-center justify-center rounded-md bg-emerald-600 py-2 w-30">
+                        ▶&ensp;Run
+                    </span>
+                </button>
+                <button id="ping-button" type="button" class="text-white">
+                    <span class="flex items-center justify-center rounded-md bg-sky-600 py-2 w-30">
+                        Ping worker
+                    </span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Interface -->
+        <main class="flex flex-row gap-4 my-0 mx-auto px-4 pb-4">
+
+            <!-- Left Column -->
+            <div class="flex flex-col gap-4 w-full md:w-1/2">
+                <!-- Editor -->
+                <section class="flex flex-col bg-white border border-gray-300 rounded-xl overflow-hidden max-h-[60vh] w-full">
+                    <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                        <label for="editor" class="font-semibold">Editor</label>
+                    </div>
+                    <div class="flex flex-row gap-2 overflow-hidden w-full">
+                        <!-- Line Numbers -->
+                        <div id="lineNumbers" class="bg-gray-100 font-light text-gray-500 p-2 text-right overflow-y-auto scrollbar-none">1</div>
+                        <!-- Code Editor -->
+                        <textarea id="editor" spellcheck="false" class="resize-none overflow-y-auto flex-1 outline-0">ROWS = 3
 COLS = 4
 .data
 matrix DWORD ROWS DUP(COLS DUP(0))
@@ -30,28 +73,68 @@ main PROC
     mov ebx, SIZEOF matrix
 main ENDP
 END main</textarea>
-        <div class="controls">
-          <button id="run-button" type="button">Run</button>
-          <button id="ping-button" type="button">Ping worker</button>
-        </div>
-      </section>
-      <section class="panel">
-        <h2>Simulator Messages</h2>
-        <pre id="simulator-messages" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Final Registers</h2>
-        <pre id="final-registers" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Memory Changes</h2>
-        <pre id="memory-changes" aria-live="polite"></pre>
-      </section>
-      <section class="panel">
-        <h2>Program Console</h2>
-        <pre id="program-console" aria-live="polite"></pre>
-      </section>
-    </main>
+                    </div>
+                </section>
+                <!-- Program Console -->
+                <section class="flex flex-col bg-white border border-gray-300 rounded-xl overflow-hidden max-h-[60vh]">
+                    <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                        <h2 class="font-semibold">Program Console</h2>
+                    </div>
+                    <pre class="p-2 overflow-y-scroll" id="program-console" aria-live="polite"></pre>
+                </section>
+            </div>
+
+            <!-- Right Column -->
+            <div class="flex flex-col gap-4 w-full md:w-1/2">
+
+                <!-- Simulator Messages -->
+                <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                    <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                        <h2 class="font-semibold">Simulator Messages</h2>
+                    </div>
+                    <pre class="p-2" id="simulator-messages" aria-live="polite"></pre>
+                </section>
+
+                <!-- Final Registers -->
+                <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                    <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                        <h2 class="font-semibold">Final Registers</h2>
+                    </div>
+                    <pre class="p-2" id="final-registers" aria-live="polite"></pre>
+                </section>
+
+                <!-- Memory Changes -->
+                <section class="bg-white border border-gray-300 rounded-xl overflow-hidden">
+                    <div class="bg-gray-100 w-full py-2 px-3 border-b border-gray-300">
+                        <h2 class="font-semibold">Memory Changes</h2>
+                    </div>
+                    <pre class="p-2" id="memory-changes" aria-live="polite"></pre>
+                </section>
+                
+            </div>
+        </main>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>
+
+<script>
+    const textarea = document.getElementById("editor");
+    const lineNumbers = document.getElementById("lineNumbers");
+
+    function updateLineNumbers() {
+        const lines = textarea.value.split("\n").length;
+
+        lineNumbers.innerHTML = Array.from(
+            { length: lines },
+            (_, i) => i + 1
+        ).join("<br>");
+    }
+
+    textarea.addEventListener("input", updateLineNumbers);
+
+    textarea.addEventListener("scroll", () => {
+        lineNumbers.scrollTop = textarea.scrollTop;
+    });
+
+    updateLineNumbers();
+</script>
