@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30 and Milestone 31 native/Node diagnostic rendering tests.
+Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30, Milestone 31 native/Node diagnostic rendering tests, and Milestone 32 fixed-layout policy infrastructure.
 
 ## Current scope
 
@@ -21,6 +21,7 @@ Implemented through the current milestone:
 - Milestone 29 extended constant expressions: numeric equates now support unary `+`/`-`/`NOT`, parentheses, binary `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, and extraction operators `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD` in supported compile-time constant contexts.
 - Milestone 30 nested `DUP`: data declarations now support nested `DUP` expansion such as `ROWS DUP(COLS DUP(0))`, expression-backed counts and initializer values, deterministic `?` storage, and expansion-capacity diagnostics.
 - Native diagnostic rendering harness: the aggregate test runner builds a C source-run JSON producer and a Node harness verifies exact Simulator Messages text through the same formatter module used by the browser UI. This verifies native JSON and formatter output, not that `web/dist` Wasm artifacts were rebuilt.
+- Milestone 32 memory layout policy infrastructure: the VM memory loader now consumes an explicit fixed-layout policy object while preserving the existing educational region bases, sizes, permissions, and diagnostics. This adds no new MASM syntax or user-facing layout controls.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 

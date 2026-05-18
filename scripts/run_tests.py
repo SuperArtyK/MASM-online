@@ -111,6 +111,8 @@ def run_structure_tests() -> None:
         "src/core/vm_cpu.h",
         "src/core/vm_memory.c",
         "src/core/vm_memory.h",
+        "src/core/vm_layout.c",
+        "src/core/vm_layout.h",
         "src/core/vm_ir.c",
         "src/core/vm_ir.h",
         "src/core/vm_exec.c",
@@ -137,6 +139,7 @@ def run_structure_tests() -> None:
         "tests/core/test_vm_cpu.c",
         "tests/core/test_vm_flags.c",
         "tests/core/test_vm_memory.c",
+        "tests/core/test_vm_layout.c",
         "tests/core/test_vm_exec.c",
         "tests/core/test_lexer.c",
         "tests/core/test_parser.c",
@@ -155,6 +158,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "wasm_api.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_cpu.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_memory.c")
+    assert_text_contains("scripts/build_wasm.sh", "vm_layout.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_ir.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_exec.c")
     assert_text_contains("scripts/build_wasm.sh", "lexer.c")
@@ -172,6 +176,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "wasm_api.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_cpu.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_memory.c")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "vm_layout.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_ir.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_exec.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "lexer.c")
@@ -220,6 +225,7 @@ def run_structure_tests() -> None:
     assert_text_not_contains("src/wasm/wasm_api.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_cpu.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_memory.h", "__cplusplus")
+    assert_text_not_contains("src/core/vm_layout.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_ir.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_exec.h", "__cplusplus")
     assert_text_not_contains("src/parser/lexer.h", "__cplusplus")
@@ -229,6 +235,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.c", "/*\n * @file vm_cpu.c")
     assert_text_contains("src/core/vm_memory.h", "/*\n * @file vm_memory.h")
     assert_text_contains("src/core/vm_memory.c", "/*\n * @file vm_memory.c")
+    assert_text_contains("src/core/vm_layout.h", "/*\n * @file vm_layout.h")
+    assert_text_contains("src/core/vm_layout.c", "/*\n * @file vm_layout.c")
     assert_text_contains("src/core/vm_ir.h", "/*\n * @file vm_ir.h")
     assert_text_contains("src/core/vm_ir.c", "/*\n * @file vm_ir.c")
     assert_text_contains("src/core/vm_exec.h", "/*\n * @file vm_exec.h")
@@ -247,10 +255,14 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "bool vm_cpu_update_add_flags")
     assert_text_contains("src/core/vm_cpu.h", "bool vm_cpu_update_sub_flags")
     assert_text_contains("src/core/vm_cpu.h", "bool vm_cpu_update_cmp_flags")
+    assert_text_contains("src/core/vm_layout.h", "/// Describes the selected VM memory layout policy")
+    assert_text_contains("src/core/vm_layout.h", "VmLayoutPolicy vm_layout_default_policy")
+    assert_text_contains("src/core/vm_layout.c", "/// Initializes maximum-size values")
     assert_text_contains("src/core/vm_memory.h", "/// Identifies one deterministic simulated memory region")
     assert_text_contains("src/core/vm_memory.h", "/// Describes one raw byte change recorded")
     assert_text_contains("src/core/vm_memory.h", "VmMemoryStatus vm_memory_read_u32")
     assert_text_contains("src/core/vm_memory.h", "VmMemoryStatus vm_memory_write_u64")
+    assert_text_contains("src/core/vm_memory.h", "VmMemoryStatus vm_memory_init_with_layout_policy")
     assert_text_contains("src/core/vm_memory.c", "/// Validates a checked access before bytes")
     assert_text_contains("src/core/vm_cpu.c", "/// Describes how a public register identifier maps")
     assert_text_contains("src/core/vm_cpu.c", "/// Describes the EFLAGS bit represented")
@@ -258,6 +270,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_vm_flags.c", "/// Verifies success-path named flag")
     assert_text_contains("tests/core/test_vm_memory.c", "/*\n * @file test_vm_memory.c")
     assert_text_contains("tests/core/test_vm_memory.c", "/// Verifies default region layout")
+    assert_text_contains("tests/core/test_vm_layout.c", "/*\n * @file test_vm_layout.c")
+    assert_text_contains("tests/core/test_vm_layout.c", "/// Verifies default policy metadata")
     assert_text_contains("src/core/vm_ir.h", "/// Identifies the currently implemented IR operation code")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPERAND_MEMORY_REGISTER")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_MOVSX")
@@ -273,6 +287,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_exec.h", "VM_EXEC_MAX_MEMORY_ACCESSES")
     assert_text_contains("src/core/vm_exec.h", "VmExecMemoryAccess")
     assert_text_contains("src/core/vm_exec.h", "VmExecStatus vm_step")
+    assert_text_contains("src/core/vm_exec.h", "VmExecStatus vm_init_with_layout_policy")
     assert_text_contains("src/core/vm_exec.c", "/// Executes one already-fetched instruction")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_movx")
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_cbw")
@@ -364,7 +379,11 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/diagnostic_json_producer.c", "/*\n * @file diagnostic_json_producer.c")
     assert_text_contains("tests/core/diagnostic_json_producer.c", "masm32_sim_wasm_run_source_json")
     assert_text_contains("README.md", "Native diagnostic rendering harness")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Milestone 31 adds a native/Node diagnostic rendering harness")
+    assert_text_contains("README.md", "Milestone 32 memory layout policy infrastructure")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Milestone 32 adds fixed memory-layout policy infrastructure only")
+    assert_text_not_contains("src/core/vm_memory.c", "0x00400000U")
+    assert_text_not_contains("src/core/vm_memory.c", "0x00500000U")
+    assert_text_not_contains("src/core/vm_exec.c", "0x00500000U")
     print("Milestone structure tests passed.")
 
 
@@ -420,6 +439,7 @@ def run_c_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",
@@ -447,8 +467,22 @@ def run_c_tests() -> None:
         [
             "tests/core/test_vm_memory.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
         ],
     )
+
+    compile_and_run_c_test(
+        "test_vm_layout",
+        [
+            "tests/core/test_vm_layout.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+        ],
+    )
+
     compile_and_run_c_test(
         "test_vm_exec",
         [
@@ -456,6 +490,7 @@ def run_c_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",
@@ -480,6 +515,7 @@ def run_c_tests() -> None:
             "tests/core/test_parser.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",
@@ -495,6 +531,7 @@ def run_c_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",
@@ -511,6 +548,7 @@ def run_c_tests() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",
@@ -532,6 +570,7 @@ def build_diagnostic_json_producer() -> None:
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
             "src/parser/lexer.c",

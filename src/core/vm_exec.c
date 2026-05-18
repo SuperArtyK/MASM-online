@@ -1318,11 +1318,36 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
     }
 }
 
+VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_policy) {
+    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+
+    if (vm == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    memset(vm, 0, sizeof(*vm));
+    vm_cpu_init(&vm->cpu);
+    memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
+    if (memory_status != VM_MEMORY_STATUS_OK) {
+        vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_MEMORY_ERROR);
+        vm->last_diagnostic.memory_status = memory_status;
+        return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    vm_exec_clear_delta(&vm->last_delta);
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
+}
+
 VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
 
     if (vm == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (memory_config == NULL) {
+        return vm_init_with_layout_policy(vm, NULL);
     }
 
     memset(vm, 0, sizeof(*vm));

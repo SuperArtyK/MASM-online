@@ -163,6 +163,16 @@ typedef struct Vm {
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config);
 
+/// Initializes a VM instance from an explicit memory layout policy.
+///
+/// Passing NULL for @p layout_policy uses @ref vm_layout_default_policy. Phase 32
+/// supports fixed layout only and preserves existing source-run behavior.
+///
+/// @param vm VM instance to initialize.
+/// @param layout_policy Optional memory layout policy.
+/// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
+VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_policy);
+
 /// Releases resources owned by a VM instance.
 ///
 /// @param vm VM instance to release. NULL is ignored.

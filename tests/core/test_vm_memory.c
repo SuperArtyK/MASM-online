@@ -1,11 +1,11 @@
 /*
  * @file test_vm_memory.c
- * @brief Unit tests for the Milestone 3 simulated memory region model.
+ * @brief Unit tests for checked VM memory regions and fixed-layout compatibility.
  *
  * These tests cover deterministic memory layout, checked reads and writes,
  * region permissions, invalid address reporting, unaligned-access warnings, raw
- * byte-change recording, and Milestone 29 read-only .const region behavior
- * without introducing parser or instruction execution.
+ * byte-change recording, read-only .const behavior, and fixed-layout
+ * compatibility without introducing parser or instruction execution.
  */
 
 #include <stdbool.h>
@@ -550,7 +550,7 @@ static int test_memory_change_capacity_truncates_without_blocking_writes(void) {
     return failures;
 }
 
-/// Runs all memory-region tests through Milestone 29.
+/// Runs all checked-memory and fixed-layout compatibility tests.
 ///
 /// @return Zero when all tests pass, otherwise one.
 int main(void) {
@@ -569,10 +569,10 @@ int main(void) {
     failures += test_memory_change_capacity_truncates_without_blocking_writes();
 
     if (failures != 0) {
-        fprintf(stderr, "Milestone 3 memory region tests failed: %d failure(s)\n", failures);
+        fprintf(stderr, "Checked memory region tests failed: %d failure(s)\n", failures);
         return 1;
     }
 
-    printf("Memory region tests through Milestone 29 passed.\n");
+    printf("Checked memory region and fixed-layout compatibility tests passed.\n");
     return 0;
 }

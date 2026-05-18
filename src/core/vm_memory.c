@@ -258,46 +258,67 @@ static VmMemoryStatus vm_memory_validate_access(
     return is_unaligned ? VM_MEMORY_STATUS_OK_UNALIGNED : VM_MEMORY_STATUS_OK;
 }
 
-/// Validates memory sizes and default fixed region placement.
+/// Computes an exclusive limit while checking 32-bit address overflow.
 ///
-/// @param config Memory-size configuration to validate.
-/// @return true when fixed region ranges are non-zero and non-overlapping.
-static bool vm_memory_config_is_valid(const VmMemoryConfig *config) {
+/// @param base Inclusive region base address.
+/// @param size Region size in bytes.
+/// @param out_limit Receives the exclusive limit address on success.
+/// @return true when the size is non-zero and base + size does not overflow.
+static bool vm_memory_compute_region_limit(uint32_t base, uint32_t size, uint32_t *out_limit) {
+    if (out_limit == NULL || size == 0U || size > UINT32_MAX - base) {
+        return false;
+    }
+
+    *out_limit = base + size;
+    return true;
+}
+
+/// Builds a fixed-layout policy from the legacy size-only memory configuration.
+///
+/// @param config Size-only memory configuration.
+/// @param out_policy Receives the equivalent fixed layout policy on success.
+/// @return true when the configuration can be represented without overflow.
+static bool vm_memory_policy_from_config(const VmMemoryConfig *config, VmLayoutPolicy *out_policy) {
+    VmLayoutPolicy policy;
+    uint32_t limit = 0U;
     uint32_t stack_base = 0U;
 
-    if (config == NULL) {
+    if (config == NULL || out_policy == NULL) {
         return false;
     }
 
-    if (config->code_size == 0U || config->data_size == 0U || config->const_size == 0U || config->heap_size == 0U || config->stack_size == 0U) {
+    policy = vm_layout_default_policy();
+
+    if (!vm_memory_compute_region_limit(VM_LAYOUT_FIXED_CODE_BASE, config->code_size, &limit)) {
         return false;
     }
+    policy.regions[VM_LAYOUT_REGION_CODE].limit = limit;
 
-    if (config->code_size > VM_MEMORY_DEFAULT_DATA_BASE - VM_MEMORY_DEFAULT_CODE_BASE) {
+    if (!vm_memory_compute_region_limit(VM_LAYOUT_FIXED_DATA_BASE, config->data_size, &limit)) {
         return false;
     }
+    policy.regions[VM_LAYOUT_REGION_DATA].limit = limit;
 
-    if (config->data_size > VM_MEMORY_DEFAULT_CONST_BASE - VM_MEMORY_DEFAULT_DATA_BASE) {
+    if (!vm_memory_compute_region_limit(VM_LAYOUT_FIXED_CONST_BASE, config->const_size, &limit)) {
         return false;
     }
+    policy.regions[VM_LAYOUT_REGION_CONST].limit = limit;
 
-    if (config->const_size > VM_MEMORY_DEFAULT_HEAP_BASE - VM_MEMORY_DEFAULT_CONST_BASE) {
+    if (!vm_memory_compute_region_limit(VM_LAYOUT_FIXED_HEAP_BASE, config->heap_size, &limit)) {
         return false;
     }
+    policy.regions[VM_LAYOUT_REGION_HEAP].limit = limit;
 
-    if (config->stack_size > VM_MEMORY_DEFAULT_STACK_TOP) {
+    if (config->stack_size == 0U || config->stack_size > VM_LAYOUT_FIXED_STACK_TOP) {
         return false;
     }
+    stack_base = VM_LAYOUT_FIXED_STACK_TOP - config->stack_size;
+    policy.regions[VM_LAYOUT_REGION_STACK].base = stack_base;
+    policy.regions[VM_LAYOUT_REGION_STACK].limit = VM_LAYOUT_FIXED_STACK_TOP;
+    policy.stack_size_request = config->stack_size;
+    policy.heap_size_request = config->heap_size;
 
-    stack_base = VM_MEMORY_DEFAULT_STACK_TOP - config->stack_size;
-    if (stack_base < VM_MEMORY_DEFAULT_HEAP_BASE) {
-        return false;
-    }
-
-    if (config->heap_size > stack_base - VM_MEMORY_DEFAULT_HEAP_BASE) {
-        return false;
-    }
-
+    *out_policy = policy;
     return true;
 }
 
@@ -497,7 +518,9 @@ static VmMemoryStatus vm_memory_write_integer_checked(
 }
 
 VmMemoryConfig vm_memory_default_config(void) {
+    VmLayoutPolicy policy = vm_layout_default_policy();
     VmMemoryConfig config;
+    uint32_t size = 0U;
 
     config.code_size = VM_MEMORY_DEFAULT_CODE_SIZE;
     config.data_size = VM_MEMORY_DEFAULT_DATA_SIZE;
@@ -505,32 +528,50 @@ VmMemoryConfig vm_memory_default_config(void) {
     config.heap_size = VM_MEMORY_DEFAULT_HEAP_SIZE;
     config.stack_size = VM_MEMORY_DEFAULT_STACK_SIZE;
 
+    if (vm_layout_region_size(&policy.regions[VM_LAYOUT_REGION_CODE], &size)) {
+        config.code_size = size;
+    }
+    if (vm_layout_region_size(&policy.regions[VM_LAYOUT_REGION_DATA], &size)) {
+        config.data_size = size;
+    }
+    if (vm_layout_region_size(&policy.regions[VM_LAYOUT_REGION_CONST], &size)) {
+        config.const_size = size;
+    }
+    if (vm_layout_region_size(&policy.regions[VM_LAYOUT_REGION_HEAP], &size)) {
+        config.heap_size = size;
+    }
+    if (vm_layout_region_size(&policy.regions[VM_LAYOUT_REGION_STACK], &size)) {
+        config.stack_size = size;
+    }
+
     return config;
 }
 
-VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
-    VmMemoryConfig effective_config;
+VmMemoryStatus vm_memory_init_with_layout_policy(VmMemory *memory, const VmLayoutPolicy *policy) {
+    VmLayoutPolicy effective_policy;
     VmMemoryStatus status = VM_MEMORY_STATUS_OK;
-    uint32_t stack_base = 0U;
+    uint32_t size = 0U;
 
     if (memory == NULL) {
         return VM_MEMORY_STATUS_INVALID_ARGUMENT;
     }
 
-    effective_config = config != NULL ? *config : vm_memory_default_config();
-    if (!vm_memory_config_is_valid(&effective_config)) {
+    effective_policy = policy != NULL ? *policy : vm_layout_default_policy();
+    if (!vm_layout_policy_is_valid(&effective_policy)) {
         memset(memory, 0, sizeof(*memory));
         return VM_MEMORY_STATUS_INVALID_ARGUMENT;
     }
 
     memset(memory, 0, sizeof(*memory));
-    stack_base = VM_MEMORY_DEFAULT_STACK_TOP - effective_config.stack_size;
 
+    if (!vm_layout_region_size(&effective_policy.regions[VM_LAYOUT_REGION_CODE], &size)) {
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
     status = vm_memory_init_region(
         &memory->regions[VM_MEMORY_REGION_CODE],
         VM_MEMORY_REGION_CODE,
-        VM_MEMORY_DEFAULT_CODE_BASE,
-        effective_config.code_size,
+        effective_policy.regions[VM_LAYOUT_REGION_CODE].base,
+        size,
         (uint8_t)(VM_MEMORY_PERMISSION_READ | VM_MEMORY_PERMISSION_EXECUTE)
     );
     if (status != VM_MEMORY_STATUS_OK) {
@@ -538,11 +579,15 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
         return status;
     }
 
+    if (!vm_layout_region_size(&effective_policy.regions[VM_LAYOUT_REGION_DATA], &size)) {
+        vm_memory_deinit(memory);
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
     status = vm_memory_init_region(
         &memory->regions[VM_MEMORY_REGION_DATA],
         VM_MEMORY_REGION_DATA,
-        VM_MEMORY_DEFAULT_DATA_BASE,
-        effective_config.data_size,
+        effective_policy.regions[VM_LAYOUT_REGION_DATA].base,
+        size,
         (uint8_t)(VM_MEMORY_PERMISSION_READ | VM_MEMORY_PERMISSION_WRITE)
     );
     if (status != VM_MEMORY_STATUS_OK) {
@@ -550,11 +595,15 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
         return status;
     }
 
+    if (!vm_layout_region_size(&effective_policy.regions[VM_LAYOUT_REGION_CONST], &size)) {
+        vm_memory_deinit(memory);
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
     status = vm_memory_init_region(
         &memory->regions[VM_MEMORY_REGION_CONST],
         VM_MEMORY_REGION_CONST,
-        VM_MEMORY_DEFAULT_CONST_BASE,
-        effective_config.const_size,
+        effective_policy.regions[VM_LAYOUT_REGION_CONST].base,
+        size,
         (uint8_t)VM_MEMORY_PERMISSION_READ
     );
     if (status != VM_MEMORY_STATUS_OK) {
@@ -562,11 +611,15 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
         return status;
     }
 
+    if (!vm_layout_region_size(&effective_policy.regions[VM_LAYOUT_REGION_HEAP], &size)) {
+        vm_memory_deinit(memory);
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
     status = vm_memory_init_region(
         &memory->regions[VM_MEMORY_REGION_HEAP],
         VM_MEMORY_REGION_HEAP,
-        VM_MEMORY_DEFAULT_HEAP_BASE,
-        effective_config.heap_size,
+        effective_policy.regions[VM_LAYOUT_REGION_HEAP].base,
+        size,
         (uint8_t)(VM_MEMORY_PERMISSION_READ | VM_MEMORY_PERMISSION_WRITE)
     );
     if (status != VM_MEMORY_STATUS_OK) {
@@ -574,11 +627,15 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
         return status;
     }
 
+    if (!vm_layout_region_size(&effective_policy.regions[VM_LAYOUT_REGION_STACK], &size)) {
+        vm_memory_deinit(memory);
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
     status = vm_memory_init_region(
         &memory->regions[VM_MEMORY_REGION_STACK],
         VM_MEMORY_REGION_STACK,
-        stack_base,
-        effective_config.stack_size,
+        effective_policy.regions[VM_LAYOUT_REGION_STACK].base,
+        size,
         (uint8_t)(VM_MEMORY_PERMISSION_READ | VM_MEMORY_PERMISSION_WRITE)
     );
     if (status != VM_MEMORY_STATUS_OK) {
@@ -587,6 +644,25 @@ VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
     }
 
     return VM_MEMORY_STATUS_OK;
+}
+
+VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config) {
+    VmLayoutPolicy policy;
+
+    if (memory == NULL) {
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (config == NULL) {
+        return vm_memory_init_with_layout_policy(memory, NULL);
+    }
+
+    if (!vm_memory_policy_from_config(config, &policy)) {
+        memset(memory, 0, sizeof(*memory));
+        return VM_MEMORY_STATUS_INVALID_ARGUMENT;
+    }
+
+    return vm_memory_init_with_layout_policy(memory, &policy);
 }
 
 void vm_memory_deinit(VmMemory *memory) {

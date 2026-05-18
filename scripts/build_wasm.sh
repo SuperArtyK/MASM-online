@@ -18,6 +18,7 @@ emcc \
   "${ROOT_DIR}/src/core/masm32_sim_api.c" \
   "${ROOT_DIR}/src/core/vm_cpu.c" \
   "${ROOT_DIR}/src/core/vm_memory.c" \
+  "${ROOT_DIR}/src/core/vm_layout.c" \
   "${ROOT_DIR}/src/core/vm_ir.c" \
   "${ROOT_DIR}/src/core/vm_exec.c" \
   "${ROOT_DIR}/src/parser/lexer.c" \

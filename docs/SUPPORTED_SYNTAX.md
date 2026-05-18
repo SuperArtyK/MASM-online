@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 30. Milestone 31 adds a native/Node diagnostic rendering harness only; it does not add MASM syntax or runtime behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 30. Milestone 31 adds a native/Node diagnostic rendering harness only, and Milestone 32 adds fixed memory-layout policy infrastructure only; neither adds MASM syntax or runtime instruction behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -253,7 +253,7 @@ Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30. Milestone 31 added a native diagnostic JSON producer plus Node rendering harness for exact Simulator Messages tests; it intentionally changed no MASM syntax or runtime semantics and does not prove stale `web/dist` artifacts were rebuilt.
+`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30. Milestone 31 added a native diagnostic JSON producer plus Node rendering harness for exact Simulator Messages tests; Milestone 32 added a fixed-layout policy object consumed by VM memory initialization. Both intentionally changed no MASM syntax or runtime instruction semantics and do not prove stale `web/dist` artifacts were rebuilt.
 
 ## Backlog notes
 

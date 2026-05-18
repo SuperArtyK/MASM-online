@@ -15,37 +15,39 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "vm_layout.h"
+
 /// Default base address for the simulated .code region.
-#define VM_MEMORY_DEFAULT_CODE_BASE 0x00400000U
+#define VM_MEMORY_DEFAULT_CODE_BASE VM_LAYOUT_FIXED_CODE_BASE
 
 /// Default base address for the simulated .data region.
-#define VM_MEMORY_DEFAULT_DATA_BASE 0x00500000U
+#define VM_MEMORY_DEFAULT_DATA_BASE VM_LAYOUT_FIXED_DATA_BASE
 
 /// Default base address for the simulated read-only .const region.
-#define VM_MEMORY_DEFAULT_CONST_BASE 0x00600000U
+#define VM_MEMORY_DEFAULT_CONST_BASE VM_LAYOUT_FIXED_CONST_BASE
 
 /// Default base address for the simulated heap region.
-#define VM_MEMORY_DEFAULT_HEAP_BASE 0x00700000U
+#define VM_MEMORY_DEFAULT_HEAP_BASE VM_LAYOUT_FIXED_HEAP_BASE
 
 /// Default exclusive top address for the simulated downward-growing stack.
-#define VM_MEMORY_DEFAULT_STACK_TOP 0x00900000U
+#define VM_MEMORY_DEFAULT_STACK_TOP VM_LAYOUT_FIXED_STACK_TOP
 
 /// Default simulated .code region size in bytes.
-#define VM_MEMORY_DEFAULT_CODE_SIZE 0x00100000U
+#define VM_MEMORY_DEFAULT_CODE_SIZE VM_LAYOUT_FIXED_CODE_SIZE
 
 /// Default simulated .data region size in bytes.
-#define VM_MEMORY_DEFAULT_DATA_SIZE 0x00100000U
+#define VM_MEMORY_DEFAULT_DATA_SIZE VM_LAYOUT_FIXED_DATA_SIZE
 
 /// Default simulated read-only .const region size in bytes.
-#define VM_MEMORY_DEFAULT_CONST_SIZE 0x00100000U
+#define VM_MEMORY_DEFAULT_CONST_SIZE VM_LAYOUT_FIXED_CONST_SIZE
 
 /// Default simulated heap region size in bytes.
-#define VM_MEMORY_DEFAULT_HEAP_SIZE 0x00100000U
+#define VM_MEMORY_DEFAULT_HEAP_SIZE VM_LAYOUT_FIXED_HEAP_SIZE
 
 /// Default simulated stack region size in bytes.
-#define VM_MEMORY_DEFAULT_STACK_SIZE 0x00010000U
+#define VM_MEMORY_DEFAULT_STACK_SIZE VM_LAYOUT_FIXED_STACK_SIZE
 
-/// Maximum number of raw byte changes retained by the Milestone 3 recorder.
+/// Maximum number of raw byte changes retained by the fixed recorder.
 #define VM_MEMORY_MAX_BYTE_CHANGES 1024U
 
 /// Identifies one deterministic simulated memory region.
@@ -124,7 +126,7 @@ typedef struct VmMemoryRegion {
     uint32_t size;
     /// Bitmask of VmMemoryPermission values.
     uint8_t permissions;
-    /// Backing storage for committed Milestone 3 memory bytes.
+    /// Backing storage for committed simulated memory bytes.
     uint8_t *bytes;
 } VmMemoryRegion;
 
@@ -170,9 +172,9 @@ typedef struct VmMemory {
     bool change_overflowed;
 } VmMemory;
 
-/// Returns the default Milestone 3 memory-size configuration.
+/// Returns the default fixed-layout memory-size configuration.
 ///
-/// @return Default memory-size configuration for .code, .data, heap, and stack.
+/// @return Default memory-size configuration for .code, .data, .const, heap, and stack.
 VmMemoryConfig vm_memory_default_config(void);
 
 /// Initializes deterministic simulated memory regions.
@@ -184,6 +186,16 @@ VmMemoryConfig vm_memory_default_config(void);
 /// @param config Optional memory-size configuration.
 /// @return VM_MEMORY_STATUS_OK on success, or an error status on failure.
 VmMemoryStatus vm_memory_init(VmMemory *memory, const VmMemoryConfig *config);
+
+/// Initializes simulated memory regions from an explicit layout policy.
+///
+/// Passing NULL for @p policy uses @ref vm_layout_default_policy. Phase 32
+/// supports only fixed-layout policies and preserves existing default behavior.
+///
+/// @param memory Memory object to initialize.
+/// @param policy Optional layout policy.
+/// @return VM_MEMORY_STATUS_OK on success, or an error status on failure.
+VmMemoryStatus vm_memory_init_with_layout_policy(VmMemory *memory, const VmLayoutPolicy *policy);
 
 /// Releases backing storage owned by initialized simulated memory.
 ///

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Milestone 30 Wasm-facing source execution API.
+ * @brief Tests for the Wasm-facing source execution API through Phase 32 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
@@ -2166,6 +2166,38 @@ static int test_subsequent_calls_return_latest_result(void) {
     return failures;
 }
 
+
+/// Verifies Phase 32 preserves fixed-layout source-run behavior from Milestones 27-30.
+///
+/// @return Number of failures.
+static int test_phase32_fixed_layout_source_run_regression_program(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        "COUNT = 2\n"
+        ".DATA?\n"
+        "buf BYTE COUNT DUP(?)\n"
+        ".data\n"
+        "arr DWORD COUNT DUP(COUNT DUP(0))\n"
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF buf\n"
+        "    mov ebx, SIZEOF arr\n"
+        "    mov ecx, limit\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 32 fixed-layout regression program should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", ".DATA? SIZEOF should remain two bytes");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "nested DUP SIZEOF should remain sixteen bytes");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", ".CONST read should remain available");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 32 regression should complete normally");
+
+    return failures;
+}
+
 /// Test entry point.
 ///
 /// @return Zero when all source-run API tests pass.
@@ -2235,6 +2267,7 @@ int main(void) {
     failures += test_phase30_dup_initializer_list_source_run_program();
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
     failures += test_phase30_large_dup_count_capacity_diagnostic_source_run_program();
+    failures += test_phase32_fixed_layout_source_run_regression_program();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -2243,6 +2276,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Milestone 30 source execution tests passed.");
+    puts("Source execution tests through Phase 32 regression coverage passed.");
     return 0;
 }
