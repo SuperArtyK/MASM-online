@@ -1,5 +1,8 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE_C99_MASM_DIRECTIVES_UPDATED_REVISED_2026-05-17_POST30_OVERHAULED_CANONICAL.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This specification owns product boundaries and stable behavior; the paired implementation guide owns phase numbering, implementation tasks, and required tests.
+
+
 ## 1. Project Goal
 
 Build a static, browser-based educational simulator for MASM32-style assembly programs. The project runs entirely on the client side and uses a C99 virtual machine compiled to WebAssembly with Emscripten.
@@ -139,13 +142,13 @@ Required language policy:
 - Browser-side code may remain JavaScript or TypeScript.
 - Public and module-level C APIs must continue to use Doxygen-style `///` comments, and each source/header file must keep a file-level block comment.
 
-Recommended compiler posture:
+Required compiler posture for core and release builds:
 
 ```text
 C standard: C99
-Warnings: enabled and treated strictly where practical
+Warnings: enabled and treated strictly for C99 core and test builds; browser-only tooling exceptions must be documented in the release report
 Core ownership: explicit structs and functions
-Allocation: deterministic and bounded where practical
+Allocation: deterministic and bounded in the C99 core; UI/browser wrapper allocations must have documented limits or release-report exceptions
 Error handling: explicit status codes and structured diagnostics
 ```
 
@@ -177,6 +180,21 @@ Each IR instruction must preserve:
 
 This enables high-quality debugging and diagnostics.
 
+### 7.1 Post-Milestone-30 Roadmap Integration Policy
+
+The implementation guide owns the canonical post-Milestone-30 phase sequence. After Milestone 30, all guide phases are renumbered sequentially starting at Phase 31 and supersede the older post-30 roadmap wording.
+
+The full specification owns stable behavior. If this specification gives a product-level rule and the implementation guide gives a phase-level task, both apply. If legacy roadmap text conflicts with the post-30 guide, the post-30 guide wins for phase sequencing and the thematic requirements in this specification win for behavior.
+
+Post-30 implementation sessions must follow these rules:
+
+- one focused implementation task per phase;
+- no future-phase syntax or runtime behavior implemented as convenience work;
+- accepted syntax, rejected syntax, diagnostics, tests, and non-goals stated per phase;
+- structured diagnostics and final rendered Simulator Messages tests for every new user-visible diagnostic path;
+- no silent no-op compatibility behavior unless explicitly listed as accepted no-op, metadata-only, or virtual built-in;
+- no broad MASM, x64, WinAPI, PE, linker, or macro behavior implied by local compatibility features.
+
 ## 8. Supported MASM Subset, Version 1
 
 The numbered subsections in this section, such as `8.1` and `8.5`, are specification sections only. They are not implementation phase numbers. The incremental implementation guide owns phase numbering.
@@ -206,7 +224,7 @@ Diagnostics should distinguish:
 Core classification rule:
 
 ```text
-Do not describe MASM-invalid code as "unsupported for now".
+Do not describe MASM-invalid code as a temporary unsupported feature.
 Do not describe simulator non-goals as if they are scheduled features.
 Do not silently accept no-op compatibility constructs unless the spec says they are accepted no-ops.
 ```
@@ -239,20 +257,85 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 
 #### 8.1.2 Additional Data Sections
 
-Textbook MASM compatibility should include these simplified sections as planned v1 features:
+`.DATA?` and `.CONST` are implemented v1 MASM compatibility sections.
 
-- `.DATA?`
-- `.CONST`
+`.DATA?` behavior is mandatory:
 
-Required behavior when implemented:
+- `.DATA?` creates writable storage for declarations whose initializers are exclusively `?` or `DUP(?)` after nested `DUP` support is available.
+- Runtime bytes are deterministic zero at program load.
+- Every byte allocated from `.DATA?` must retain uninitialized-origin metadata until overwritten by the simulated program.
+- Reads and writes are allowed in default MASM32 Educational Mode.
+- `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, constant offsets, and later expression-backed offsets must work for `.DATA?` symbols using the same symbol metadata rules as `.data`.
+- Initialized declarations in `.DATA?`, such as `x DWORD 5` or `buf BYTE ?, 1`, must produce structured assembly diagnostics. They must not be silently converted to zero-filled declarations.
 
-- `.DATA?` creates deterministic zero-filled storage while retaining metadata that the storage was originally uninitialized.
-- `.CONST` creates initialized read-only data metadata or a read-only data region.
-- Statically known writes to `.CONST` should produce assembly diagnostics when practical.
-- Runtime writes to `.CONST` should fail through checked memory permission diagnostics if `.CONST` is modeled as a separate read-only region.
-- Reads from originally uninitialized `.DATA?` storage may initially be allowed without warning; optional uninitialized-read warnings may be added later.
+`.CONST` behavior is mandatory:
 
-Until implemented, `.DATA?` and `.CONST` must be recognized and reported as planned unsupported features, not vague parse errors.
+- `.CONST` creates initialized read-only storage.
+- `.CONST` must be protected by address range, not only by symbol metadata.
+- The preferred implementation is a dedicated read-only `.const` VM memory region.
+- An acceptable implementation may use a protected-range table, but every central VM memory write helper must check that table before committing writes.
+- Every write whose final effective byte range overlaps `.CONST` storage must fail, even if only one byte overlaps.
+- The check must apply after effective-address calculation and before memory mutation.
+- The check must apply to direct symbol writes, symbol-offset writes, bracketed symbol writes, `OFFSET`-derived indirect writes, displacement writes such as `[eax + 3]`, arithmetic-derived addresses, and numeric/computed addresses that happen to land in `.CONST` storage.
+- Parser/static diagnostics are required for obvious `.CONST` destinations such as `mov limit, 20`, `mov limits[4], 99`, `mov DWORD PTR [limit], 20`, `add limit, 1`, `neg limit`, and `xchg eax, limit`.
+- Parser/static diagnostics are not sufficient. Runtime write protection must still be enforced by the memory write path.
+- Reads from `.CONST` must work normally.
+- Failed `.CONST` writes must not create successful memory-change rows.
+- `.CONST` declarations must be initialized. `?` and `DUP(?)` belong in `.DATA?`, not `.CONST`.
+
+Required runtime write algorithm:
+
+```text
+1. Resolve the final effective address for the memory operand.
+2. Determine the write width in bytes.
+3. Compute the inclusive write range [address, address + width - 1] with overflow checks.
+4. Reject address-range overflow.
+5. Reject accesses not fully contained in a valid memory region.
+6. Reject missing write permission.
+7. Reject any overlap with read-only `.CONST` storage.
+8. Only then mutate memory and record memory changes.
+```
+
+Examples that must fail:
+
+```asm
+.CONST
+limit DWORD 10
+
+.code
+main PROC
+    mov limit, 20                 ; static diagnostic
+    mov eax, OFFSET limit
+    mov DWORD PTR [eax], 20        ; runtime diagnostic
+main ENDP
+END main
+```
+
+```asm
+.CONST
+pair DWORD 10, 20
+
+.code
+main PROC
+    mov eax, OFFSET pair
+    mov DWORD PTR [eax + 3], 99    ; runtime partial-overlap diagnostic
+main ENDP
+END main
+```
+
+```asm
+.CONST
+limit DWORD 10
+
+.code
+main PROC
+    mov ebx, 500000h
+    mov DWORD PTR [ebx + 500000h], 20 ; diagnostic if final range lands in `.CONST`
+main ENDP
+END main
+```
+
+Uninitialized-origin diagnostics are not required in default mode. They are specified separately as a strict/debug memory-diagnostics feature.
 
 #### 8.1.3 Accepted MASM32 Header / Compatibility Directives
 
@@ -590,6 +673,44 @@ Equates should also be staged:
 - numeric `name EQU expression`;
 - limited or explicit rejection for `TEXTEQU` until text substitution or macro compatibility exists.
 
+
+#### 8.4.2 Constant Expression and Equate Evaluation Contract
+
+Expression and equate phases must use one documented evaluator rather than ad hoc parsing in each feature.
+
+Mandatory evaluator rules:
+
+- Expressions are compile-time only unless a later runtime/high-level control-flow phase explicitly says otherwise.
+- Numeric expression evaluation must use a signed 64-bit intermediate plus explicit overflow checks unless a later phase adopts a different documented width. Final values must still be validated against the destination context.
+- Positive literals are allowed up to the unsigned width accepted by the destination context. Negative expression values are allowed only where the context already accepts negative values or signed declarations, and must be encoded with the existing two's-complement rules after range validation.
+- Expression evaluation must not silently truncate.
+- Division and `MOD` by zero must produce a structured diagnostic and must invalidate the equate/expression result so later uses do not cascade into misleading `unknown-symbol` or generic parse diagnostics.
+- Unsupported operators must produce specific unsupported-expression diagnostics, not generic expected-line-end diagnostics.
+- Forward references to numeric equates are not supported until a future multi-pass expression phase. A use of an equate before its definition must produce a structured unknown-equate diagnostic.
+- Recursive or self-referential equates must produce a structured recursive-equate or invalid-equate diagnostic.
+- Duplicate names across data symbols, labels, procedures, and equates must be rejected unless a later phase explicitly introduces separate scopes. The diagnostic must name the earlier symbol category when practical.
+- `name = expression` may be redefined only if the implementation phase explicitly says redefinition is supported. Until then, redefinition must be rejected consistently.
+- `name EQU expression` is non-redefinable in the v1 numeric-equate subset.
+- `TEXTEQU` and text `EQU <...>` remain unsupported until the text-equate or selected macro phase.
+- `OFFSET symbol + constant` is a static address expression. The symbol must be a data symbol, not a numeric equate.
+- `$`, segment arithmetic, `THIS`, `SHORT`, high-level condition operators, and macro-time text operators are unsupported until their assigned phases.
+
+Mandatory precedence and associativity for implemented constant-expression operators:
+
+```text
+Highest:
+  unary +, unary -, NOT, HIGH, LOW, HIGHWORD, LOWWORD
+  *, /, MOD
+  +, -
+  SHL, SHR
+  AND
+  XOR
+  OR
+Lowest
+```
+
+Binary operators are left-associative unless a later phase explicitly documents an exception. Parentheses override precedence. Every expression diagnostic must preserve line, column, byte offset, and span length for the operator or operand that caused the failure.
+
 ### 8.5 Memory Operands and Addressing Forms
 
 Memory operands should be implemented in stages so textbook MASM array code works before the simulator attempts full x86 addressing complexity.
@@ -704,7 +825,7 @@ Suggested user-facing message:
 Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
 ```
 
-A future non-MASM convenience mode may choose to infer widths, but MASM32 Educational Mode should preserve MASM-compatible rejection.
+Any future non-MASM convenience mode must be separately named and must not change MASM32 Educational Mode. MASM32 Educational Mode preserves MASM-compatible rejection for ambiguous memory-width forms.
 
 Runtime-invalid addresses should be runtime errors, not assembly errors. For example:
 
@@ -844,6 +965,25 @@ These instruction families remain intentionally deferred because they require br
 
 Additional instructions may be added later as separate, tested compatibility milestones.
 
+#### 8.6.5 Post-30 Instruction Semantics Contract
+
+Post-30 instruction implementations must use the following contract unless a later phase explicitly overrides it:
+
+- flag behavior is specified per instruction and per operand width;
+- undefined or underspecified architectural flag results are converted into deterministic educational-mode behavior only when the phase says so;
+- all memory operands use central checked reads and writes;
+- validation-first instructions must not mutate registers, flags, memory, console state, or debugger deltas when validation fails;
+- partial-progress instructions, such as repeated string operations under watchdog interruption, must state exactly which committed effects remain visible;
+- read-only instructions such as `cmp`, `test`, `lea`, jumps, and many string comparisons must not create successful memory-change rows;
+- QWORD/SQWORD executable memory operations remain rejected in MASM32 Educational Mode until Extended 32-bit Mode phases enable selected behavior.
+
+Core expansion groups must remain distinct:
+
+- `inc/dec`, logical operations, `not`, shifts, and rotates are separate milestones because their flag rules differ;
+- `mul`, one-operand `imul`, two-/three-operand `imul`, `div`, and `idiv` are separate milestones because their implicit registers and failure behavior differ;
+- label metadata, instruction watchdogs, direct `jmp`, `cmp`, equality jumps, signed relational jumps, and unsigned relational jumps are separately staged;
+- string instruction families are split by data movement, accumulator behavior, comparison behavior, and REP/REPE/REPNE repetition semantics.
+
 ### 8.7 Unsupported Initially
 
 Initially unsupported:
@@ -874,6 +1014,7 @@ Important textbook/compatibility areas to track explicitly:
 - Additional data sections: `.DATA?` and `.CONST`, with deterministic simulator behavior for uninitialized storage and optional read-only metadata for constants.
 - Additional non-integer data declarations: `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`. These remain deferred unless a floating-point/data-layout phase explicitly adds them.
 - Nested `DUP` and initializer expressions.
+- Native diagnostic rendering harness for exact Simulator Messages text.
 - Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, `WIDTH`, `MASK`, and structure initializers.
 - Procedure metadata: `USES`, `PROTO`, `INVOKE`, `LOCAL`, parameters, `ADDR`, calling-convention modeling, and root procedure termination.
 - High-level MASM flow: `.IF`, `.ELSE`, `.ELSEIF`, `.ENDIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, `.CONTINUE`.
@@ -889,6 +1030,23 @@ Important textbook/compatibility areas to track explicitly:
 - Irvine32 runtime compatibility: virtual include symbols, `exit`, output routines, input routines with flag semantics, debug routines, random routines, console-control policy, and explicit unsupported diagnostics for file routines and Windows-specific routines.
 
 These features should not be silently accepted before they are implemented. Unsupported forms should produce explicit diagnostics with source location.
+
+### 8.9 Post-30 Supported-Subset Expansion Rules
+
+The post-Milestone-30 roadmap expands the supported MASM subset through tightly staged instruction, control-flow, procedure, Irvine32, string, STRUCT/RECORD, macro-convenience, debugger, settings, and editor milestones.
+
+The following staging rules are normative:
+
+- scalar instruction groups must be split by distinct flag behavior and operand shape;
+- memory-capable instruction phases must state width-resolution sources and ambiguous-width diagnostics;
+- branch phases must separate target classification from runtime instruction-pointer mutation when needed;
+- CALL/RET/procedure phases must use simulator return tokens, not native addresses;
+- high-level MASM flow is lowered to ordinary IR, labels, comparisons, and conditional branches rather than executed by a separate high-level interpreter;
+- selected `Macros.inc` conveniences are virtual built-ins, not general MASM macro expansion;
+- STRUCT, TYPEDEF, and RECORD support starts as explicit metadata and layout rules, not a full MASM type system;
+- listing/documentation no-ops and COMMENT skipping remain compatibility features, not object/listing generation.
+
+Unsupported or deferred constructs must continue to receive explicit diagnostics that distinguish MASM-invalid syntax, planned-later features, explicit v1 non-goals, and simulator-mode restrictions.
 
 ## 9. Register Model
 
@@ -985,6 +1143,22 @@ Optional formats:
 - Signed decimal.
 - Binary.
 - Character view for bytes.
+
+### 9.4 Extended 32-bit Register and Address-Size Boundaries
+
+Extended 32-bit Mode remains an educational extension, not x64 MASM and not `ml64` behavior.
+
+When enabled by the corresponding phases:
+
+- existing 32-bit registers gain 64-bit parents such as `RAX`, `RBX`, `RCX`, `RDX`, `RSI`, `RDI`, `RBP`, and `RSP`;
+- `R8` through `R15` are added only by the dedicated extended-register phase;
+- aliases update parent registers using simulator alias rules rather than machine-code REX encoding rules;
+- `AH`, `BH`, `CH`, and `DH` remain valid aliases because the simulator is not modeling machine-code encoding restrictions;
+- `R8B`, `R8W`, and `R8D` style aliases are accepted only if the extended-register phase explicitly implements them;
+- `RIP` is debugger/display metadata only unless a later phase defines source-level use;
+- `RFLAGS` stores modeled flags only; unmodeled bits are zero or explicitly reserved.
+
+Memory effective addresses remain 32-bit VM addresses in Extended 32-bit Mode. A computed effective address above `0xFFFFFFFF` must report `address-size-exceeded` unless a future post-v1 phase explicitly introduces a 64-bit VM address space.
 
 ## 10. Flag Model
 
@@ -1101,6 +1275,196 @@ Warning: unaligned DWORD read at 00500001h.
 
 The warning should appear in Simulator Messages, not Program Console.
 
+
+### 11.6 Automatic Memory Region Sizing
+
+Automatic memory region sizing is a deterministic layout mode. It must not be random by default.
+
+In automatic deterministic layout mode, the loader computes region sizes from program metadata and user settings:
+
+```text
+.code size  = IR/code metadata size + configured guard margin, rounded up to alignment
+.data size  = initialized `.data` + `.DATA?` + `.CONST` storage as separate regions or protected subranges, rounded up to alignment
+.heap size  = configured heap size or default heap setting
+.stack size = `.stack` metadata if supplied, otherwise the configured default stack size
+```
+
+Requirements:
+
+- Region sizes must have documented minimums, maximums, alignment, and guard-gap policy.
+- Automatic sizing must be deterministic for the same source and settings.
+- Automatic sizing must preserve the central memory-helper rule: all accesses still go through checked read/write helpers.
+- Automatic sizing must not hide out-of-bounds bugs by silently expanding regions after program load.
+- If a program requests more memory than the configured safety tier permits, loading must fail with a structured resource-limit diagnostic.
+
+### 11.7 Memory Layout Modes
+
+The simulator must distinguish layout policy from memory validation policy.
+
+Supported layout modes:
+
+```text
+Fixed educational layout:
+  Uses stable documented region bases such as `.code = 00400000h` and `.data = 00500000h`.
+  This is the default for beginner use, tests, documentation, and screenshots.
+
+Automatic deterministic layout:
+  Computes sizes from source metadata but uses deterministic bases and alignment.
+
+Seeded randomized layout:
+  Computes or selects randomized region bases from an explicit seed.
+  The same source, settings, and seed must produce the same layout.
+  The seed must be visible in the UI and saved in project/share state when this mode is active.
+
+Fresh randomized layout:
+  Generates a new seed per run/session.
+  This mode is for anti-hardcoding demonstrations and must be clearly labeled non-deterministic unless the generated seed is captured.
+```
+
+Randomized layout exists to discourage hardcoded simulator addresses such as `00500000h`. Correct MASM-style programs should use labels and `OFFSET`, not fixed implementation addresses.
+
+Randomization must never change MASM semantics. It changes simulated placement only. It must not change instruction results except when a program incorrectly depends on fixed implementation addresses.
+
+### 11.8 Declared Object Allocation Map
+
+The parser/data-layout layer must be able to produce a declared-object allocation map for `.data`, `.DATA?`, and `.CONST` storage.
+
+Each declared object entry should include:
+
+- symbol name;
+- section kind: `.data`, `.DATA?`, or `.CONST`;
+- base address after layout;
+- byte size;
+- declared element size;
+- element count;
+- signedness/type metadata;
+- initialization-origin metadata for each byte or byte range;
+- read/write permissions;
+- source location of the declaration.
+
+This object map is required for strict object-bounds diagnostics, provenance diagnostics, memory visualization, and uninitialized-origin read diagnostics. It must not replace the lower-level region permission checks.
+
+### 11.9 Memory Validation Modes
+
+The simulator must support multiple validation modes. These modes are educational diagnostics layered on top of MASM-compatible address execution.
+
+```text
+Region-only mode:
+  Baseline execution mode.
+  A memory access is valid if the full byte range is inside a valid region and permissions allow the requested access.
+  This is closest to normal flat-address MASM/x86 behavior.
+
+Allocated-object warning mode:
+  Accesses into padding, guard bytes, or unallocated gaps inside a region emit simulator warnings but do not stop execution.
+  Accesses into another declared object remain valid.
+
+Allocated-object strict mode:
+  Accesses into padding, guard bytes, or unallocated gaps inside a region stop execution with a runtime diagnostic.
+  Accesses into another declared object remain valid because real MASM/x86 addresses memory, not source variables.
+
+Provenance warning mode:
+  Registers loaded from `OFFSET symbol` may carry optional symbolic provenance.
+  If an access derived from that register leaves the original symbol allocation, emit a warning.
+  If the final address lands inside another declared object, the access remains valid unless another rule rejects it.
+
+Provenance strict mode:
+  The same provenance escape becomes a runtime error.
+  This mode intentionally goes beyond normal MASM/x86 behavior and is for teaching pointer and array correctness.
+```
+
+Example for allocated-object strict mode:
+
+```asm
+.data
+var1 DWORD 12345
+
+.code
+main PROC
+    mov eax, OFFSET var1
+    test [eax+40h], eax
+main ENDP
+END main
+```
+
+This must diagnose an invalid allocated-object access because the final address is inside the `.data` region but outside any declared object.
+
+This must remain valid in allocated-object mode because the target address lands inside a declared object:
+
+```asm
+.data
+var1 DWORD 12345
+arr1 DWORD 20 DUP(0ABCDEF12h)
+
+.code
+main PROC
+    mov eax, OFFSET var1
+    test [eax+40h], eax
+main ENDP
+END main
+```
+
+A provenance mode may additionally warn that the address was derived from `var1` and escaped `var1`, but allocated-object mode alone must not reject a valid access into `arr1`.
+
+### 11.10 Uninitialized-Origin Byte Tracking and Read Diagnostics
+
+`?` and `.DATA?` storage are deterministic zero at program load but must retain metadata that the bytes originated from uninitialized declarations.
+
+Required model:
+
+- Bytes emitted from explicit initializers start initialized.
+- Bytes emitted from `?` or `DUP(?)` start uninitialized-origin and runtime-zero-filled.
+- Every successful program write marks the written bytes initialized.
+- Multi-byte writes initialize every byte in the written range.
+- Multi-byte reads in strict/debug mode must check every byte read.
+- Default educational mode allows reads from uninitialized-origin bytes without warning.
+- Strict/debug modes may warn or error on reads from any uninitialized-origin byte that has not yet been written by the simulated program.
+
+This feature must not change the default runtime value of `?` storage. The default value remains deterministic zero.
+
+### 11.11 Invalid Memory Access Handling and Diagnostic Precedence
+
+When a memory access could trigger multiple diagnostics, the simulator must select exactly one primary fatal diagnostic in this order:
+
+```text
+1. Effective-address calculation overflow.
+2. Full access range is not contained in any valid memory region.
+3. Region permission violation or `.CONST` read-only write.
+4. Stack overflow/underflow classification, if the access is in or near the stack region.
+5. Allocated-object strict violation.
+6. Provenance strict violation.
+7. Uninitialized-origin read strict violation.
+8. Unaligned-access warning.
+9. Provenance warning.
+10. Uninitialized-origin read warning.
+```
+
+Fatal diagnostics suppress lower-priority warnings unless a lower-priority warning is necessary to explain the fatal error. Successful accesses may emit warnings such as unaligned access, provenance escape, or uninitialized-origin read according to the active validation mode.
+
+### 11.12 Post-30 Memory Layout, Validation, and Metadata Requirements
+
+Post-30 memory work is split into explicit slices: layout policy objects, automatic deterministic sizing, stack/heap metadata, seeded or fresh randomized layout, declared-object maps, allocated-object warning mode, allocated-object strict mode, uninitialized-origin tracking, and uninitialized-read diagnostics.
+
+The first implementation must use named configuration fields rather than hardcoded layout constants. The layout policy must include region bases or placement rules, region sizes, alignment, guard gaps, data/const/data? image sizes, stack and heap requested sizes, validation modes, and deterministic seed state.
+
+Object and uninitialized-origin metadata must have explicit capacity behavior:
+
+- metadata capacity exhaustion is a structured assembly/setup diagnostic;
+- the simulator must not silently disable object-bound or uninitialized-origin tracking;
+- memory mutation must not occur after metadata setup failure;
+- JSON output must include whether a metadata feature is enabled, disabled, or failed setup.
+
+Object-bound classification is based on the full access byte range `[address, address + width - 1]`, with overflow checks. The classifier must distinguish wholly inside object, outside all objects, partial overlap, spanning adjacent objects, padding/gap access, outside all regions, and permission failure.
+
+Diagnostic precedence for memory failures is:
+
+1. address arithmetic overflow or address-size violation;
+2. region containment failure;
+3. missing permission or `.CONST` overlap;
+4. object-bound strict failure;
+5. uninitialized-read strict failure;
+6. unaligned access warning;
+7. object-bound or uninitialized-read warnings in warning modes.
+
 ## 12. Stack Model
 
 The stack is a memory region that grows downward.
@@ -1124,6 +1488,23 @@ The debugger should display:
 - Optional warning when peak usage exceeds a threshold, such as 80% or 90%.
 
 A separate call-depth watchdog may be provided for clearer recursion diagnostics, but the stack size remains the hard correctness boundary.
+
+### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
+
+CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, and ADDR depend on completed stack initialization plus `push` and `pop` behavior.
+
+The simulator uses 32-bit VM return tokens for call/return flow. Return tokens are not native addresses. The root return sentinel is `VM_RETURN_TOKEN_ROOT = 0xFFFFFFFFu`, reserved and never emitted as a normal instruction index.
+
+The educational frame model is explicit:
+
+- frame-owning procedures reserve `EBP` as frame pointer;
+- `USES` rejects `ESP` and `EBP`;
+- LOCAL storage is allocated in declaration order at negative `EBP` offsets;
+- local frame size is rounded to a 4-byte boundary;
+- procedure epilogue order is LOCAL/frame release, USES restore, return-token pop/validation, and then RET imm16 caller-argument cleanup when applicable;
+- failed frame, return-token, or stack validation must not partially mutate state.
+
+`INVOKE` is deterministic in v1: supported user-procedure INVOKE lowering uses DWORD arguments and requires cleanup behavior defined by procedure metadata and RET imm16 phases. Full MASM calling-convention inference, external procedure invocation, Windows ABI behavior, and WinAPI calls remain out of scope.
 
 ## 13. Irvine32 Runtime Support
 
@@ -1304,6 +1685,118 @@ Effect:
 
 `DumpRegs` and `DumpMem` write to Program Console, not Simulator Messages. `DumpRegs` should use current VM state and initially show the modeled flags `CF`, `ZF`, `SF`, and `OF`; after the extended flag phase it should also include newly modeled flags where appropriate.
 
+
+### 13.5 Exact Irvine32 Routine Contracts Required Before Implementation
+
+Before implementing an Irvine32 routine phase, the guide must state exact register, memory, output, input, and flag behavior. Implementations must not infer behavior from routine names alone.
+
+Output routines:
+
+```text
+Crlf:
+  Appends CRLF or the simulator's documented newline sequence to Program Console.
+  Does not write Simulator Messages.
+  Register and flag effects must be documented before implementation.
+
+WriteString:
+  Input: EDX = address of a null-terminated byte string.
+  Reads bytes through checked VM memory helpers until 00h.
+  Stops with a runtime diagnostic if no terminator appears before unreadable memory or the configured scan limit.
+  Decodes bytes using the simulator's documented console byte policy, initially ASCII-compatible byte-to-character mapping.
+
+WriteChar:
+  Input: AL is the character byte. If EAX is referenced in UI text, only AL is consumed.
+  Appends exactly one character/control byte according to the console byte policy.
+
+WriteInt:
+  Input: EAX interpreted as signed 32-bit integer.
+  Appends decimal signed text with a leading minus sign for negative values.
+
+WriteDec:
+  Input: EAX interpreted as unsigned 32-bit integer.
+  Appends unsigned decimal text.
+
+WriteHex:
+  Input: EAX.
+  Appends eight uppercase hexadecimal digits by default unless a later phase documents a different width policy.
+
+WriteBin:
+  Input: EAX.
+  Appends 32 binary digits by default unless a later phase documents grouping or width policy.
+```
+
+Input routines:
+
+```text
+ReadChar:
+  Enters WAITING_FOR_INPUT if no character is buffered.
+  On completion, AL receives the character byte.
+  Upper EAX byte behavior must be specified by the implementation phase and tested.
+  Echo behavior must be specified; default should be no implicit echo unless the phase says otherwise.
+
+ReadInt:
+  Parses a signed 32-bit decimal integer from the submitted input line.
+  On valid input, EAX receives the value and OF is cleared.
+  On invalid or out-of-range input, OF is set and EAX behavior must be documented and tested.
+  Whitespace handling, optional sign handling, and newline consumption must be specified.
+
+ReadDec:
+  Parses an unsigned 32-bit decimal integer.
+  On valid input, EAX receives the value and CF is cleared.
+  On invalid or out-of-range input, CF is set and EAX behavior must be documented and tested.
+
+ReadHex:
+  Parses an unsigned hexadecimal integer according to the phase contract.
+  The phase must specify whether h-suffix, 0x-prefix, bare hexadecimal digits, or mixed forms are accepted.
+  Error flag behavior must be documented before implementation.
+
+ReadString:
+  Input: EDX = destination buffer, ECX = maximum non-null character count unless the phase explicitly chooses total buffer bytes.
+  Writes submitted characters through checked memory helpers.
+  Writes a null terminator if space permits.
+  EAX receives the number of characters written, excluding the terminator.
+  Long input must have documented behavior: truncate with warning, reject, or accept prefix. The chosen behavior must be tested.
+```
+
+Debug and utility routines:
+
+```text
+DumpRegs:
+  Writes to Program Console, not Simulator Messages.
+  Must include EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, EIP, EFLAGS, and modeled flags.
+
+DumpMem:
+  Must document required input registers before implementation.
+  Every byte read must go through checked memory helpers.
+  Invalid memory must produce a runtime diagnostic, not partial silent output.
+
+Randomize / RandomRange / Random32:
+  Must use deterministic seeded simulator RNG unless the user explicitly opts into nondeterministic behavior.
+  Shared URLs must preserve seeds when reproducibility is expected.
+
+WaitMsg:
+  Must not block the browser thread.
+  It may map to the input-wait protocol or emit a deterministic prompt, according to the phase contract.
+```
+
+Unsupported Irvine32 file routines must produce `unsupported-irvine32-file-io` or an equivalent specific diagnostic. They must not attempt host filesystem access.
+
+### 13.6 Post-30 Irvine32 and Macros.inc Virtual Built-In Rules
+
+Irvine32 routines and selected `Macros.inc` conveniences are virtual built-ins provided by the simulator. They do not load host include files, link libraries, expand general MASM macros, or call Windows APIs.
+
+The following implementation policies are mandatory:
+
+- `exit`, `Exit`, and `EXIT` are accepted only through the virtual Irvine32 symbol registry and follow the documented case policy;
+- output routines validate output limits before appending when their formatted output is known up front;
+- `WriteString` and `DumpMem` use validation-first behavior and append no partial output on memory failure;
+- formatted output routines preserve registers and flags unless a routine contract says otherwise;
+- input routines enter the shared `WAITING_FOR_INPUT` VM state and resume only through the input protocol;
+- invalid numeric input resumes execution with documented flags/register results and does not implicitly re-enter wait;
+- deterministic random routines use the named simulator PRNG and seed policy from the guide.
+
+Selected virtual macros such as `mWrite`, `mWriteLn`, and `mReadString` remain dedicated built-ins. Known but deferred macro names receive `unsupported-macro-invocation`; unknown macro-like syntax is not treated as full MASM macro expansion.
+
 ## 14. Console and Input Model
 
 ### 14.1 Separate Output Streams
@@ -1367,6 +1860,18 @@ Supported actions when exceeded:
 
 A simple clear-and-continue action is not preferred because it hides the issue and can confuse users.
 
+### 14.4 Post-30 Console, Input, and Byte Encoding Policy
+
+The Program Console is a byte-oriented output stream with deterministic rendering. The first v1 policy is ASCII-focused:
+
+- bytes `00h..7Fh` map to ASCII rendering rules defined by the Program Console byte policy;
+- `WriteString` stops before the first `00h` terminator and does not append the terminator;
+- output limits are measured against the raw Program Console byte buffer before rendering;
+- Simulator Messages have a separate message limit and a reserved final truncation diagnostic;
+- UI strings, local preferences, and share URLs must not be treated as Program Console bytes.
+
+Input payload normalization is shared by `ReadChar`, `ReadInt`, `ReadDec`, `ReadHex`, `ReadString`, `WaitMsg`, and macro input built-ins. Submitted text is normalized deterministically before being converted to routine-specific bytes or numbers. Empty input, stale input request IDs, duplicate submission, submit-after-cancel, submit-after-reset, and wrong request kinds must produce stable diagnostics.
+
 ## 15. VM Execution State
 
 VM states:
@@ -1383,6 +1888,17 @@ VM states:
 - `CRASHED`
 
 Transitions should be explicit and testable.
+
+### 15.1 Post-30 VM State, Waiting, and Debugger Interaction
+
+The VM state model must include enough state to distinguish ready, running, paused, stopped at breakpoint, waiting for input, halted, faulted, and terminated sessions.
+
+When the VM is `WAITING_FOR_INPUT`:
+
+- input submit, input cancel, reset, stop, and breakpoint edits are permitted according to the debugger state matrix;
+- Step Into, Step Over, and Continue return a stable `waiting-for-input` debugger error;
+- current registers, flags, stack summary, and current source highlight remain inspectable;
+- entering wait counts as one executed logical instruction for watchdog and debugger statistics.
 
 ## 16. Browser Execution and Worker Model
 
@@ -1413,6 +1929,14 @@ The Stop button should support:
 2. Hard stop: terminate and recreate the worker if the worker does not respond.
 
 The UI should always allow stopping, including while waiting for input.
+
+### 16.2 Post-30 Worker Protocol Determinism
+
+Worker protocol payloads must be structured-clone-safe and JSON-compatible unless a later phase explicitly introduces a binary transfer type. Functions, DOM nodes, cyclic objects, `Map`, `Set`, `BigInt`, `undefined` fields, and binary buffers are rejected or prevented at the protocol boundary in v1.
+
+Hard worker termination invalidates all sessions, command IDs, input request IDs, breakpoint bindings, run generations, pending VM references, and stale response routing. A fresh worker initialization is required before new Run or Debug commands are accepted.
+
+Debugger commands use a named state-transition matrix. Invalid transitions return stable debugger errors and rendered Simulator Messages when user-visible.
 
 ## 17. Execution Limits
 
@@ -1479,6 +2003,19 @@ Repeat
 ```
 
 This keeps Stop responsive and allows periodic UI updates.
+
+### 17.5 Post-30 Resource Accounting
+
+The simulator distinguishes:
+
+- `runInstructionCount`: total logical instructions executed in the current run/debug session;
+- `commandInstructionCount`: logical instructions executed by the current Step/Continue/Step Over command;
+- repeated string instruction element counts when a phase defines per-element watchdog accounting;
+- active wall-clock time measured in worker builds using `performance.now()` and in native tests using an injectable fake monotonic clock;
+- raw Program Console byte length before rendering;
+- rendered Simulator Messages byte or message limits according to the configured message-limit policy.
+
+Resource-limit diagnostics must be deterministic and must not leave hidden partial state except for explicitly defined partial-progress instructions.
 
 ## 18. Memory Configuration and Safety Tiers
 
@@ -1559,6 +2096,73 @@ Current local mode permits this, but running the program may allocate large amou
 
 Run anyway?
 ```
+
+
+### 18.4 Memory Layout and Safety Presets UI
+
+The UI must expose memory layout and validation settings only after the core modes are implemented.
+
+Required controls:
+
+```text
+Memory layout:
+  Fixed educational layout
+  Automatic deterministic layout
+  Seeded randomized layout
+  Fresh randomized layout
+
+Memory validation:
+  Region-only
+  Allocated-object warnings
+  Allocated-object strict
+  Provenance warnings
+  Provenance strict
+  Uninitialized-read warnings
+  Uninitialized-read strict
+
+Invalid memory access handling:
+  Stop execution with runtime diagnostic
+  Warn and continue only for non-fatal warning modes
+```
+
+Required presets:
+
+```text
+Beginner/default:
+  fixed educational layout
+  region-only validation
+  fatal invalid region/permission errors
+
+Debug:
+  fixed or automatic deterministic layout
+  allocated-object warnings
+  uninitialized-read warnings
+
+Robustness:
+  seeded randomized layout
+  allocated-object strict
+  provenance warnings
+  uninitialized-read warnings
+```
+
+Seed requirements:
+
+- Seeded randomized mode must display the active seed.
+- Shared URLs must include the seed if deterministic reproduction is expected.
+- Fresh randomized mode must display the generated seed after each run so a failing run can be reproduced.
+- Tests must use fixed or explicitly seeded layout. They must not depend on fresh random mode.
+
+These controls belong in the later UI/settings phases, not in the core memory-layout phases.
+
+### 18.5 Post-30 Settings, Preferences, and Memory Capability Policy
+
+Simulator settings and local UI preferences are separate.
+
+Simulator settings affect VM behavior, share URLs, and reproducibility. They include memory sizes, layout mode, validation modes, execution mode, watchdog limits, output limits, and safety tiers. Simulator settings have a schema version and migrate or reject atomically.
+
+Local preferences affect only local UI appearance and editor behavior. They are stored best-effort under the exact key defined by the guide and must not block Run, Debug, share import, or source execution if storage is unavailable.
+
+Memory presets use binary units: `1 KiB = 1024 bytes`, `1 MiB = 1048576 bytes`, and `1 GiB = 1073741824 bytes`. Extended and super-extended memory settings require capability probing and local confirmation. Shared URLs requesting local-only or unsupported super-extended settings are rejected atomically rather than silently downgraded.
 
 ## 19. Debugger Model
 
@@ -1666,6 +2270,22 @@ Memory changes:
   result DWORD: 00000000h / 0 -> 0000002Ah / 42
 ```
 
+### 19.5 Post-30 Debugger Protocol and UI Contract
+
+Debugger behavior is split into backend state, protocol, UI rendering, breakpoints, continue/pause, step-over, aggregate deltas, memory visualization, and integration smoke phases.
+
+The debugger must define:
+
+- stable session IDs, run generations, command IDs, and stale-response rejection;
+- exact `currentInstructionIndex` behavior for normal completion, root return, `exit`, runtime fault, breakpoint stop, and waiting-for-input;
+- Step Into behavior from `stopped-at-breakpoint`, including executing the stopped instruction once without re-triggering the same breakpoint;
+- Continue chunk size and pause-latency behavior;
+- global stop-reason precedence shared by Step Into, Continue, Step Over, breakpoints, input waits, and limits;
+- Step Over recursion and early-stop behavior;
+- final-diff aggregate register/flag deltas plus ordered memory and console event streams.
+
+Breakpoint binding is source-line based in v1. Breakpoints do not track moved code across edits; after source edits, bindings become unbound until the next successful load/rebind pass.
+
 ## 20. Memory Change Display
 
 ### 20.1 Default Display
@@ -1757,6 +2377,12 @@ buffer BYTE[6]
 
 Large string changes should be collapsed by default.
 
+### 20.5 Post-30 Memory Visualization Row Contract
+
+Memory-change visualization uses ordered row objects with stable identity. Each row includes sequence, row ID, region name, address, width, old bytes, new bytes, source instruction index or null, symbol name or null, byte offset when known, and display classification.
+
+Overlapping writes are displayed in execution order by default. Grouped views must not reorder rows unless the grouping is explicitly labeled. Failed writes and validation-first failures produce diagnostics but no successful memory-change rows.
+
 ## 21. Error, Warning, and Diagnostic Model
 
 All errors should be structured internally.
@@ -1817,13 +2443,111 @@ A generic `lexer-failed` diagnostic may be retained internally as a summary/stat
 The parser should eventually support diagnostic recovery for known unsupported constructs. Recovery must be conservative:
 
 - Recover from known unsupported line-level constructs by skipping to the next line.
-- Recover from known unsupported block constructs by skipping to the matching terminator where practical.
+- Recover from known unsupported block constructs by skipping to the matching terminator when the terminator is present; if no terminator is present, emit a structured unterminated-unsupported-block diagnostic and stop recovery for that block.
 - Avoid cascading noise from inside skipped unsupported constructs.
 - Cap the number of diagnostics reported in one pass.
 - Never execute a program if any assembly diagnostic was produced.
 - Stop immediately on fatal capacity, lexer state, or internal parser errors.
 
 Recoverable unsupported constructs include common textbook/compiler forms such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `.DATA?`, `.CONST`, `EQU`, `TEXTEQU`, `PROTO`, `LOCAL`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
+
+
+### 21.0 Diagnostic Precision and Precedence Requirements
+
+Diagnostic wording is part of the user-facing product. Feature phases must not be considered complete if they only prove that execution failed; they must also prove that the failure is classified correctly.
+
+Mandatory requirements:
+
+- Diagnostics must preserve line, column, byte offset, and span length whenever the error is tied to source text.
+- MASM-invalid code must receive an invalid-syntax or invalid-operands diagnostic, not `unsupported-feature`.
+- Planned-but-not-yet-implemented MASM features must receive `unsupported-feature` or a more specific planned-feature diagnostic.
+- Explicit non-goals must say they are outside the simulator, not imply future implementation.
+- Runtime memory diagnostics must classify invalid address, permission violation, `.CONST` read-only write, stack overflow/underflow, strict object-bounds failure, provenance failure, and uninitialized-origin read failure distinctly when those modes exist.
+- A failed access should emit one primary fatal diagnostic according to the memory diagnostic precedence ladder in the Memory Model.
+- A parser diagnostic that intentionally invalidates an equate or expression must suppress misleading follow-up diagnostics from later uses of that invalid symbol.
+- Multi-diagnostic recovery must report diagnostics in stable source order.
+- Source-run must not emit `execution-complete` if lexer, parser, assembly, unsupported-feature, or fatal runtime diagnostics prevented successful completion.
+
+### 21.1 Native Diagnostic Rendering Harness
+
+The project must provide a native-testable diagnostic rendering path that verifies the final user-facing **Simulator Messages** text without requiring an Emscripten build or manual browser session.
+
+This requirement exists because AI-assisted implementation environments may be able to compile and run native C tests but may not be able to build the WebAssembly artifact with Emscripten. Native tests already exercise the C source-run JSON path, but diagnostic quality is not fully covered unless the final browser-style message text is also rendered and compared.
+
+The harness must use **Option A: a Node-based formatter test over real C source-run JSON**.
+
+Required architecture:
+
+```text
+native C diagnostic JSON producer
+  -> calls the same C source-run entry point used by the Wasm export
+  -> prints or returns raw source-run JSON
+  -> Node test parses the JSON
+  -> Node test calls the same pure web formatter used by the browser UI
+  -> test compares exact rendered Simulator Messages text
+```
+
+Mandatory rules:
+
+- The native JSON producer must link the same C parser/source-run/Wasm-facing API code used by the browser export path, including `src/wasm/wasm_api.c` or its current equivalent.
+- Emscripten export annotations must compile as harmless no-ops in native builds.
+- The diagnostic formatter used by the browser must be exposed as a pure JavaScript/TypeScript function that can be imported by Node tests without creating DOM elements, starting a Worker, loading Wasm, or mutating browser state.
+- The Node harness must call that browser formatter directly. It must not maintain a second, divergent copy of the message-formatting rules.
+- If the current UI formatter is embedded in DOM bootstrap code, it must be extracted into a side-effect-free formatter module before this phase is considered complete.
+- The harness must check both the structured diagnostic JSON and the final rendered message text.
+- Exact text comparison is required for stable diagnostic examples. Substring-only checks are allowed only for volatile details that are explicitly documented as volatile.
+- The harness must preserve and verify diagnostic ordering for multi-diagnostic programs.
+- The harness must verify that source-run does not emit `execution-complete` when lexer, parser, unsupported-feature, or assembly diagnostics prevent execution.
+- The harness must distinguish native-source-run failures from stale browser/Wasm artifacts. It must not claim that the served web app was verified unless a browser/Wasm test was actually run.
+
+The harness must cover representative diagnostics from each current diagnostic layer:
+
+- lexer error: invalid hexadecimal literal;
+- lexer error: unterminated string;
+- parser/source error: unknown symbol;
+- unsupported feature: unsupported directive or recognized deferred construct;
+- MASM-invalid syntax: ambiguous memory width;
+- runtime error: invalid address;
+- runtime error: read-only `.CONST` write;
+- simulator warning: unaligned memory access;
+- successful execution: `execution-complete` informational message.
+
+For every golden diagnostic case, the test fixture should record:
+
+- source program;
+- raw source-run JSON;
+- expected rendered Simulator Messages text;
+- reason the diagnostic belongs to the chosen category.
+
+Failure output from the harness must print:
+
+- the source program;
+- the raw JSON returned by the native C source-run path;
+- the rendered Simulator Messages text;
+- the expected text;
+- a diff or enough context to identify the mismatch.
+
+Manual browser verification remains required when any of these change:
+
+- Emscripten build scripts;
+- `web/dist` artifact generation;
+- Worker loading or worker protocol shape;
+- UI DOM rendering;
+- CodeMirror diagnostic integration;
+- source-run JSON schema;
+- formatter module import path or public API.
+
+Manual browser verification is not a substitute for this harness. The harness is a permanent regression test for diagnostic message quality in native/Node environments.
+
+### 21.2 Post-30 Editor Diagnostic and Source Mapping Contract
+
+Backend byte offsets are authoritative. Browser editor integrations must convert backend UTF-8 byte offsets and span lengths into CodeMirror UTF-16 document offsets through a tested mapping utility tied to the exact source snapshot parsed by the backend.
+
+Editor diagnostics project into CodeMirror lint diagnostics with `from`, `to`, `severity`, and `message` fields. The projection also carries simulator metadata such as diagnostic code, category, source snapshot hash, diagnostic ID, execution-blocking status, and navigation availability.
+
+When source changes after diagnostics were produced, editor markers are removed immediately. Simulator Messages remain visible but are marked stale and non-navigable. Attempting to navigate a stale diagnostic emits `ui-diagnostic-source-stale`.
+
+Diagnostic marker caps, gutter marker caps, and summary diagnostics are mandatory to avoid unbounded UI work.
 
 ## 22. Save and Share URL Format
 
@@ -1897,6 +2621,12 @@ Not saved:
 - Editor local preferences such as folded panels, font size, and local-only editor options.
 - Scroll positions.
 
+### 22.1 Post-30 Share URL and Import Contract
+
+Share URLs are mandatory v1 behavior. They encode share-safe project state only: source text, simulator settings that affect execution, breakpoints if included by schema, and schema metadata. They must not encode Program Console output, Simulator Messages, runtime memory, pending input, register state, debugger history, local UI preferences, or private transient state.
+
+Encoding uses stable JSON key order, UTF-8 bytes, the named compression codec wrapper, and strict canonical no-padding base64url. The decoder rejects duplicate parameters, non-canonical base64url, unsupported versions, malformed compressed data, unsafe settings, local-only settings, and schema violations. Import is atomic: validation failure leaves current editor text, settings, breakpoints, and run state unchanged.
+
 ## 23. Project File Model
 
 Version 1 may be single-file, but the internal state should support multiple files from the start.
@@ -1920,6 +2650,21 @@ Future virtual project files:
 - `main.asm`
 - `.inc` files
 - virtual input/output text files
+
+### 23.1 CodeMirror Editor, Preferences, and Accessibility Contract
+
+CodeMirror integration is mandatory v1 behavior and remains UI-only. The C99 parser/VM remains the semantic source of truth.
+
+Editor and preference behavior must include:
+
+- local preference schema versioning and atomic validation/apply behavior;
+- best-effort `localStorage` persistence with stable UI diagnostics on failure;
+- theme reconfiguration without editor destruction, preserving source text, selection, undo history, diagnostics, breakpoints, current-instruction highlight, focus, and worker state;
+- `system` appearance mode using `matchMedia("(prefers-color-scheme: dark)")` when present and deterministic fallback when absent;
+- MASM highlighting and indentation as editor extensions only;
+- visible keyboard focus indicators, accessible labels, live-region state feedback, and keyboard-only end-to-end flows.
+
+Final release requires accessibility checks, responsive/mobile layout checks, current-instruction highlighting, breakpoint gutter interaction, diagnostic click-to-source navigation, and release artifact/hash verification.
 
 ## 24. Security and Safety Model
 
@@ -2047,6 +2792,7 @@ Important split areas:
 - Memory operand support should be implemented incrementally: constant symbol offsets, `PTR` width overrides, register-indirect operands, all-GPR bases, global width resolution, and later scaled-index addressing.
 - Data operators and literals should be implemented incrementally: `TYPE`, then `LENGTHOF`, then `SIZEOF` together with single-character and packed multi-character literals, then compatibility aliases such as `LENGTH` and `SIZE`.
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
+- Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
 - Stack and procedure support should be implemented incrementally: stack initialization with `PUSH`/`POP`, then `CALL`/`RET`, then root termination and call-target classification, then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
@@ -2065,9 +2811,60 @@ Every guide phase should specify:
 - acceptance programs;
 - regression tests for previously implemented behavior.
 
+
+### 27.1 Instruction Phase Contract Template
+
+Every future instruction phase must define the following before implementation. AI-assisted coding prompts should include this table explicitly.
+
+```text
+Instruction(s):
+Accepted operand forms:
+Rejected operand forms:
+Width resolution rules:
+Immediate range rules:
+Destination mutation:
+Source mutation:
+Memory read behavior:
+Memory write behavior:
+Flags read:
+Flags written:
+Modeled flags deliberately unchanged:
+Real x86 flags not yet modeled:
+Runtime errors:
+Assembly diagnostics:
+Source locations to report:
+Required parser tests:
+Required executor tests:
+Required source-run JSON tests:
+Required rendered Simulator Messages tests:
+Default browser/manual smoke program:
+Future behavior explicitly not implemented:
+```
+
+High-risk instruction groups such as `MUL`, `IMUL`, `DIV`, `IDIV`, `CALL`, `RET`, `INVOKE`, string instructions, and high-level MASM flow must not be implemented from informal descriptions. Their phase text must specify exact register operands, implicit operands, flags, overflow/divide errors, and memory behavior.
+
+### 27.2 Post-30 Release, Documentation, and Regression Gate
+
+The v1 release gate must run these required categories:
+
+- native C unit and integration tests;
+- parser tests;
+- source-run JSON tests;
+- Node diagnostic-rendering tests;
+- browser/worker smoke tests;
+- Wasm/Emscripten build and source-run validation;
+- static documentation and supported-syntax checks;
+- release artifact inventory and SHA-256 hash manifest.
+
+Environment-dependent suites may be skipped only with an explicit reason in the release report. Required suites failing or missing cause the release gate to fail.
+
+User-facing documentation must be generated from, or mechanically checked against, the implemented feature/test manifest. Examples referencing unsupported future features are permitted only in the known-unsupported/non-goal corpus.
+
 ## 28. Future Roadmap
 
-The implementation guide now assigns most v1-relevant textbook MASM/Irvine32 features to concrete phases. Features below remain either late roadmap, optional post-v1 work, or explicit non-goals unless a later specification revision promotes them.
+This section is a high-level product roadmap only. It does not override the canonical post-30 implementation sequence in the implementation guide or the integration status in Section 29.
+
+The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to concrete phases. Features below remain either late roadmap, optional post-v1 work, or explicit non-goals unless a later specification revision promotes them.
 
 Concrete v1 roadmap themes:
 
@@ -2076,6 +2873,7 @@ Concrete v1 roadmap themes:
 - `.DATA?` and `.CONST` data sections.
 - Numeric equates and constant expressions.
 - Nested `DUP` and initializer expressions.
+- Native diagnostic rendering harness for exact Simulator Messages text.
 - Virtual Irvine32 include symbols and `exit`.
 - Core instruction expansion.
 - Control flow, anonymous labels, and loop helpers.
@@ -2115,3 +2913,17 @@ Explicit non-goals unless the project definition changes:
 - object-file linking;
 - full Windows process or console emulation;
 - full x64/ml64 compatibility.
+
+## 29. Canonical Post-30 Roadmap and Thematic Integration Status
+
+The post-Milestone-30 roadmap is now integrated into the thematic sections above and into the canonical implementation guide. The implementation guide owns exact phase numbers and phase-level tasks. This specification owns product boundaries and stable behavior.
+
+The following policies are final for v1:
+
+- Extended 32-bit Mode remains before the v1 release gate, but true x64 MASM, `ml64`, Windows ABI, PE loading, object linking, and WinAPI execution remain non-goals.
+- CodeMirror/editor integration, local preferences, share URLs, debugger UI, accessibility, and release-gate validation are mandatory v1 behavior.
+- Local preference storage is best-effort and non-blocking; share URL import/export is mandatory and deterministic.
+- The supported syntax reference must reflect implemented behavior only, not future roadmap behavior.
+- External references are used to inform mirrored or intentionally divergent behavior; the simulator spec and implementation guide remain the source of truth.
+
+Completed Phases 0-30 are preserved. Post-30 phases are renumbered sequentially from Phase 31 in the canonical implementation guide; old planning-batch labels are intentionally omitted.
