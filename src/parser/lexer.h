@@ -51,8 +51,10 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_PLUS,
     /// Minus sign used by constant symbol-offset memory operands when not part of a signed number.
     VM_LEXER_TOKEN_MINUS,
-    /// Asterisk used to recognize and reject unsupported scaled-index operands.
+    /// Asterisk used for scaled-index diagnostics and constant-expression multiplication.
     VM_LEXER_TOKEN_ASTERISK,
+    /// Slash used by compile-time constant-expression division.
+    VM_LEXER_TOKEN_SLASH,
     /// Less-than sign used only to keep unsupported MASM textbook constructs lexable.
     VM_LEXER_TOKEN_LESS_THAN,
     /// Greater-than sign used only to keep unsupported MASM textbook constructs lexable.

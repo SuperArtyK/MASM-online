@@ -3,26 +3,36 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 28 numeric-equate and constant-expression UI: source editing, Run button,
+  This page provides the Milestone 30 nested-DUP UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates numeric equates and Stage A expressions.
+  execution stay inside the worker/Wasm path; the default program demonstrates nested DUP and metadata operators.
 -->
 <html lang="en">
-
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>MASM32 Educational Simulator</title>
-        <link rel="stylesheet" href="./src/styles.css">
-        <link rel="stylesheet" href="./src/custom.css">
-    </head>
-
-    <body class="bg-[#f5f7fb] text-[#172033] font-['Inter', sans-serif]">
-
-        <!-- Navbar -->
-        <div class="sticky top-0 flex flex-row items-center justify-between bg-black h-16 w-full">
-            <h1 class="font-bold text-3xl ml-4 text-yellow-500"><span class="text-red-900">MASM32</span> Educational Simulator</h1>
-            <a href="https://github.com/SuperArtyK/MASM-online" target="_blank" class="text-white mr-4 font-bold text-3xl ml-auto">&lt;/&gt; Source</a>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MASM32 Educational Simulator</title>
+    <link rel="stylesheet" href="./src/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="panel">
+        <h1>MASM32 Educational Simulator</h1>
+        <p class="muted">Milestone 30: nested DUP expansion in supported data declarations.</p>
+        <label for="editor">Editor</label>
+        <textarea id="editor" spellcheck="false">ROWS = 3
+COLS = 4
+.data
+matrix DWORD ROWS DUP(COLS DUP(0))
+.code
+main PROC
+    mov eax, LENGTHOF matrix
+    mov ebx, SIZEOF matrix
+main ENDP
+END main</textarea>
+        <div class="controls">
+          <button id="run-button" type="button">Run</button>
+          <button id="ping-button" type="button">Ping worker</button>
         </div>
 
         <!-- Rest of Page -->

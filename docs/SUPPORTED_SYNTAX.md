@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 28. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 30. It is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -24,7 +24,7 @@ Supported structural forms:
 
 - Optional `.DATA?`, `.data`, and `.CONST` sections before `.code`.
 - Required `.code` section.
-- `.DATA?` declarations must use `?` or flat `DUP(?)` uninitialized initializers. They are emitted as deterministic zero-filled writable storage while retaining metadata that they were originally uninitialized.
+- `.DATA?` declarations must use `?` or `DUP(?)` uninitialized initializers, including nested `DUP` forms that expand only to `?`. They are emitted as deterministic zero-filled writable storage while retaining metadata that they were originally uninitialized.
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
@@ -47,7 +47,7 @@ Case policy:
 - User-defined symbols are case-sensitive in MASM32 Educational Mode.
 
 
-### Numeric equates and Stage A constant expressions
+### Numeric equates and extended constant expressions
 
 Implemented numeric equate forms:
 
@@ -56,13 +56,14 @@ COUNT = 4
 EXTRA EQU 2
 ```
 
-Numeric equates are compile-time constants. They are stored separately from data labels and are not addressable storage symbols. Supported Stage A constant-expression syntax includes:
+Numeric equates are compile-time constants. They are stored separately from data labels and are not addressable storage symbols. Supported constant-expression syntax includes:
 
 - numeric literals already supported by the lexer;
 - numeric equate identifiers;
-- unary `+` and unary `-`;
+- unary `+`, unary `-`, and unary `NOT`;
+- byte/word extraction operators `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD`;
 - parentheses;
-- binary `+` and binary `-`.
+- binary `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, and `XOR`.
 
 Supported constant-expression contexts include:
 
@@ -78,7 +79,8 @@ Unsupported in this milestone:
 - `TEXTEQU` and text substitution;
 - text or macro-style `EQU` values such as `NAME EQU <text>`;
 - recursive or unknown equate references;
-- Stage B operators such as `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, `NOT`, `HIGH`, and `LOW`.
+- runtime high-level condition operators such as `EQ` in constant contexts;
+- non-constant terms such as register names in equate expressions.
 
 ### Data declarations
 
@@ -101,9 +103,9 @@ Implemented initializer forms:
 - Single-quoted character literals.
 - Packed character literals such as `'AB'`, `'ABC'`, and `'ABCD'` where they fit the destination/data width.
 - Comma-separated initializers.
-- Flat `DUP`, such as `10 DUP(0)` or `COUNT DUP(0)`.
+- Flat and nested `DUP`, such as `10 DUP(0)`, `COUNT DUP(0)`, and `ROWS DUP(COLS DUP(0))`.
 - `?`, represented deterministically as zero-filled storage while retaining uninitialized metadata.
-- Stage A constant expressions where a numeric initializer is valid.
+- Milestone 29 constant expressions where a numeric initializer is valid, including in nested `DUP` counts and initializer values.
 
 ### Operators and memory operands
 
@@ -251,7 +253,7 @@ Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28.
+`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30.
 
 ## Backlog notes
 
@@ -265,13 +267,12 @@ Additional data types tracked for later compatibility work:
 
 Expression parser expansion tracked for later compatibility work:
 
-- Extended arithmetic expressions beyond binary `+` and `-`, including `*`, `/`, and `MOD`.
-- Logical expressions.
-- Relational expressions.
+- Full MASM expression compatibility beyond the implemented Milestone 29 constant-expression operators.
+- Runtime logical and relational expressions.
 - Binary and octal literals.
 - `.RADIX`.
-- `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, and `THIS`.
+- `SHORT`, `THIS`, and segment-related expression operators.
 
 ## Still deferred
 
-Deferred systems include control flow, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines, debugger stepping, breakpoints, scaled-index addressing, nested `DUP`, macro expansion, Windows API modeling, and full MASM expression compatibility.
+Deferred systems include control flow, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines, debugger stepping, breakpoints, scaled-index addressing, macro expansion, Windows API modeling, and full MASM expression compatibility.

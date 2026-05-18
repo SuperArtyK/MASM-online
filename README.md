@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 28.
+Static, browser-based MASM32 educational simulator through Milestone 30.
 
 ## Current scope
 
@@ -9,7 +9,7 @@ Implemented through the current milestone:
 - C99 core, parser, executor, memory model, and WebAssembly export boundary.
 - Static browser UI shell with worker-based source execution.
 - MASM32-mode register aliases, arithmetic flags, checked memory regions, and minimal IR execution.
-- Lexer/parser support through `.data`, `.DATA?`, `.CONST`, `.code`, symbols, numeric equates, simple constant expressions, constant and register-indirect memory operands, `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literals.
+- Lexer/parser support through `.data`, `.DATA?`, `.CONST`, `.code`, symbols, numeric equates, extended constant expressions, constant and register-indirect memory operands, `PTR`, `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literals.
 - Executable `mov`, `add`, `sub`, `movsx`, `movzx`, `cbw`, `cwde`, `cwd`, `cdq`, `xchg`, `neg`, `nop`, `adc`, `sbb`, `clc`, `stc`, `cmc`, and `test` for the currently supported operand forms.
 - Explicit `unsupported-feature` diagnostics for common textbook MASM constructs tracked by the Milestone 15 backlog checkpoint.
 - Milestone 22 `test` instruction support, including MASM-compatible ambiguous memory-width diagnostics for `test [reg], imm` forms.
@@ -18,13 +18,14 @@ Implemented through the current milestone:
 - Milestone 25 global memory-width resolution rules: memory operands now share one parser validation path for the implemented memory-capable instructions, register operands can supply unambiguous memory width, and ambiguous memory/immediate forms produce `ambiguous-memory-width` diagnostics.
 - Milestone 26 MASM32 header compatibility directives: `.386`, `.model flat, stdcall`, `.stack`, `OPTION CASEMAP:NONE`, virtual `INCLUDE Irvine32.inc` / `INCLUDE Macros.inc`, and listing no-ops parse before the program body.
 - Milestone 27 additional data sections: `.DATA?` accepts `?`/`DUP(?)` uninitialized declarations and emits deterministic zero-filled writable storage with uninitialized metadata; `.CONST` emits initialized read-only storage with direct and indirect write protection.
-- Milestone 28 numeric equates and simple constant expressions: `COUNT = 4`, `EXTRA EQU 2`, unary `+`/`-`, parentheses, and binary `+`/`-` in supported constant contexts such as immediates, data initializers, `DUP` counts, symbol offsets, `.stack`, and `OFFSET symbol + constant`.
+- Milestone 29 extended constant expressions: numeric equates now support unary `+`/`-`/`NOT`, parentheses, binary `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, and extraction operators `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD` in supported compile-time constant contexts.
+- Milestone 30 nested `DUP`: data declarations now support nested `DUP` expansion such as `ROWS DUP(COLS DUP(0))`, expression-backed counts and initializer values, deterministic `?` storage, and expansion-capacity diagnostics.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 
 Not implemented yet:
 
-- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, extended/full expression parsing beyond Stage A, and Windows API behavior.
+- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, runtime high-level condition expressions, and full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
 - Extended 32-bit / 64-bit register behavior.
 
 See `docs/SUPPORTED_SYNTAX.md` for the current supported subset, scheduled features, and recognized unsupported constructs.

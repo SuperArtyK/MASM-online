@@ -4,7 +4,7 @@
  *
  * These tests cover deterministic memory layout, checked reads and writes,
  * region permissions, invalid address reporting, unaligned-access warnings, raw
- * byte-change recording, and Milestone 28 read-only .const region behavior
+ * byte-change recording, and Milestone 29 read-only .const region behavior
  * without introducing parser or instruction execution.
  */
 
@@ -550,7 +550,7 @@ static int test_memory_change_capacity_truncates_without_blocking_writes(void) {
     return failures;
 }
 
-/// Runs all memory-region tests through Milestone 28.
+/// Runs all memory-region tests through Milestone 29.
 ///
 /// @return Zero when all tests pass, otherwise one.
 int main(void) {
@@ -573,6 +573,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Memory region tests through Milestone 28 passed.\n");
+    printf("Memory region tests through Milestone 29 passed.\n");
     return 0;
 }

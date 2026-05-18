@@ -1,10 +1,10 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 28.
+ * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 30.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to implemented writable, uninitialized, and constant data declarations, numeric equates, simple constant expressions, OFFSET, direct symbol
+ * remains limited to implemented writable, uninitialized, and constant data declarations, numeric equates, extended constant expressions, nested DUP initializers, OFFSET, direct symbol
  * memory operands, constant symbol-offset memory operands, signed and unsigned PTR width overrides,
  * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
  * literal expressions for mov/add/sub, sign and zero extension
@@ -152,11 +152,14 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNKNOWN_EQUATE,
     /// A numeric equate references itself while being evaluated.
     VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE,
-    /// A constant expression used syntax outside the implemented Stage A subset.
+    /// A constant expression used syntax outside the implemented constant-expression subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
+
+/// Number of bytes reserved inside each diagnostic for formatted parser messages.
+#define VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY 256U
 
 /// Describes one parser diagnostic with source context.
 typedef struct VmParserDiagnostic {
@@ -168,8 +171,10 @@ typedef struct VmParserDiagnostic {
     const char *lexeme;
     /// Length of the associated lexeme in bytes.
     size_t lexeme_length;
-    /// Static human-readable diagnostic summary.
+    /// Human-readable diagnostic summary. Points to static storage or @ref message_storage.
     const char *message;
+    /// Caller-owned storage used when a diagnostic needs parse-specific values.
+    char message_storage[VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY];
 } VmParserDiagnostic;
 
 /// Configures one parse operation and all caller-owned output storage.

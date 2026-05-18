@@ -196,11 +196,11 @@ static int test_guide_snippet_tokenizes(void) {
 static int test_source_positions_and_comments(void) {
     int failures = 0;
     const char *source = "; first comment\r\nlabel: mov ebx, 2\n";
-    VmLexerToken tokens[16];
+    VmLexerToken tokens[20];
     VmLexerDiagnostic diagnostics[4];
     VmLexerResult result;
 
-    failures += expect_status(tokenize_for_test(source, tokens, 16U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "comments and CRLF should tokenize cleanly");
+    failures += expect_status(tokenize_for_test(source, tokens, 20U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "comments and CRLF should tokenize cleanly");
     failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_NEWLINE, "comment-only line should preserve newline");
     failures += expect_size(tokens[0].lexeme_length, 2U, "CRLF should be one newline token with length 2");
     failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_IDENTIFIER, "label should be identifier after comment newline");
@@ -312,18 +312,19 @@ static int test_brackets_and_commas(void) {
 /// @return Zero on success, otherwise a positive failure count.
 static int test_symbol_offset_operator_tokens(void) {
     int failures = 0;
-    const char *source = "[nums + 8] nums-label [esi * 4]";
-    VmLexerToken tokens[16];
+    const char *source = "[nums + 8] nums-label [esi * 4] COUNT / 2";
+    VmLexerToken tokens[20];
     VmLexerDiagnostic diagnostics[4];
     VmLexerResult result;
 
-    failures += expect_status(tokenize_for_test(source, tokens, 16U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "symbol offset operators should tokenize cleanly");
+    failures += expect_status(tokenize_for_test(source, tokens, 20U, diagnostics, 4U, &result), VM_LEXER_STATUS_OK, "symbol offset operators should tokenize cleanly");
     failures += expect_token_kind(tokens[2].kind, VM_LEXER_TOKEN_PLUS, "+ should tokenize as PLUS");
     failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_NUMBER, "8 should tokenize as a number after +");
     failures += expect_token_kind(tokens[5].kind, VM_LEXER_TOKEN_IDENTIFIER, "nums should tokenize before standalone minus");
     failures += expect_token_kind(tokens[6].kind, VM_LEXER_TOKEN_MINUS, "standalone - should tokenize as MINUS");
     failures += expect_token_kind(tokens[7].kind, VM_LEXER_TOKEN_IDENTIFIER, "label should tokenize after standalone minus");
     failures += expect_token_kind(tokens[10].kind, VM_LEXER_TOKEN_ASTERISK, "* should tokenize as ASTERISK for scaled-index diagnostics");
+    failures += expect_token_kind(tokens[14].kind, VM_LEXER_TOKEN_SLASH, "/ should tokenize as SLASH for constant-expression division");
 
     return failures;
 }
