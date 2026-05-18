@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator through Milestone 30.
+Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30 and Milestone 31 native/Node diagnostic rendering tests.
 
 ## Current scope
 
@@ -20,6 +20,7 @@ Implemented through the current milestone:
 - Milestone 27 additional data sections: `.DATA?` accepts `?`/`DUP(?)` uninitialized declarations and emits deterministic zero-filled writable storage with uninitialized metadata; `.CONST` emits initialized read-only storage with direct and indirect write protection.
 - Milestone 29 extended constant expressions: numeric equates now support unary `+`/`-`/`NOT`, parentheses, binary `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, and extraction operators `HIGH`, `LOW`, `HIGHWORD`, and `LOWWORD` in supported compile-time constant contexts.
 - Milestone 30 nested `DUP`: data declarations now support nested `DUP` expansion such as `ROWS DUP(COLS DUP(0))`, expression-backed counts and initializer values, deterministic `?` storage, and expansion-capacity diagnostics.
+- Native diagnostic rendering harness: the aggregate test runner builds a C source-run JSON producer and a Node harness verifies exact Simulator Messages text through the same formatter module used by the browser UI. This verifies native JSON and formatter output, not that `web/dist` Wasm artifacts were rebuilt.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 
@@ -42,7 +43,7 @@ On Windows, run the same test command from a terminal with Python and a C compil
 python scripts\run_tests.py
 ```
 
-The native tests do not require Emscripten. They compile the Phase 0 C API, Milestone 1 CPU register module, and Milestone 2 flag tests with the host C compiler, then run JavaScript protocol tests with Node.js.
+The native tests do not require Emscripten. They compile the C99 core/parser/executor/source-run tests with the host C compiler, build the native diagnostic JSON producer, then run JavaScript protocol, formatter, and diagnostic-rendering harness tests with Node.js.
 
 ## Install emsdk on Windows
 

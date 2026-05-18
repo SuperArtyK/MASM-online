@@ -144,6 +144,8 @@ def run_structure_tests() -> None:
         "tests/core/test_data_section.c",
         "tests/web/test_protocol.mjs",
         "tests/web/test_formatters.mjs",
+        "tests/web/test_diagnostic_rendering.mjs",
+        "tests/core/diagnostic_json_producer.c",
     ])
     assert_text_contains("web/src/protocol.js", "type: \"PONG\"")
     assert_text_contains("web/src/protocol.js", "unsupported-message")
@@ -358,15 +360,23 @@ def run_structure_tests() -> None:
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 30")
     assert_text_contains("web/src/formatters.js", "Formats final canonical registers")
     assert_text_contains("tests/web/test_formatters.mjs", "/*\n * @file test_formatters.mjs")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "/*\n * @file test_diagnostic_rendering.mjs")
+    assert_text_contains("tests/core/diagnostic_json_producer.c", "/*\n * @file diagnostic_json_producer.c")
+    assert_text_contains("tests/core/diagnostic_json_producer.c", "masm32_sim_wasm_run_source_json")
+    assert_text_contains("README.md", "Native diagnostic rendering harness")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Milestone 31 adds a native/Node diagnostic rendering harness")
     print("Milestone structure tests passed.")
 
 
-def compile_and_run_c_test(output_name: str, sources: list[str]) -> None:
-    """Compile and run one C unit test binary.
+def compile_c_binary(output_name: str, sources: list[str]) -> pathlib.Path:
+    """Compile one C test-support binary.
 
     Args:
-        output_name: File name for the compiled test executable.
+        output_name: File name for the compiled executable.
         sources: Repository-relative C source files to compile.
+
+    Returns:
+        Path to the compiled executable.
     """
 
     compiler = os.environ.get("CC", "cc")
@@ -385,6 +395,18 @@ def compile_and_run_c_test(output_name: str, sources: list[str]) -> None:
         "-o",
         str(output),
     ])
+    return output
+
+
+def compile_and_run_c_test(output_name: str, sources: list[str]) -> None:
+    """Compile and run one C unit test binary.
+
+    Args:
+        output_name: File name for the compiled test executable.
+        sources: Repository-relative C source files to compile.
+    """
+
+    output = compile_c_binary(output_name, sources)
     run_command([str(output)])
 
 
@@ -499,13 +521,34 @@ def run_c_tests() -> None:
     )
 
 
+
+def build_diagnostic_json_producer() -> None:
+    """Build the native source-run JSON producer used by Node rendering tests."""
+
+    compile_c_binary(
+        "diagnostic_json_producer",
+        [
+            "tests/core/diagnostic_json_producer.c",
+            "src/core/masm32_sim_api.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+            "src/parser/lexer.c",
+            "src/parser/parser.c",
+            "src/parser/symbols.c",
+            "src/wasm/wasm_api.c",
+        ],
+    )
+
 def run_js_tests() -> None:
-    """Run Phase 0 JavaScript protocol tests when Node.js is available."""
+    """Run JavaScript and Node-based diagnostic rendering tests."""
 
     if shutil.which("node") is None:
-        raise TestFailure("node is required for Phase 0 protocol tests")
+        raise TestFailure("node is required for JavaScript and diagnostic rendering tests")
     run_command(["node", "tests/web/test_protocol.mjs"])
     run_command(["node", "tests/web/test_formatters.mjs"])
+    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"])
 
 
 def main() -> int:
@@ -518,6 +561,7 @@ def main() -> int:
     try:
         run_structure_tests()
         run_c_tests()
+        build_diagnostic_json_producer()
         run_js_tests()
     except TestFailure as error:
         print(f"ERROR: {error}", file=sys.stderr)
