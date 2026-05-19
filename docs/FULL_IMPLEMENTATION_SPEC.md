@@ -341,7 +341,7 @@ Uninitialized-origin diagnostics are not required in default mode. They are spec
 
 Common MASM32 textbook headers should be accepted so students do not need to delete standard setup lines.
 
-Accepted as no-op, virtual, or metadata-only directives in MASM32 Educational Mode:
+Accepted as no-op, virtual, metadata-only, or semantic compatibility directives in MASM32 Educational Mode:
 
 - `.386`
 - `.486`
@@ -352,6 +352,7 @@ Accepted as no-op, virtual, or metadata-only directives in MASM32 Educational Mo
 - `.stack size`
 - `INCLUDE Irvine32.inc`
 - `INCLUDE Macros.inc`
+- `OPTION CASEMAP:ALL`
 - `OPTION CASEMAP:NONE`
 - `TITLE text`
 - `SUBTITLE text`
@@ -364,15 +365,71 @@ Behavior:
 - `.stack` optionally records a requested stack size. Runtime stack behavior is applied by the later stack milestone.
 - `INCLUDE Irvine32.inc` is accepted as a built-in virtual include. The simulator does not read the host filesystem.
 - `INCLUDE Macros.inc` is accepted as a virtual no-op for paste compatibility. Macro invocations remain unsupported until selected Irvine macro compatibility is implemented.
-- `OPTION CASEMAP:NONE` is accepted as a compatibility directive documenting the simulator's user-symbol case policy.
+- `OPTION CASEMAP:ALL` is accepted as an explicit selection of the default user-symbol case-insensitive policy.
+- `OPTION CASEMAP:NONE` is accepted as a semantic compatibility directive that switches user-defined symbols to exact-case matching from that directive forward.
 - `TITLE`, `SUBTITLE`, and `PAGE` are accepted as listing/documentation no-ops.
 
 Default case policy:
 
-- Instructions, registers, directives, operators, and data type names are case-insensitive.
-- User-defined symbols are case-sensitive in MASM32 Educational Mode.
-- `OPTION CASEMAP:NONE` is accepted as documenting that policy.
-- Other `OPTION CASEMAP` forms are rejected unless a later phase explicitly adds them.
+- Instructions, registers, register aliases, directives, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 routine names are case-insensitive.
+- User-defined symbols are case-insensitive by default in MASM32 Educational Mode.
+- User-defined symbol categories include data labels, numeric equates, code labels, procedure names, and later user-defined types, fields, aliases, and macros when those features are implemented.
+- Case-insensitive user-symbol matching uses ASCII identifier folding only. The simulator must not use locale-sensitive or Unicode case mapping.
+- In the default policy, user-symbol definitions whose names differ only by ASCII case are duplicates.
+- In the default policy, user-symbol references may use any casing.
+
+Supported `OPTION CASEMAP` forms:
+
+- `OPTION CASEMAP:ALL` is accepted. It explicitly selects the default user-symbol policy: user-defined symbols are matched case-insensitively from that directive forward.
+- `OPTION CASEMAP:NONE` is accepted. It selects exact-case user-symbol policy from that directive forward: user-defined symbols are matched case-sensitively.
+- `OPTION CASEMAP:NOTPUBLIC` is recognized as a real MASM case-mapping mode, but it is not supported in v1 because the simulator does not yet implement `PUBLIC`, `EXTERN`, object-file linkage, or public/external name export semantics.
+- Other `OPTION CASEMAP` values are invalid and must produce a structured diagnostic.
+
+`OPTION CASEMAP` affects only user-defined symbols. It must not make instructions, registers, directives, operators, data type names, `PTR` width names, virtual include names, or recognized Irvine32 routine names case-sensitive.
+
+The active `CASEMAP` policy is source-order based:
+
+1. The parser starts in `CASEMAP:ALL` behavior.
+2. A supported `OPTION CASEMAP` directive changes the active user-symbol lookup policy for declarations and references parsed after that directive.
+3. The directive does not retroactively re-key, rename, merge, split, or remove symbols already accepted into symbol tables.
+4. Each accepted symbol keeps its original source spelling for display and exact-case lookup.
+5. Each lookup is resolved using the active policy at the reference location.
+
+When `CASEMAP:ALL` is active:
+
+- a new declaration conflicts with any already-accepted symbol in the same namespace whose name has the same ASCII-folded spelling;
+- a reference resolves by ASCII-folded spelling;
+- if the folded lookup matches exactly one accepted symbol, that symbol is used;
+- if the folded lookup matches more than one accepted exact-case symbol, the simulator must emit `ambiguous-symbol` rather than choosing one.
+
+When `CASEMAP:NONE` is active:
+
+- a new declaration conflicts only with an already-accepted symbol in the same namespace whose spelling matches exactly;
+- a reference resolves only by exact spelling;
+- if no exact spelling match exists, the simulator must emit `unknown-symbol`.
+
+Rejected declarations are not inserted into any symbol table. If a duplicate declaration is rejected under `CASEMAP:ALL`, a later `CASEMAP:NONE` reference to that rejected spelling may produce `unknown-symbol` if parser recovery continues. This diagnostic sequence is valid and not contradictory.
+
+Changing between supported `CASEMAP:ALL` and `CASEMAP:NONE` directives is accepted for MASM compatibility. If a supported `CASEMAP` directive changes a previously selected supported `CASEMAP` policy, the simulator must emit a non-fatal warning with code:
+
+```text
+casemap-policy-changed
+```
+
+A `casemap-policy-changed` warning alone must not block execution. As usual, any assembly error emitted in the same run prevents execution.
+
+Diagnostic classification:
+
+- `OPTION CASEMAP:ALL`: supported.
+- `OPTION CASEMAP:NONE`: supported.
+- `OPTION CASEMAP:NOTPUBLIC`: recognized but unsupported; emit `unsupported-option`.
+- Any other `CASEMAP` value: invalid; emit `invalid-option-value` if available, otherwise `unsupported-option` with wording that distinguishes invalid values from recognized-but-unsupported `NOTPUBLIC`.
+
+Suggested invalid-value wording:
+
+```text
+Invalid CASEMAP value 'LOWER'. Supported values: ALL, NONE. Recognized but unsupported value: NOTPUBLIC.
+```
 
 Examples:
 

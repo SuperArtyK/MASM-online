@@ -1577,25 +1577,28 @@ This phase lets users paste ordinary MASM32/Irvine32 classroom programs without 
    unsupported-include
    ```
 
-10. Parse and accept:
+10. Parse and classify `OPTION CASEMAP` forms as MASM32 header compatibility syntax:
 
    ```asm
+   OPTION CASEMAP:ALL
    OPTION CASEMAP:NONE
+   OPTION CASEMAP:NOTPUBLIC
    ```
 
-   as a compatibility no-op documenting the simulator's user-symbol case policy.
+11. Define the intended case policy, with full semantic implementation completed by Phase 35A:
+    - instructions, registers, register aliases, directives, operators, data types, `PTR` width names, virtual include names, and recognized Irvine32 routine names are case-insensitive;
+    - user-defined symbols are case-insensitive by default;
+    - `OPTION CASEMAP:ALL` explicitly selects the default user-symbol policy and is accepted;
+    - `OPTION CASEMAP:NONE` selects exact-case user-symbol policy and is accepted;
+    - `OPTION CASEMAP:NOTPUBLIC` is recognized but unsupported until public/external linkage semantics exist;
+    - any other `CASEMAP` value is invalid.
 
-11. Define case policy:
-    - instructions, registers, directives, operators, and data types are case-insensitive;
-    - user-defined symbols are case-sensitive in MASM32 Educational Mode;
-    - other `OPTION CASEMAP` forms are rejected.
+    Phase 26 accepted header compatibility syntax before the full user-symbol case-policy correction existed. Phase 35A corrects the earlier contradictory wording and implements the missing semantic behavior. Phase 26 must not be read as specifying case-sensitive user symbols by default.
 
-12. Reject unsupported `OPTION` forms with structured diagnostics:
-    - `OPTION NOKEYWORD`
-    - `OPTION DOTNAME`
-    - `OPTION NODOTNAME`
-    - unsupported `OPTION LANGUAGE` forms
-    - any other unsupported option.
+12. Reject unsupported or invalid `OPTION` forms with structured diagnostics:
+    - `OPTION CASEMAP:NOTPUBLIC` should produce an `unsupported-option` diagnostic explaining that public/external linkage semantics are not implemented;
+    - invalid `CASEMAP` values should produce `invalid-option-value` where available, or `unsupported-option` with clear wording;
+    - unrelated unsupported option families such as `OPTION NOKEYWORD`, `OPTION DOTNAME`, `OPTION NODOTNAME`, and unsupported `OPTION LANGUAGE` forms remain rejected.
 
 13. Parse and accept listing/documentation directives as no-ops:
     - `TITLE`
@@ -2351,6 +2354,888 @@ main ENDP
 END main
 ```
 
+## 39A. Phase 35A - OPTION CASEMAP and User Symbol Case Policy Correction
+
+### Goal
+
+Correct and implement the simulator's user-defined symbol case policy before object-map and provenance work depends on stable symbol identity.
+
+This phase fixes the earlier Phase 26 wording that incorrectly described user-defined symbols as case-sensitive by default and described `OPTION CASEMAP:NONE` as a no-op. The simulator must instead use MASM-compatible default case-insensitive user-symbol matching, support explicit `CASEMAP:ALL`, support `CASEMAP:NONE` exact-case mode, recognize but reject `CASEMAP:NOTPUBLIC`, and reject invalid `CASEMAP` values clearly.
+
+This is a corrective compatibility phase inserted between Phase 35 and Phase 36. It does not renumber later phases. After this phase is complete, the next numbered phase remains Phase 36.
+
+### Dependencies
+
+- Phase 26 MASM header directive parsing.
+- Existing parser symbol tables for data symbols, numeric equates, labels, and procedure names where implemented.
+- Existing duplicate-symbol and unknown-symbol diagnostics.
+- Phase 31 native diagnostic rendering harness for rendered Simulator Messages tests.
+
+### Default case policy
+
+Without any `OPTION CASEMAP` directive:
+
+- instructions are case-insensitive;
+- registers and register aliases are case-insensitive;
+- directives are case-insensitive;
+- operators such as `OFFSET`, `TYPE`, `LENGTHOF`, and `SIZEOF` are case-insensitive;
+- data type names and `PTR` width names are case-insensitive;
+- virtual include names and recognized Irvine32 routine names are case-insensitive;
+- user-defined symbols are case-insensitive;
+- symbol definitions whose names differ only by ASCII case are duplicates;
+- symbol references may use any casing.
+
+In default mode, these references must resolve to the same symbol:
+
+```asm
+.DATA?
+buf DWORD ?
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+    mov DWORD PTR [eax], 77
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Expected result:
+
+```text
+execution-complete
+EBX = 0000004Dh / 77
+```
+
+In default mode, this remains rejected as a duplicate symbol:
+
+```asm
+.DATA?
+buf DWORD ?
+bUF DWORD ?
+
+.code
+main PROC
+END main
+```
+
+Expected diagnostic:
+
+```text
+duplicate-symbol
+```
+
+The diagnostic must point at the second declaration name.
+
+### Required symbol-resolution model
+
+The implementation must use one active user-symbol case policy while parsing.
+
+The parser starts in:
+
+```text
+CASEMAP:ALL
+```
+
+This means the default simulator behavior is case-insensitive user-symbol matching.
+
+The active policy may change only through supported directives:
+
+```asm
+OPTION CASEMAP:ALL
+OPTION CASEMAP:NONE
+```
+
+The active policy applies only to declarations and references parsed after the directive. The implementation must not retroactively modify accepted symbols when the policy changes.
+
+Each accepted user symbol must retain:
+
+- original source spelling;
+- namespace/category;
+- source location of declaration;
+- enough comparison metadata to support exact-case lookup and ASCII-folded lookup.
+
+The implementation may store a folded key for efficiency, but the folded key must be derived by ASCII uppercase folding, not locale-sensitive case conversion.
+
+### Declaration rules
+
+When declaring a user symbol under `CASEMAP:ALL`:
+
+- compare the new spelling to already-accepted symbols in the same namespace using ASCII-folded spelling;
+- if a match exists, emit `duplicate-symbol`;
+- do not insert the rejected declaration.
+
+When declaring a user symbol under `CASEMAP:NONE`:
+
+- compare the new spelling to already-accepted symbols in the same namespace using exact spelling;
+- if an exact spelling match exists, emit `duplicate-symbol`;
+- if only different-case spellings exist, accept the new symbol as distinct.
+
+These rules apply to data symbols and numeric equates in this phase. They must also apply to labels/procedure names where those tables already exist. Future user-symbol namespaces must follow the same active-policy model when implemented.
+
+### Reference lookup rules
+
+When resolving a user-symbol reference under `CASEMAP:ALL`:
+
+1. ASCII-fold the reference spelling.
+2. Find accepted symbols in the relevant namespace whose ASCII-folded declaration spelling matches.
+3. If zero symbols match, emit `unknown-symbol`.
+4. If one symbol matches, resolve to that symbol.
+5. If more than one symbol matches, emit `ambiguous-symbol` and do not choose one.
+
+When resolving a user-symbol reference under `CASEMAP:NONE`:
+
+1. Match only accepted symbols whose declaration spelling exactly equals the reference spelling.
+2. If no exact match exists, emit `unknown-symbol`.
+3. Do not fall back to case-insensitive lookup.
+
+### CASEMAP directive rules
+
+`OPTION CASEMAP:ALL`:
+
+- is supported;
+- sets active user-symbol policy to `CASEMAP:ALL`;
+- is equivalent to the default policy if no earlier `CASEMAP:NONE` changed the mode.
+
+`OPTION CASEMAP:NONE`:
+
+- is supported;
+- sets active user-symbol policy to `CASEMAP:NONE`.
+
+`OPTION CASEMAP:NOTPUBLIC`:
+
+- is recognized but unsupported;
+- must emit `unsupported-option`;
+- must not change the active policy;
+- must explain that `NOTPUBLIC` depends on public/external linkage semantics not modeled by the simulator.
+
+Any other `CASEMAP` value:
+
+- is invalid;
+- must emit `invalid-option-value` where available, or `unsupported-option` if no narrower code exists;
+- must not change the active policy;
+- must list `ALL` and `NONE` as supported values and `NOTPUBLIC` as recognized but unsupported.
+
+If a supported `CASEMAP` directive changes the active policy from a previously selected supported policy, emit:
+
+```text
+casemap-policy-changed
+```
+
+Severity:
+
+```text
+warning
+```
+
+The warning must not block execution by itself.
+
+No warning is required when:
+
+- the first explicit `CASEMAP` directive appears;
+- `OPTION CASEMAP:ALL` appears while the active policy is already `ALL`;
+- `OPTION CASEMAP:NONE` appears while the active policy is already `NONE`.
+
+A warning is required when:
+
+- `ALL` changes to `NONE`;
+- `NONE` changes to `ALL`.
+
+### Required diagnostic behavior
+
+Every new or changed diagnostic must preserve:
+
+- severity;
+- diagnostic code;
+- line;
+- column;
+- byte offset;
+- span length;
+- final rendered Simulator Messages text.
+
+Required severities:
+
+```text
+casemap-policy-changed: warning
+duplicate-symbol: assembly-error
+unknown-symbol: assembly-error
+ambiguous-symbol: assembly-error
+unsupported-option: assembly-error
+invalid-option-value: assembly-error
+```
+
+Execution rule:
+
+- warning-only programs may execute;
+- any assembly-error prevents execution.
+
+### Duplicate, unknown, and ambiguous symbol behavior
+
+When `CASEMAP:ALL` is active, declarations that differ only by case are duplicates.
+
+If a duplicate declaration is rejected, it must not be entered into the symbol table.
+
+If a later `CASEMAP:NONE` directive changes lookup to exact-case mode, references to the rejected spelling remain unresolved and may produce `unknown-symbol` if parser recovery continues.
+
+This behavior is intentional:
+
+```asm
+OPTION CASEMAP:ALL
+
+.DATA?
+buf DWORD ?
+bUF DWORD ?
+
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+    mov DWORD PTR [eax], 77
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Expected diagnostics, if recovery continues:
+
+```text
+duplicate-symbol on the bUF declaration
+casemap-policy-changed warning on OPTION CASEMAP:NONE
+unknown-symbol on OFFSET bUF
+```
+
+No execution occurs.
+
+If `CASEMAP:ALL` becomes active after earlier `CASEMAP:NONE` declarations created multiple valid case-distinct symbols that fold to the same case-insensitive key, a later folded lookup that matches more than one valid symbol must not guess.
+
+Preferred diagnostic:
+
+```text
+ambiguous-symbol
+```
+
+Acceptable fallback if no ambiguity diagnostic exists yet:
+
+```text
+duplicate-symbol
+```
+
+Suggested example:
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+buf DWORD 1
+bUF DWORD 2
+
+OPTION CASEMAP:ALL
+
+.code
+main PROC
+    mov eax, buf
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+casemap-policy-changed warning
+ambiguous-symbol or duplicate-symbol for folded lookup
+no execution
+```
+
+### Implementation tasks
+
+1. Add an explicit parser/source setting for active user-symbol case policy.
+2. Default the policy to `CASEMAP:ALL` behavior: case-insensitive user symbols.
+3. Parse and support `OPTION CASEMAP:ALL`.
+4. Parse and support `OPTION CASEMAP:NONE`.
+5. Parse and recognize `OPTION CASEMAP:NOTPUBLIC`, but reject it with `unsupported-option`.
+6. Reject all other `CASEMAP` values with `invalid-option-value` where available, or `unsupported-option` with precise wording.
+7. Ensure keyword, instruction, register, register-alias, directive, operator, data type, `PTR` width, virtual include, and recognized Irvine32 routine matching remains case-insensitive under all `CASEMAP` modes.
+8. Ensure data-symbol lookup and duplicate detection use the active user-symbol policy.
+9. Ensure numeric equate lookup and duplicate detection use the active user-symbol policy.
+10. Ensure label lookup and duplicate detection use the active user-symbol policy where label support currently exists.
+11. Ensure procedure-name lookup and duplicate detection use the active user-symbol policy where procedure-name metadata currently exists.
+12. Ensure future user-symbol categories named in the spec follow the same active policy when implemented.
+13. Support source-order policy application: declarations and references are interpreted using the policy active at their source location.
+14. Emit a non-fatal `casemap-policy-changed` warning when a supported `CASEMAP` directive changes a previously set supported `CASEMAP` policy.
+15. Preserve current default behavior where references such as `OFFSET bUF` resolve to `buf`.
+16. Under `CASEMAP:NONE`, make references require exact user-symbol spelling.
+17. Under `CASEMAP:NONE`, allow separately declared user symbols whose names differ only by case.
+18. Under `CASEMAP:ALL`, reject duplicate declarations whose names differ only by case.
+19. Do not enter rejected duplicate declarations into the symbol table.
+20. If case-insensitive lookup under `CASEMAP:ALL` matches multiple valid case-distinct symbols from an earlier `CASEMAP:NONE` region, emit an ambiguity diagnostic rather than choosing one.
+21. Add or update Doxygen comments for any new public structs, enums, helpers, or configuration fields.
+22. Update `FULL_IMPLEMENTATION_SPEC.md`.
+23. Update Phase 26 wording in `INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
+24. Update `docs/SUPPORTED_SYNTAX.md`.
+25. Add regression tests proving that older default case-insensitive behavior remains unchanged.
+26. Add structured diagnostic tests and rendered Simulator Messages tests for every new or changed user-visible diagnostic or warning.
+
+### Required tests
+
+#### Default case-insensitive symbol lookup
+
+```asm
+.DATA?
+buf DWORD ?
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+    mov DWORD PTR [eax], 77
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+execution-complete
+EBX = 0000004Dh / 77
+```
+
+#### Default duplicate-by-case-folded-name rejection
+
+```asm
+.DATA?
+buf DWORD ?
+bUF DWORD ?
+
+.code
+main PROC
+END main
+```
+
+Expected:
+
+```text
+duplicate-symbol
+```
+
+The diagnostic must point at the second declaration. The implementation must not accept both symbols.
+
+#### Explicit CASEMAP:ALL symbol lookup
+
+```asm
+OPTION CASEMAP:ALL
+
+.DATA?
+buf DWORD ?
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+    mov DWORD PTR [eax], 77
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+execution-complete
+EBX = 0000004Dh / 77
+```
+
+#### Explicit CASEMAP:ALL duplicate-by-case-folded-name rejection
+
+```asm
+OPTION CASEMAP:ALL
+
+.DATA?
+buf DWORD ?
+bUF DWORD ?
+
+.code
+main PROC
+END main
+```
+
+Expected:
+
+```text
+duplicate-symbol
+```
+
+The diagnostic must point at the second declaration. The implementation must not accept both symbols.
+
+#### Default equate lookup is case-insensitive
+
+```asm
+COUNT = 5
+
+.code
+main PROC
+    mov eax, count
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000005h / 5
+```
+
+#### Default equate duplicate differs only by case
+
+```asm
+COUNT = 5
+count = 6
+
+.code
+main PROC
+END main
+```
+
+Expected:
+
+```text
+duplicate-symbol
+```
+
+or a narrower duplicate-equate diagnostic if one already exists.
+
+#### CASEMAP:NONE makes data symbols case-sensitive
+
+```asm
+OPTION CASEMAP:NONE
+
+.DATA?
+buf DWORD ?
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+The diagnostic must point at `bUF`. The implementation must not resolve `bUF` to `buf`.
+
+#### CASEMAP:NONE permits case-distinct data symbols
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+buf DWORD 1
+bUF DWORD 2
+
+.code
+main PROC
+    mov eax, buf
+    mov ebx, bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000001h / 1
+EBX = 00000002h / 2
+```
+
+#### CASEMAP:NONE keeps instructions and registers case-insensitive
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+value DWORD 3
+
+.code
+main PROC
+    MoV EaX, VaLuE
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+The instruction and register must be recognized. The failure must be only the user-symbol spelling mismatch for `VaLuE`.
+
+#### Exact-case reference succeeds under CASEMAP:NONE
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+VaLuE DWORD 3
+
+.code
+main PROC
+    MoV EaX, VaLuE
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000003h / 3
+```
+
+#### CASEMAP:NONE applies to `.CONST`
+
+```asm
+OPTION CASEMAP:NONE
+
+.CONST
+Limit DWORD 10
+
+.code
+main PROC
+    mov eax, limit
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+#### CASEMAP:NONE applies to `.DATA?`
+
+```asm
+OPTION CASEMAP:NONE
+
+.DATA?
+Buffer DWORD ?
+
+.code
+main PROC
+    mov eax, OFFSET buffer
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+#### CASEMAP:NONE applies to `TYPE`, `LENGTHOF`, and `SIZEOF`
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+Nums DWORD 4 DUP(0)
+
+.code
+main PROC
+    mov eax, TYPE nums
+    mov ebx, LENGTHOF NUMS
+    mov ecx, SIZEOF nUMS
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+At least one test should verify each operator with exact casing succeeds.
+
+#### CASEMAP:NONE applies to numeric equates
+
+```asm
+OPTION CASEMAP:NONE
+
+COUNT = 5
+
+.code
+main PROC
+    mov eax, count
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unknown-symbol
+```
+
+#### CASEMAP:NONE permits case-distinct equates
+
+```asm
+OPTION CASEMAP:NONE
+
+COUNT = 5
+count = 6
+
+.code
+main PROC
+    mov eax, COUNT
+    mov ebx, count
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000005h / 5
+EBX = 00000006h / 6
+```
+
+#### CASEMAP policy change from NONE to ALL emits warning and applies ALL afterward
+
+```asm
+OPTION CASEMAP:NONE
+OPTION CASEMAP:ALL
+
+.data
+buf DWORD 1
+
+.code
+main PROC
+    mov eax, bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+casemap-policy-changed warning
+execution-complete
+EAX = 00000001h / 1
+```
+
+The implementation must not treat `casemap-policy-changed` as an assembly error.
+
+#### CASEMAP policy change from ALL to NONE emits warning and applies NONE afterward
+
+```asm
+OPTION CASEMAP:ALL
+OPTION CASEMAP:NONE
+
+.data
+buf DWORD 1
+
+.code
+main PROC
+    mov eax, bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+casemap-policy-changed warning
+unknown-symbol for bUF
+no execution
+```
+
+#### Repeated same CASEMAP value does not require a warning
+
+```asm
+OPTION CASEMAP:ALL
+OPTION CASEMAP:ALL
+
+.data
+buf DWORD 1
+
+.code
+main PROC
+    mov eax, bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+execution-complete
+EAX = 00000001h / 1
+```
+
+No `casemap-policy-changed` warning is required because the active policy did not change.
+
+#### Duplicate under ALL then unknown under later NONE
+
+```asm
+OPTION CASEMAP:ALL
+
+.DATA?
+buf DWORD ?
+bUF DWORD ?
+
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+    mov eax, OFFSET bUF
+    mov DWORD PTR [eax], 77
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Expected, if parser recovery continues:
+
+```text
+duplicate-symbol on bUF declaration
+casemap-policy-changed warning on OPTION CASEMAP:NONE
+unknown-symbol on OFFSET bUF
+no execution
+```
+
+The implementation must not insert the rejected `bUF` declaration and then resolve it later.
+
+#### Ambiguous folded lookup after switching from NONE to ALL
+
+```asm
+OPTION CASEMAP:NONE
+
+.data
+buf DWORD 1
+bUF DWORD 2
+
+OPTION CASEMAP:ALL
+
+.code
+main PROC
+    mov eax, buf
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+casemap-policy-changed warning
+ambiguous-symbol or duplicate-symbol for folded lookup
+no execution
+```
+
+The implementation must not silently choose either `buf` or `bUF`.
+
+#### CASEMAP:NOTPUBLIC is recognized but unsupported
+
+```asm
+OPTION CASEMAP:NOTPUBLIC
+
+.code
+main PROC
+END main
+```
+
+Expected:
+
+```text
+unsupported-option
+```
+
+The message must explain that `CASEMAP:NOTPUBLIC` depends on public/external linkage semantics that are not implemented. The implementation must not silently treat `NOTPUBLIC` as `ALL`, `NONE`, or default.
+
+#### CASEMAP:NOTPUBLIC does not change active policy
+
+```asm
+OPTION CASEMAP:NOTPUBLIC
+
+.data
+buf DWORD 1
+
+.code
+main PROC
+    mov eax, bUF
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+unsupported-option
+no execution
+```
+
+If recovery proceeds far enough to attempt lookup, `bUF` should still be interpreted under the prior active policy because `NOTPUBLIC` must not change the active policy.
+
+#### Invalid CASEMAP value is rejected
+
+```asm
+OPTION CASEMAP:LOWER
+
+.code
+main PROC
+END main
+```
+
+Expected:
+
+```text
+invalid-option-value
+```
+
+or, if no specific invalid-value diagnostic exists:
+
+```text
+unsupported-option
+```
+
+The message must identify:
+
+```text
+Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.
+```
+
+#### Source-span and rendered-message tests
+
+For every new diagnostic or warning introduced or changed in this phase:
+
+- assert structured diagnostic code;
+- assert diagnostic severity;
+- assert one-based source line;
+- assert one-based source column;
+- assert byte offset;
+- assert span length;
+- assert final rendered Simulator Messages text through the native diagnostic JSON producer and Node formatter harness.
+
+Warnings must be tested separately from fatal assembly errors to prove that warning-only programs can still execute.
+
+### Non-Goals
+
+This phase must not implement:
+
+- object allocation map behavior;
+- object-bounds/provenance diagnostics;
+- STRUCT, UNION, RECORD, TYPEDEF, or field access;
+- macro definitions or macro expansion;
+- `OPTION NOKEYWORD`;
+- `OPTION CASEMAP:NOTPUBLIC` semantics;
+- public/external linkage semantics;
+- `PUBLIC`, `EXTERN`, `COMM`, or linker/object-file behavior;
+- Windows API, PE/linker, or host include behavior;
+- control flow, stack instructions, Irvine32 routines, or new runtime instructions.
 ## 40. Phase 36 - Declared Object Allocation Map
 
 ### Goal
@@ -2364,6 +3249,7 @@ This phase must not add object-bounds warnings/errors yet.
 - Current data layout and symbol metadata.
 - Current `.DATA?` and `.CONST` sections.
 - Current selected memory layout after fixed/automatic/randomized placement.
+- Phase 35A user-symbol case policy correction.
 
 ### Tasks
 
@@ -4029,7 +4915,7 @@ main ENDP
 
 Ordinary labels use `name:`. `PROC` names are recorded as procedure-entry code labels targeting the first executable instruction in that procedure. This is direct-branch metadata only; it does not imply CALL/RET or stack behavior.
 
-Label names follow the same case policy as user-defined symbols in MASM32 Educational Mode: they are case-sensitive unless a later phase explicitly changes the symbol policy. For example, `Loop:` and `loop:` are distinct labels.
+Label names follow the active user-defined symbol case policy. By default, labels are case-insensitive and `Loop:` conflicts with `loop:`. With `OPTION CASEMAP:NONE`, labels are case-sensitive and references must match the declared label spelling exactly.
 
 ### Target policy
 
@@ -4573,7 +5459,7 @@ This `_v2` revision also locks down the following cross-cutting rules:
 - `lea` effective-address arithmetic is modulo 2^32 and never validates mapped memory merely because the computed address is unmapped.
 - Successful `lea`, `div`, and `idiv` must preserve all currently modeled flags unless a later phase explicitly changes the policy.
 - Failed `mul`, `div`, and `idiv` must not create memory-change rows, partial implicit-register writes, or misleading successful deltas.
-- Label lookup is case-sensitive, matching the simulator's user-symbol policy.
+- Label lookup follows the active user-symbol case policy: case-insensitive by default, and case-sensitive only under `OPTION CASEMAP:NONE`.
 - All branch instructions in this batch use one shared branch target classifier.
 - Conditional jumps count as executed instructions whether taken or not taken.
 
@@ -4649,7 +5535,7 @@ The target classifier must distinguish:
 4. Add a virtual Irvine32 symbol registry with at least these names classified:
    - supported-now or planned: `exit`, `Crlf`, `WriteChar`, `WriteString`, `WriteDec`, `WriteInt`, `WriteHex`, `WriteBin`, `DumpRegs`, `DumpMem`, `Randomize`, `Random32`, `RandomRange`, `WaitMsg`, `ReadChar`, `ReadInt`, `ReadDec`, `ReadHex`, `ReadString`;
    - explicit non-goal or deferred Windows/UI names as appropriate, such as `MsgBox`, `MsgBoxAsk`, file I/O routines, and color/cursor routines if not scheduled in v1.
-5. Preserve case policy: instructions and Irvine routine names are case-insensitive; user-defined procedure and label names remain case-sensitive unless a later phase changes the symbol policy.
+5. Preserve case policy: instructions and Irvine routine names are case-insensitive; user-defined procedure and label names follow the active user-symbol case policy.
 6. Reject duplicate procedure names, duplicate labels, and collisions with existing data/equate symbols according to the existing global symbol policy.
 7. Add structured diagnostics for duplicate or invalid procedure metadata.
 8. Do not implement CALL, RET, INVOKE, or Irvine routine execution.
@@ -8310,8 +9196,8 @@ Point ENDS
 
 ### Semantics
 
-- STRUCT names are case-sensitive user type symbols.
-- Field names are case-sensitive within the struct.
+- STRUCT names follow the active user-symbol case policy.
+- Field names follow the active user-symbol case policy within the struct.
 - Fields use existing scalar integer declaration types only.
 - Offsets are assigned in declaration order.
 - No implicit padding in first implementation.
@@ -8533,7 +9419,7 @@ BYTE_ALIAS TYPEDEF BYTE
 
 ### Semantics
 
-- Type aliases are case-sensitive user type symbols.
+- Type aliases follow the active user-symbol case policy.
 - Aliases may be used in data declarations where the underlying scalar type is supported.
 - Alias chains are allowed only if they resolve acyclically to a supported scalar type.
 - Alias metadata preserves original spelling and target type.
@@ -8589,7 +9475,7 @@ Flags RECORD carry:1, mode:3, value:4
 
 - Total width must be 1..32 bits.
 - Field widths must be positive constant expressions.
-- Field names are case-sensitive within the record.
+- Field names follow the active user-symbol case policy within the record.
 - Field bit positions must be assigned deterministically. First field occupies the highest-order bits of the record. Metadata must store exact inclusive bit ranges using zero-based bit indices, where bit 0 is the least-significant bit of the selected storage unit.
 - No runtime variables yet.
 
