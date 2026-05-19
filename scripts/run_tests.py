@@ -123,6 +123,8 @@ def run_structure_tests() -> None:
         "src/parser/parser.h",
         "src/parser/symbols.c",
         "src/parser/symbols.h",
+        "src/parser/object_map.c",
+        "src/parser/object_map.h",
         "docs/SUPPORTED_SYNTAX.md",
         "web/index.html",
         "web/src/main.js",
@@ -145,6 +147,7 @@ def run_structure_tests() -> None:
         "tests/core/test_parser.c",
         "tests/core/test_wasm_source_run.c",
         "tests/core/test_data_section.c",
+        "tests/core/test_object_map.c",
         "tests/web/test_protocol.mjs",
         "tests/web/test_formatters.mjs",
         "tests/web/test_diagnostic_rendering.mjs",
@@ -164,6 +167,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "lexer.c")
     assert_text_contains("scripts/build_wasm.sh", "parser.c")
     assert_text_contains("scripts/build_wasm.sh", "symbols.c")
+    assert_text_contains("scripts/build_wasm.sh", "object_map.c")
     assert_text_contains("scripts/build_wasm.sh", "src/parser")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json")
@@ -182,6 +186,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "lexer.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "parser.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "symbols.c")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "object_map.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "src\\parser")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json")
@@ -247,6 +252,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "/*\n * @file parser.c")
     assert_text_contains("src/parser/symbols.h", "/*\n * @file symbols.h")
     assert_text_contains("src/parser/symbols.c", "/*\n * @file symbols.c")
+    assert_text_contains("src/parser/object_map.h", "/*\n * @file object_map.h")
+    assert_text_contains("src/parser/object_map.c", "/*\n * @file object_map.c")
     assert_text_contains("src/core/vm_cpu.h", "/// Identifies a canonical MASM32 register")
     assert_text_contains("src/core/vm_cpu.h", "/// Identifies one named EFLAGS bit")
     assert_text_contains("src/core/vm_cpu.h", "/// Stores canonical 32-bit MASM32 CPU registers")
@@ -320,8 +327,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Milestone 35A")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 35A")
+    assert_text_contains("README.md", "Milestone 36")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 36")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -359,6 +366,13 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "ambiguous-memory-width")
     assert_text_contains("src/parser/symbols.h", "/// Describes one data symbol")
     assert_text_contains("src/parser/symbols.h", "bool vm_symbol_parse_data_type")
+    assert_text_contains("src/parser/object_map.h", "/// Describes one declared data object after layout selection")
+    assert_text_contains("src/parser/object_map.h", "VmObjectMapStatus vm_object_map_build_from_symbols")
+    assert_text_contains("src/parser/object_map.h", "VmObjectMapStatus vm_object_map_find_by_range")
+    assert_text_contains("src/parser/object_map.h", "VmObjectMapStatus vm_object_map_classify_range")
+    assert_text_contains("src/parser/object_map.h", "/// Classifies how one full access range relates to declared objects and valid regions")
+    assert_text_contains("src/parser/object_map.c", "/// Writes one object-map entry from one symbol")
+    assert_text_contains("src/parser/object_map.c", "/// Finds the selected layout region that wholly contains one inclusive range")
     assert_text_contains("src/parser/parser.c", "/// Owns mutable parser state")
     assert_text_contains("tests/core/test_parser.c", "/*\n * @file test_parser.c")
     assert_text_contains("tests/core/test_parser.c", "/// Verifies that the guide's minimal program parses")
@@ -371,6 +385,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies TYPE symbol emits declared element-size immediates")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies LENGTHOF symbol emits element-count immediates")
     assert_text_contains("tests/core/test_data_section.c", "/// Verifies Milestone 30 nested DUP expansion")
+    assert_text_contains("tests/core/test_object_map.c", "/*\n * @file test_object_map.c")
+    assert_text_contains("tests/core/test_object_map.c", "/// Verifies scalar, array, nested DUP, .DATA?, and .CONST object metadata")
+    assert_text_contains("tests/core/test_object_map.c", "/// Verifies full-range classification covers Phase 36 object-map categories")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 30")
     assert_text_contains("web/src/formatters.js", "Formats final canonical registers")
@@ -449,6 +466,7 @@ def run_c_tests() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
     )
@@ -500,6 +518,7 @@ def run_c_tests() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
     )
@@ -525,6 +544,7 @@ def run_c_tests() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
         ],
     )
 
@@ -541,6 +561,7 @@ def run_c_tests() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
     )
@@ -558,10 +579,29 @@ def run_c_tests() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
     )
 
+
+    compile_and_run_c_test(
+        "test_object_map",
+        [
+            "tests/core/test_object_map.c",
+            "src/core/masm32_sim_api.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+            "src/parser/lexer.c",
+            "src/parser/parser.c",
+            "src/parser/symbols.c",
+            "src/parser/object_map.c",
+            "src/wasm/wasm_api.c",
+        ],
+    )
 
 
 def build_diagnostic_json_producer() -> None:
@@ -580,6 +620,7 @@ def build_diagnostic_json_producer() -> None:
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
+            "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
     )

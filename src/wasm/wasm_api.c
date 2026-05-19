@@ -19,6 +19,7 @@
 #include "../core/vm_exec.h"
 #include "../core/vm_layout.h"
 #include "../core/vm_memory.h"
+#include "../parser/object_map.h"
 #include "../parser/parser.h"
 #include "../parser/symbols.h"
 
@@ -52,6 +53,9 @@
 
 /// Maximum data symbols retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_SYMBOLS 128U
+
+/// Maximum declared-object map entries retained by one source run.
+#define MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES MASM32_SIM_WASM_MAX_RUN_SYMBOLS
 
 /// Maximum .data/.DATA? bytes laid out by the source-run API.
 #define MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES VM_MEMORY_DEFAULT_DATA_SIZE
@@ -161,6 +165,10 @@ typedef struct Masm32SimWasmRunStorage {
     VmIrInstruction instructions[MASM32_SIM_WASM_MAX_RUN_INSTRUCTIONS];
     /// Data symbols emitted by the parser.
     VmSymbol symbols[MASM32_SIM_WASM_MAX_RUN_SYMBOLS];
+    /// Declared-object map entries built from final selected-layout symbols.
+    VmObjectMapEntry object_map_entries[MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES];
+    /// Number of valid declared-object map entries.
+    size_t object_map_entry_count;
     /// Data image bytes emitted by the parser for `.data` and `.DATA?`.
     uint8_t data_image[MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES];
     /// Constant image bytes emitted by the parser for `.CONST`.
@@ -1570,6 +1578,33 @@ static bool masm32_sim_wasm_relocate_parser_output(
     return true;
 }
 
+/// Builds Phase 36 declared-object map metadata from final selected-layout symbols.
+///
+/// The map is retained for tests/internal tooling only. It is intentionally not
+/// serialized into default source-run JSON and does not participate in runtime
+/// validation in this phase.
+///
+/// @param result Parser result containing symbol count metadata.
+/// @param storage Source-run storage that owns symbols and object entries.
+/// @return true when object-map metadata was built successfully.
+static bool masm32_sim_wasm_build_declared_object_map(const VmParserResult *result, Masm32SimWasmRunStorage *storage) {
+    VmObjectMapStatus status = VM_OBJECT_MAP_STATUS_OK;
+
+    if (result == NULL || storage == NULL) {
+        return false;
+    }
+
+    status = vm_object_map_build_from_symbols(
+        storage->symbols,
+        result->symbol_count,
+        storage->object_map_entries,
+        (size_t)MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES,
+        &storage->object_map_entry_count
+    );
+
+    return status == VM_OBJECT_MAP_STATUS_OK;
+}
+
 /// Parses, optionally applies policy-selected layout, and executes source.
 ///
 /// @param source Source text to run.
@@ -1677,6 +1712,12 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
     }
     vm_initialized = true;
+
+    if (!masm32_sim_wasm_build_declared_object_map(&parser_result, &g_masm32_sim_wasm_run_storage)) {
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        vm_deinit(&vm);
+        return json;
+    }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {

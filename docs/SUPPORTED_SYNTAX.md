@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 35A. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, and Milestone 35A corrects MASM-compatible user-symbol case policy. These infrastructure and compatibility-correction milestones add no new runtime instruction behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 36. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, Milestone 35A corrects MASM-compatible user-symbol case policy, and Milestone 36 adds declared-object allocation map metadata for tests/internal tooling only. These infrastructure and compatibility-correction milestones add no new runtime instruction behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -52,6 +52,10 @@ Case policy:
 - Under `CASEMAP:NONE`, user-symbol definitions and references use exact source spelling from that point forward; different-case symbols may coexist.
 - Switching between supported CASEMAP policies emits a non-fatal `casemap-policy-changed` warning when it changes a previously selected supported policy.
 - If `CASEMAP:ALL` lookup matches multiple valid exact-case symbols created under `CASEMAP:NONE`, lookup fails with `ambiguous-symbol` rather than choosing one.
+
+Backend metadata note:
+
+- Milestone 36 builds a declared-object allocation map for `.data`, `.DATA?`, and `.CONST` symbols after selected layout placement. It records object address ranges, declaration metadata, permissions, source locations, and a `not-tracked` initialization-origin placeholder for later diagnostics. It does not add object-bounds warnings, strict object errors, provenance checks, uninitialized-read diagnostics, or UI memory visualization.
 
 
 ### Numeric equates and extended constant expressions

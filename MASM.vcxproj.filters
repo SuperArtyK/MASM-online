@@ -63,6 +63,9 @@
     <ClCompile Include="src\core\vm_layout.c">
       <Filter>Source Files\core</Filter>
     </ClCompile>
+    <ClCompile Include="src\parser\object_map.c">
+      <Filter>Source Files\parser</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\masm32_sim_api.h">
@@ -94,6 +97,9 @@
     </ClInclude>
     <ClInclude Include="src\core\vm_layout.h">
       <Filter>Header Files\core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\parser\object_map.h">
+      <Filter>Header Files\parser</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

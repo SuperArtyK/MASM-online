@@ -24,6 +24,7 @@ emcc \
   "${ROOT_DIR}/src/parser/lexer.c" \
   "${ROOT_DIR}/src/parser/parser.c" \
   "${ROOT_DIR}/src/parser/symbols.c" \
+  "${ROOT_DIR}/src/parser/object_map.c" \
   "${ROOT_DIR}/src/wasm/wasm_api.c" \
   -I"${ROOT_DIR}/src/core" \
   -I"${ROOT_DIR}/src/parser" \
