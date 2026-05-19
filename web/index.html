@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 30 nested-DUP UI: source editing, Run button,
+  This page provides the Milestone 42 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates nested DUP and metadata operators.
+  execution stay inside the worker/Wasm path; the default program demonstrates the Irvine32 exit terminator.
 -->
 <html lang="en">
   <head>
@@ -18,16 +18,14 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 30: nested DUP expansion in supported data declarations.</p>
+        <p class="muted">Milestone 42: Irvine32 exit terminator.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">ROWS = 3
-COLS = 4
-.data
-matrix DWORD ROWS DUP(COLS DUP(0))
+        <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .code
 main PROC
-    mov eax, LENGTHOF matrix
-    mov ebx, SIZEOF matrix
+    mov eax, 123
+    exit
+    mov eax, 999
 main ENDP
 END main</textarea>
         <div class="controls">

@@ -370,7 +370,26 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 41 known Irvine32 routine diagnostic fixture."
+    reason: "Known Irvine32 routine diagnostic fixture."
+  },
+  exitWithoutIrvine32Include: {
+    source: `.code
+main PROC
+    exit
+main ENDP
+END main
+`,
+    reason: "Phase 42 exit without Irvine32 include diagnostic fixture."
+  },
+  exitWithOperand: {
+    source: `INCLUDE Irvine32.inc
+.code
+main PROC
+    exit 0
+main ENDP
+END main
+`,
+    reason: "Phase 42 invalid exit operand diagnostic fixture."
   },
   success: {
     source: `.code
@@ -581,6 +600,47 @@ test("renders known Irvine32 routine diagnostic exactly", () => {
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 11: Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.");
+});
+
+test("renders exit without Irvine32 include diagnostic exactly", () => {
+  const name = "exitWithoutIrvine32Include";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "unknown-instruction",
+      message: "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.",
+      line: 3,
+      column: 5,
+      byteOffset: 20,
+      spanLength: 4
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unknown-instruction line 3, column 5, byte offset 20, span length 4: Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.");
+});
+
+test("renders exit operand diagnostic exactly", () => {
+  const name = "exitWithOperand";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.virtualIncludes.irvine32, true);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-instruction-operands",
+      message: "exit does not take operands.",
+      line: 4,
+      column: 10,
+      byteOffset: 46,
+      spanLength: 1
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 4, column 10, byte offset 46, span length 1: exit does not take operands.");
 });
 
 test("renders unsupported feature diagnostic exactly", () => {

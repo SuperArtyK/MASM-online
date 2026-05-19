@@ -2448,7 +2448,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":41,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":42,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -2523,7 +2523,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":41,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":42,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

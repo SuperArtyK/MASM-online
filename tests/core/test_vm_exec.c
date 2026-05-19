@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 22.
+ * @brief Unit tests for the VM executor through Milestone 42.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
  * delta capture. They intentionally avoid parser, control-flow, stack, Irvine32,
- * and browser UI behavior.
+ * and browser UI behavior except for the Phase 42 virtual exit terminator.
  */
 
 #include <stdbool.h>
@@ -1180,6 +1180,60 @@ static int test_test_error_paths(void) {
     return failures;
 }
 
+/// Verifies the Irvine32 exit IR opcode halts without state mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_exit_terminator_halts_without_mutation(void) {
+    Vm vm;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    const VmExecDelta *delta = NULL;
+    uint32_t eax = 0U;
+    int failures = 0;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 123U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 123", 0U},
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "stc", 1U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "exit", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 999U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov eax, 999", 3U}
+    };
+    const VmIrInstruction malformed_exit[] = {
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "exit eax", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for EXIT test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "EXIT program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before EXIT should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before EXIT should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "EXIT should execute successfully");
+    if (!vm.halted) {
+        failures += record_failure("EXIT should halt the VM");
+    }
+    failures += expect_size((size_t)vm.instruction_count, 3U, "EXIT should count as executed and skip later instructions");
+    if (!vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax)) {
+        failures += record_failure("EAX read after EXIT should succeed");
+    } else {
+        failures += expect_u32(eax, 123U, "instruction after EXIT should not execute");
+    }
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "EXIT should preserve modeled flags");
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction || delta->instruction.opcode != VM_IR_OPCODE_EXIT) {
+        failures += record_failure("last delta should identify EXIT instruction");
+    } else {
+        failures += expect_size(delta->register_change_count, 0U, "EXIT should not change registers");
+        failures += expect_size(delta->flag_change_count, 0U, "EXIT should not change flags");
+        failures += expect_size(delta->memory_change_count, 0U, "EXIT should not change memory");
+    }
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "step after EXIT should report halted");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for malformed EXIT test");
+    failures += expect_status(vm_load_program(&vm, malformed_exit, 1U), VM_EXEC_STATUS_OK, "Malformed EXIT program should load");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "Malformed EXIT operands should be rejected by executor");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1188,6 +1242,9 @@ static int test_metadata_helpers(void) {
 
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_MOV), "mov") != 0) {
         failures += record_failure("MOV opcode name should be mov");
+    }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
+        failures += record_failure("EXIT opcode name should be exit");
     }
     if (vm_ir_opcode_name((VmIrOpcode)99) != NULL) {
         failures += record_failure("invalid opcode name should be NULL");
@@ -1208,7 +1265,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 22.
+/// Runs all executor tests through Milestone 42.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -1241,6 +1298,7 @@ int main(void) {
     failures += test_test_alias_sign_flag_edge_case();
     failures += test_test_memory_forms_and_non_mutation();
     failures += test_test_error_paths();
+    failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -1248,6 +1306,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 22 passed.");
+    puts("Executor tests through Milestone 42 passed.");
     return 0;
 }

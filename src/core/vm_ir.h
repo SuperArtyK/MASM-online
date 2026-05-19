@@ -54,6 +54,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_CMC,
     /// Compute bitwise AND for flags only without storing the result.
     VM_IR_OPCODE_TEST,
+    /// Terminate execution successfully for Irvine32 `exit`.
+    VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;

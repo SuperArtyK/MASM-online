@@ -284,7 +284,7 @@ static char vm_parser_ascii_lower(char ch) {
 
 /// Virtual Irvine32 names recognized once `INCLUDE Irvine32.inc` is active.
 static const VmParserIrvine32RegistryEntry VM_PARSER_IRVINE32_REGISTRY[] = {
-    {"exit", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"exit", VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC},
     {"Crlf", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"WriteChar", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
     {"WriteString", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
@@ -3047,7 +3047,8 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_NOP ||
            opcode == VM_IR_OPCODE_CLC ||
            opcode == VM_IR_OPCODE_STC ||
-           opcode == VM_IR_OPCODE_CMC;
+           opcode == VM_IR_OPCODE_CMC ||
+           opcode == VM_IR_OPCODE_EXIT;
 }
 
 /// Returns whether an opcode uses sign/zero-extension width rules.
@@ -5081,7 +5082,17 @@ static bool vm_parser_emit_instruction(
     return true;
 }
 
-/// Emits a Phase 41 unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
+/// Returns whether a token names the Irvine32 `exit` virtual terminator.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is an identifier spelling `exit` case-insensitively.
+static bool vm_parser_token_is_exit_terminator(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           vm_parser_token_equals(token, "exit");
+}
+
+/// Emits an unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
 ///
 /// The registry is active only after `INCLUDE Irvine32.inc`. CALL target
 /// classification is deliberately deferred until CALL exists, so this helper
@@ -5127,15 +5138,31 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     const VmLexerToken *source_token = NULL;
 
     if (!vm_parser_parse_opcode(mnemonic_token, &opcode)) {
-        if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
+        if (vm_parser_token_is_exit_terminator(mnemonic_token)) {
+            if (state == NULL || state->result == NULL || !state->result->has_irvine32_virtual_include) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION, mnemonic_token, "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.");
+                return false;
+            }
+            opcode = VM_IR_OPCODE_EXIT;
+        } else {
+            if (vm_parser_token_equals(mnemonic_token, "call")) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "CALL is not supported yet.");
+                return false;
+            }
+            if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
+                return false;
+            }
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "Unsupported instruction for the current milestone.");
             return false;
         }
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "Unsupported instruction for the current milestone.");
-        return false;
     }
 
     vm_parser_advance(state);
     if (vm_parser_opcode_has_no_operands(opcode)) {
+        if (opcode == VM_IR_OPCODE_EXIT && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "exit does not take operands.");
+            return false;
+        }
         if ((opcode == VM_IR_OPCODE_NOP || opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
             !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             const char *message = "Instruction does not take operands.";
@@ -6279,6 +6306,10 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "casemap-policy-changed";
         case VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE:
             return "invalid-option-value";
+        case VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION:
+            return "unknown-instruction";
+        case VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS:
+            return "invalid-instruction-operands";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE:
             return "unsupported-irvine32-routine";
         default:

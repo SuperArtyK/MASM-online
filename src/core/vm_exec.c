@@ -1247,6 +1247,27 @@ static void vm_exec_capture_delta(Vm *vm, const VmIrInstruction *instruction, co
     vm->last_delta.instruction_count = vm->instruction_count;
 }
 
+/// Executes the Irvine32 `exit` virtual terminator.
+///
+/// The instruction marks the VM halted without mutating registers, flags,
+/// memory, or console state. The caller still records the instruction count and
+/// last-step delta for the terminator itself.
+///
+/// @param vm VM instance to halt.
+/// @param instruction EXIT instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_exit(Vm *vm, const VmIrInstruction *instruction) {
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    vm->halted = true;
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Executes one already-fetched instruction.
 ///
 /// @param vm VM instance to mutate.
@@ -1313,6 +1334,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_STC:
         case VM_IR_OPCODE_CMC:
             return vm_exec_execute_carry_control(vm, instruction, instruction->opcode);
+        case VM_IR_OPCODE_EXIT:
+            return vm_exec_execute_exit(vm, instruction);
         default:
             return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }

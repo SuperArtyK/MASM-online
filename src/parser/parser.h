@@ -161,6 +161,10 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED,
     /// An OPTION CASEMAP directive used an invalid value.
     VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE,
+    /// A mnemonic is unknown in the current include/context.
+    VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION,
+    /// An instruction used operands outside the valid shape for that instruction.
+    VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
     /// A recognized Irvine32 virtual symbol was used before its routine implementation exists.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE,
     /// Number of parser diagnostic codes.

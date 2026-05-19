@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 41.
+ * @brief Unit and integration tests for the parser through Milestone 42.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -1844,7 +1844,7 @@ static int test_phase41_virtual_irvine32_include_records_registry(void) {
         failures += record_failure("Irvine32 virtual registry should contain known names");
     }
 
-    failures += expect_u32(vm_parser_classify_irvine32_symbol("exit", 4U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "exit should remain planned until the Phase 42 terminator milestone");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("exit", 4U), VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC, "exit should be a supported virtual intrinsic in Phase 42");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteString", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should be a planned Irvine32 routine");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("writestring", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "Irvine32 routine lookup should be case-insensitive");
     failures += expect_u32(vm_parser_classify_irvine32_symbol("OpenInputFile", 13U), VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE, "file I/O routines should be known unsupported routines");
@@ -1920,9 +1920,74 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "Windows/API name diagnostic should use Irvine32 routine code until CALL classification exists");
     failures += expect_string_contains(buffers.diagnostics[0].message, "Windows/API", "Windows/API diagnostic should describe non-goal behavior");
 
-    failures += expect_parser_status(parse_for_test(exit_line, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "exit should remain non-executable until Phase 42");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "exit should report the Phase 41 Irvine32 routine diagnostic before Phase 42");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "exit diagnostic should explain deferred routine execution");
+    failures += expect_parser_status(parse_for_test(exit_line, &buffers, &result), VM_PARSER_STATUS_OK, "exit should parse as an Irvine32 virtual terminator in Phase 42");
+    failures += expect_size(result.diagnostic_count, 0U, "exit terminator should not emit a Phase 41 unsupported-routine diagnostic anymore");
+    failures += expect_size(result.instruction_count, 1U, "exit terminator should emit one IR instruction");
+    if (result.instruction_count > 0U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_EXIT, "exit should lower to EXIT IR opcode");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 42 parser behavior for the Irvine32 exit terminator.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase42_irvine32_exit_terminator_parser_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *acceptance_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 123\n"
+        "    ExIt\n"
+        "    mov eax, 999\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *no_include_source =
+        ".code\n"
+        "main PROC\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *operand_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    exit 0\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *macros_only_source =
+        "INCLUDE Macros.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(acceptance_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 42 acceptance source should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 42 acceptance source should not emit diagnostics");
+    failures += expect_size(result.instruction_count, 3U, "Phase 42 acceptance source should retain instructions after exit in IR");
+    if (result.instruction_count == 3U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_MOV, "First instruction should be MOV");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_EXIT, "Second instruction should be EXIT");
+        failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_MOV, "Third instruction should remain parsed but not execute after EXIT");
+    }
+
+    failures += expect_parser_status(parse_for_test(no_include_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "exit without Irvine32 include should be an assembly diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION, "exit without include should use unknown-instruction");
+    failures += expect_string(buffers.diagnostics[0].message, "Unknown instruction or virtual Irvine32 terminator. Add INCLUDE Irvine32.inc to use exit.", "exit without include should use the required diagnostic text");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "exit without include diagnostic should point at mnemonic line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "exit without include diagnostic should point at mnemonic column");
+
+    failures += expect_parser_status(parse_for_test(operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "exit operands should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "exit operands should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "exit operand diagnostic should explain zero-operand form");
+
+    failures += expect_parser_status(parse_for_test(macros_only_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Macros.inc alone should not enable exit");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION, "Macros.inc alone should leave exit unknown");
 
     return failures;
 }
@@ -1941,6 +2006,12 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE), "unsupported-feature") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported-feature");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION), "unknown-instruction") != 0) {
+        failures += record_failure("parser diagnostic helper should name unknown-instruction");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS), "invalid-instruction-operands") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid-instruction-operands");
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL), "invalid-hex-literal") != 0) {
         failures += record_failure("parser diagnostic helper should name surfaced lexer invalid hex diagnostics");
@@ -2009,7 +2080,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 41.
+/// Runs all parser regression tests through Milestone 42.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -2057,6 +2128,7 @@ int main(void) {
     failures += test_phase35a_casemap_parser_policy();
     failures += test_phase41_virtual_irvine32_include_records_registry();
     failures += test_phase41_irvine32_routine_diagnostics();
+    failures += test_phase42_irvine32_exit_terminator_parser_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

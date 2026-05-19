@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30, Milestone 31 native/Node diagnostic rendering tests, Milestone 32 fixed-layout policy infrastructure, Milestone 33 automatic deterministic layout sizing available to tests/configuration, Milestone 34 stack/heap size metadata applied to automatic layout, Milestone 35 seeded/fresh randomized layout placement available to tests/configuration, Milestone 35A MASM-compatible `OPTION CASEMAP` user-symbol case policy correction, Milestone 36 declared-object allocation map metadata for tests/internal tooling, Milestone 37 allocated-object warning mode for tests/configuration, Milestone 38 allocated-object strict mode for tests/configuration, Milestone 39 uninitialized-origin byte metadata/write tracking for test/internal inspection, Milestone 40 opt-in uninitialized-read warning/strict validation for tests/configuration, and Milestone 41 virtual Irvine32 symbol-registry metadata/diagnostics.
+Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30, Milestone 31 native/Node diagnostic rendering tests, Milestone 32 fixed-layout policy infrastructure, Milestone 33 automatic deterministic layout sizing available to tests/configuration, Milestone 34 stack/heap size metadata applied to automatic layout, Milestone 35 seeded/fresh randomized layout placement available to tests/configuration, Milestone 35A MASM-compatible `OPTION CASEMAP` user-symbol case policy correction, Milestone 36 declared-object allocation map metadata for tests/internal tooling, Milestone 37 allocated-object warning mode for tests/configuration, Milestone 38 allocated-object strict mode for tests/configuration, Milestone 39 uninitialized-origin byte metadata/write tracking for test/internal inspection, Milestone 40 opt-in uninitialized-read warning/strict validation for tests/configuration, Milestone 41 virtual Irvine32 symbol-registry metadata/diagnostics, and Milestone 42 Irvine32 `exit` virtual terminator behavior.
 
 ## Current scope
 
@@ -31,13 +31,14 @@ Implemented through the current milestone:
 - Milestone 38 allocated-object strict mode: tests/configuration can stop execution with `object-bounds-violation` for those same valid-region/object-boundary escapes. Default region-only execution remains unchanged; provenance diagnostics, uninitialized-read diagnostics, and UI controls remain deferred.
 - Milestone 39 uninitialized-origin metadata: tests/internal tooling can inspect which `.data` and `.DATA?` bytes originated from `?`/`DUP(?)` and which bytes have been initialized by successful program writes. Default runtime values and browser UI behavior remain unchanged.
 - Milestone 40 uninitialized-read validation: tests/configuration can enable warning mode, which emits non-fatal `uninitialized-read` simulator warnings, or strict mode, which stops execution before reading bytes that still have uninitialized-origin state. Default browser/source-run behavior remains warning-free and deterministic zero-filled.
-- Milestone 41 virtual Irvine32 symbol registry: `INCLUDE Irvine32.inc` records known Irvine32 names as parser/source-run metadata and lets currently recognized executable uses of known not-yet-executable routines report `unsupported-irvine32-routine`. This adds no `call`, `exit`, routine bodies, Program Console output, Windows API execution, linking, or stack behavior.
+- Milestone 41 virtual Irvine32 symbol registry: `INCLUDE Irvine32.inc` records known Irvine32 names as parser/source-run metadata and lets currently recognized executable uses of known not-yet-executable routines report `unsupported-irvine32-routine`.
+- Milestone 42 Irvine32 `exit` terminator: with `INCLUDE Irvine32.inc` active, zero-operand `exit` terminates execution successfully and skips following instructions. This adds no `call`, `ret`, ExitProcess behavior, stack behavior, Program Console routines, other Irvine32 bodies, Windows API execution, or linking.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 
 Not implemented yet:
 
-- Control flow, stack, call/ret, Irvine32 routines, debugger stepping, macros, runtime high-level condition expressions, and full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
+- Control flow, stack, call/ret, Irvine32 routines other than the virtual `exit` terminator, debugger stepping, macros, runtime high-level condition expressions, full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
 - Extended 32-bit / 64-bit register behavior.
 
 See `docs/SUPPORTED_SYNTAX.md` for the current supported subset, scheduled features, and recognized unsupported constructs.
