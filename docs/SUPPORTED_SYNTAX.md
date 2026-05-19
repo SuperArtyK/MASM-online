@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 30. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, and Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only. These infrastructure milestones add no MASM syntax or runtime instruction behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable `unsupported-feature` diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 35A. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, and Milestone 35A corrects MASM-compatible user-symbol case policy. These infrastructure and compatibility-correction milestones add no new runtime instruction behavior. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -38,13 +38,20 @@ Accepted before `.data` or `.code` as compatibility no-ops or metadata:
 - `.model flat, stdcall`. Other `.model` forms report `unsupported-model`.
 - `.stack` and `.stack size`, where the optional size is stored as parser metadata. In automatic layout selected by tests/configuration, the parsed size controls stack region capacity metadata. Fixed-layout browser execution and runtime stack behavior are still deferred.
 - `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. Other include files report `unsupported-include`.
-- `OPTION CASEMAP:NONE` as a compatibility no-op documenting the simulator case policy. Other `OPTION` forms report `unsupported-option`.
+- `OPTION CASEMAP:ALL` as an explicit selection of the default user-symbol case-insensitive policy.
+- `OPTION CASEMAP:NONE` as an exact-case user-symbol policy from that directive forward.
+- `OPTION CASEMAP:NOTPUBLIC` is recognized but reports `unsupported-option` because public/external linkage semantics are not implemented.
+- Other `OPTION CASEMAP` values report `invalid-option-value`; unrelated unsupported `OPTION` families still report `unsupported-option`.
 - `TITLE`, `SUBTITLE`, and `PAGE` as listing/documentation no-ops.
 
 Case policy:
 
-- Instructions, registers, directives, operators, and data type names are case-insensitive.
-- User-defined symbols are case-sensitive in MASM32 Educational Mode.
+- Instructions, registers and aliases, directives, operators, data type names, `PTR` width names, and virtual include names are always case-insensitive.
+- User-defined symbols are case-insensitive by default, equivalent to `OPTION CASEMAP:ALL`.
+- Under `CASEMAP:ALL`, definitions whose names differ only by ASCII case are duplicates, and references may use any casing.
+- Under `CASEMAP:NONE`, user-symbol definitions and references use exact source spelling from that point forward; different-case symbols may coexist.
+- Switching between supported CASEMAP policies emits a non-fatal `casemap-policy-changed` warning when it changes a previously selected supported policy.
+- If `CASEMAP:ALL` lookup matches multiple valid exact-case symbols created under `CASEMAP:NONE`, lookup fails with `ambiguous-symbol` rather than choosing one.
 
 
 ### Numeric equates and extended constant expressions

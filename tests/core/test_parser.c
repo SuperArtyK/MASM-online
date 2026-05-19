@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 30.
+ * @brief Unit and integration tests for the parser through Milestone 35A.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -1603,8 +1603,11 @@ static int test_phase26_header_directive_error_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, "Unsupported include diagnostic code should match");
     failures += expect_size(buffers.diagnostics[0].location.column, 9U, "Unsupported include diagnostic should point at the include path");
 
-    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:ALL\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported OPTION form should produce diagnostics");
+    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:NOTPUBLIC\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Unsupported OPTION CASEMAP:NOTPUBLIC should produce diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, "Unsupported OPTION diagnostic code should match");
+
+    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:BOGUS\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Invalid OPTION CASEMAP value should produce diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE, "Invalid CASEMAP value diagnostic code should match");
 
     failures += expect_parser_status(parse_for_test(".stack -1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Invalid .stack size should produce diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "Invalid .stack diagnostic code should match");
@@ -1663,6 +1666,158 @@ static int test_phase26_broader_directive_backlog_diagnostics(void) {
     return failures;
 }
 
+
+/// Verifies Phase 35A parser CASEMAP policy diagnostics and symbol insertion rules.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase35a_casemap_parser_policy(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        "bUF DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Default CASEMAP:ALL should reject duplicate data symbols that differ only by case");
+    failures += expect_size(result.symbol_count, 1U, "Rejected folded duplicate data symbol should not be inserted");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, "Default folded duplicate should use duplicate-symbol");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "Duplicate-by-case diagnostic should point at second declaration line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "Duplicate-by-case diagnostic should point at second declaration column");
+    if (buffers.diagnostics[0].severity != VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR) {
+        failures += record_failure("Duplicate-by-case diagnostic should be an assembly error");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        "bUF DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should allow case-distinct data symbols");
+    failures += expect_size(result.symbol_count, 2U, "CASEMAP:NONE should insert both exact-case data symbols");
+    failures += expect_size(result.diagnostic_count, 0U, "CASEMAP:NONE case-distinct data symbols should not warn or error");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:ALL\n"
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Changing supported CASEMAP policy should produce a warning diagnostic");
+    failures += expect_size(result.diagnostic_count, 1U, "Single supported CASEMAP policy change should emit one warning");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED, "Supported CASEMAP policy change should use warning code");
+    if (buffers.diagnostics[0].severity != VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING) {
+        failures += record_failure("Supported CASEMAP policy change should be non-fatal warning severity");
+    }
+    if (vm_parser_diagnostic_is_error(&buffers.diagnostics[0])) {
+        failures += record_failure("Supported CASEMAP policy change should not be fatal to source execution");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        "bUF DWORD 2\n"
+        "OPTION CASEMAP:ALL\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, buf\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:ALL folded lookup of exact-case duplicates should be ambiguous");
+    failures += expect_size(result.diagnostic_count, 2U, "Ambiguous folded lookup should preserve policy warning and ambiguity error");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED, "Ambiguous folded lookup fixture should first warn about policy change");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, "Ambiguous folded lookup should use ambiguous-symbol");
+    if (buffers.diagnostics[1].severity != VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR) {
+        failures += record_failure("Ambiguous folded lookup should be an assembly error");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NOTPUBLIC\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NOTPUBLIC should be recognized but unsupported");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, "CASEMAP:NOTPUBLIC should use unsupported-option");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "public/external linkage", "CASEMAP:NOTPUBLIC diagnostic should explain linkage dependency");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:LOWER\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Invalid CASEMAP value should be rejected clearly");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE, "Invalid CASEMAP value should use invalid-option-value");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Supported CASEMAP values: ALL, NONE", "Invalid CASEMAP diagnostic should list supported values");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "Main PROC\n"
+        "mAIN ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Default CASEMAP:ALL should allow folded ENDP and END procedure-name lookup");
+    failures += expect_size(result.diagnostic_count, 0U, "Default folded ENDP and END targets should not emit diagnostics");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "Main PROC\n"
+        "Main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should require exact END procedure-name spelling");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, "CASEMAP:NONE mismatched END target should keep existing invalid-end-target diagnostic");
+    failures += expect_size(buffers.diagnostics[0].location.line, 5U, "CASEMAP:NONE END diagnostic should point at END target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "CASEMAP:NONE END diagnostic should point at entry-point token");
+    if (buffers.diagnostics[0].severity != VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR) {
+        failures += record_failure("CASEMAP:NONE mismatched END target should be an assembly error");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "Main PROC\n"
+        "main ENDP\n"
+        "END Main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should require exact ENDP procedure-name spelling");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, "CASEMAP:NONE mismatched ENDP name should keep existing invalid-end-target diagnostic");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "CASEMAP:NONE ENDP diagnostic should point at ENDP line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "CASEMAP:NONE ENDP diagnostic should point at ENDP procedure token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "ENDP procedure name", "CASEMAP:NONE ENDP diagnostic should explain procedure-name mismatch");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1699,6 +1854,21 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_CONST_WRITE), "const-write") != 0) {
         failures += record_failure("parser diagnostic helper should name const-write diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL), "ambiguous-symbol") != 0) {
+        failures += record_failure("parser diagnostic helper should name ambiguous symbol diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED), "casemap-policy-changed") != 0) {
+        failures += record_failure("parser diagnostic helper should name CASEMAP policy warning diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE), "invalid-option-value") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid option value diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_severity_name(VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING), "warning") != 0) {
+        failures += record_failure("parser diagnostic helper should name warning severity");
+    }
+    if (strcmp(vm_parser_diagnostic_severity_name(VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR), "error") != 0) {
+        failures += record_failure("parser diagnostic helper should name error severity");
+    }
     if (vm_parser_status_name((VmParserStatus)999) != NULL) {
         failures += record_failure("invalid parser status name should be NULL");
     }
@@ -1709,7 +1879,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 30.
+/// Runs all parser regression tests through Milestone 35A.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1754,6 +1924,7 @@ int main(void) {
     failures += test_phase26_header_directive_edge_cases();
     failures += test_phase26_header_directive_error_paths();
     failures += test_phase26_broader_directive_backlog_diagnostics();
+    failures += test_phase35a_casemap_parser_policy();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

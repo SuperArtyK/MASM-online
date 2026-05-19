@@ -53,6 +53,24 @@ typedef enum VmSymbolDataType {
     VM_SYMBOL_DATA_TYPE_COUNT
 } VmSymbolDataType;
 
+/// Identifies the active MASM user-symbol case policy.
+typedef enum VmSymbolCasePolicy {
+    /// CASEMAP:ALL behavior: compare user symbols by ASCII-folded spelling.
+    VM_SYMBOL_CASE_POLICY_ALL = 0,
+    /// CASEMAP:NONE behavior: compare user symbols by exact source spelling.
+    VM_SYMBOL_CASE_POLICY_NONE
+} VmSymbolCasePolicy;
+
+/// Describes a user-symbol lookup result.
+typedef enum VmSymbolLookupStatus {
+    /// No matching symbol was found.
+    VM_SYMBOL_LOOKUP_NOT_FOUND = 0,
+    /// Exactly one matching symbol was found.
+    VM_SYMBOL_LOOKUP_FOUND,
+    /// More than one symbol matched under the active case policy.
+    VM_SYMBOL_LOOKUP_AMBIGUOUS
+} VmSymbolLookupStatus;
+
 /// Describes one data symbol laid out in the simulated .data region.
 typedef struct VmSymbol {
     /// Null-terminated symbol name copied from source.
@@ -131,6 +149,14 @@ bool vm_symbol_data_type_is_signed(VmSymbolDataType data_type);
 /// @return true when the name fit and was copied.
 bool vm_symbol_set_name(VmSymbol *symbol, const char *text, size_t length);
 
+/// Compares a symbol name with a source slice using exact byte spelling.
+///
+/// @param symbol Symbol whose name should be compared.
+/// @param text Source slice to compare.
+/// @param length Number of bytes in @p text.
+/// @return true when the symbol spelling exactly matches the slice.
+bool vm_symbol_name_equals_exact(const VmSymbol *symbol, const char *text, size_t length);
+
 /// Compares a symbol name with a source slice using ASCII case-insensitive matching.
 ///
 /// @param symbol Symbol whose name should be compared.
@@ -139,14 +165,45 @@ bool vm_symbol_set_name(VmSymbol *symbol, const char *text, size_t length);
 /// @return true when the names match case-insensitively.
 bool vm_symbol_name_equals(const VmSymbol *symbol, const char *text, size_t length);
 
+/// Compares a symbol name with a source slice using the active CASEMAP policy.
+///
+/// @param symbol Symbol whose name should be compared.
+/// @param text Source slice to compare.
+/// @param length Number of bytes in @p text.
+/// @param policy Active user-symbol case policy.
+/// @return true when the names match according to @p policy.
+bool vm_symbol_name_equals_with_policy(const VmSymbol *symbol, const char *text, size_t length, VmSymbolCasePolicy policy);
+
 /// Finds a data symbol by case-insensitive name.
+///
+/// This legacy helper preserves the default CASEMAP:ALL lookup behavior. New
+/// parser code that depends on source-order CASEMAP state should call
+/// @ref vm_symbol_find_by_name_with_policy instead.
 ///
 /// @param symbols Symbol array to inspect.
 /// @param symbol_count Number of valid entries in @p symbols.
 /// @param text Source name slice to find.
 /// @param length Number of bytes in @p text.
-/// @return Matching symbol, or NULL when none exists.
+/// @return Matching symbol, or NULL when none exists or lookup is ambiguous.
 const VmSymbol *vm_symbol_find_by_name(const VmSymbol *symbols, size_t symbol_count, const char *text, size_t length);
+
+/// Finds a data symbol using the active CASEMAP user-symbol policy.
+///
+/// @param symbols Symbol array to inspect.
+/// @param symbol_count Number of valid entries in @p symbols.
+/// @param text Source name slice to find.
+/// @param length Number of bytes in @p text.
+/// @param policy Active user-symbol case policy.
+/// @param out_status Optional receiver for the lookup status.
+/// @return Matching symbol when exactly one exists; otherwise NULL.
+const VmSymbol *vm_symbol_find_by_name_with_policy(
+    const VmSymbol *symbols,
+    size_t symbol_count,
+    const char *text,
+    size_t length,
+    VmSymbolCasePolicy policy,
+    VmSymbolLookupStatus *out_status
+);
 
 /// Finds the symbol whose byte range contains an address.
 ///

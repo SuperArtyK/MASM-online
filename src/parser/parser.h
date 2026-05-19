@@ -154,9 +154,23 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE,
     /// A constant expression used syntax outside the implemented constant-expression subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION,
+    /// A case-insensitive user-symbol lookup matched more than one exact-case declaration.
+    VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL,
+    /// A supported OPTION CASEMAP directive changed the active user-symbol policy.
+    VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED,
+    /// An OPTION CASEMAP directive used an invalid value.
+    VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
+
+/// Identifies whether a parser diagnostic blocks execution.
+typedef enum VmParserDiagnosticSeverity {
+    /// Warning diagnostic; execution may continue if no errors exist.
+    VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING = 0,
+    /// Error diagnostic; execution must not start.
+    VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR
+} VmParserDiagnosticSeverity;
 
 /// Number of bytes reserved inside each diagnostic for formatted parser messages.
 #define VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY 256U
@@ -165,6 +179,8 @@ typedef enum VmParserDiagnosticCode {
 typedef struct VmParserDiagnostic {
     /// Diagnostic code.
     VmParserDiagnosticCode code;
+    /// Diagnostic severity used to decide whether execution may continue.
+    VmParserDiagnosticSeverity severity;
     /// Source location associated with the diagnostic.
     VmLexerSourceLocation location;
     /// Pointer into the original source for the associated lexeme when available.
@@ -281,5 +297,17 @@ const char *vm_parser_status_name(VmParserStatus status);
 /// @param code Parser diagnostic code to inspect.
 /// @return Static diagnostic code name, or NULL for invalid values.
 const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code);
+
+/// Returns a stable display name for a parser diagnostic severity.
+///
+/// @param severity Parser diagnostic severity to inspect.
+/// @return Static severity name, or NULL for invalid values.
+const char *vm_parser_diagnostic_severity_name(VmParserDiagnosticSeverity severity);
+
+/// Returns whether a parser diagnostic is fatal to source execution.
+///
+/// @param diagnostic Diagnostic to inspect.
+/// @return true when @p diagnostic is non-NULL and has error severity.
+bool vm_parser_diagnostic_is_error(const VmParserDiagnostic *diagnostic);
 
 #endif

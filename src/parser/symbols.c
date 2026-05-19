@@ -34,13 +34,13 @@ bool vm_symbol_is_uninitialized_storage(const VmSymbol *symbol) {
     return symbol != NULL && symbol->has_uninitialized_storage;
 }
 
-/// Converts an ASCII byte to lowercase without depending on locale.
+/// Converts an ASCII byte to uppercase without depending on locale.
 ///
 /// @param ch Source byte to convert.
-/// @return Lowercase ASCII byte, or the original byte when not uppercase ASCII.
-static char vm_symbol_ascii_lower(char ch) {
-    if (ch >= 'A' && ch <= 'Z') {
-        return (char)(ch - 'A' + 'a');
+/// @return Uppercase ASCII byte, or the original byte when not lowercase ASCII.
+static char vm_symbol_ascii_upper(char ch) {
+    if (ch >= 'a' && ch <= 'z') {
+        return (char)(ch - 'a' + 'A');
     }
 
     return ch;
@@ -60,7 +60,7 @@ static bool vm_symbol_slice_equals(const char *text, size_t length, const char *
     }
 
     while (index < length && literal[index] != '\0') {
-        if (vm_symbol_ascii_lower(text[index]) != vm_symbol_ascii_lower(literal[index])) {
+        if (vm_symbol_ascii_upper(text[index]) != vm_symbol_ascii_upper(literal[index])) {
             return false;
         }
         index += 1U;
@@ -172,6 +172,14 @@ bool vm_symbol_set_name(VmSymbol *symbol, const char *text, size_t length) {
     return true;
 }
 
+bool vm_symbol_name_equals_exact(const VmSymbol *symbol, const char *text, size_t length) {
+    if (symbol == NULL || text == NULL) {
+        return false;
+    }
+
+    return strlen(symbol->name) == length && memcmp(symbol->name, text, length) == 0;
+}
+
 bool vm_symbol_name_equals(const VmSymbol *symbol, const char *text, size_t length) {
     size_t index = 0U;
 
@@ -180,7 +188,7 @@ bool vm_symbol_name_equals(const VmSymbol *symbol, const char *text, size_t leng
     }
 
     while (index < length && symbol->name[index] != '\0') {
-        if (vm_symbol_ascii_lower(symbol->name[index]) != vm_symbol_ascii_lower(text[index])) {
+        if (vm_symbol_ascii_upper(symbol->name[index]) != vm_symbol_ascii_upper(text[index])) {
             return false;
         }
         index += 1U;
@@ -189,17 +197,55 @@ bool vm_symbol_name_equals(const VmSymbol *symbol, const char *text, size_t leng
     return index == length && symbol->name[index] == '\0';
 }
 
-const VmSymbol *vm_symbol_find_by_name(const VmSymbol *symbols, size_t symbol_count, const char *text, size_t length) {
-    size_t index = 0U;
+bool vm_symbol_name_equals_with_policy(const VmSymbol *symbol, const char *text, size_t length, VmSymbolCasePolicy policy) {
+    if (policy == VM_SYMBOL_CASE_POLICY_NONE) {
+        return vm_symbol_name_equals_exact(symbol, text, length);
+    }
 
+    return vm_symbol_name_equals(symbol, text, length);
+}
+
+const VmSymbol *vm_symbol_find_by_name(const VmSymbol *symbols, size_t symbol_count, const char *text, size_t length) {
+    return vm_symbol_find_by_name_with_policy(symbols, symbol_count, text, length, VM_SYMBOL_CASE_POLICY_ALL, NULL);
+}
+
+const VmSymbol *vm_symbol_find_by_name_with_policy(
+    const VmSymbol *symbols,
+    size_t symbol_count,
+    const char *text,
+    size_t length,
+    VmSymbolCasePolicy policy,
+    VmSymbolLookupStatus *out_status
+) {
+    size_t index = 0U;
+    const VmSymbol *match = NULL;
+    size_t match_count = 0U;
+
+    if (out_status != NULL) {
+        *out_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    }
     if (symbols == NULL || text == NULL || length == 0U) {
         return NULL;
     }
 
     for (index = 0U; index < symbol_count; index += 1U) {
-        if (vm_symbol_name_equals(&symbols[index], text, length)) {
-            return &symbols[index];
+        if (vm_symbol_name_equals_with_policy(&symbols[index], text, length, policy)) {
+            match = &symbols[index];
+            match_count += 1U;
         }
+    }
+
+    if (match_count == 1U) {
+        if (out_status != NULL) {
+            *out_status = VM_SYMBOL_LOOKUP_FOUND;
+        }
+        return match;
+    }
+    if (match_count > 1U) {
+        if (out_status != NULL) {
+            *out_status = VM_SYMBOL_LOOKUP_AMBIGUOUS;
+        }
+        return NULL;
     }
 
     return NULL;

@@ -289,6 +289,62 @@ main ENDP
 END main
 `,
     reason: "Multi-diagnostic stable source-order fixture."
+  },
+  casemapPolicyChanged: {
+    source: `OPTION CASEMAP:NONE
+OPTION CASEMAP:ALL
+.data
+buf DWORD 1
+.code
+main PROC
+    mov eax, bUF
+main ENDP
+END main
+`,
+    reason: "CASEMAP policy change warning plus successful execution fixture."
+  },
+  casemapAmbiguousSymbol: {
+    source: `OPTION CASEMAP:NONE
+.data
+buf DWORD 1
+bUF DWORD 2
+OPTION CASEMAP:ALL
+.code
+main PROC
+    mov eax, buf
+main ENDP
+END main
+`,
+    reason: "CASEMAP folded ambiguous symbol diagnostic fixture."
+  },
+  casemapAmbiguousEquate: {
+    source: `OPTION CASEMAP:NONE
+COUNT = 5
+count = 6
+OPTION CASEMAP:ALL
+.code
+main PROC
+    mov eax, COUNT
+main ENDP
+END main
+`,
+    reason: "CASEMAP folded ambiguous numeric equate diagnostic fixture."
+  },
+  casemapInvalidValue: {
+    source: `OPTION CASEMAP:LOWER
+.code
+main PROC
+END main
+`,
+    reason: "Invalid OPTION CASEMAP value diagnostic fixture."
+  },
+  casemapNotPublic: {
+    source: `OPTION CASEMAP:NOTPUBLIC
+.code
+main PROC
+END main
+`,
+    reason: "Unsupported OPTION CASEMAP:NOTPUBLIC diagnostic fixture."
   }
 };
 
@@ -550,4 +606,127 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
   assertNoExecutionComplete(json.simulatorMessages);
   assert.equal(rendered.includes("mov ebx"), false);
   assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.\n[unsupported-feature] unsupported-feature line 10, column 5, byte offset 82, span length 6: Unsupported feature: INVOKE is not supported yet; use CALL when available.\n[unsupported-feature] unsupported-feature line 11, column 5, byte offset 102, span length 3: Unsupported feature: MASM .IF high-level flow is not supported yet.");
+});
+
+
+test("renders CASEMAP policy warning followed by successful execution exactly", () => {
+  const name = "casemapPolicyChanged";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-warning",
+      code: "casemap-policy-changed",
+      message: "OPTION CASEMAP changed the active user-symbol case policy.",
+      line: 2,
+      column: 16,
+      byteOffset: 35,
+      spanLength: 3
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-warning] casemap-policy-changed line 2, column 16, byte offset 35, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders CASEMAP ambiguous symbol diagnostic exactly", () => {
+  const name = "casemapAmbiguousSymbol";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-warning",
+      code: "casemap-policy-changed",
+      message: "OPTION CASEMAP changed the active user-symbol case policy.",
+      line: 5,
+      column: 16,
+      byteOffset: 65,
+      spanLength: 3
+    },
+    {
+      kind: "assembly-error",
+      code: "ambiguous-symbol",
+      message: "Multiple data symbols match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact symbol spelling, or make the symbol names distinct beyond case.",
+      line: 8,
+      column: 14,
+      byteOffset: 98,
+      spanLength: 3
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-warning] casemap-policy-changed line 5, column 16, byte offset 65, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n[assembly-error] ambiguous-symbol line 8, column 14, byte offset 98, span length 3: Multiple data symbols match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact symbol spelling, or make the symbol names distinct beyond case.");
+});
+
+test("renders CASEMAP ambiguous numeric equate diagnostic exactly", () => {
+  const name = "casemapAmbiguousEquate";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-warning",
+      code: "casemap-policy-changed",
+      message: "OPTION CASEMAP changed the active user-symbol case policy.",
+      line: 4,
+      column: 16,
+      byteOffset: 55,
+      spanLength: 3
+    },
+    {
+      kind: "assembly-error",
+      code: "ambiguous-symbol",
+      message: "Multiple numeric equates match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact equate spelling, or make the equate names distinct beyond case.",
+      line: 7,
+      column: 14,
+      byteOffset: 88,
+      spanLength: 5
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-warning] casemap-policy-changed line 4, column 16, byte offset 55, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n[assembly-error] ambiguous-symbol line 7, column 14, byte offset 88, span length 5: Multiple numeric equates match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact equate spelling, or make the equate names distinct beyond case.");
+});
+
+test("renders invalid CASEMAP value diagnostic exactly", () => {
+  const name = "casemapInvalidValue";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-option-value",
+      message: "Invalid OPTION CASEMAP value. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.",
+      line: 1,
+      column: 16,
+      byteOffset: 15,
+      spanLength: 5
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-option-value line 1, column 16, byte offset 15, span length 5: Invalid OPTION CASEMAP value. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.");
+});
+
+test("renders unsupported CASEMAP NOTPUBLIC diagnostic exactly", () => {
+  const name = "casemapNotPublic";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "unsupported-option",
+      message: "OPTION CASEMAP:NOTPUBLIC is unsupported because public/external linkage semantics are not implemented.",
+      line: 1,
+      column: 16,
+      byteOffset: 15,
+      spanLength: 9
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-option line 1, column 16, byte offset 15, span length 9: OPTION CASEMAP:NOTPUBLIC is unsupported because public/external linkage semantics are not implemented.");
 });

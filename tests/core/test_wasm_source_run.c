@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 35 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 35A regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -12,6 +12,9 @@
 #include <string.h>
 
 #include "../../src/wasm/wasm_api.h"
+
+/// Number of bytes reserved for local copies of source-run JSON results.
+#define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Records a source-run test failure.
 ///
@@ -35,6 +38,20 @@ static int expect_json_contains(const char *json, const char *expected, const ch
     }
 
     return 0;
+}
+
+
+/// Copies a source-run JSON result out of the API static result buffer.
+///
+/// @param destination Destination character buffer.
+/// @param destination_size Destination buffer size in bytes.
+/// @param json Source JSON pointer returned by the source-run API.
+static void copy_source_run_json(char *destination, size_t destination_size, const char *json) {
+    if (destination == NULL || destination_size == 0U) {
+        return;
+    }
+
+    (void)snprintf(destination, destination_size, "%s", json != NULL ? json : "");
 }
 
 /// Verifies that a returned JSON string does not contain an unexpected fragment.
@@ -2207,6 +2224,365 @@ static int test_subsequent_calls_return_latest_result(void) {
 }
 
 
+
+/// Verifies Phase 35A default and explicit CASEMAP:ALL folded symbol lookup.
+///
+/// @return Number of failures.
+static int test_phase35a_casemap_all_source_run_programs(void) {
+    int failures = 0;
+    char default_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(default_json, sizeof(default_json), masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET bUF\n"
+        "    mov DWORD PTR [eax], 77\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char explicit_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(explicit_json, sizeof(explicit_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:ALL\n"
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET bUF\n"
+        "    mov DWORD PTR [eax], 77\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(default_json, "\"ok\":true", "Default CASEMAP:ALL source-run should execute folded data-symbol lookup");
+    failures += expect_json_contains(default_json, "\"EBX\":{\"hex\":\"0000004Dh\",\"unsigned\":77}", "Default folded lookup should read back written value");
+    failures += expect_json_contains(default_json, "\"code\":\"execution-complete\"", "Default folded lookup should complete execution");
+    failures += expect_json_not_contains(default_json, "unknown-symbol", "Default folded lookup should not report unknown-symbol");
+
+    failures += expect_json_contains(explicit_json, "\"ok\":true", "Explicit CASEMAP:ALL source-run should execute folded data-symbol lookup");
+    failures += expect_json_contains(explicit_json, "\"EBX\":{\"hex\":\"0000004Dh\",\"unsigned\":77}", "Explicit CASEMAP:ALL folded lookup should read back written value");
+    failures += expect_json_not_contains(explicit_json, "casemap-policy-changed", "First explicit CASEMAP:ALL should not warn");
+
+    return failures;
+}
+
+/// Verifies Phase 35A CASEMAP:NONE exact-case lookup behavior for data sections and operators.
+///
+/// @return Number of failures.
+static int test_phase35a_casemap_none_source_run_programs(void) {
+    int failures = 0;
+    char unknown_data_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(unknown_data_json, sizeof(unknown_data_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "Buffer DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET buffer\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char distinct_data_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(distinct_data_json, sizeof(distinct_data_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        "bUF DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, buf\n"
+        "    mov ebx, bUF\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char operator_exact_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(operator_exact_json, sizeof(operator_exact_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "Nums DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, TYPE Nums\n"
+        "    mov ebx, LENGTHOF Nums\n"
+        "    mov ecx, SIZEOF Nums\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char operator_unknown_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(operator_unknown_json, sizeof(operator_unknown_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "Nums DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, TYPE nums\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char const_unknown_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(const_unknown_json, sizeof(const_unknown_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".CONST\n"
+        "Limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, limit\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(unknown_data_json, "\"ok\":false", "CASEMAP:NONE should reject mismatched data symbol casing");
+    failures += expect_json_contains(unknown_data_json, "unknown-symbol", "CASEMAP:NONE mismatched data symbol should report unknown-symbol");
+    failures += expect_json_contains(unknown_data_json, "OFFSET references an unknown data symbol", "CASEMAP:NONE OFFSET diagnostic should be specific");
+
+    failures += expect_json_contains(distinct_data_json, "\"ok\":true", "CASEMAP:NONE should allow case-distinct data symbols");
+    failures += expect_json_contains(distinct_data_json, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "CASEMAP:NONE exact lower-case symbol should load first value");
+    failures += expect_json_contains(distinct_data_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "CASEMAP:NONE exact mixed-case symbol should load second value");
+
+    failures += expect_json_contains(operator_exact_json, "\"ok\":true", "CASEMAP:NONE exact operator symbol references should execute");
+    failures += expect_json_contains(operator_exact_json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "CASEMAP:NONE exact TYPE should succeed");
+    failures += expect_json_contains(operator_exact_json, "\"EBX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "CASEMAP:NONE exact LENGTHOF should succeed");
+    failures += expect_json_contains(operator_exact_json, "\"ECX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "CASEMAP:NONE exact SIZEOF should succeed");
+
+    failures += expect_json_contains(operator_unknown_json, "\"ok\":false", "CASEMAP:NONE TYPE with wrong symbol case should fail");
+    failures += expect_json_contains(operator_unknown_json, "unknown-symbol", "CASEMAP:NONE TYPE with wrong symbol case should report unknown-symbol");
+
+    failures += expect_json_contains(const_unknown_json, "\"ok\":false", "CASEMAP:NONE should apply to .CONST symbols");
+    failures += expect_json_contains(const_unknown_json, "unknown-symbol", "CASEMAP:NONE .CONST mismatch should report unknown-symbol");
+
+    return failures;
+}
+
+/// Verifies Phase 35A CASEMAP policy for numeric equates.
+///
+/// @return Number of failures.
+static int test_phase35a_casemap_equate_source_run_programs(void) {
+    int failures = 0;
+    char default_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(default_json, sizeof(default_json), masm32_sim_wasm_run_source_json(
+        "COUNT = 5\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, count\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char duplicate_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(duplicate_json, sizeof(duplicate_json), masm32_sim_wasm_run_source_json(
+        "COUNT = 5\n"
+        "count = 6\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char none_unknown_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(none_unknown_json, sizeof(none_unknown_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        "COUNT = 5\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, count\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char none_distinct_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(none_distinct_json, sizeof(none_distinct_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        "COUNT = 5\n"
+        "count = 6\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, COUNT\n"
+        "    mov ebx, count\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char ambiguous_equate_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(ambiguous_equate_json, sizeof(ambiguous_equate_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        "COUNT = 5\n"
+        "count = 6\n"
+        "OPTION CASEMAP:ALL\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, COUNT\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(default_json, "\"ok\":true", "Default equate lookup should be case-insensitive");
+    failures += expect_json_contains(default_json, "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Default folded equate lookup should use COUNT value");
+
+    failures += expect_json_contains(duplicate_json, "\"ok\":false", "Default folded equate duplicate should fail");
+    failures += expect_json_contains(duplicate_json, "duplicate-symbol", "Default folded equate duplicate should use duplicate-symbol");
+
+    failures += expect_json_contains(none_unknown_json, "\"ok\":false", "CASEMAP:NONE equate mismatched case should fail");
+    failures += expect_json_contains(none_unknown_json, "unknown-symbol", "CASEMAP:NONE equate mismatched case should report unknown-symbol");
+
+    failures += expect_json_contains(none_distinct_json, "\"ok\":true", "CASEMAP:NONE should allow case-distinct equates");
+    failures += expect_json_contains(none_distinct_json, "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "CASEMAP:NONE exact COUNT should load first equate value");
+    failures += expect_json_contains(none_distinct_json, "\"EBX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "CASEMAP:NONE exact count should load second equate value");
+
+    failures += expect_json_contains(ambiguous_equate_json, "\"ok\":false", "CASEMAP:ALL folded lookup over exact-case duplicate equates should fail");
+    failures += expect_json_contains(ambiguous_equate_json, "ambiguous-symbol", "Ambiguous folded equate lookup should use ambiguous-symbol");
+    failures += expect_json_contains(ambiguous_equate_json, "make the equate names distinct beyond case", "Ambiguous folded equate diagnostic should describe a clear fix");
+
+    return failures;
+}
+
+/// Verifies Phase 35A CASEMAP policy changes, unsupported modes, and ambiguity diagnostics.
+///
+/// @return Number of failures.
+static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
+    int failures = 0;
+    char none_to_all_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(none_to_all_json, sizeof(none_to_all_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        "OPTION CASEMAP:ALL\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, bUF\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char all_to_none_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(all_to_none_json, sizeof(all_to_none_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:ALL\n"
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, bUF\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char same_policy_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(same_policy_json, sizeof(same_policy_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:ALL\n"
+        "OPTION CASEMAP:ALL\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, bUF\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char ambiguous_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(ambiguous_json, sizeof(ambiguous_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "buf DWORD 1\n"
+        "bUF DWORD 2\n"
+        "OPTION CASEMAP:ALL\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, buf\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char duplicate_then_unknown_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(duplicate_then_unknown_json, sizeof(duplicate_then_unknown_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:ALL\n"
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        "bUF DWORD ?\n"
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET bUF\n"
+        "    mov DWORD PTR [eax], 77\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char notpublic_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(notpublic_json, sizeof(notpublic_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NOTPUBLIC\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char invalid_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(invalid_json, sizeof(invalid_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:LOWER\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    char default_proc_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(default_proc_json, sizeof(default_proc_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "Main PROC\n"
+        "mAIN ENDP\n"
+        "END main\n"
+    ));
+    char none_proc_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(none_proc_json, sizeof(none_proc_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "Main PROC\n"
+        "Main ENDP\n"
+        "END main\n"
+    ));
+    char none_endp_json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(none_endp_json, sizeof(none_endp_json), masm32_sim_wasm_run_source_json(
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "Main PROC\n"
+        "main ENDP\n"
+        "END Main\n"
+    ));
+
+    failures += expect_json_contains(none_to_all_json, "\"ok\":true", "CASEMAP:NONE to CASEMAP:ALL warning-only program should execute");
+    failures += expect_json_contains(none_to_all_json, "\"kind\":\"assembly-warning\"", "CASEMAP policy change should be surfaced as warning");
+    failures += expect_json_contains(none_to_all_json, "casemap-policy-changed", "CASEMAP policy change should use stable warning code");
+    failures += expect_json_contains(none_to_all_json, "\"code\":\"execution-complete\"", "CASEMAP warning-only program should still complete execution");
+    failures += expect_json_contains(none_to_all_json, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "CASEMAP:NONE to ALL should apply folded lookup afterward");
+
+    failures += expect_json_contains(all_to_none_json, "\"ok\":false", "CASEMAP:ALL to NONE then mismatched symbol should not execute");
+    failures += expect_json_contains(all_to_none_json, "casemap-policy-changed", "CASEMAP:ALL to NONE should warn");
+    failures += expect_json_contains(all_to_none_json, "unknown-symbol", "CASEMAP:ALL to NONE should apply exact-case lookup afterward");
+
+    failures += expect_json_contains(same_policy_json, "\"ok\":true", "Repeated same CASEMAP value should execute");
+    failures += expect_json_not_contains(same_policy_json, "casemap-policy-changed", "Repeated same CASEMAP value should not warn");
+
+    failures += expect_json_contains(ambiguous_json, "\"ok\":false", "CASEMAP:ALL folded lookup over exact-case duplicates should fail");
+    failures += expect_json_contains(ambiguous_json, "ambiguous-symbol", "Ambiguous folded lookup should use ambiguous-symbol");
+    failures += expect_json_contains(ambiguous_json, "casemap-policy-changed", "Ambiguous folded lookup fixture should also preserve policy warning");
+
+    failures += expect_json_contains(duplicate_then_unknown_json, "duplicate-symbol", "Duplicate under CASEMAP:ALL should be diagnosed");
+    failures += expect_json_contains(duplicate_then_unknown_json, "unknown-symbol", "Rejected duplicate spelling should not be inserted for later CASEMAP:NONE lookup");
+    failures += expect_json_contains(duplicate_then_unknown_json, "casemap-policy-changed", "Duplicate-then-unknown fixture should preserve policy warning");
+
+    failures += expect_json_contains(notpublic_json, "\"ok\":false", "CASEMAP:NOTPUBLIC should fail before execution");
+    failures += expect_json_contains(notpublic_json, "unsupported-option", "CASEMAP:NOTPUBLIC should use unsupported-option");
+    failures += expect_json_contains(notpublic_json, "public/external linkage", "CASEMAP:NOTPUBLIC diagnostic should explain linkage dependency");
+
+    failures += expect_json_contains(invalid_json, "\"ok\":false", "Invalid CASEMAP value should fail before execution");
+    failures += expect_json_contains(invalid_json, "invalid-option-value", "Invalid CASEMAP value should use invalid-option-value");
+    failures += expect_json_contains(invalid_json, "Supported CASEMAP values: ALL, NONE", "Invalid CASEMAP diagnostic should list supported values");
+
+    failures += expect_json_contains(default_proc_json, "\"ok\":true", "Default CASEMAP:ALL should apply folded procedure ENDP and END target matching");
+    failures += expect_json_contains(default_proc_json, "execution-complete", "Default folded procedure ENDP and END targets should execute");
+    failures += expect_json_contains(none_proc_json, "\"ok\":false", "CASEMAP:NONE should require exact procedure END target spelling");
+    failures += expect_json_contains(none_proc_json, "invalid-end-target", "CASEMAP:NONE mismatched procedure END target should use existing diagnostic");
+    failures += expect_json_contains(none_proc_json, "active CASEMAP policy", "CASEMAP:NONE procedure END mismatch diagnostic should explain policy involvement");
+    failures += expect_json_contains(none_endp_json, "\"ok\":false", "CASEMAP:NONE should require exact procedure ENDP name spelling");
+    failures += expect_json_contains(none_endp_json, "invalid-end-target", "CASEMAP:NONE mismatched procedure ENDP name should use existing diagnostic");
+    failures += expect_json_contains(none_endp_json, "ENDP procedure name", "CASEMAP:NONE ENDP mismatch diagnostic should explain procedure-name mismatch");
+
+    return failures;
+}
+
 /// Verifies Phase 32 preserves fixed-layout source-run behavior from Milestones 27-30.
 ///
 /// @return Number of failures.
@@ -2787,6 +3163,10 @@ int main(void) {
     failures += test_phase35_seeded_randomized_layout_data_question_writable();
     failures += test_phase35_randomized_layout_unavailable_source_run_json();
     failures += test_phase35_fresh_randomized_layout_returns_seed_metadata();
+    failures += test_phase35a_casemap_all_source_run_programs();
+    failures += test_phase35a_casemap_none_source_run_programs();
+    failures += test_phase35a_casemap_equate_source_run_programs();
+    failures += test_phase35a_casemap_diagnostic_source_run_programs();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -2795,6 +3175,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 35 regression coverage passed.");
+    puts("Source execution tests through Phase 35A regression coverage passed.");
     return 0;
 }

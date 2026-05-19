@@ -778,7 +778,13 @@ static bool masm32_sim_json_append_warnings(
 ///
 /// @param code Parser diagnostic code to classify.
 /// @return Stable simulator-message kind string.
-static const char *masm32_sim_wasm_parser_diagnostic_kind(VmParserDiagnosticCode code) {
+static const char *masm32_sim_wasm_parser_diagnostic_kind(const VmParserDiagnostic *diagnostic) {
+    VmParserDiagnosticCode code = diagnostic != NULL ? diagnostic->code : VM_PARSER_DIAGNOSTIC_NONE;
+
+    if (diagnostic != NULL && diagnostic->severity == VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING) {
+        return "assembly-warning";
+    }
+
     if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH ||
@@ -817,7 +823,7 @@ static bool masm32_sim_json_append_parser_messages(
         }
         if (!masm32_sim_json_append_message_with_span(
                 writer,
-                masm32_sim_wasm_parser_diagnostic_kind(diagnostic->code),
+                masm32_sim_wasm_parser_diagnostic_kind(diagnostic),
                 code_name != NULL ? code_name : "parser-diagnostic",
                 diagnostic->message != NULL ? diagnostic->message : "Parser diagnostic.",
                 diagnostic->location.line,
@@ -831,6 +837,27 @@ static bool masm32_sim_json_append_parser_messages(
     }
 
     return true;
+}
+
+/// Returns whether a parser diagnostic array contains any execution-blocking error.
+///
+/// @param diagnostics Diagnostics to inspect.
+/// @param diagnostic_count Number of diagnostics available.
+/// @return true when at least one parser diagnostic has error severity.
+static bool masm32_sim_wasm_parser_diagnostics_have_errors(const VmParserDiagnostic *diagnostics, size_t diagnostic_count) {
+    size_t index = 0U;
+
+    if (diagnostics == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < diagnostic_count; index += 1U) {
+        if (vm_parser_diagnostic_is_error(&diagnostics[index])) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /// Returns a stable lowercase name for a memory access type.
@@ -1071,6 +1098,10 @@ static const char *masm32_sim_wasm_build_run_json(
     (void)masm32_sim_json_append(&writer, "\"simulatorMessages\":[");
     if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_OK) {
         bool has_message = false;
+        if (parser_result != NULL && parser_diagnostics != NULL && parser_result->diagnostic_count > 0U) {
+            (void)masm32_sim_json_append_parser_messages(&writer, parser_diagnostics, parser_result->diagnostic_count);
+            has_message = true;
+        }
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
@@ -1594,7 +1625,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     config.diagnostic_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS;
 
     parser_status = vm_parser_parse_program(&config, &parser_result);
-    if (parser_status != VM_PARSER_STATUS_OK || parser_result.diagnostic_count > 0U) {
+    if ((parser_status != VM_PARSER_STATUS_OK && parser_status != VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS) ||
+        masm32_sim_wasm_parser_diagnostics_have_errors(g_masm32_sim_wasm_run_storage.parser_diagnostics, parser_result.diagnostic_count)) {
         return masm32_sim_wasm_build_run_json(
             MASM32_SIM_WASM_RUN_OUTCOME_PARSE_ERROR,
             NULL,
@@ -1642,20 +1674,20 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
     }
     vm_initialized = true;
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         vm_deinit(&vm);
         return json;
     }
@@ -1676,7 +1708,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -1684,7 +1716,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     }
 
     {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, NULL, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }

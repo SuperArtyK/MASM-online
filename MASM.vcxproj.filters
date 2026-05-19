@@ -60,6 +60,9 @@
     <ClCompile Include="src\wasm\wasm_api.c">
       <Filter>Source Files\wasm</Filter>
     </ClCompile>
+    <ClCompile Include="src\core\vm_layout.c">
+      <Filter>Source Files\core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\masm32_sim_api.h">
@@ -88,6 +91,9 @@
     </ClInclude>
     <ClInclude Include="src\wasm\wasm_api.h">
       <Filter>Header Files\wasm</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\vm_layout.h">
+      <Filter>Header Files\core</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

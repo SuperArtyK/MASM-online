@@ -89,6 +89,14 @@ typedef enum VmParserSection {
     VM_PARSER_SECTION_CODE
 } VmParserSection;
 
+/// Describes the parser's active user-symbol case policy.
+typedef enum VmParserUserSymbolCasePolicy {
+    /// CASEMAP:ALL behavior: ASCII-folded user-symbol matching.
+    VM_PARSER_USER_SYMBOL_CASEMAP_ALL = 0,
+    /// CASEMAP:NONE behavior: exact-case user-symbol matching.
+    VM_PARSER_USER_SYMBOL_CASEMAP_NONE
+} VmParserUserSymbolCasePolicy;
+
 /// Describes one numeric equate known during parsing.
 typedef struct VmParserEquate {
     /// Null-terminated equate name copied from source.
@@ -145,6 +153,10 @@ typedef struct VmParserState {
     size_t equate_count;
     /// Name token for the equate currently being parsed, or NULL outside equate parsing.
     const VmLexerToken *active_equate_name;
+    /// Active source-order CASEMAP policy for user-defined symbols.
+    VmParserUserSymbolCasePolicy user_symbol_case_policy;
+    /// Whether a supported OPTION CASEMAP directive has been seen.
+    bool has_explicit_casemap_policy;
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
@@ -192,6 +204,13 @@ static bool vm_parser_add_diagnostic(
     const char *message
 );
 
+static bool vm_parser_add_warning(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+);
+
 static bool vm_parser_add_lexer_diagnostic(
     VmParserState *state,
     const VmLexerDiagnostic *diagnostic
@@ -213,6 +232,12 @@ static bool vm_parser_parse_data_initializer(
 );
 
 static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state);
+
+static bool vm_parser_parse_option_directive(VmParserState *state);
+
+static bool vm_parser_has_conflicting_data_symbol(VmParserState *state, const VmLexerToken *token);
+
+static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *state, const VmLexerToken *token);
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
@@ -295,6 +320,40 @@ static bool vm_parser_token_lexemes_equal(const VmLexerToken *left, const VmLexe
     return true;
 }
 
+/// Compares two lexer token lexemes by exact source spelling.
+///
+/// @param left First token.
+/// @param right Second token.
+/// @return true when both lexemes match exactly.
+static bool vm_parser_token_lexemes_equal_exact(const VmLexerToken *left, const VmLexerToken *right) {
+    return left != NULL && right != NULL &&
+           left->lexeme_length == right->lexeme_length &&
+           left->lexeme != NULL && right->lexeme != NULL &&
+           memcmp(left->lexeme, right->lexeme, left->lexeme_length) == 0;
+}
+
+/// Converts the parser CASEMAP policy to the symbol-module policy.
+///
+/// @param policy Parser CASEMAP policy to convert.
+/// @return Equivalent symbol helper policy.
+static VmSymbolCasePolicy vm_parser_symbol_case_policy(VmParserUserSymbolCasePolicy policy) {
+    return policy == VM_PARSER_USER_SYMBOL_CASEMAP_NONE ? VM_SYMBOL_CASE_POLICY_NONE : VM_SYMBOL_CASE_POLICY_ALL;
+}
+
+/// Compares a source token to an accepted user-symbol spelling using active CASEMAP policy.
+///
+/// @param state Parser state containing the active user-symbol policy.
+/// @param left First token.
+/// @param right Second token.
+/// @return true when both tokens match under the active policy.
+static bool vm_parser_user_symbol_tokens_equal(const VmParserState *state, const VmLexerToken *left, const VmLexerToken *right) {
+    if (state != NULL && state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_NONE) {
+        return vm_parser_token_lexemes_equal_exact(left, right);
+    }
+
+    return vm_parser_token_lexemes_equal(left, right);
+}
+
 /// Returns whether a token can begin a compile-time constant expression.
 ///
 /// @param token Token to inspect.
@@ -308,16 +367,21 @@ static bool vm_parser_token_starts_constant_expression(const VmLexerToken *token
             token->kind == VM_LEXER_TOKEN_LEFT_PAREN);
 }
 
-/// Compares an equate slot name with a source token case-insensitively.
+/// Compares an equate slot name with a source token using active CASEMAP policy.
 ///
 /// @param equate Equate slot to inspect.
 /// @param token Source token containing the candidate name.
+/// @param policy Active user-symbol case policy.
 /// @return true when the names match.
-static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmLexerToken *token) {
+static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmLexerToken *token, VmParserUserSymbolCasePolicy policy) {
     size_t index = 0U;
 
     if (equate == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
         return false;
+    }
+
+    if (policy == VM_PARSER_USER_SYMBOL_CASEMAP_NONE) {
+        return strlen(equate->name) == token->lexeme_length && memcmp(equate->name, token->lexeme, token->lexeme_length) == 0;
     }
 
     while (index < token->lexeme_length && equate->name[index] != '\0') {
@@ -330,6 +394,42 @@ static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmL
     return index == token->lexeme_length && equate->name[index] == '\0';
 }
 
+/// Finds a numeric equate by source token name using active CASEMAP policy.
+///
+/// @param state Parser state whose equate table should be searched.
+/// @param token Source token containing the equate name.
+/// @param out_ambiguous Receives true when folded lookup matched multiple equates.
+/// @return Matching equate slot, including invalid definitions retained for
+/// diagnostic suppression, or NULL when no equate with that name was seen.
+static VmParserEquate *vm_parser_find_equate_with_ambiguity(VmParserState *state, const VmLexerToken *token, bool *out_ambiguous) {
+    size_t index = 0U;
+    VmParserEquate *match = NULL;
+    size_t match_count = 0U;
+
+    if (out_ambiguous != NULL) {
+        *out_ambiguous = false;
+    }
+    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->equate_count; index += 1U) {
+        if (vm_parser_equate_name_equals(&state->equates[index], token, state->user_symbol_case_policy)) {
+            match = &state->equates[index];
+            match_count += 1U;
+        }
+    }
+
+    if (match_count > 1U) {
+        if (out_ambiguous != NULL) {
+            *out_ambiguous = true;
+        }
+        return NULL;
+    }
+
+    return match_count == 1U ? match : NULL;
+}
+
 /// Finds a numeric equate by source token name.
 ///
 /// @param state Parser state whose equate table should be searched.
@@ -337,19 +437,23 @@ static bool vm_parser_equate_name_equals(const VmParserEquate *equate, const VmL
 /// @return Matching equate slot, including invalid definitions retained for
 /// diagnostic suppression, or NULL when no equate with that name was seen.
 static VmParserEquate *vm_parser_find_equate(VmParserState *state, const VmLexerToken *token) {
-    size_t index = 0U;
+    return vm_parser_find_equate_with_ambiguity(state, token, NULL);
+}
 
-    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
-        return NULL;
+/// Returns whether a token should be parsed as a numeric equate expression.
+///
+/// @param state Parser state whose equate table should be searched.
+/// @param token Source token to inspect.
+/// @return true when the token names a visible equate or an ambiguous folded
+/// equate set that must be diagnosed by constant-expression parsing.
+static bool vm_parser_token_names_equate_expression(VmParserState *state, const VmLexerToken *token) {
+    bool ambiguous = false;
+
+    if (vm_parser_find_equate_with_ambiguity(state, token, &ambiguous) != NULL) {
+        return true;
     }
 
-    for (index = 0U; index < state->equate_count; index += 1U) {
-        if (vm_parser_equate_name_equals(&state->equates[index], token)) {
-            return &state->equates[index];
-        }
-    }
-
-    return NULL;
+    return ambiguous;
 }
 
 /// Copies an equate name into an internal fixed-capacity slot.
@@ -582,11 +686,16 @@ static bool vm_parser_parse_constant_primary_expression(VmParserState *state, Vm
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
         VmParserEquate *equate = NULL;
-        if (state->active_equate_name != NULL && vm_parser_token_lexemes_equal(state->active_equate_name, token)) {
+        bool ambiguous_equate = false;
+        if (state->active_equate_name != NULL && vm_parser_user_symbol_tokens_equal(state, state->active_equate_name, token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_RECURSIVE_EQUATE, token, "Numeric equate cannot reference itself.");
             return false;
         }
-        equate = vm_parser_find_equate(state, token);
+        equate = vm_parser_find_equate_with_ambiguity(state, token, &ambiguous_equate);
+        if (ambiguous_equate) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, token, "Multiple numeric equates match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact equate spelling, or make the equate names distinct beyond case.");
+            return false;
+        }
         if (equate == NULL) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_EQUATE, token, "Constant expression references an unknown numeric equate.");
             return false;
@@ -1167,14 +1276,18 @@ static void vm_parser_skip_newlines(VmParserState *state) {
 
 /// Records one parser diagnostic.
 ///
+/// Records one parser diagnostic with explicit severity.
+///
 /// @param state Parser state whose diagnostic buffer should receive the entry.
 /// @param code Diagnostic code.
+/// @param severity Diagnostic severity.
 /// @param token Optional token associated with the diagnostic.
 /// @param message Static diagnostic message.
 /// @return true when the diagnostic was recorded.
-static bool vm_parser_add_diagnostic(
+static bool vm_parser_add_diagnostic_with_severity(
     VmParserState *state,
     VmParserDiagnosticCode code,
+    VmParserDiagnosticSeverity severity,
     const VmLexerToken *token,
     const char *message
 ) {
@@ -1192,6 +1305,7 @@ static bool vm_parser_add_diagnostic(
     diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = code;
+    diagnostic->severity = severity;
     if (token != NULL) {
         diagnostic->location = token->location;
         diagnostic->lexeme = token->lexeme;
@@ -1200,6 +1314,36 @@ static bool vm_parser_add_diagnostic(
     diagnostic->message = message;
     state->result->diagnostic_count += 1U;
     return true;
+}
+
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Optional token associated with the diagnostic.
+/// @param message Static diagnostic message.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_diagnostic(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+) {
+    return vm_parser_add_diagnostic_with_severity(state, code, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, token, message);
+}
+
+/// Records one non-fatal parser warning.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Optional token associated with the warning.
+/// @param message Static warning message.
+/// @return true when the warning was recorded.
+static bool vm_parser_add_warning(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+) {
+    return vm_parser_add_diagnostic_with_severity(state, code, VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING, token, message);
 }
 
 /// Records one parser diagnostic whose message includes parse-specific values.
@@ -1231,6 +1375,7 @@ static bool vm_parser_add_formatted_diagnostic(
     diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = code;
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
     if (token != NULL) {
         diagnostic->location = token->location;
         diagnostic->lexeme = token->lexeme;
@@ -1561,6 +1706,7 @@ static bool vm_parser_add_lexer_diagnostic(
     diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = vm_parser_diagnostic_code_from_lexer(source_diagnostic->code);
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
     diagnostic->location = source_diagnostic->location;
     diagnostic->lexeme = source_diagnostic->lexeme;
     diagnostic->lexeme_length = source_diagnostic->lexeme_length;
@@ -1592,6 +1738,7 @@ static bool vm_parser_add_lexer_status_diagnostic(
     diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = vm_parser_diagnostic_code_from_lexer_status(status);
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
     diagnostic->message = vm_parser_message_from_lexer_status(status);
     state->result->diagnostic_count += 1U;
     return true;
@@ -2556,10 +2703,11 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
-    if (vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, name_token->lexeme, name_token->lexeme_length) != NULL ||
+    if (vm_parser_has_conflicting_data_symbol(state, name_token) ||
         vm_parser_find_equate(state, name_token) != NULL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate data symbol or numeric equate name.");
-        return false;
+        vm_parser_recover_skip_line(state);
+        return true;
     }
 
     if (state->config->symbols == NULL || state->result->symbol_count >= state->config->symbol_capacity) {
@@ -2858,24 +3006,92 @@ static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token) {
            (token->kind == VM_LEXER_TOKEN_IDENTIFIER || token->kind == VM_LEXER_TOKEN_REGISTER);
 }
 
-/// Resolves a data symbol token.
+/// Resolves a data symbol token using the active CASEMAP policy.
 ///
 /// @param state Parser state to inspect.
 /// @param token Symbol token to resolve.
+/// @param message Diagnostic text for an unknown symbol.
 /// @return Matching symbol, or NULL after recording a diagnostic.
-static const VmSymbol *vm_parser_resolve_symbol(VmParserState *state, const VmLexerToken *token) {
+static const VmSymbol *vm_parser_resolve_symbol_with_message(VmParserState *state, const VmLexerToken *token, const char *message) {
     const VmSymbol *symbol = NULL;
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
 
     if (state == NULL || !vm_parser_token_can_name_data_symbol(token)) {
         return NULL;
     }
 
-    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length);
+    symbol = vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        token->lexeme,
+        token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        &lookup_status
+    );
+    if (lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, token, "Multiple data symbols match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact symbol spelling, or make the symbol names distinct beyond case.");
+        return NULL;
+    }
     if (symbol == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, token, "Unknown data symbol.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, token, message != NULL ? message : "Unknown data symbol.");
     }
 
     return symbol;
+}
+
+/// Resolves a data symbol token using the active CASEMAP policy.
+///
+/// @param state Parser state to inspect.
+/// @param token Symbol token to resolve.
+/// @return Matching symbol, or NULL after recording a diagnostic.
+static const VmSymbol *vm_parser_resolve_symbol(VmParserState *state, const VmLexerToken *token) {
+    return vm_parser_resolve_symbol_with_message(state, token, "Unknown data symbol.");
+}
+
+/// Returns whether a symbol table already contains a declaration matching a token under active CASEMAP policy.
+///
+/// @param state Parser state to inspect.
+/// @param token Declaration token to check.
+/// @return true when an accepted data symbol conflicts with @p token.
+static bool vm_parser_has_conflicting_data_symbol(VmParserState *state, const VmLexerToken *token) {
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+
+    if (state == NULL || token == NULL) {
+        return false;
+    }
+
+    (void)vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        token->lexeme,
+        token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        &lookup_status
+    );
+    return lookup_status == VM_SYMBOL_LOOKUP_FOUND || lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS;
+}
+
+/// Returns the active-policy lookup status for a candidate data symbol token.
+///
+/// @param state Parser state to inspect.
+/// @param token Token to check.
+/// @return Matching status for the current data-symbol table.
+static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *state, const VmLexerToken *token) {
+    VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+
+    if (state == NULL || token == NULL) {
+        return VM_SYMBOL_LOOKUP_NOT_FOUND;
+    }
+
+    (void)vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        token->lexeme,
+        token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        &lookup_status
+    );
+    return lookup_status;
 }
 
 /// Creates a memory operand for a symbol plus constant byte offset.
@@ -3731,7 +3947,7 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
     }
 
     if (token->kind == VM_LEXER_TOKEN_REGISTER &&
-        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length) != NULL) {
+        vm_parser_data_symbol_lookup_status(state, token) != VM_SYMBOL_LOOKUP_NOT_FOUND) {
         if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
             return false;
         }
@@ -3811,9 +4027,8 @@ static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperan
         return false;
     }
 
-    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+    symbol = vm_parser_resolve_symbol_with_message(state, symbol_token, "TYPE references an unknown data symbol.");
     if (symbol == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "TYPE references an unknown data symbol.");
         return false;
     }
 
@@ -3857,9 +4072,8 @@ static bool vm_parser_parse_lengthof_source_operand(VmParserState *state, VmIrOp
         return false;
     }
 
-    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+    symbol = vm_parser_resolve_symbol_with_message(state, symbol_token, "LENGTHOF references an unknown data symbol.");
     if (symbol == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "LENGTHOF references an unknown data symbol.");
         return false;
     }
 
@@ -3903,9 +4117,8 @@ static bool vm_parser_parse_sizeof_source_operand(VmParserState *state, VmIrOper
         return false;
     }
 
-    symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+    symbol = vm_parser_resolve_symbol_with_message(state, symbol_token, "SIZEOF references an unknown data symbol.");
     if (symbol == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "SIZEOF references an unknown data symbol.");
         return false;
     }
 
@@ -3975,7 +4188,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     }
 
     if (token->kind == VM_LEXER_TOKEN_REGISTER &&
-        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, token->lexeme, token->lexeme_length) != NULL) {
+        vm_parser_data_symbol_lookup_status(state, token) != VM_SYMBOL_LOOKUP_NOT_FOUND) {
         if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
             return false;
         }
@@ -4019,9 +4232,27 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "OFFSET requires a following data symbol.");
             return false;
         }
-        symbol = vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, symbol_token->lexeme, symbol_token->lexeme_length);
+        symbol = vm_symbol_find_by_name_with_policy(
+            state->config->symbols,
+            state->result->symbol_count,
+            symbol_token->lexeme,
+            symbol_token->lexeme_length,
+            vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+            NULL
+        );
         if (symbol == NULL) {
-            if (vm_parser_find_equate(state, symbol_token) != NULL) {
+            VmSymbolLookupStatus offset_lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+            (void)vm_symbol_find_by_name_with_policy(
+                state->config->symbols,
+                state->result->symbol_count,
+                symbol_token->lexeme,
+                symbol_token->lexeme_length,
+                vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+                &offset_lookup_status
+            );
+            if (offset_lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL, symbol_token, "Multiple data symbols match this reference under CASEMAP:ALL because their names differ only by letter case. Use OPTION CASEMAP:NONE and the exact symbol spelling, or make the symbol names distinct beyond case.");
+            } else if (vm_parser_find_equate(state, symbol_token) != NULL) {
                 vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, symbol_token, "OFFSET requires a data symbol, not a numeric equate.");
             } else {
                 vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, symbol_token, "OFFSET references an unknown data symbol.");
@@ -4055,7 +4286,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
     if (token->kind == VM_LEXER_TOKEN_NUMBER || token->kind == VM_LEXER_TOKEN_PLUS || token->kind == VM_LEXER_TOKEN_MINUS ||
         token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
         (token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
-         (vm_parser_find_equate(state, token) != NULL || vm_parser_token_is_constant_unary_operator(token)))) {
+         (vm_parser_token_names_equate_expression(state, token) || vm_parser_token_is_constant_unary_operator(token)))) {
         VmParserConstantExpression expression;
         uint32_t encoded_value = 0U;
         memset(&expression, 0, sizeof(expression));
@@ -4926,6 +5157,17 @@ static bool vm_parser_parse_endp_line(VmParserState *state) {
         return false;
     }
 
+    if (state->procedure_name.is_set) {
+        VmLexerToken procedure_token;
+        memset(&procedure_token, 0, sizeof(procedure_token));
+        procedure_token.lexeme = state->procedure_name.lexeme;
+        procedure_token.lexeme_length = state->procedure_name.length;
+        if (!vm_parser_user_symbol_tokens_equal(state, &procedure_token, name_token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, name_token, "ENDP procedure name does not match the parsed procedure name under the active CASEMAP policy.");
+            return false;
+        }
+    }
+
     vm_parser_advance(state);
     vm_parser_advance(state);
     return vm_parser_expect_line_end(state);
@@ -4949,8 +5191,8 @@ static bool vm_parser_parse_end_line(VmParserState *state) {
         memset(&procedure_token, 0, sizeof(procedure_token));
         procedure_token.lexeme = state->procedure_name.lexeme;
         procedure_token.lexeme_length = state->procedure_name.length;
-        if (!vm_parser_token_lexemes_equal(&procedure_token, entry_token)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, entry_token, "END entry point does not match the parsed procedure name.");
+        if (!vm_parser_user_symbol_tokens_equal(state, &procedure_token, entry_token)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, entry_token, "END entry point does not match the parsed procedure name under the active CASEMAP policy.");
             return false;
         }
     }
@@ -5013,6 +5255,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
 
     if (vm_parser_parse_equate_line_if_recognized(state)) {
         return !state->diagnostic_overflowed;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "option")) {
+        return vm_parser_parse_option_directive(state) && !state->diagnostic_overflowed;
     }
 
     if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
@@ -5203,7 +5449,7 @@ static bool vm_parser_parse_include_directive(VmParserState *state) {
     return true;
 }
 
-/// Parses `OPTION CASEMAP:NONE` as a compatibility no-op.
+/// Parses OPTION CASEMAP directives and updates source-order symbol policy.
 ///
 /// @param state Parser state to mutate.
 /// @return true when an OPTION line was consumed; diagnostics may have been recorded.
@@ -5211,17 +5457,58 @@ static bool vm_parser_parse_option_directive(VmParserState *state) {
     const VmLexerToken *option_token = vm_parser_current_token(state);
     const VmLexerToken *casemap_token = vm_parser_peek_token(state, 1U);
     const VmLexerToken *colon_token = vm_parser_peek_token(state, 2U);
-    const VmLexerToken *none_token = vm_parser_peek_token(state, 3U);
+    const VmLexerToken *value_token = vm_parser_peek_token(state, 3U);
     const VmLexerToken *tail_token = vm_parser_peek_token(state, 4U);
+    VmParserUserSymbolCasePolicy new_policy = VM_PARSER_USER_SYMBOL_CASEMAP_ALL;
+    bool is_supported_policy = false;
+
+    if (state == NULL) {
+        return false;
+    }
 
     if (vm_parser_header_token_equals(casemap_token, "casemap") && colon_token != NULL && colon_token->kind == VM_LEXER_TOKEN_COLON &&
-        vm_parser_header_token_equals(none_token, "none") && vm_parser_is_line_end_token(tail_token)) {
+        value_token != NULL && vm_parser_is_line_end_token(tail_token)) {
+        if (vm_parser_header_token_equals(value_token, "all")) {
+            new_policy = VM_PARSER_USER_SYMBOL_CASEMAP_ALL;
+            is_supported_policy = true;
+        } else if (vm_parser_header_token_equals(value_token, "none")) {
+            new_policy = VM_PARSER_USER_SYMBOL_CASEMAP_NONE;
+            is_supported_policy = true;
+        } else if (vm_parser_header_token_equals(value_token, "notpublic")) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION,
+                value_token,
+                "OPTION CASEMAP:NOTPUBLIC is unsupported because public/external linkage semantics are not implemented."
+            );
+        } else {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE,
+                value_token,
+                "Invalid OPTION CASEMAP value. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC."
+            );
+        }
+
+        if (is_supported_policy) {
+            if (state->has_explicit_casemap_policy && state->user_symbol_case_policy != new_policy) {
+                (void)vm_parser_add_warning(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED,
+                    value_token,
+                    "OPTION CASEMAP changed the active user-symbol case policy."
+                );
+            }
+            state->user_symbol_case_policy = new_policy;
+            state->has_explicit_casemap_policy = true;
+        }
+
         vm_parser_advance_many(state, 4U);
         (void)vm_parser_expect_line_end(state);
         return true;
     }
 
-    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, option_token, "Unsupported OPTION form. Only OPTION CASEMAP:NONE is accepted.");
+    (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION, option_token, "Unsupported OPTION form. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.");
     vm_parser_recover_skip_line(state);
     return true;
 }
@@ -5260,8 +5547,8 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
     }
 
     if (vm_parser_find_equate(state, name_token) != NULL ||
-        vm_symbol_find_by_name(state->config->symbols, state->result->symbol_count, name_token->lexeme, name_token->lexeme_length) != NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, name_token, "Duplicate numeric equate or data symbol name.");
+        vm_parser_has_conflicting_data_symbol(state, name_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate numeric equate or data symbol name.");
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -5414,6 +5701,13 @@ static bool vm_parser_parse_data_sections(VmParserState *state) {
             continue;
         }
 
+        if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "option")) {
+            if (!vm_parser_parse_option_directive(state) || state->diagnostic_overflowed) {
+                return false;
+            }
+            continue;
+        }
+
         if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
             if (state->diagnostic_overflowed) {
                 return false;
@@ -5506,6 +5800,7 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
 
     memset(&state, 0, sizeof(state));
+    state.user_symbol_case_policy = VM_PARSER_USER_SYMBOL_CASEMAP_ALL;
     state.config = config;
     state.result = out_result;
     vm_parser_init_result(out_result, VM_PARSER_STATUS_OK);
@@ -5759,7 +6054,28 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "recursive-equate";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION:
             return "unsupported-constant-expression";
+        case VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL:
+            return "ambiguous-symbol";
+        case VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED:
+            return "casemap-policy-changed";
+        case VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE:
+            return "invalid-option-value";
         default:
             return NULL;
     }
+}
+
+const char *vm_parser_diagnostic_severity_name(VmParserDiagnosticSeverity severity) {
+    switch (severity) {
+        case VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING:
+            return "warning";
+        case VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR:
+            return "error";
+        default:
+            return NULL;
+    }
+}
+
+bool vm_parser_diagnostic_is_error(const VmParserDiagnostic *diagnostic) {
+    return diagnostic != NULL && diagnostic->severity == VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
 }

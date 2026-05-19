@@ -23,6 +23,7 @@
     <ClCompile Include="src\core\vm_cpu.c" />
     <ClCompile Include="src\core\vm_exec.c" />
     <ClCompile Include="src\core\vm_ir.c" />
+    <ClCompile Include="src\core\vm_layout.c" />
     <ClCompile Include="src\core\vm_memory.c" />
     <ClCompile Include="src\parser\lexer.c" />
     <ClCompile Include="src\parser\parser.c" />
@@ -34,6 +35,7 @@
     <ClInclude Include="src\core\vm_cpu.h" />
     <ClInclude Include="src\core\vm_exec.h" />
     <ClInclude Include="src\core\vm_ir.h" />
+    <ClInclude Include="src\core\vm_layout.h" />
     <ClInclude Include="src\core\vm_memory.h" />
     <ClInclude Include="src\parser\lexer.h" />
     <ClInclude Include="src\parser\parser.h" />
