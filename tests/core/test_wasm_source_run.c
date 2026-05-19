@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 37 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 38 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -3302,6 +3302,181 @@ static int test_phase37_const_permission_error_precedes_object_warning(void) {
     return failures;
 }
 
+
+
+/// Verifies Phase 38 strict mode stops for a valid-region gap outside declared objects.
+///
+/// @return Number of failures.
+static int test_phase38_strict_gap_access_fails(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "var1 DWORD 12345\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET var1\n"
+        "    test [eax+40h], eax\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "strict mode should fail valid-region gap access");
+    failures += expect_json_contains(json, "\"code\":\"object-bounds-violation\"", "strict mode should emit object-bounds-violation");
+    failures += expect_json_contains(json, "Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.", "strict gap diagnostic should describe the escaped access");
+    failures += expect_json_contains(json, "\"line\":6", "strict object diagnostic should preserve source line");
+    failures += expect_json_not_contains(json, "execution-complete", "strict object diagnostic should stop execution without success message");
+
+    return failures;
+}
+
+/// Verifies Phase 38 strict mode allows accesses wholly inside another object.
+///
+/// @return Number of failures.
+static int test_phase38_strict_access_into_another_object_succeeds(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "var1 DWORD 12345\n"
+        "arr1 DWORD 20 DUP(0ABCDEF12h)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET var1\n"
+        "    test [eax+40h], eax\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "strict mode should allow access that lands inside arr1");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "strict mode should execute both accepted instructions");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "strict mode should not reject access wholly inside another object");
+
+    return failures;
+}
+
+/// Verifies Phase 38 strict mode fails an access that starts inside an object and ends outside it.
+///
+/// @return Number of failures.
+static int test_phase38_strict_partial_overlap_starting_inside_object_fails(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "a DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET a\n"
+        "    test DWORD PTR [eax+2], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "strict partial overlap should fail");
+    failures += expect_json_contains(json, "object-bounds-violation", "strict partial overlap should emit object violation");
+    failures += expect_json_contains(json, "starts-in-object", "strict partial overlap should include starts-in-object classification");
+    failures += expect_json_contains(json, "Memory read range 00500002h..00500005h starts inside a declared data object and extends outside it (starts-in-object).", "strict partial overlap should describe the boundary escape");
+    failures += expect_json_not_contains(json, "execution-complete", "strict partial overlap should stop execution");
+
+    return failures;
+}
+
+/// Verifies Phase 38 strict mode fails an access spanning adjacent objects.
+///
+/// @return Number of failures.
+static int test_phase38_strict_spanning_adjacent_objects_fails(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "a DWORD 1\n"
+        "b DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET a\n"
+        "    test DWORD PTR [eax+2], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "strict adjacent-object span should fail");
+    failures += expect_json_contains(json, "object-bounds-violation", "strict adjacent-object span should emit object violation");
+    failures += expect_json_contains(json, "spans-objects", "strict adjacent-object span should include spans-objects classification");
+    failures += expect_json_not_contains(json, "execution-complete", "strict adjacent-object span should stop execution");
+
+    return failures;
+}
+
+/// Verifies Phase 38 strict mode allows unaligned accesses wholly inside one object.
+///
+/// @return Number of failures.
+static int test_phase38_strict_unaligned_inside_object_succeeds(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "arr BYTE 8 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET arr\n"
+        "    test DWORD PTR [eax+1], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "unaligned access wholly inside one object should execute in strict mode");
+    failures += expect_json_contains(json, "unaligned-memory-access", "unaligned inside-object access should preserve unaligned warning");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "unaligned access wholly inside one object should not be a strict object violation");
+
+    return failures;
+}
+
+/// Verifies Phase 38 preserves lower-level invalid-address diagnostics before strict object validation.
+///
+/// @return Number of failures.
+static int test_phase38_strict_invalid_address_precedes_object_violation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    test [eax], eax\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "invalid address should remain fatal in strict mode");
+    failures += expect_json_contains(json, "invalid-address", "invalid address should preserve runtime memory diagnostic");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "invalid address should not be reclassified as object-bounds violation");
+
+    return failures;
+}
+
+/// Verifies Phase 38 preserves .CONST permission diagnostics before strict object validation.
+///
+/// @return Number of failures.
+static int test_phase38_strict_const_permission_error_precedes_object_violation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", ".CONST write should remain fatal in strict mode");
+    failures += expect_json_contains(json, "permission-denied", ".CONST write should preserve permission diagnostic");
+    failures += expect_json_not_contains(json, "object-bounds-violation", ".CONST permission error should precede strict object validation");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -3395,6 +3570,13 @@ int main(void) {
     failures += test_phase37_spanning_adjacent_objects_warns();
     failures += test_phase37_unaligned_inside_object_has_no_object_warning();
     failures += test_phase37_const_permission_error_precedes_object_warning();
+    failures += test_phase38_strict_gap_access_fails();
+    failures += test_phase38_strict_access_into_another_object_succeeds();
+    failures += test_phase38_strict_partial_overlap_starting_inside_object_fails();
+    failures += test_phase38_strict_spanning_adjacent_objects_fails();
+    failures += test_phase38_strict_unaligned_inside_object_succeeds();
+    failures += test_phase38_strict_invalid_address_precedes_object_violation();
+    failures += test_phase38_strict_const_permission_error_precedes_object_violation();
     failures += test_phase35a_casemap_all_source_run_programs();
     failures += test_phase35a_casemap_none_source_run_programs();
     failures += test_phase35a_casemap_equate_source_run_programs();
@@ -3407,6 +3589,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 37 regression coverage passed.");
+    puts("Source execution tests through Phase 38 regression coverage passed.");
     return 0;
 }

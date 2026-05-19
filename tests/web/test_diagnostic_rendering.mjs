@@ -589,6 +589,29 @@ test("renders allocated-object warning followed by successful execution exactly"
 });
 
 
+
+test("renders allocated-object strict violation exactly", () => {
+  const name = "objectBoundsWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "object-bounds-violation",
+      message: "Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.",
+      line: 6,
+      column: 10,
+      byteOffset: 73,
+      spanLength: 9
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] object-bounds-violation line 6, column 10, byte offset 73, span length 9: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.");
+});
+
 test("renders automatic layout resource-limit diagnostic exactly", () => {
   const name = "automaticLayoutResourceLimit";
   const source = fixtureSource("automaticLayoutResourceLimit");

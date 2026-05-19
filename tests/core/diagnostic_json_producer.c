@@ -198,12 +198,31 @@ static int diagnostic_json_producer_use_automatic_layout(void) {
     return mode != NULL && strcmp(mode, "automatic") == 0;
 }
 
-/// Returns whether the producer should enable allocated-object warning mode.
+/// Returns the requested memory validation mode from the diagnostic environment.
 ///
-/// @return Nonzero when MASM32_DIAGNOSTIC_MEMORY_VALIDATION=allocated-object-warnings.
-static int diagnostic_json_producer_use_object_warnings(void) {
+/// @param out_mode Receives the selected memory validation mode.
+/// @return Nonzero when MASM32_DIAGNOSTIC_MEMORY_VALIDATION selects a non-default mode.
+static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemoryValidationMode *out_mode) {
     const char *mode = getenv("MASM32_DIAGNOSTIC_MEMORY_VALIDATION");
-    return mode != NULL && strcmp(mode, "allocated-object-warnings") == 0;
+
+    if (out_mode == NULL) {
+        return 0;
+    }
+
+    *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "allocated-object-warnings") == 0) {
+        *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS;
+        return 1;
+    }
+    if (strcmp(mode, "allocated-object-strict") == 0) {
+        *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT;
+        return 1;
+    }
+
+    return 0;
 }
 
 /// Applies optional automatic layout limit environment overrides.
@@ -263,16 +282,14 @@ static int diagnostic_json_producer_apply_layout_env(VmLayoutPolicy *policy) {
 static int diagnostic_json_producer_emit_json(const char *source) {
     const char *json = NULL;
     VmLayoutPolicy policy;
+    Masm32SimWasmMemoryValidationMode validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
     }
 
-    if (diagnostic_json_producer_use_object_warnings()) {
-        json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
-            source,
-            MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
-        );
+    if (diagnostic_json_producer_get_memory_validation_mode(&validation_mode)) {
+        json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, validation_mode);
     } else if (diagnostic_json_producer_use_automatic_layout()) {
         policy = vm_layout_default_policy();
         if (diagnostic_json_producer_apply_layout_env(&policy) != 0) {

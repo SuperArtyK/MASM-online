@@ -17,7 +17,9 @@ typedef enum Masm32SimWasmMemoryValidationMode {
     /// Validate memory using the default region and permission checks only.
     MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY = 0,
     /// Emit non-fatal warnings for accesses that escape declared data objects.
-    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
+    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS,
+    /// Stop execution when an access escapes declared data-object bounds.
+    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
 } Masm32SimWasmMemoryValidationMode;
 
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
@@ -73,8 +75,9 @@ const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const 
 ///
 /// This test/configuration-facing helper keeps the browser default in
 /// region-only validation while allowing native tests to enable allocated-object
-/// warnings from Phase 37. The returned pointer refers to the same internal
-/// static buffer as @ref masm32_sim_wasm_run_source_json.
+/// warnings from Phase 37 or allocated-object strict validation from Phase 38.
+/// The returned pointer refers to the same internal static buffer as
+/// @ref masm32_sim_wasm_run_source_json.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @param validation_mode Memory validation behavior to apply during execution.
