@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 42.
+ * @brief Unit and integration tests for the parser through Milestone 43.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -350,7 +350,7 @@ static int test_error_path_diagnostics(void) {
     failures += expect_parser_status(parse_for_test("main PROC\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing .code should produce diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, "missing .code diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".code\nmain PROC\ninc eax\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported instruction should produce diagnostic");
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nand eax, ebx\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported instruction should produce diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "unsupported instruction diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".code\nmain PROC\nmov eax 20\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing comma should produce diagnostic");
@@ -825,7 +825,7 @@ static int test_capacity_and_invalid_arguments(void) {
 
     memset(&buffers, 0, sizeof(buffers));
     memset(&config, 0, sizeof(config));
-    config.source = ".code\nmain PROC\ninc eax\nmain ENDP\nEND main\n";
+    config.source = ".code\nmain PROC\nand eax, ebx\nmain ENDP\nEND main\n";
     config.tokens = buffers.tokens;
     config.token_capacity = TEST_TOKEN_CAPACITY;
     config.lexer_diagnostics = buffers.lexer_diagnostics;
@@ -1930,6 +1930,199 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
     return failures;
 }
 
+
+/// Verifies Phase 43 INC and DEC parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase43_inc_dec_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 1\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    inc al\n"
+        "    dec ax\n"
+        "    inc eax\n"
+        "    inc BYTE PTR [esi]\n"
+        "    inc WORD PTR [esi]\n"
+        "    dec DWORD PTR [esi]\n"
+        "    inc SBYTE PTR [esi]\n"
+        "    dec SWORD PTR [esi]\n"
+        "    inc SDWORD PTR [esi]\n"
+        "    inc value\n"
+        "    dec arr[8]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 43 INC/DEC program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 43 INC/DEC program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 11U, "Phase 43 INC/DEC program should emit eleven instructions");
+    if (result.instruction_count == 11U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_INC, "inc al should emit INC opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "inc al destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_AL, "inc al destination should be AL");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_NONE, "INC should emit no source operand");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_DEC, "dec ax should emit DEC opcode");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_AX, "dec ax destination should be AX");
+        failures += expect_u32(buffers.instructions[2].destination.reg, VM_REGISTER_EAX, "inc eax destination should be EAX");
+        failures += expect_u32(buffers.instructions[3].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "inc BYTE PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[3].destination.width_bits, 8U, "inc BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[4].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "inc WORD PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[4].destination.width_bits, 16U, "inc WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[5].opcode, VM_IR_OPCODE_DEC, "dec DWORD PTR [esi] should emit DEC opcode");
+        failures += expect_u32(buffers.instructions[5].destination.width_bits, 32U, "dec DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[6].opcode, VM_IR_OPCODE_INC, "inc SBYTE PTR [esi] should emit INC opcode");
+        failures += expect_u32(buffers.instructions[6].destination.width_bits, 8U, "inc SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[7].opcode, VM_IR_OPCODE_DEC, "dec SWORD PTR [esi] should emit DEC opcode");
+        failures += expect_u32(buffers.instructions[7].destination.width_bits, 16U, "dec SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[8].destination.width_bits, 32U, "inc SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[9].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "inc value should emit direct memory destination");
+        failures += expect_u32(buffers.instructions[9].destination.width_bits, 32U, "inc value should infer DWORD width");
+        failures += expect_u32(buffers.instructions[10].destination.width_bits, 32U, "dec arr[8] should infer DWORD width");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 43 INC and DEC parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase43_inc_dec_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    inc 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INC immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "INC immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "INC immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    dec 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "DEC immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "DEC immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "DEC immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    inc eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INC extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "INC extra operand should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "INC extra operand diagnostic should describe operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    dec eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "DEC extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "DEC extra operand should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "DEC extra operand diagnostic should describe operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    inc [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INC ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "INC ambiguous memory diagnostic should be ambiguous-memory-width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "INC ambiguous memory diagnostic should point at the memory operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    dec [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "DEC ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "DEC ambiguous memory diagnostic should be ambiguous-memory-width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    inc QWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INC QWORD memory operation should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "INC QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD -1\n"
+        ".code\n"
+        "main PROC\n"
+        "    dec SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "DEC SQWORD memory operation should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "DEC SQWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    inc limit\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "INC direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "INC direct .CONST destination should use const-write diagnostic");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    dec limit\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "DEC direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "DEC direct .CONST destination should use const-write diagnostic");
+
+    return failures;
+}
+
 /// Verifies Phase 42 parser behavior for the Irvine32 exit terminator.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2080,7 +2273,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 42.
+/// Runs all parser regression tests through Milestone 43.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -2129,6 +2322,8 @@ int main(void) {
     failures += test_phase41_virtual_irvine32_include_records_registry();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
+    failures += test_phase43_inc_dec_parse_to_ir();
+    failures += test_phase43_inc_dec_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

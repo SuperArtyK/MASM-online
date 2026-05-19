@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 42 source-run UI: source editing, Run button,
+  This page provides the Milestone 43 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates the Irvine32 exit terminator.
+  execution stay inside the worker/Wasm path; the default program demonstrates INC/DEC carry preservation.
 -->
 <html lang="en">
   <head>
@@ -18,14 +18,14 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 42: Irvine32 exit terminator.</p>
+        <p class="muted">Milestone 43: INC and DEC.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
-.code
+        <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, 123
-    exit
-    mov eax, 999
+    stc
+    mov eax, 0FFFFFFFFh
+    inc eax
+    dec eax
 main ENDP
 END main</textarea>
         <div class="controls">

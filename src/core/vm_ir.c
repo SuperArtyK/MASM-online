@@ -136,6 +136,10 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "cmc";
         case VM_IR_OPCODE_TEST:
             return "test";
+        case VM_IR_OPCODE_INC:
+            return "inc";
+        case VM_IR_OPCODE_DEC:
+            return "dec";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

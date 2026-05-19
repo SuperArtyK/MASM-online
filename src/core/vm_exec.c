@@ -3,8 +3,8 @@
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
- * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc, and test over the
- * currently supported register and memory operand forms. It records last-step
+ * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
+ * test, inc, and dec over the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -959,6 +959,70 @@ static VmExecStatus vm_exec_execute_neg(Vm *vm, const VmIrInstruction *instructi
     return status;
 }
 
+/// Executes one INC or DEC instruction and preserves the carry flag.
+///
+/// INC and DEC are read-modify-write operations for memory destinations. The
+/// arithmetic helper updates ZF, SF, and OF at the selected width; this wrapper
+/// restores the incoming CF exactly as required by x86-compatible educational
+/// behavior. If the final destination write fails, the CPU snapshot is restored
+/// so validation failures leave registers and flags unchanged.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param is_increment true for INC, false for DEC.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_inc_dec(Vm *vm, const VmIrInstruction *instruction, bool is_increment) {
+    VmCpu before_cpu;
+    bool carry_before = false;
+    uint8_t width_bits = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_operand_is_destination(&instruction->destination) || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &carry_before)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (is_increment) {
+        if (!vm_cpu_update_add_flags(&vm->cpu, value, 1U, width_bits, &result)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else {
+        if (!vm_cpu_update_sub_flags(&vm->cpu, value, 1U, width_bits, &result)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    }
+
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, carry_before)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+    return status;
+}
+
 /// Executes one NOP instruction.
 ///
 /// @param instruction Instruction to validate.
@@ -1328,6 +1392,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_xchg(vm, instruction);
         case VM_IR_OPCODE_NEG:
             return vm_exec_execute_neg(vm, instruction);
+        case VM_IR_OPCODE_INC:
+            return vm_exec_execute_inc_dec(vm, instruction, true);
+        case VM_IR_OPCODE_DEC:
+            return vm_exec_execute_inc_dec(vm, instruction, false);
         case VM_IR_OPCODE_NOP:
             return vm_exec_execute_nop(instruction);
         case VM_IR_OPCODE_CLC:

@@ -3031,6 +3031,14 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_TEST;
         return true;
     }
+    if (vm_parser_token_equals(token, "inc")) {
+        *out_opcode = VM_IR_OPCODE_INC;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "dec")) {
+        *out_opcode = VM_IR_OPCODE_DEC;
+        return true;
+    }
 
     return false;
 }
@@ -3065,7 +3073,9 @@ static bool vm_parser_opcode_is_extension_move(VmIrOpcode opcode) {
 /// @param opcode Opcode to inspect.
 /// @return true for single-operand destination instructions.
 static bool vm_parser_opcode_is_single_destination_operand(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_NEG;
+    return opcode == VM_IR_OPCODE_NEG ||
+           opcode == VM_IR_OPCODE_INC ||
+           opcode == VM_IR_OPCODE_DEC;
 }
 
 /// Returns whether an opcode uses exchange operand validation rules.
@@ -4563,9 +4573,9 @@ static VmParserMemoryWidthResolutionStatus vm_parser_resolve_binary_memory_width
 
 /// Resolves memory operand width for a single-operand instruction.
 ///
-/// Memory-only instructions such as `neg [eax]` have no same-instruction
-/// register source. They therefore require PTR or symbol metadata instead of
-/// guessing a default width.
+/// Memory-only instructions such as `neg [eax]`, `inc [eax]`, and `dec [eax]`
+/// have no same-instruction register source. They therefore require PTR or
+/// symbol metadata instead of guessing a default width.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
 /// @param opcode Opcode whose operand is being validated.
@@ -4897,26 +4907,54 @@ static bool vm_parser_validate_test_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
-/// Validates the destination operand for NEG.
+/// Validates the destination operand for a single-destination instruction.
+///
+/// NEG, INC, and DEC accept exactly one register or memory destination with a
+/// known 8-bit, 16-bit, or 32-bit execution width. INC and DEC use the newer
+/// invalid-instruction-operands diagnostic category for malformed operand
+/// shapes; NEG keeps its existing diagnostic behavior for regression stability.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Single-destination opcode being validated.
 /// @param destination Destination operand to validate.
 /// @param operand_token Token associated with the operand for diagnostics.
 /// @return true when the operand has a supported execution width.
-static bool vm_parser_validate_neg_operand(VmParserState *state, const VmIrOperand *destination, const VmLexerToken *operand_token) {
+static bool vm_parser_validate_single_destination_operand(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    const VmIrOperand *destination,
+    const VmLexerToken *operand_token
+) {
     uint8_t width_bits = 0U;
+    const char *mnemonic = "instruction";
+    VmParserDiagnosticCode invalid_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX;
 
     if (state == NULL || destination == NULL) {
         return false;
     }
 
+    if (opcode == VM_IR_OPCODE_NEG) {
+        mnemonic = "NEG";
+        invalid_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX;
+    } else if (opcode == VM_IR_OPCODE_INC) {
+        mnemonic = "INC";
+        invalid_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+    } else if (opcode == VM_IR_OPCODE_DEC) {
+        mnemonic = "DEC";
+        invalid_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+    }
+
     if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, "NEG requires a register or memory destination.");
+        char message[96];
+        (void)snprintf(message, sizeof(message), "%s requires a register or memory destination.", mnemonic);
+        vm_parser_add_diagnostic(state, invalid_code, operand_token, message);
         return false;
     }
 
     if (!vm_parser_resolve_operand_width(destination, &width_bits)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, operand_token, "NEG destination requires a known 8-bit, 16-bit, or 32-bit width.");
+        char message[128];
+        (void)snprintf(message, sizeof(message), "%s destination requires a known 8-bit, 16-bit, or 32-bit width.", mnemonic);
+        vm_parser_add_diagnostic(state, opcode == VM_IR_OPCODE_NEG ? VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH : VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, operand_token, message);
         return false;
     }
 
@@ -5185,6 +5223,21 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC) &&
+        destination_token != NULL &&
+        (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
+         destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
+         destination_token->kind == VM_LEXER_TOKEN_PLUS ||
+         destination_token->kind == VM_LEXER_TOKEN_MINUS ||
+         destination_token->kind == VM_LEXER_TOKEN_LEFT_PAREN)) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
+            destination_token,
+            opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." : "DEC requires a register or memory destination."
+        );
+        return false;
+    }
     if (!vm_parser_parse_destination_operand(state, &destination)) {
         return false;
     }
@@ -5193,14 +5246,23 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (vm_parser_resolve_unary_memory_width(state, opcode, &destination, destination_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
             return false;
         }
-        if (!vm_parser_validate_neg_operand(state, &destination, mnemonic_token)) {
+        if (!vm_parser_validate_single_destination_operand(state, opcode, &destination, mnemonic_token)) {
             return false;
         }
         if (!vm_parser_reject_static_const_write(state, opcode, &destination, &source, destination_token, source_token)) {
             return false;
         }
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, vm_parser_current_token(state), "NEG takes exactly one register or memory operand.");
+            const char *message = "NEG takes exactly one register or memory operand.";
+            VmParserDiagnosticCode code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX;
+            if (opcode == VM_IR_OPCODE_INC) {
+                message = "INC takes exactly one register or memory operand.";
+                code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+            } else if (opcode == VM_IR_OPCODE_DEC) {
+                message = "DEC takes exactly one register or memory operand.";
+                code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+            }
+            vm_parser_add_diagnostic(state, code, vm_parser_current_token(state), message);
             return false;
         }
         if (!vm_parser_expect_line_end(state)) {

@@ -1,6 +1,6 @@
 # Supported MASM32 Educational Simulator Syntax
 
-This reference describes the implemented source subset through Milestone 42. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, Milestone 35A corrects MASM-compatible user-symbol case policy, Milestone 36 adds declared-object allocation map metadata for tests/internal tooling only, Milestone 37 adds allocated-object warning validation for tests/configuration only, Milestone 38 adds allocated-object strict validation for tests/configuration only, Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test-only inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes for tests/configuration, Milestone 41 adds virtual Irvine32 symbol-registry metadata plus specific diagnostics for known Irvine32 names before routine execution exists, and Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator. These infrastructure, compatibility-correction, and exit-terminator milestones do not add CALL/RET, stack behavior, Program Console routines, or other Irvine32 routine bodies. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Milestone 43. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, Milestone 35A corrects MASM-compatible user-symbol case policy, Milestone 36 adds declared-object allocation map metadata for tests/internal tooling only, Milestone 37 adds allocated-object warning validation for tests/configuration only, Milestone 38 adds allocated-object strict validation for tests/configuration only, Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test-only inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes for tests/configuration, Milestone 41 adds virtual Irvine32 symbol-registry metadata plus specific diagnostics for known Irvine32 names before routine execution exists, Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator, and Milestone 43 adds `inc` and `dec`. These infrastructure, compatibility-correction, exit-terminator, and INC/DEC milestones do not add CALL/RET, stack behavior, Program Console routines, other Irvine32 routine bodies, bitwise instructions, shifts, rotates, multiplication, division, labels, or jumps. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 ## Implemented now
 
@@ -62,6 +62,7 @@ Backend metadata note:
 - Milestone 40 adds tests/configuration-facing uninitialized-read warning and strict modes. Warning mode emits `uninitialized-read` simulator warnings and continues; strict mode stops before the read with runtime diagnostic code `uninitialized-read`. Default browser/source-run behavior remains region-only and warning-free. UI settings controls and provenance diagnostics remain deferred.
 - Milestone 41 adds a parser/source-run virtual Irvine32 symbol registry. Known names such as `WriteString`, `ReadInt`, `DumpRegs`, and `RandomRange` are classified for later routine milestones. Bare executable use of a known not-yet-executable Irvine32 name after `INCLUDE Irvine32.inc` reports `unsupported-irvine32-routine`.
 - Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator when `INCLUDE Irvine32.inc` is active. `exit` terminates execution successfully, mutates no registers/flags/memory/Program Console state, and prevents later instructions from executing. Without the include, `exit` reports `unknown-instruction` with guidance to add `INCLUDE Irvine32.inc`; operands report `invalid-instruction-operands`. `CALL` target classification, Program Console routines, stack behavior, and Windows/API execution remain deferred.
+- Milestone 43 adds `inc` and `dec` for 8-bit, 16-bit, and 32-bit register and unambiguous memory destinations. They update `ZF`, `SF`, and `OF`, preserve `CF`, and use checked memory read/write helpers for memory destinations.
 
 
 ### Numeric equates and extended constant expressions
@@ -157,6 +158,8 @@ adc [eax], al
 sbb [eax], ebx
 xchg [eax], cx
 test [eax], eax
+inc BYTE PTR [eax]
+dec WORD PTR [eax]
 test BYTE PTR [eax], 1
 test value, 1
 test nums[8], 1
@@ -173,6 +176,8 @@ sbb [eax], 1
 test [eax], 1
 test [eax + 4], 1
 neg [eax]
+inc [eax]
+dec [eax]
 ```
 
 These report `ambiguous-memory-width` with guidance to use `BYTE PTR`, `WORD PTR`, or `DWORD PTR`.
@@ -199,6 +204,8 @@ Implemented executable instructions:
 - `stc`
 - `cmc`
 - `test`
+- `inc`
+- `dec`
 - `exit` when `INCLUDE Irvine32.inc` is active
 
 `movsx` and `movzx` require a register destination and an 8-bit or 16-bit register or memory source whose width is narrower than the destination. Register-indirect memory sources such as `[esi]` require `BYTE PTR` or `WORD PTR` because the source width is otherwise ambiguous.
@@ -225,6 +232,8 @@ Signed `PTR` aliases select memory access width only. `SBYTE PTR`, `SWORD PTR`, 
 `clc`, `stc`, and `cmc` take no operands and mutate only the tracked carry flag.
 
 `test` supports register/register, register/immediate, register/memory, memory/register, and memory/immediate forms when the memory width is explicit or inferable. It computes a transient bitwise AND, updates `ZF` and `SF`, clears `CF` and `OF`, and does not store the result. MASM-compatible ambiguous memory/immediate forms such as `test [esi], 1` and `test [esi + 4], 1` are rejected with an `ambiguous-memory-width` diagnostic; use `BYTE PTR`, `WORD PTR`, or `DWORD PTR`.
+
+`inc` and `dec` support register destinations and memory destinations whose width is known from `PTR`, signed `PTR` aliases, direct symbol metadata, or symbol-offset metadata. Register aliases mutate only their selected width. Memory destinations are read-modify-write operations through checked memory helpers. Both instructions update `ZF`, `SF`, and `OF` and preserve `CF`. Untyped register-indirect forms such as `inc [eax]` and `dec [eax]` are rejected with `ambiguous-memory-width`; executable QWORD/SQWORD memory operations remain deferred.
 
 `exit` is accepted only as a zero-operand virtual Irvine32 terminator after `INCLUDE Irvine32.inc`. It terminates execution successfully and skips following instructions without changing registers, flags, memory, or Program Console output. It is not `call ExitProcess` and does not model Windows API behavior.
 
@@ -273,7 +282,7 @@ Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30. Milestone 31 added a native diagnostic JSON producer plus Node rendering harness for exact Simulator Messages tests; Milestone 32 added a fixed-layout policy object consumed by VM memory initialization; Milestone 33 added automatic deterministic region sizing for tests/configuration; Milestone 34 applies parsed `.stack` metadata and configured heap-size requests to automatic layout capacity metadata; Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration, with symbolic addresses relocated to selected bases while fixed numeric addresses remain literal; Milestone 36 adds declared-object allocation map metadata; Milestone 37 adds allocated-object warning validation for tests/configuration while leaving default region-only execution unchanged; Milestone 38 adds allocated-object strict validation for tests/configuration while still leaving default region-only execution unchanged; Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test/internal inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes while preserving default runtime output, Milestone 41 adds virtual Irvine32 registry metadata, and Milestone 42 adds the zero-operand virtual `exit` terminator. The infrastructure-only milestones do not prove stale `web/dist` artifacts were rebuilt; Milestone 42 intentionally adds only the narrow `exit` terminator syntax and runtime termination semantics.
+`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30. Milestone 31 added a native diagnostic JSON producer plus Node rendering harness for exact Simulator Messages tests; Milestone 32 added a fixed-layout policy object consumed by VM memory initialization; Milestone 33 added automatic deterministic region sizing for tests/configuration; Milestone 34 applies parsed `.stack` metadata and configured heap-size requests to automatic layout capacity metadata; Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration, with symbolic addresses relocated to selected bases while fixed numeric addresses remain literal; Milestone 36 adds declared-object allocation map metadata; Milestone 37 adds allocated-object warning validation for tests/configuration while leaving default region-only execution unchanged; Milestone 38 adds allocated-object strict validation for tests/configuration while still leaving default region-only execution unchanged; Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test/internal inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes while preserving default runtime output, Milestone 41 adds virtual Irvine32 registry metadata, Milestone 42 adds the zero-operand virtual `exit` terminator, and Milestone 43 adds `inc` and `dec` runtime instruction behavior. The infrastructure-only milestones do not prove stale `web/dist` artifacts were rebuilt; Milestone 43 intentionally adds only the narrow INC/DEC read-modify-write instruction semantics beyond prior `exit` behavior.
 
 ## Backlog notes
 

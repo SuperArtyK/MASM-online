@@ -1,11 +1,12 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 42.
+ * @brief Unit tests for the VM executor through Milestone 43.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
- * stepping, mov/add/sub semantics, CPU and memory integration, and last-step
- * delta capture. They intentionally avoid parser, control-flow, stack, Irvine32,
- * and browser UI behavior except for the Phase 42 virtual exit terminator.
+ * stepping, supported straight-line instruction semantics, CPU and memory
+ * integration, and last-step delta capture. They intentionally avoid parser,
+ * control-flow, stack, Irvine32 routine bodies, and browser UI behavior except
+ * for the Phase 42 virtual exit terminator.
  */
 
 #include <stdbool.h>
@@ -1180,6 +1181,140 @@ static int test_test_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies INC and DEC register edge cases and carry preservation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_inc_dec_register_flags_and_carry_preservation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x7FU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov al, 7Fh", 1U},
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "inc al", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov al, 80h", 3U},
+        {VM_IR_OPCODE_DEC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "dec al", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x7FFFU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "mov ax, 7FFFh", 5U},
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "inc ax", 6U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x8000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ax, 8000h", 7U},
+        {VM_IR_OPCODE_DEC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "dec ax", 8U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0xFFFFFFFFU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "mov eax, 0FFFFFFFFh", 9U},
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "inc eax", 10U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 12U, "mov eax, 0", 11U},
+        {VM_IR_OPCODE_DEC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 13U, "dec eax", 12U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for INC/DEC register tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "INC/DEC register program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before INC/DEC should execute");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AL 7Fh should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "inc AL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after inc AL");
+    failures += expect_u32(eax, 0x00000080U, "inc AL should wrap 7Fh to 80h within the low byte");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "inc AL should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "inc AL 7Fh should set OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "inc AL 7Fh should set SF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AL 80h should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "dec AL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after dec AL");
+    failures += expect_u32(eax, 0x0000007FU, "dec AL should wrap 80h to 7Fh within the low byte");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "dec AL should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "dec AL 80h should set OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "dec AL 80h should clear SF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AX 7FFFh should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "inc AX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after inc AX");
+    failures += expect_u32(eax, 0x00008000U, "inc AX should produce 8000h");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "inc AX should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "inc AX 7FFFh should set OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov AX 8000h should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "dec AX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after dec AX");
+    failures += expect_u32(eax, 0x00007FFFU, "dec AX should produce 7FFFh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "dec AX should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "dec AX 8000h should set OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov EAX FFFFFFFFh should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "inc EAX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after inc EAX");
+    failures += expect_u32(eax, 0U, "inc EAX FFFFFFFFh should wrap to zero");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "inc EAX should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "inc EAX FFFFFFFFh should set ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "inc EAX FFFFFFFFh should clear OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "mov EAX zero should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "dec EAX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after dec EAX");
+    failures += expect_u32(eax, 0xFFFFFFFFU, "dec EAX zero should wrap to FFFFFFFFh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "dec EAX should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "dec EAX zero should set SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "dec EAX zero should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "dec EAX zero should clear OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies INC and DEC memory destinations use checked read-modify-write helpers.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_inc_dec_memory_destinations_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    uint8_t memory_byte = 0U;
+    uint32_t memory_dword = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x7FU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov BYTE PTR value, 7Fh", 0U},
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "inc BYTE PTR value", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov DWORD PTR other, 0", 2U},
+        {VM_IR_OPCODE_DEC, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "dec DWORD PTR other", 3U}
+    };
+    const VmIrInstruction const_write[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_CONST_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "inc DWORD PTR [const]", 1U}
+    };
+    const VmIrInstruction malformed[] = {
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "inc eax, 1", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for INC/DEC memory tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "INC/DEC memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory byte setup should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "INC memory byte should execute");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after INC");
+    failures += expect_u32((uint32_t)memory_byte, 0x80U, "INC memory byte should store 80h");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 1U, "INC memory byte should report one byte change");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "INC memory byte 7Fh should set OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory dword setup should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "DEC memory dword should execute");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, &memory_dword, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory dword read should succeed after DEC");
+    failures += expect_u32(memory_dword, 0xFFFFFFFFU, "DEC memory dword should wrap zero to FFFFFFFFh");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 4U, "DEC memory dword should report four byte changes");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "DEC memory dword zero should set SF");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for INC const-write test");
+    failures += expect_status(vm_load_program(&vm, const_write, sizeof(const_write) / sizeof(const_write[0])), VM_EXEC_STATUS_OK, "INC const-write program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute before failed INC");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "INC .CONST memory should fail through checked memory");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed INC .CONST write should restore CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed INC .CONST write should not record successful memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for malformed INC test");
+    failures += expect_status(vm_load_program(&vm, malformed, 1U), VM_EXEC_STATUS_OK, "malformed INC program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "INC with a source operand should be unsupported by executor");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies the Irvine32 exit IR opcode halts without state mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1243,6 +1378,12 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_MOV), "mov") != 0) {
         failures += record_failure("MOV opcode name should be mov");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_INC), "inc") != 0) {
+        failures += record_failure("INC opcode name should be inc");
+    }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_DEC), "dec") != 0) {
+        failures += record_failure("DEC opcode name should be dec");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -1265,7 +1406,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 42.
+/// Runs all executor tests through Milestone 43.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -1298,6 +1439,8 @@ int main(void) {
     failures += test_test_alias_sign_flag_edge_case();
     failures += test_test_memory_forms_and_non_mutation();
     failures += test_test_error_paths();
+    failures += test_inc_dec_register_flags_and_carry_preservation();
+    failures += test_inc_dec_memory_destinations_and_errors();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -1306,6 +1449,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 42 passed.");
+    puts("Executor tests through Milestone 43 passed.");
     return 0;
 }
