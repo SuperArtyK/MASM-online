@@ -206,6 +206,27 @@ static int diagnostic_json_producer_apply_layout_env(VmLayoutPolicy *policy) {
         policy->regions[VM_LAYOUT_REGION_DATA].maximum_size_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = value;
     }
 
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_STACK_LIMIT", &value, &present) != 0) {
+        return 1;
+    }
+    if (present) {
+        policy->regions[VM_LAYOUT_REGION_STACK].maximum_size_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = value;
+    }
+
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST", &value, &present) != 0) {
+        return 1;
+    }
+    if (present) {
+        policy->heap_size_request = value;
+    }
+
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT", &value, &present) != 0) {
+        return 1;
+    }
+    if (present) {
+        policy->regions[VM_LAYOUT_REGION_HEAP].maximum_size_by_tier[VM_LAYOUT_SAFETY_TIER_BEGINNER] = value;
+    }
+
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT", &value, &present) != 0) {
         return 1;
     }

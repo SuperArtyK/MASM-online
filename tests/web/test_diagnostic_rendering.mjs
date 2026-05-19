@@ -1,6 +1,6 @@
 /*
  * @file test_diagnostic_rendering.mjs
- * @brief Native/Node diagnostic rendering harness tests for Milestone 31.
+ * @brief Native/Node diagnostic rendering harness tests for rendered Simulator Messages.
  *
  * These tests run the native C source-run JSON producer, parse the real JSON
  * emitted by the same API used by the Wasm boundary, and render Simulator
@@ -262,6 +262,15 @@ END main
 `,
     reason: "Automatic layout resource-limit diagnostic fixture."
   },
+  automaticLayoutStackResourceLimit: {
+    source: `.stack 8192
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Automatic layout .stack resource-limit diagnostic fixture."
+  },
   multiDiagnostic: {
     source: `.data
 x DWORD 0
@@ -479,6 +488,29 @@ test("renders automatic layout resource-limit diagnostic exactly", () => {
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[resource-limit-error] resource-limit-exceeded line 2, column 1, byte offset 6, span length 3: Automatic layout requested .data/.DATA? region size 8192 bytes, exceeding configured limit 4096 bytes.");
+});
+
+test("renders automatic layout .stack resource-limit diagnostic exactly", () => {
+  const name = "automaticLayoutStackResourceLimit";
+  const source = fixtureSource("automaticLayoutStackResourceLimit");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_LAYOUT_MODE: "automatic",
+    MASM32_DIAGNOSTIC_AUTO_STACK_LIMIT: "4096"
+  });
+  assertRunStatus(json, false, "resource-limit-exceeded");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "resource-limit-error",
+      code: "resource-limit-exceeded",
+      message: "Automatic layout requested .stack region size 8192 bytes, exceeding configured limit 4096 bytes.",
+      line: 1,
+      column: 1,
+      byteOffset: 0,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[resource-limit-error] resource-limit-exceeded line 1, column 1, byte offset 0, span length 6: Automatic layout requested .stack region size 8192 bytes, exceeding configured limit 4096 bytes.");
 });
 
 test("renders multi-diagnostic ordering exactly without execution-complete", () => {

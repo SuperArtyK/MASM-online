@@ -3,8 +3,8 @@
  * @brief Memory layout policy defaults for the MASM32 educational VM.
  *
  * This module centralizes fixed educational memory layout defaults and the
- * policy object that layout phases can extend. Phase 33 adds automatic
- * deterministic sizing while deliberately keeping randomized bases,
+ * policy object that layout phases can extend. Automatic sizing and stack/heap
+ * size metadata are modeled while deliberately keeping randomized bases,
  * object-bounds diagnostics, stack behavior, and heap allocation out of scope.
  */
 

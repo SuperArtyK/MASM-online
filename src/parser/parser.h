@@ -1,6 +1,6 @@
 /*
  * @file parser.h
- * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 30.
+ * @brief Parser API for the currently implemented MASM32 educational subset.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
@@ -235,6 +235,12 @@ typedef struct VmParserResult {
     size_t data_size;
     /// Number of initialized bytes written to the configured .CONST image buffer.
     size_t const_size;
+    /// Whether a `.stack` directive source span was parsed.
+    bool has_stack_directive_source_span;
+    /// Source location of the parsed `.stack` directive when available.
+    VmLexerSourceLocation stack_directive_source_location;
+    /// Source span length of the parsed `.stack` directive in bytes.
+    size_t stack_directive_source_span_length;
     /// Whether a `.stack size` directive requested a specific stack size.
     bool has_requested_stack_size;
     /// Requested stack size in bytes from `.stack size`; runtime stack behavior is deferred.

@@ -35,8 +35,9 @@ const char *masm32_sim_wasm_run_source_json(const char *source);
 /// Parses and executes source using automatic deterministic layout sizing.
 ///
 /// This test/configuration-facing helper keeps the normal browser export in
-/// fixed-layout mode while allowing native tests to select Phase 33 automatic
-/// sizing. Passing NULL for @p base_policy uses @ref vm_layout_default_policy.
+/// fixed-layout mode while allowing native tests to select automatic
+/// sizing and policy-driven stack/heap metadata. Passing NULL for @p base_policy
+/// uses @ref vm_layout_default_policy.
 /// The returned pointer refers to the same internal static buffer as
 /// @ref masm32_sim_wasm_run_source_json.
 ///

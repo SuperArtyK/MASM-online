@@ -1,9 +1,10 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 33 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 34 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
- * minimal `.code` and `.data` programs, reports final registers and memory changes as JSON, and returns
+ * minimal `.code` and `.data` programs, reports final registers and memory
+ * changes as JSON, and returns
  * structured simulator messages for parse and argument errors.
  */
 
@@ -2358,6 +2359,166 @@ static int test_phase33_automatic_layout_resource_limit_json(void) {
     return failures;
 }
 
+
+/// Verifies parsed `.stack size` metadata affects automatic stack capacity only.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_uses_stack_size_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".stack 4096\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 008F0000h\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic .stack 4096 should shrink stack capacity relative to default");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "out-of-range stack write should be an execution error");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "out-of-range stack write should report invalid address");
+    failures += expect_json_contains(json, "008F0000h", "invalid stack access should mention the address below the requested stack region");
+    failures += expect_json_not_contains(json, "execution-complete", "failed stack access should not report execution complete");
+
+    return failures;
+}
+
+/// Verifies `.stack` without an operand keeps the documented automatic default stack size.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_stack_without_operand_uses_default(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".stack\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 008F0000h\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "automatic .stack without operand should use default stack capacity");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "default automatic stack should allow access at default stack base");
+    failures += expect_json_contains(json, "\"ESP\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 34 should not initialize or otherwise change ESP");
+    failures += expect_json_contains(json, "execution-complete", "default stack metadata source should execute successfully");
+
+    return failures;
+}
+
+/// Verifies `.stack` can use prior constant-expression support in automatic layout.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_stack_expression_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        "COUNT = 4096\n"
+        "EXTRA EQU 4096\n"
+        ".stack COUNT + EXTRA\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 008FDFFCh\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic .stack expression should affect stack capacity");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "address below expression-sized stack should fail");
+    failures += expect_json_contains(json, "008FDFFCh", "invalid stack expression access should mention the failing address");
+
+    return failures;
+}
+
+/// Verifies excessive parsed `.stack` sizes return source-mapped resource-limit diagnostics.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_excessive_stack_size_json(void) {
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    const char *json = NULL;
+    int failures = 0;
+
+    base_policy.regions[VM_LAYOUT_REGION_STACK].maximum_size_by_tier[base_policy.safety_tier] = 4096U;
+    json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".stack 8192\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &base_policy
+    );
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic oversized .stack should fail");
+    failures += expect_json_contains(json, "\"status\":\"resource-limit-exceeded\"", "oversized .stack should report resource status");
+    failures += expect_json_contains(json, "Automatic layout requested .stack region size 8192 bytes, exceeding configured limit 4096 bytes.", "oversized .stack message should report aligned request and policy limit");
+    failures += expect_json_contains(json, "\"line\":1", "oversized .stack diagnostic should point at .stack line");
+    failures += expect_json_contains(json, "\"column\":1", "oversized .stack diagnostic should point at .stack column");
+    failures += expect_json_contains(json, "\"byteOffset\":0", "oversized .stack diagnostic should include .stack byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":6", "oversized .stack diagnostic should include .stack span length");
+    failures += expect_json_not_contains(json, "execution-complete", "oversized .stack should not execute");
+
+    return failures;
+}
+
+/// Verifies configured heap size influences automatic heap capacity metadata.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_uses_configured_heap_size(void) {
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    const char *json = NULL;
+    int failures = 0;
+
+    base_policy.heap_size_request = 4096U;
+    json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 00701000h\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        &base_policy
+    );
+
+    failures += expect_json_contains(json, "\"ok\":false", "configured automatic heap size should bound heap capacity");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "one-past configured heap access should be execution error");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "one-past configured heap access should report invalid address");
+    failures += expect_json_contains(json, "00701000h", "configured heap diagnostic should mention one-past heap address");
+
+    return failures;
+}
+
+/// Verifies excessive configured heap requests return structured resource-limit diagnostics.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_excessive_heap_size_json(void) {
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    const char *json = NULL;
+    int failures = 0;
+
+    base_policy.heap_size_request = 8192U;
+    base_policy.regions[VM_LAYOUT_REGION_HEAP].maximum_size_by_tier[base_policy.safety_tier] = 4096U;
+    json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &base_policy
+    );
+
+    failures += expect_json_contains(json, "\"ok\":false", "automatic oversized heap request should fail");
+    failures += expect_json_contains(json, "\"status\":\"resource-limit-exceeded\"", "oversized heap should report resource status");
+    failures += expect_json_contains(json, "Automatic layout requested .heap region size 8192 bytes, exceeding configured limit 4096 bytes.", "oversized heap message should report configured request and policy limit");
+    failures += expect_json_contains(json, "\"kind\":\"resource-limit-error\"", "oversized heap should use resource-limit message kind");
+    failures += expect_json_not_contains(json, "execution-complete", "oversized heap should not execute");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -2430,6 +2591,12 @@ int main(void) {
     failures += test_phase33_automatic_layout_const_write_rejected();
     failures += test_phase33_automatic_layout_invalid_access_does_not_grow();
     failures += test_phase33_automatic_layout_resource_limit_json();
+    failures += test_phase34_automatic_layout_uses_stack_size_metadata();
+    failures += test_phase34_automatic_layout_stack_without_operand_uses_default();
+    failures += test_phase34_automatic_layout_stack_expression_metadata();
+    failures += test_phase34_automatic_layout_excessive_stack_size_json();
+    failures += test_phase34_automatic_layout_uses_configured_heap_size();
+    failures += test_phase34_automatic_layout_excessive_heap_size_json();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -2438,6 +2605,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 33 regression coverage passed.");
+    puts("Source execution tests through Phase 34 regression coverage passed.");
     return 0;
 }

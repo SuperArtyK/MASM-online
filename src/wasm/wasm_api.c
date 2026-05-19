@@ -3,7 +3,7 @@
  * @brief WebAssembly-facing exports for implemented simulator core milestones.
  *
  * This file bridges JavaScript worker requests to the C simulator core. The
- * The source execution export parses numeric equates, extended
+ * source execution export parses numeric equates, extended
  * constant expressions, optional `.data`, `.DATA?`, and `.CONST`, initializes
  * simulated memory, runs the currently supported `.code` subset including
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
@@ -1217,9 +1217,10 @@ static void masm32_sim_wasm_build_layout_metadata(
     out_metadata->uninitialized_data_size = uninitialized_data_size;
     out_metadata->const_size = masm32_sim_wasm_size_to_u32_saturating(result->const_size);
 
-    /* Phase 33 keeps .stack source metadata out of runtime sizing. Phase 34
-       applies parsed stack/heap metadata to the automatic layout. */
-    out_metadata->has_stack_size_request = false;
+    if (result->has_requested_stack_size) {
+        out_metadata->has_stack_size_request = true;
+        out_metadata->stack_size_request = result->requested_stack_size;
+    }
     out_metadata->has_heap_size_request = false;
 }
 
@@ -1270,6 +1271,16 @@ static void masm32_sim_wasm_build_layout_message(
         (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout size calculation overflowed.");
     } else {
         (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout policy was invalid.");
+    }
+
+    if (diagnostic != NULL && diagnostic->has_region && diagnostic->region == VM_LAYOUT_REGION_STACK &&
+        result != NULL && result->has_stack_directive_source_span) {
+        out_message->line = result->stack_directive_source_location.line;
+        out_message->column = result->stack_directive_source_location.column;
+        out_message->byte_offset = result->stack_directive_source_location.offset;
+        out_message->span_length = result->stack_directive_source_span_length;
+        out_message->has_source_span = true;
+        return;
     }
 
     symbol = masm32_sim_wasm_find_resource_limit_symbol(result, storage, diagnostic);

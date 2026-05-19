@@ -1,9 +1,10 @@
 /*
  * @file test_vm_layout.c
- * @brief Unit tests for the Phase 33 memory layout policy object.
+ * @brief Unit tests for the memory layout policy object through Phase 34.
  *
  * These tests verify that the explicit layout policy preserves the fixed
  * educational memory layout exactly while adding automatic deterministic sizing
+ * and stack/heap size metadata
  * for test/configuration-selected layout policies.
  */
 
@@ -453,7 +454,110 @@ static int test_automatic_memory_initialization_preserves_bounds_and_permissions
     return failures;
 }
 
-/// Test entry point for Phase 33 layout-policy tests.
+
+/// Verifies automatic layout uses policy defaults when source/configuration omit heap and stack requests.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_uses_policy_default_heap_and_stack_requests(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy automatic_policy;
+    uint32_t heap_size = 0U;
+    uint32_t stack_size = 0U;
+
+    memset(&metadata, 0, sizeof(metadata));
+    memset(&automatic_policy, 0, sizeof(automatic_policy));
+
+    base_policy.heap_size_request = base_policy.region_alignment * 2U;
+    base_policy.stack_size_request = base_policy.region_alignment * 3U;
+
+    failures += expect_u32((uint32_t)vm_layout_build_automatic_policy(&base_policy, &metadata, &automatic_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "automatic layout with policy heap/stack defaults should build");
+    failures += expect_bool(vm_layout_region_size(&automatic_policy.regions[VM_LAYOUT_REGION_HEAP], &heap_size), true, "automatic heap size should be readable");
+    failures += expect_bool(vm_layout_region_size(&automatic_policy.regions[VM_LAYOUT_REGION_STACK], &stack_size), true, "automatic stack size should be readable");
+    failures += expect_u32(heap_size, base_policy.heap_size_request, "automatic heap should use policy default heap request");
+    failures += expect_u32(stack_size, base_policy.stack_size_request, "automatic stack should use policy default stack request when .stack size is absent");
+    failures += expect_u32(automatic_policy.regions[VM_LAYOUT_REGION_STACK].base, VM_LAYOUT_FIXED_STACK_TOP - base_policy.stack_size_request, "automatic stack base should reflect default stack request");
+
+    return failures;
+}
+
+/// Verifies automatic layout uses explicit heap and stack requests when supplied.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_uses_configured_heap_and_stack_requests(void) {
+    int failures = 0;
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy automatic_policy;
+    uint32_t heap_size = 0U;
+    uint32_t stack_size = 0U;
+
+    memset(&metadata, 0, sizeof(metadata));
+    memset(&automatic_policy, 0, sizeof(automatic_policy));
+
+    metadata.has_heap_size_request = true;
+    metadata.heap_size_request = VM_LAYOUT_DEFAULT_REGION_ALIGNMENT * 2U;
+    metadata.has_stack_size_request = true;
+    metadata.stack_size_request = VM_LAYOUT_DEFAULT_REGION_ALIGNMENT;
+
+    failures += expect_u32((uint32_t)vm_layout_build_automatic_policy(NULL, &metadata, &automatic_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "automatic layout with configured heap/stack requests should build");
+    failures += expect_bool(vm_layout_region_size(&automatic_policy.regions[VM_LAYOUT_REGION_HEAP], &heap_size), true, "configured automatic heap size should be readable");
+    failures += expect_bool(vm_layout_region_size(&automatic_policy.regions[VM_LAYOUT_REGION_STACK], &stack_size), true, "configured automatic stack size should be readable");
+    failures += expect_u32(heap_size, metadata.heap_size_request, "automatic heap should use configured heap request");
+    failures += expect_u32(stack_size, metadata.stack_size_request, "automatic stack should use parsed/configured stack request");
+    failures += expect_u32(automatic_policy.heap_size_request, metadata.heap_size_request, "automatic policy should retain configured heap request metadata");
+    failures += expect_u32(automatic_policy.stack_size_request, metadata.stack_size_request, "automatic policy should retain configured stack request metadata");
+
+    return failures;
+}
+
+/// Verifies heap and stack size safety limits come from the named layout policy.
+///
+/// @return Number of failures.
+static int test_phase34_automatic_layout_rejects_heap_and_stack_policy_limits(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy automatic_policy;
+    VmLayoutDiagnostic diagnostic;
+
+    memset(&metadata, 0, sizeof(metadata));
+    memset(&automatic_policy, 0, sizeof(automatic_policy));
+    memset(&diagnostic, 0, sizeof(diagnostic));
+
+    base_policy.regions[VM_LAYOUT_REGION_HEAP].maximum_size_by_tier[base_policy.safety_tier] = base_policy.region_alignment;
+    metadata.has_heap_size_request = true;
+    metadata.heap_size_request = base_policy.region_alignment + 1U;
+    metadata.has_stack_size_request = true;
+    metadata.stack_size_request = base_policy.region_alignment;
+
+    failures += expect_u32((uint32_t)vm_layout_build_automatic_policy(&base_policy, &metadata, &automatic_policy, &diagnostic), (uint32_t)VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED, "oversized configured heap request should fail");
+    failures += expect_bool(diagnostic.has_region, true, "heap size diagnostic should identify a region");
+    failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_LAYOUT_REGION_HEAP, "heap size diagnostic should identify heap region");
+    failures += expect_u32(diagnostic.requested_size, base_policy.region_alignment * 2U, "heap size diagnostic should report aligned heap request");
+    failures += expect_u32(diagnostic.limit, base_policy.regions[VM_LAYOUT_REGION_HEAP].maximum_size_by_tier[base_policy.safety_tier], "heap size diagnostic should use policy heap limit");
+
+    memset(&metadata, 0, sizeof(metadata));
+    memset(&automatic_policy, 0, sizeof(automatic_policy));
+    memset(&diagnostic, 0, sizeof(diagnostic));
+
+    base_policy = vm_layout_default_policy();
+    base_policy.regions[VM_LAYOUT_REGION_STACK].maximum_size_by_tier[base_policy.safety_tier] = base_policy.region_alignment;
+    metadata.has_heap_size_request = true;
+    metadata.heap_size_request = base_policy.region_alignment;
+    metadata.has_stack_size_request = true;
+    metadata.stack_size_request = base_policy.region_alignment + 1U;
+
+    failures += expect_u32((uint32_t)vm_layout_build_automatic_policy(&base_policy, &metadata, &automatic_policy, &diagnostic), (uint32_t)VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED, "oversized parsed stack request should fail");
+    failures += expect_bool(diagnostic.has_region, true, "stack size diagnostic should identify a region");
+    failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_LAYOUT_REGION_STACK, "stack size diagnostic should identify stack region");
+    failures += expect_u32(diagnostic.requested_size, base_policy.region_alignment * 2U, "stack size diagnostic should report aligned stack request");
+    failures += expect_u32(diagnostic.limit, base_policy.regions[VM_LAYOUT_REGION_STACK].maximum_size_by_tier[base_policy.safety_tier], "stack size diagnostic should use policy stack limit");
+
+    return failures;
+}
+
+/// Test entry point for layout-policy tests through Phase 34.
 ///
 /// @return Zero when all tests pass, otherwise one.
 int main(void) {
@@ -470,12 +574,15 @@ int main(void) {
     failures += test_automatic_layout_rejects_total_resource_limit();
     failures += test_automatic_layout_rejects_address_overflow();
     failures += test_automatic_memory_initialization_preserves_bounds_and_permissions();
+    failures += test_phase34_automatic_layout_uses_policy_default_heap_and_stack_requests();
+    failures += test_phase34_automatic_layout_uses_configured_heap_and_stack_requests();
+    failures += test_phase34_automatic_layout_rejects_heap_and_stack_policy_limits();
 
     if (failures != 0) {
-        fprintf(stderr, "Phase 33 layout policy tests failed: %d failure(s)\n", failures);
+        fprintf(stderr, "Phase 34 layout policy tests failed: %d failure(s)\n", failures);
         return 1;
     }
 
-    puts("Phase 33 layout policy tests passed.");
+    puts("Phase 34 layout policy tests passed.");
     return 0;
 }

@@ -1,6 +1,6 @@
 /*
  * @file parser.c
- * @brief Parser for MASM-like .data/.DATA?/.CONST, numeric equates, and minimal .code programs through Milestone 30.
+ * @brief Parser for the currently implemented MASM32 educational subset.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
@@ -5106,6 +5106,12 @@ static bool vm_parser_parse_model_directive(VmParserState *state) {
 static bool vm_parser_parse_stack_directive(VmParserState *state) {
     const VmLexerToken *stack_token = vm_parser_current_token(state);
     const VmLexerToken *size_token = vm_parser_peek_token(state, 1U);
+
+    if (state != NULL && state->result != NULL && stack_token != NULL) {
+        state->result->has_stack_directive_source_span = true;
+        state->result->stack_directive_source_location = stack_token->location;
+        state->result->stack_directive_source_span_length = stack_token->lexeme_length;
+    }
 
     vm_parser_advance(state);
     if (vm_parser_is_line_end_token(size_token)) {
