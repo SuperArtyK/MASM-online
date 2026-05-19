@@ -2474,6 +2474,14 @@ static uint32_t vm_parser_symbol_section_base(VmSymbolSection section) {
     return section == VM_SYMBOL_SECTION_CONST ? VM_MEMORY_DEFAULT_CONST_BASE : VM_MEMORY_DEFAULT_DATA_BASE;
 }
 
+/// Returns the IR relocation marker associated with a parser symbol section.
+///
+/// @param section Symbol section to inspect.
+/// @return Relocation marker for address-valued operands derived from that section.
+static VmIrRelocationKind vm_parser_symbol_relocation_kind(VmSymbolSection section) {
+    return section == VM_SYMBOL_SECTION_CONST ? VM_IR_RELOCATION_CONST : VM_IR_RELOCATION_DATA;
+}
+
 /// Returns the number of bytes emitted for a symbol section.
 ///
 /// @param state Parser state to inspect.
@@ -2949,7 +2957,7 @@ static bool vm_parser_build_symbol_offset_memory_operand(
         return false;
     }
 
-    *out_operand = vm_ir_operand_memory(final_address, width_bits);
+    *out_operand = vm_ir_operand_with_relocation(vm_ir_operand_memory(final_address, width_bits), vm_parser_symbol_relocation_kind(symbol->section));
     return true;
 }
 
@@ -3053,6 +3061,9 @@ static bool vm_parser_build_register_memory_operand(
     }
 
     *out_operand = vm_ir_operand_memory_register(base_token->register_id, displacement, static_address, width_bits);
+    if (symbol != NULL) {
+        *out_operand = vm_ir_operand_with_relocation(*out_operand, vm_parser_symbol_relocation_kind(symbol->section));
+    }
     return true;
 }
 
@@ -4037,7 +4048,7 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
             return false;
         }
         encoded_address = (uint32_t)address_value;
-        *out_operand = vm_ir_operand_immediate(encoded_address, 32U);
+        *out_operand = vm_ir_operand_with_relocation(vm_ir_operand_immediate(encoded_address, 32U), vm_parser_symbol_relocation_kind(symbol->section));
         return true;
     }
 

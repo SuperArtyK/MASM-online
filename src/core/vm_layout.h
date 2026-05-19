@@ -3,9 +3,10 @@
  * @brief Memory layout policy defaults for the MASM32 educational VM.
  *
  * This module centralizes fixed educational memory layout defaults and the
- * policy object that layout phases can extend. Automatic sizing and stack/heap
- * size metadata are modeled while deliberately keeping randomized bases,
- * object-bounds diagnostics, stack behavior, and heap allocation out of scope.
+ * policy object that layout phases can extend. Automatic sizing, stack/heap
+ * size metadata, and seeded/fresh randomized base placement are modeled while
+ * deliberately keeping object-bounds diagnostics, stack behavior, and heap
+ * allocation out of scope.
  */
 
 #ifndef MASM32_SIM_VM_LAYOUT_H
@@ -71,8 +72,14 @@
 /// Guard-gap size for the current fixed educational layout policy.
 #define VM_LAYOUT_DEFAULT_GUARD_GAP_SIZE 0U
 
-/// Placeholder deterministic seed value reserved for future randomized layouts.
+/// Default deterministic seed value used when randomized tests do not override it.
 #define VM_LAYOUT_DEFAULT_RANDOM_SEED 0U
+
+/// Inclusive lower bound for randomized region-base placement.
+#define VM_LAYOUT_RANDOM_BASE_MIN 0x01000000U
+
+/// Exclusive upper bound for randomized region-base placement.
+#define VM_LAYOUT_RANDOM_BASE_LIMIT 0x20000000U
 
 /// Maximum fixed-layout total reservation in the default safety tier.
 #define VM_LAYOUT_DEFAULT_MAX_TOTAL_RESERVATION 0x02000000U
@@ -82,7 +89,11 @@ typedef enum VmLayoutMode {
     /// Current fixed educational layout mode.
     VM_LAYOUT_MODE_FIXED = 0,
     /// Automatic deterministic sizing mode used by tests and future configuration.
-    VM_LAYOUT_MODE_AUTOMATIC
+    VM_LAYOUT_MODE_AUTOMATIC,
+    /// Automatic sizing with reproducible randomized region bases from an explicit seed.
+    VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+    /// Automatic sizing with randomized region bases and a generated seed recorded in metadata.
+    VM_LAYOUT_MODE_FRESH_RANDOMIZED
 } VmLayoutMode;
 
 /// Identifies a memory-layout safety tier.
@@ -143,7 +154,9 @@ typedef enum VmLayoutStatus {
     /// A size, alignment, or address calculation overflowed.
     VM_LAYOUT_STATUS_INTEGER_OVERFLOW,
     /// A computed region or total reservation exceeded the selected safety tier.
-    VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED
+    VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED,
+    /// Randomized placement could not satisfy range, alignment, size, and guard-gap rules.
+    VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE
 } VmLayoutStatus;
 
 /// Describes a failed automatic layout-policy calculation.
@@ -194,9 +207,13 @@ typedef struct VmLayoutPolicy {
     uint32_t region_alignment;
     /// Required guard gap in bytes between regions for future layout modes.
     uint32_t guard_gap_size;
+    /// Inclusive lower bound for randomized region-base placement.
+    uint32_t random_base_min;
+    /// Exclusive upper bound for randomized region-base placement.
+    uint32_t random_base_limit;
     /// Whether @ref random_seed contains a caller-selected seed.
     bool has_random_seed;
-    /// Optional seed placeholder for future seeded randomized layout phases.
+    /// Seed used by seeded/fresh randomized layout placement.
     uint32_t random_seed;
     /// Region bounds, defaults, minimums, and maximums indexed by VmLayoutRegionKind.
     VmLayoutRegionPolicy regions[VM_LAYOUT_REGION_COUNT];
@@ -223,7 +240,7 @@ const VmLayoutRegionPolicy *vm_layout_policy_get_region(const VmLayoutPolicy *po
 /// @return true when the range is valid and @p out_size was written.
 bool vm_layout_region_size(const VmLayoutRegionPolicy *region, uint32_t *out_size);
 
-/// Validates a layout policy for supported fixed or automatic layout modes.
+/// Validates a layout policy for supported fixed, automatic, or randomized modes.
 ///
 /// @param policy Layout policy to validate.
 /// @return true when the policy can initialize VM memory safely.
@@ -244,6 +261,29 @@ bool vm_layout_policy_is_valid(const VmLayoutPolicy *policy);
 VmLayoutStatus vm_layout_build_automatic_policy(
     const VmLayoutPolicy *base_policy,
     const VmLayoutProgramMetadata *metadata,
+    VmLayoutPolicy *out_policy,
+    VmLayoutDiagnostic *out_diagnostic
+);
+
+/// Builds a seeded or fresh randomized layout policy from program metadata.
+///
+/// The function first computes automatic deterministic region sizes, then places
+/// regions at aligned non-overlapping bases inside the policy randomized range.
+/// For VM_LAYOUT_MODE_SEEDED_RANDOMIZED, @p base_policy supplies the seed when
+/// has_random_seed is true, otherwise @ref VM_LAYOUT_DEFAULT_RANDOM_SEED is used.
+/// For VM_LAYOUT_MODE_FRESH_RANDOMIZED, a generated seed is stored in the output
+/// policy so the run can be reproduced later.
+///
+/// @param base_policy Optional policy containing limits, defaults, range, and seed.
+/// @param metadata Program metadata used for automatic sizing.
+/// @param randomized_mode VM_LAYOUT_MODE_SEEDED_RANDOMIZED or VM_LAYOUT_MODE_FRESH_RANDOMIZED.
+/// @param out_policy Receives the computed randomized policy on success.
+/// @param out_diagnostic Optional structured diagnostic for failures.
+/// @return VM_LAYOUT_STATUS_OK on success, otherwise a status describing failure.
+VmLayoutStatus vm_layout_build_randomized_policy(
+    const VmLayoutPolicy *base_policy,
+    const VmLayoutProgramMetadata *metadata,
+    VmLayoutMode randomized_mode,
     VmLayoutPolicy *out_policy,
     VmLayoutDiagnostic *out_diagnostic
 );

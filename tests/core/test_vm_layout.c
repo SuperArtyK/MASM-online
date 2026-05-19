@@ -1,10 +1,10 @@
 /*
  * @file test_vm_layout.c
- * @brief Unit tests for the memory layout policy object through Phase 34.
+ * @brief Unit tests for the memory layout policy object through Phase 35.
  *
  * These tests verify that the explicit layout policy preserves the fixed
  * educational memory layout exactly while adding automatic deterministic sizing
- * and stack/heap size metadata
+ * stack/heap size metadata, and seeded/fresh randomized region placement
  * for test/configuration-selected layout policies.
  */
 
@@ -557,7 +557,205 @@ static int test_phase34_automatic_layout_rejects_heap_and_stack_policy_limits(vo
     return failures;
 }
 
-/// Test entry point for layout-policy tests through Phase 34.
+
+/// Fills representative program metadata for randomized layout tests.
+///
+/// @param metadata Metadata object to initialize.
+static void fill_randomized_layout_test_metadata(VmLayoutProgramMetadata *metadata) {
+    if (metadata == NULL) {
+        return;
+    }
+
+    memset(metadata, 0, sizeof(*metadata));
+    metadata->code_size = 3U;
+    metadata->initialized_data_size = 16U;
+    metadata->uninitialized_data_size = 8U;
+    metadata->const_size = 4U;
+    metadata->has_heap_size_request = true;
+    metadata->heap_size_request = 8192U;
+    metadata->has_stack_size_request = true;
+    metadata->stack_size_request = 4096U;
+}
+
+/// Verifies one randomized policy satisfies alignment, order, and guard-gap rules.
+///
+/// @param policy Policy to inspect.
+/// @return Number of failures.
+static int verify_randomized_policy_ranges(const VmLayoutPolicy *policy) {
+    int failures = 0;
+    size_t index = 0U;
+
+    if (policy == NULL) {
+        return record_failure("randomized policy should not be NULL");
+    }
+
+    failures += expect_bool(vm_layout_policy_is_valid(policy), true, "randomized policy should validate");
+    for (index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        const VmLayoutRegionPolicy *region = &policy->regions[index];
+        uint32_t size = 0U;
+        failures += expect_bool(vm_layout_region_size(region, &size), true, "randomized region size should be readable");
+        failures += expect_bool(region->base >= policy->random_base_min, true, "randomized region base should be inside configured range");
+        failures += expect_bool(region->limit <= policy->random_base_limit, true, "randomized region limit should be inside configured range");
+        failures += expect_u32(region->base % policy->region_alignment, 0U, "randomized region base should be aligned");
+        failures += expect_bool(size >= region->minimum_size, true, "randomized region should satisfy minimum size");
+        if (index + 1U < (size_t)VM_LAYOUT_REGION_COUNT) {
+            const VmLayoutRegionPolicy *next = &policy->regions[index + 1U];
+            failures += expect_bool(region->limit <= next->base, true, "randomized regions should not overlap");
+            failures += expect_bool((uint64_t)region->limit + (uint64_t)policy->guard_gap_size <= (uint64_t)next->base, true, "randomized regions should satisfy guard gap");
+        }
+    }
+
+    return failures;
+}
+
+/// Verifies seeded randomized layout is reproducible for the same seed.
+///
+/// @return Number of failures.
+static int test_phase35_seeded_randomized_layout_is_reproducible(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy first_policy;
+    VmLayoutPolicy second_policy;
+
+    fill_randomized_layout_test_metadata(&metadata);
+    memset(&first_policy, 0, sizeof(first_policy));
+    memset(&second_policy, 0, sizeof(second_policy));
+    base_policy.has_random_seed = true;
+    base_policy.random_seed = 0x12345678U;
+
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &first_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "first seeded randomized layout should build");
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &second_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "second seeded randomized layout should build");
+    failures += expect_u32((uint32_t)first_policy.mode, (uint32_t)VM_LAYOUT_MODE_SEEDED_RANDOMIZED, "seeded randomized policy should record mode");
+    failures += expect_bool(first_policy.has_random_seed, true, "seeded randomized policy should record seed availability");
+    failures += expect_u32(first_policy.random_seed, 0x12345678U, "seeded randomized policy should preserve caller seed");
+    failures += verify_randomized_policy_ranges(&first_policy);
+
+    for (size_t index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        failures += expect_u32(first_policy.regions[index].base, second_policy.regions[index].base, "same seeded layout should produce identical region base");
+        failures += expect_u32(first_policy.regions[index].limit, second_policy.regions[index].limit, "same seeded layout should produce identical region limit");
+    }
+
+    return failures;
+}
+
+/// Verifies distinct deterministic seeds produce distinct randomized bases.
+///
+/// @return Number of failures.
+static int test_phase35_distinct_seeded_randomized_layouts_differ(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy seed_one_policy;
+    VmLayoutPolicy seed_two_policy;
+    bool any_base_differs = false;
+
+    fill_randomized_layout_test_metadata(&metadata);
+    memset(&seed_one_policy, 0, sizeof(seed_one_policy));
+    memset(&seed_two_policy, 0, sizeof(seed_two_policy));
+
+    base_policy.has_random_seed = true;
+    base_policy.random_seed = 0x00000001U;
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &seed_one_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "seed 1 randomized layout should build");
+
+    base_policy.random_seed = 0x00000002U;
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &seed_two_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "seed 2 randomized layout should build");
+
+    for (size_t index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        if (seed_one_policy.regions[index].base != seed_two_policy.regions[index].base) {
+            any_base_differs = true;
+        }
+    }
+    failures += expect_bool(any_base_differs, true, "two fixed randomized seeds should differ for at least one region base");
+
+    return failures;
+}
+
+/// Verifies fresh randomized layout records a generated seed.
+///
+/// @return Number of failures.
+static int test_phase35_fresh_randomized_layout_records_generated_seed(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy fresh_policy;
+
+    fill_randomized_layout_test_metadata(&metadata);
+    memset(&fresh_policy, 0, sizeof(fresh_policy));
+
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_FRESH_RANDOMIZED, &fresh_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "fresh randomized layout should build");
+    failures += expect_u32((uint32_t)fresh_policy.mode, (uint32_t)VM_LAYOUT_MODE_FRESH_RANDOMIZED, "fresh randomized policy should record mode");
+    failures += expect_bool(fresh_policy.has_random_seed, true, "fresh randomized policy should record generated seed availability");
+    failures += expect_bool(fresh_policy.random_seed != 0U, true, "fresh randomized policy should record a nonzero generated seed");
+    failures += verify_randomized_policy_ranges(&fresh_policy);
+
+    return failures;
+}
+
+/// Verifies randomized layout reports unavailable when the configured range cannot fit regions.
+///
+/// @return Number of failures.
+static int test_phase35_randomized_layout_reports_unavailable_range(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy randomized_policy;
+    VmLayoutDiagnostic diagnostic;
+
+    fill_randomized_layout_test_metadata(&metadata);
+    memset(&randomized_policy, 0, sizeof(randomized_policy));
+    memset(&diagnostic, 0, sizeof(diagnostic));
+
+    base_policy.has_random_seed = true;
+    base_policy.random_seed = 1U;
+    base_policy.random_base_min = 0x01000000U;
+    base_policy.random_base_limit = base_policy.random_base_min + base_policy.region_alignment;
+
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &randomized_policy, &diagnostic), (uint32_t)VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE, "too-small randomized range should report unavailable");
+    failures += expect_u32((uint32_t)diagnostic.status, (uint32_t)VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE, "unavailable randomized range diagnostic should record status");
+    failures += expect_bool(diagnostic.total_size > diagnostic.total_limit, true, "unavailable randomized range diagnostic should report total span and limit");
+
+    return failures;
+}
+
+/// Verifies memory initialization consumes randomized region bases and preserves permissions.
+///
+/// @return Number of failures.
+static int test_phase35_randomized_memory_initialization_uses_selected_bases(void) {
+    int failures = 0;
+    VmLayoutPolicy base_policy = vm_layout_default_policy();
+    VmLayoutProgramMetadata metadata;
+    VmLayoutPolicy randomized_policy;
+    VmMemory memory;
+    const VmMemoryRegion *data_region = NULL;
+    const VmMemoryRegion *const_region = NULL;
+
+    fill_randomized_layout_test_metadata(&metadata);
+    memset(&randomized_policy, 0, sizeof(randomized_policy));
+    base_policy.has_random_seed = true;
+    base_policy.random_seed = 0xCAFEBABEU;
+
+    failures += expect_u32((uint32_t)vm_layout_build_randomized_policy(&base_policy, &metadata, VM_LAYOUT_MODE_SEEDED_RANDOMIZED, &randomized_policy, NULL), (uint32_t)VM_LAYOUT_STATUS_OK, "randomized policy for memory init should build");
+    if (vm_memory_init_with_layout_policy(&memory, &randomized_policy) != VM_MEMORY_STATUS_OK) {
+        return failures + record_failure("memory should initialize from randomized policy");
+    }
+
+    data_region = vm_memory_get_region(&memory, VM_MEMORY_REGION_DATA);
+    const_region = vm_memory_get_region(&memory, VM_MEMORY_REGION_CONST);
+    if (data_region == NULL || const_region == NULL) {
+        failures += record_failure("randomized data and const regions should exist");
+    } else {
+        failures += expect_u32(data_region->base, randomized_policy.regions[VM_LAYOUT_REGION_DATA].base, "memory data region should use randomized base");
+        failures += expect_u32(const_region->base, randomized_policy.regions[VM_LAYOUT_REGION_CONST].base, "memory const region should use randomized base");
+        failures += expect_bool(vm_memory_region_has_permission(data_region, VM_MEMORY_PERMISSION_WRITE), true, "randomized data region should remain writable");
+        failures += expect_bool(vm_memory_region_has_permission(const_region, VM_MEMORY_PERMISSION_WRITE), false, "randomized const region should remain read-only");
+    }
+
+    vm_memory_deinit(&memory);
+    return failures;
+}
+
+/// Test entry point for layout-policy tests through Phase 35.
 ///
 /// @return Zero when all tests pass, otherwise one.
 int main(void) {
@@ -577,12 +775,17 @@ int main(void) {
     failures += test_phase34_automatic_layout_uses_policy_default_heap_and_stack_requests();
     failures += test_phase34_automatic_layout_uses_configured_heap_and_stack_requests();
     failures += test_phase34_automatic_layout_rejects_heap_and_stack_policy_limits();
+    failures += test_phase35_seeded_randomized_layout_is_reproducible();
+    failures += test_phase35_distinct_seeded_randomized_layouts_differ();
+    failures += test_phase35_fresh_randomized_layout_records_generated_seed();
+    failures += test_phase35_randomized_layout_reports_unavailable_range();
+    failures += test_phase35_randomized_memory_initialization_uses_selected_bases();
 
     if (failures != 0) {
-        fprintf(stderr, "Phase 34 layout policy tests failed: %d failure(s)\n", failures);
+        fprintf(stderr, "Phase 35 layout policy tests failed: %d failure(s)\n", failures);
         return 1;
     }
 
-    puts("Phase 34 layout policy tests passed.");
+    puts("Phase 35 layout policy tests passed.");
     return 0;
 }

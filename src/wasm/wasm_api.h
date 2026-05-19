@@ -46,6 +46,21 @@ const char *masm32_sim_wasm_run_source_json(const char *source);
 /// @return Pointer to a null-terminated JSON result string.
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy);
 
+/// Parses and executes source using seeded or fresh randomized layout placement.
+///
+/// This test/configuration-facing helper keeps the normal browser export in
+/// fixed-layout mode while allowing native tests to verify randomized region
+/// bases and relocation. @p randomized_mode must be
+/// VM_LAYOUT_MODE_SEEDED_RANDOMIZED or VM_LAYOUT_MODE_FRESH_RANDOMIZED.
+/// Passing NULL for @p base_policy uses @ref vm_layout_default_policy. The
+/// returned JSON includes layout metadata for randomized runs.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param randomized_mode Randomized layout mode to select.
+/// @param base_policy Optional policy supplying limits/defaults/range/seed.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy);
+
 /// Copies the simulator version string through the WebAssembly export boundary.
 ///
 /// @param out_buffer Destination buffer owned by the caller.

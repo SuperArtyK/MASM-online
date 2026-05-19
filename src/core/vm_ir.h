@@ -72,6 +72,17 @@ typedef enum VmIrOperandKind {
     VM_IR_OPERAND_MEMORY_REGISTER
 } VmIrOperandKind;
 
+
+/// Identifies the section base that should relocate an address-valued IR operand.
+typedef enum VmIrRelocationKind {
+    /// Operand contains no relocatable address and must be interpreted literally.
+    VM_IR_RELOCATION_NONE = 0,
+    /// Operand contains an address relative to the writable `.data` / `.DATA?` region.
+    VM_IR_RELOCATION_DATA,
+    /// Operand contains an address relative to the read-only `.CONST` region.
+    VM_IR_RELOCATION_CONST
+} VmIrRelocationKind;
+
 /// Describes one minimal IR operand.
 typedef struct VmIrOperand {
     /// Operand representation kind.
@@ -84,6 +95,8 @@ typedef struct VmIrOperand {
     VmRegister reg;
     /// Absolute address for VM_IR_OPERAND_MEMORY_ADDRESS, or static base address for VM_IR_OPERAND_MEMORY_REGISTER.
     uint32_t address;
+    /// Relocation section for address-valued operands that came from data symbols or OFFSET.
+    VmIrRelocationKind relocation;
 } VmIrOperand;
 
 /// Describes one minimal IR instruction with source metadata.
@@ -143,6 +156,17 @@ VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits);
 /// @param width_bits Operand width in bits, or zero when parser validation will infer it.
 /// @return Register-indirect memory operand descriptor.
 VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t displacement, uint32_t static_address, uint8_t width_bits);
+
+/// Returns a copy of an operand marked with address relocation metadata.
+///
+/// The relocation marker is consumed by loader/source-run code before execution
+/// when a non-fixed memory layout is selected. Literal immediates keep
+/// VM_IR_RELOCATION_NONE so hardcoded addresses remain hardcoded.
+///
+/// @param operand Operand to copy and mark.
+/// @param relocation Relocation section for the address-valued operand.
+/// @return Operand copy with relocation metadata applied.
+VmIrOperand vm_ir_operand_with_relocation(VmIrOperand operand, VmIrRelocationKind relocation);
 
 /// Returns an IR instruction with preserved source metadata.
 ///

@@ -1481,8 +1481,8 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
     const VmIrInstruction program[] = {
         {
             VM_IR_OPCODE_MOV,
-            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U},
-            {VM_IR_OPERAND_IMMEDIATE, 32U, 20U, VM_REGISTER_COUNT, 0U},
+            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+            {VM_IR_OPERAND_IMMEDIATE, 32U, 20U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
             "milestone4.asm",
             1U,
             "mov eax, 20",
@@ -1490,8 +1490,8 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         },
         {
             VM_IR_OPCODE_ADD,
-            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U},
-            {VM_IR_OPERAND_IMMEDIATE, 32U, 22U, VM_REGISTER_COUNT, 0U},
+            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+            {VM_IR_OPERAND_IMMEDIATE, 32U, 22U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
             "milestone4.asm",
             2U,
             "add eax, 22",

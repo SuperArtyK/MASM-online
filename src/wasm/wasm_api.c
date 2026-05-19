@@ -131,8 +131,10 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
-/// Describes one source-mapped automatic layout resource-limit message.
+/// Describes one source-mapped layout failure message.
 typedef struct Masm32SimWasmLayoutMessage {
+    /// Stable diagnostic code used by Simulator Messages.
+    const char *code;
     /// Human-readable diagnostic message.
     char message[256];
     /// One-based source line, or zero when unavailable.
@@ -962,6 +964,66 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     );
 }
 
+/// Appends one layout region object to the source-run JSON response.
+///
+/// @param writer Writer to mutate.
+/// @param name Stable region name.
+/// @param region Region policy to serialize.
+/// @return true when the region fit without overflowing the buffer.
+static bool masm32_sim_json_append_layout_region(Masm32SimJsonWriter *writer, const char *name, const VmLayoutRegionPolicy *region) {
+    uint32_t size = 0U;
+
+    if (writer == NULL || region == NULL || !vm_layout_region_size(region, &size)) {
+        return false;
+    }
+
+    if (!masm32_sim_json_append(writer, "\"") || !masm32_sim_json_append(writer, "%s", name) || !masm32_sim_json_append(writer, "\":{\"base\":%u,\"limit\":%u,\"size\":%u}", (unsigned int)region->base, (unsigned int)region->limit, (unsigned int)size)) {
+        return false;
+    }
+
+    return true;
+}
+
+/// Appends optional randomized layout metadata to the source-run JSON response.
+///
+/// @param writer Writer to mutate.
+/// @param layout_policy Selected randomized layout policy, or NULL to omit metadata.
+/// @return true when metadata was omitted or appended successfully.
+static bool masm32_sim_json_append_layout_metadata(Masm32SimJsonWriter *writer, const VmLayoutPolicy *layout_policy) {
+    const char *mode_name = NULL;
+
+    if (writer == NULL) {
+        return false;
+    }
+    if (layout_policy == NULL) {
+        return true;
+    }
+
+    mode_name = vm_layout_mode_name(layout_policy->mode);
+    if (mode_name == NULL) {
+        mode_name = "unknown";
+    }
+
+    if (!masm32_sim_json_append(writer, "\"layout\":{\"mode\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, mode_name)) {
+        return false;
+    }
+    if (!masm32_sim_json_append(writer, ",\"seed\":%u,\"hasSeed\":%s,\"regions\":{", (unsigned int)layout_policy->random_seed, layout_policy->has_random_seed ? "true" : "false")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_layout_region(writer, "code", &layout_policy->regions[VM_LAYOUT_REGION_CODE]) || !masm32_sim_json_append(writer, ",") ||
+        !masm32_sim_json_append_layout_region(writer, "data", &layout_policy->regions[VM_LAYOUT_REGION_DATA]) || !masm32_sim_json_append(writer, ",") ||
+        !masm32_sim_json_append_layout_region(writer, "const", &layout_policy->regions[VM_LAYOUT_REGION_CONST]) || !masm32_sim_json_append(writer, ",") ||
+        !masm32_sim_json_append_layout_region(writer, "heap", &layout_policy->regions[VM_LAYOUT_REGION_HEAP]) || !masm32_sim_json_append(writer, ",") ||
+        !masm32_sim_json_append_layout_region(writer, "stack", &layout_policy->regions[VM_LAYOUT_REGION_STACK])) {
+        return false;
+    }
+
+    return masm32_sim_json_append(writer, "}},");
+}
+
 /// Builds a full JSON response into the static source-run buffer.
 ///
 /// @param outcome High-level result outcome.
@@ -970,6 +1032,8 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
 /// @param parser_diagnostics Optional parser diagnostic array.
 /// @param exec_status Executor status when relevant.
 /// @param storage Optional source-run storage containing symbol-aware memory changes.
+/// @param layout_policy Optional selected randomized layout policy to serialize.
+/// @param layout_message Optional layout failure message to serialize.
 /// @return Pointer to the static JSON response buffer.
 static const char *masm32_sim_wasm_build_run_json(
     Masm32SimWasmRunOutcome outcome,
@@ -978,6 +1042,7 @@ static const char *masm32_sim_wasm_build_run_json(
     const VmParserDiagnostic *parser_diagnostics,
     VmExecStatus exec_status,
     const Masm32SimWasmRunStorage *storage,
+    const VmLayoutPolicy *layout_policy,
     const Masm32SimWasmLayoutMessage *layout_message
 ) {
     Masm32SimJsonWriter writer;
@@ -993,6 +1058,7 @@ static const char *masm32_sim_wasm_build_run_json(
     (void)masm32_sim_json_append(&writer, "{\"phase\":30,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
+    (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
 
     if (vm != NULL) {
         (void)masm32_sim_json_append_registers(&writer, &vm->cpu);
@@ -1022,10 +1088,11 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_RESOURCE_LIMIT) {
         const char *message = layout_message != NULL ? layout_message->message : "Automatic layout exceeded the configured resource limits.";
+        const char *code = layout_message != NULL && layout_message->code != NULL ? layout_message->code : "resource-limit-exceeded";
         (void)masm32_sim_json_append_message_with_span(
             &writer,
             "resource-limit-error",
-            "resource-limit-exceeded",
+            code,
             message,
             layout_message != NULL ? layout_message->line : 0U,
             layout_message != NULL ? layout_message->column : 0U,
@@ -1244,6 +1311,7 @@ static void masm32_sim_wasm_build_layout_message(
     }
 
     memset(out_message, 0, sizeof(*out_message));
+    out_message->code = "resource-limit-exceeded";
     if (diagnostic == NULL) {
         (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout exceeded the configured resource limits.");
         return;
@@ -1269,6 +1337,15 @@ static void masm32_sim_wasm_build_layout_message(
         );
     } else if (diagnostic->status == VM_LAYOUT_STATUS_INTEGER_OVERFLOW) {
         (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout size calculation overflowed.");
+    } else if (diagnostic->status == VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE) {
+        out_message->code = "randomization-unavailable";
+        (void)snprintf(
+            out_message->message,
+            sizeof(out_message->message),
+            "Randomized layout could not place %u bytes inside the configured %u-byte address range.",
+            (unsigned int)diagnostic->total_size,
+            (unsigned int)diagnostic->total_limit
+        );
     } else {
         (void)snprintf(out_message->message, sizeof(out_message->message), "Automatic layout policy was invalid.");
     }
@@ -1293,33 +1370,206 @@ static void masm32_sim_wasm_build_layout_message(
     }
 }
 
-/// Parses, optionally applies automatic layout sizing, and executes source.
+/// Returns fixed and selected bases for an IR relocation kind.
+///
+/// @param relocation Relocation kind to resolve.
+/// @param policy Selected layout policy containing randomized bases.
+/// @param out_fixed_base Receives the fixed-layout base encoded by the parser.
+/// @param out_selected_base Receives the selected layout base.
+/// @param out_selected_limit Receives the selected layout exclusive limit.
+/// @return true when the relocation kind maps to a relocatable region.
+static bool masm32_sim_wasm_get_relocation_bases(
+    VmIrRelocationKind relocation,
+    const VmLayoutPolicy *policy,
+    uint32_t *out_fixed_base,
+    uint32_t *out_selected_base,
+    uint32_t *out_selected_limit
+) {
+    if (policy == NULL || out_fixed_base == NULL || out_selected_base == NULL || out_selected_limit == NULL) {
+        return false;
+    }
+
+    if (relocation == VM_IR_RELOCATION_DATA) {
+        *out_fixed_base = VM_MEMORY_DEFAULT_DATA_BASE;
+        *out_selected_base = policy->regions[VM_LAYOUT_REGION_DATA].base;
+        *out_selected_limit = policy->regions[VM_LAYOUT_REGION_DATA].limit;
+        return true;
+    }
+
+    if (relocation == VM_IR_RELOCATION_CONST) {
+        *out_fixed_base = VM_MEMORY_DEFAULT_CONST_BASE;
+        *out_selected_base = policy->regions[VM_LAYOUT_REGION_CONST].base;
+        *out_selected_limit = policy->regions[VM_LAYOUT_REGION_CONST].limit;
+        return true;
+    }
+
+    return false;
+}
+
+/// Relocates a parser-fixed address into the selected layout region.
+///
+/// @param fixed_address Address produced by the parser against fixed bases.
+/// @param fixed_base Fixed base corresponding to the address section.
+/// @param selected_base Selected runtime base for the section.
+/// @param selected_limit Selected runtime exclusive limit for the section.
+/// @param out_address Receives the relocated address.
+/// @return true when the relocated address fits inside the selected region.
+static bool masm32_sim_wasm_relocate_address(
+    uint32_t fixed_address,
+    uint32_t fixed_base,
+    uint32_t selected_base,
+    uint32_t selected_limit,
+    uint32_t *out_address
+) {
+    uint32_t offset = 0U;
+    uint32_t relocated = 0U;
+
+    if (out_address == NULL || fixed_address < fixed_base || selected_base >= selected_limit) {
+        return false;
+    }
+
+    offset = fixed_address - fixed_base;
+    if (offset > UINT32_MAX - selected_base) {
+        return false;
+    }
+
+    relocated = selected_base + offset;
+    if (relocated >= selected_limit) {
+        return false;
+    }
+
+    *out_address = relocated;
+    return true;
+}
+
+/// Applies selected-layout relocation metadata to one IR operand.
+///
+/// @param operand Operand to mutate.
+/// @param policy Selected randomized layout policy.
+/// @return true when the operand was unrelocated or relocated successfully.
+static bool masm32_sim_wasm_relocate_operand(VmIrOperand *operand, const VmLayoutPolicy *policy) {
+    uint32_t fixed_base = 0U;
+    uint32_t selected_base = 0U;
+    uint32_t selected_limit = 0U;
+    uint32_t relocated = 0U;
+
+    if (operand == NULL) {
+        return false;
+    }
+
+    if (operand->relocation == VM_IR_RELOCATION_NONE) {
+        return true;
+    }
+
+    if (!masm32_sim_wasm_get_relocation_bases(operand->relocation, policy, &fixed_base, &selected_base, &selected_limit)) {
+        return false;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_IMMEDIATE) {
+        if (!masm32_sim_wasm_relocate_address(operand->immediate, fixed_base, selected_base, selected_limit, &relocated)) {
+            return false;
+        }
+        operand->immediate = relocated;
+        operand->relocation = VM_IR_RELOCATION_NONE;
+        return true;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER) {
+        if (!masm32_sim_wasm_relocate_address(operand->address, fixed_base, selected_base, selected_limit, &relocated)) {
+            return false;
+        }
+        operand->address = relocated;
+        operand->relocation = VM_IR_RELOCATION_NONE;
+        return true;
+    }
+
+    return false;
+}
+
+/// Relocates parser output from fixed symbolic bases to selected runtime bases.
+///
+/// @param result Parser result containing instructions and symbol count metadata.
+/// @param storage Source-run storage containing emitted instructions and symbols.
+/// @param policy Selected randomized layout policy.
+/// @return true when all relocatable parser output was relocated successfully.
+static bool masm32_sim_wasm_relocate_parser_output(
+    const VmParserResult *result,
+    Masm32SimWasmRunStorage *storage,
+    const VmLayoutPolicy *policy
+) {
+    size_t index = 0U;
+
+    if (result == NULL || storage == NULL || policy == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < result->instruction_count; index += 1U) {
+        VmIrInstruction *instruction = &storage->instructions[index];
+        if (!masm32_sim_wasm_relocate_operand(&instruction->destination, policy) ||
+            !masm32_sim_wasm_relocate_operand(&instruction->source, policy)) {
+            return false;
+        }
+    }
+
+    for (index = 0U; index < result->symbol_count; index += 1U) {
+        VmSymbol *symbol = &storage->symbols[index];
+        VmIrRelocationKind relocation = VM_IR_RELOCATION_NONE;
+        uint32_t fixed_base = 0U;
+        uint32_t selected_base = 0U;
+        uint32_t selected_limit = 0U;
+        uint32_t relocated = 0U;
+
+        if (symbol->section == VM_SYMBOL_SECTION_CONST) {
+            relocation = VM_IR_RELOCATION_CONST;
+        } else if (symbol->section == VM_SYMBOL_SECTION_DATA || symbol->section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED) {
+            relocation = VM_IR_RELOCATION_DATA;
+        }
+
+        if (relocation == VM_IR_RELOCATION_NONE) {
+            continue;
+        }
+
+        if (!masm32_sim_wasm_get_relocation_bases(relocation, policy, &fixed_base, &selected_base, &selected_limit) ||
+            !masm32_sim_wasm_relocate_address(symbol->address, fixed_base, selected_base, selected_limit, &relocated)) {
+            return false;
+        }
+        symbol->address = relocated;
+    }
+
+    return true;
+}
+
+/// Parses, optionally applies policy-selected layout, and executes source.
 ///
 /// @param source Source text to run.
-/// @param use_automatic_layout Whether to compute automatic layout sizes.
-/// @param base_policy Optional base policy for automatic layout mode.
+/// @param requested_layout_mode Fixed, automatic, seeded-randomized, or fresh-randomized layout mode.
+/// @param base_policy Optional base policy for non-fixed layout modes.
 /// @return Pointer to the static JSON result buffer.
-static const char *masm32_sim_wasm_run_source_json_internal(const char *source, bool use_automatic_layout, const VmLayoutPolicy *base_policy) {
+static const char *masm32_sim_wasm_run_source_json_internal(const char *source, VmLayoutMode requested_layout_mode, const VmLayoutPolicy *base_policy) {
     VmParserConfig config;
     VmParserResult parser_result;
     Vm vm;
     VmExecStatus exec_status = VM_EXEC_STATUS_OK;
     VmParserStatus parser_status = VM_PARSER_STATUS_OK;
-    VmLayoutPolicy automatic_policy;
+    VmLayoutPolicy selected_policy;
     VmLayoutProgramMetadata layout_metadata;
     VmLayoutDiagnostic layout_diagnostic;
     Masm32SimWasmLayoutMessage layout_message;
+    const VmLayoutPolicy *runtime_policy = NULL;
+    const VmLayoutPolicy *json_layout_policy = NULL;
     bool vm_initialized = false;
+    bool use_policy_layout = requested_layout_mode != VM_LAYOUT_MODE_FIXED;
+    bool use_randomized_layout = requested_layout_mode == VM_LAYOUT_MODE_SEEDED_RANDOMIZED || requested_layout_mode == VM_LAYOUT_MODE_FRESH_RANDOMIZED;
 
     if (source == NULL) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL);
     }
 
     memset(&g_masm32_sim_wasm_run_storage, 0, sizeof(g_masm32_sim_wasm_run_storage));
     memset(&config, 0, sizeof(config));
     memset(&parser_result, 0, sizeof(parser_result));
     memset(&vm, 0, sizeof(vm));
-    memset(&automatic_policy, 0, sizeof(automatic_policy));
+    memset(&selected_policy, 0, sizeof(selected_policy));
     memset(&layout_metadata, 0, sizeof(layout_metadata));
     memset(&layout_diagnostic, 0, sizeof(layout_diagnostic));
     memset(&layout_message, 0, sizeof(layout_message));
@@ -1352,14 +1602,21 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
             g_masm32_sim_wasm_run_storage.parser_diagnostics,
             VM_EXEC_STATUS_INVALID_ARGUMENT,
             &g_masm32_sim_wasm_run_storage,
+            NULL,
             NULL
         );
     }
 
-    if (use_automatic_layout) {
+    if (use_policy_layout) {
         VmLayoutStatus layout_status = VM_LAYOUT_STATUS_OK;
         masm32_sim_wasm_build_layout_metadata(&parser_result, &g_masm32_sim_wasm_run_storage, &layout_metadata);
-        layout_status = vm_layout_build_automatic_policy(base_policy, &layout_metadata, &automatic_policy, &layout_diagnostic);
+        if (use_randomized_layout) {
+            layout_status = vm_layout_build_randomized_policy(base_policy, &layout_metadata, requested_layout_mode, &selected_policy, &layout_diagnostic);
+            json_layout_policy = &selected_policy;
+        } else {
+            layout_status = vm_layout_build_automatic_policy(base_policy, &layout_metadata, &selected_policy, &layout_diagnostic);
+        }
+
         if (!vm_layout_status_succeeded(layout_status)) {
             masm32_sim_wasm_build_layout_message(&parser_result, &g_masm32_sim_wasm_run_storage, &layout_diagnostic, &layout_message);
             return masm32_sim_wasm_build_run_json(
@@ -1369,29 +1626,36 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
                 NULL,
                 VM_EXEC_STATUS_INVALID_ARGUMENT,
                 &g_masm32_sim_wasm_run_storage,
+                NULL,
                 &layout_message
             );
         }
-        exec_status = vm_init_with_layout_policy(&vm, &automatic_policy);
+
+        if (use_randomized_layout && !masm32_sim_wasm_relocate_parser_output(&parser_result, &g_masm32_sim_wasm_run_storage, &selected_policy)) {
+            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        }
+
+        runtime_policy = &selected_policy;
+        exec_status = vm_init_with_layout_policy(&vm, runtime_policy);
     } else {
         exec_status = vm_init(&vm, NULL);
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
     }
     vm_initialized = true;
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         vm_deinit(&vm);
         return json;
     }
@@ -1412,7 +1676,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -1420,7 +1684,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
     }
 
     {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, NULL, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, NULL, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -1429,11 +1693,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, false, NULL);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, true, base_policy);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy);
+}
+
+const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

@@ -18,6 +18,7 @@ VmIrOperand vm_ir_operand_none(void) {
     operand.immediate = 0U;
     operand.reg = VM_REGISTER_COUNT;
     operand.address = 0U;
+    operand.relocation = VM_IR_RELOCATION_NONE;
 
     return operand;
 }
@@ -61,6 +62,17 @@ VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t disp
     operand.reg = base_register;
     operand.address = static_address;
 
+    return operand;
+}
+
+
+/// Returns an operand copy with relocation metadata applied.
+///
+/// @param operand Operand to copy.
+/// @param relocation Relocation marker to attach.
+/// @return Relocatable operand copy.
+VmIrOperand vm_ir_operand_with_relocation(VmIrOperand operand, VmIrRelocationKind relocation) {
+    operand.relocation = relocation;
     return operand;
 }
 

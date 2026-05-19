@@ -4,13 +4,16 @@
  *
  * This file centralizes fixed educational layout addresses, sizes, safety-tier
  * limits, alignment, guard-gap, stack-size, heap-size, automatic deterministic
- * sizing, and random-seed policy defaults so the loader can consume one
- * explicit layout policy object.
+ * sizing, randomized base placement, and random-seed policy defaults so the
+ * loader can consume one explicit layout policy object.
  */
 
 #include "vm_layout.h"
 
 #include <stddef.h>
+
+/// Deterministic process-local state used to generate fresh layout seeds in native builds.
+static uint32_t g_vm_layout_fresh_seed_state = 0xA341316CU;
 
 /// Initializes maximum-size values for every safety tier.
 ///
@@ -142,6 +145,48 @@ static bool vm_layout_add_u32(uint32_t left, uint32_t right, uint32_t *out_value
 
     *out_value = left + right;
     return true;
+}
+
+/// Returns true when @p mode is one of the randomized layout modes.
+///
+/// @param mode Layout mode to inspect.
+/// @return true for seeded or fresh randomized layout modes.
+static bool vm_layout_mode_is_randomized(VmLayoutMode mode) {
+    return mode == VM_LAYOUT_MODE_SEEDED_RANDOMIZED || mode == VM_LAYOUT_MODE_FRESH_RANDOMIZED;
+}
+
+/// Returns true when @p mode is supported by this layout module.
+///
+/// @param mode Layout mode to validate.
+/// @return true when the mode can be validated or built.
+static bool vm_layout_mode_is_supported(VmLayoutMode mode) {
+    return mode == VM_LAYOUT_MODE_FIXED || mode == VM_LAYOUT_MODE_AUTOMATIC || vm_layout_mode_is_randomized(mode);
+}
+
+/// Mixes a 32-bit seed into a deterministic pseudorandom value.
+///
+/// @param seed Input seed.
+/// @return Mixed deterministic value suitable for selecting layout slots.
+static uint32_t vm_layout_mix_seed(uint32_t seed) {
+    uint32_t value = seed == 0U ? 0x6D2B79F5U : seed;
+
+    value ^= value >> 16U;
+    value *= 0x7FEB352DU;
+    value ^= value >> 15U;
+    value *= 0x846CA68BU;
+    value ^= value >> 16U;
+    return value;
+}
+
+/// Generates a fresh deterministic seed for test/configuration-selected runs.
+///
+/// @return Nonzero generated seed recorded in the randomized layout policy.
+static uint32_t vm_layout_generate_fresh_seed(void) {
+    g_vm_layout_fresh_seed_state = g_vm_layout_fresh_seed_state * 1664525U + 1013904223U;
+    if (g_vm_layout_fresh_seed_state == 0U) {
+        g_vm_layout_fresh_seed_state = 0x1D872B41U;
+    }
+    return g_vm_layout_fresh_seed_state;
 }
 
 /// Rounds a size up to a requested alignment with overflow checks.
@@ -337,6 +382,8 @@ VmLayoutPolicy vm_layout_default_policy(void) {
     policy.heap_size_request = VM_LAYOUT_DEFAULT_HEAP_SIZE_REQUEST;
     policy.region_alignment = VM_LAYOUT_DEFAULT_REGION_ALIGNMENT;
     policy.guard_gap_size = VM_LAYOUT_DEFAULT_GUARD_GAP_SIZE;
+    policy.random_base_min = VM_LAYOUT_RANDOM_BASE_MIN;
+    policy.random_base_limit = VM_LAYOUT_RANDOM_BASE_LIMIT;
     policy.has_random_seed = false;
     policy.random_seed = VM_LAYOUT_DEFAULT_RANDOM_SEED;
 
@@ -402,12 +449,18 @@ bool vm_layout_policy_is_valid(const VmLayoutPolicy *policy) {
     uint64_t total_size = 0U;
     size_t index = 0U;
 
-    if (policy == NULL || (policy->mode != VM_LAYOUT_MODE_FIXED && policy->mode != VM_LAYOUT_MODE_AUTOMATIC) || !vm_layout_safety_tier_is_valid(policy->safety_tier)) {
+    if (policy == NULL || !vm_layout_mode_is_supported(policy->mode) || !vm_layout_safety_tier_is_valid(policy->safety_tier)) {
         return false;
     }
 
     if (policy->region_alignment == 0U) {
         return false;
+    }
+
+    if (vm_layout_mode_is_randomized(policy->mode)) {
+        if (policy->random_base_min >= policy->random_base_limit) {
+            return false;
+        }
     }
 
     for (index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
@@ -417,6 +470,12 @@ bool vm_layout_policy_is_valid(const VmLayoutPolicy *policy) {
 
         if (region->kind != (VmLayoutRegionKind)index || !vm_layout_region_size(region, &size)) {
             return false;
+        }
+
+        if (vm_layout_mode_is_randomized(policy->mode)) {
+            if (region->base < policy->random_base_min || region->limit > policy->random_base_limit || region->base % policy->region_alignment != 0U) {
+                return false;
+            }
         }
 
         maximum = region->maximum_size_by_tier[policy->safety_tier];
@@ -530,6 +589,168 @@ VmLayoutStatus vm_layout_build_automatic_policy(
     return VM_LAYOUT_STATUS_OK;
 }
 
+/// Computes the total randomized span required for all regions.
+///
+/// @param policy Policy providing region sizes and guard gap.
+/// @param out_span Receives total span in bytes on success.
+/// @return true when the calculation did not overflow.
+static bool vm_layout_randomized_total_span(const VmLayoutPolicy *policy, uint32_t *out_span) {
+    uint64_t total = 0U;
+    size_t index = 0U;
+
+    if (policy == NULL || out_span == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        uint32_t size = 0U;
+        if (!vm_layout_region_size(&policy->regions[index], &size)) {
+            return false;
+        }
+        total += (uint64_t)size;
+        if (index + 1U < (size_t)VM_LAYOUT_REGION_COUNT) {
+            total += (uint64_t)policy->guard_gap_size;
+        }
+        if (total > (uint64_t)UINT32_MAX) {
+            return false;
+        }
+    }
+
+    *out_span = (uint32_t)total;
+    return true;
+}
+
+/// Places already-sized regions at randomized aligned bases.
+///
+/// @param policy Policy whose regions should be placed.
+/// @param seed Seed used to select an aligned slot inside the randomized range.
+/// @param out_diagnostic Optional diagnostic for unavailable randomization.
+/// @return Layout status for placement.
+static VmLayoutStatus vm_layout_place_randomized_regions(VmLayoutPolicy *policy, uint32_t seed, VmLayoutDiagnostic *out_diagnostic) {
+    uint32_t aligned_min = 0U;
+    uint32_t total_span = 0U;
+    uint32_t available = 0U;
+    uint32_t slack = 0U;
+    uint32_t slot_count = 0U;
+    uint32_t slot_index = 0U;
+    uint32_t cursor = 0U;
+    size_t index = 0U;
+
+    if (policy == NULL || policy->region_alignment == 0U || policy->random_base_min >= policy->random_base_limit) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INVALID_ARGUMENT);
+        return VM_LAYOUT_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (!vm_layout_align_up_u32(policy->random_base_min, policy->region_alignment, &aligned_min) || aligned_min >= policy->random_base_limit) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE);
+        return VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE;
+    }
+
+    if (!vm_layout_randomized_total_span(policy, &total_span)) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INTEGER_OVERFLOW);
+        return VM_LAYOUT_STATUS_INTEGER_OVERFLOW;
+    }
+
+    available = policy->random_base_limit - aligned_min;
+    if (total_span > available) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE);
+        if (out_diagnostic != NULL) {
+            out_diagnostic->total_size = total_span;
+            out_diagnostic->total_limit = available;
+        }
+        return VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE;
+    }
+
+    slack = available - total_span;
+    slot_count = slack / policy->region_alignment + 1U;
+    slot_index = slot_count == 0U ? 0U : vm_layout_mix_seed(seed) % slot_count;
+    cursor = aligned_min + slot_index * policy->region_alignment;
+
+    for (index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        VmLayoutRegionPolicy *region = &policy->regions[index];
+        uint32_t size = 0U;
+        uint32_t limit = 0U;
+
+        if (!vm_layout_region_size(region, &size)) {
+            vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INVALID_ARGUMENT);
+            return VM_LAYOUT_STATUS_INVALID_ARGUMENT;
+        }
+        if (!vm_layout_compute_limit(cursor, size, &limit) || limit > policy->random_base_limit) {
+            vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE);
+            return VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE;
+        }
+
+        region->base = cursor;
+        region->limit = limit;
+        if (index + 1U < (size_t)VM_LAYOUT_REGION_COUNT) {
+            if (!vm_layout_add_u32(limit, policy->guard_gap_size, &cursor)) {
+                vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INTEGER_OVERFLOW);
+                return VM_LAYOUT_STATUS_INTEGER_OVERFLOW;
+            }
+        }
+    }
+
+    if (!vm_layout_policy_is_valid(policy)) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INVALID_ARGUMENT);
+        return VM_LAYOUT_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_OK);
+    return VM_LAYOUT_STATUS_OK;
+}
+
+VmLayoutStatus vm_layout_build_randomized_policy(
+    const VmLayoutPolicy *base_policy,
+    const VmLayoutProgramMetadata *metadata,
+    VmLayoutMode randomized_mode,
+    VmLayoutPolicy *out_policy,
+    VmLayoutDiagnostic *out_diagnostic
+) {
+    VmLayoutPolicy sizing_base;
+    VmLayoutPolicy policy;
+    VmLayoutStatus status = VM_LAYOUT_STATUS_OK;
+    uint32_t seed = VM_LAYOUT_DEFAULT_RANDOM_SEED;
+
+    vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_OK);
+
+    if (metadata == NULL || out_policy == NULL || !vm_layout_mode_is_randomized(randomized_mode)) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INVALID_ARGUMENT);
+        return VM_LAYOUT_STATUS_INVALID_ARGUMENT;
+    }
+
+    sizing_base = base_policy != NULL ? *base_policy : vm_layout_default_policy();
+    if (!vm_layout_mode_is_supported(sizing_base.mode) || !vm_layout_safety_tier_is_valid(sizing_base.safety_tier)) {
+        vm_layout_clear_diagnostic(out_diagnostic, VM_LAYOUT_STATUS_INVALID_ARGUMENT);
+        return VM_LAYOUT_STATUS_INVALID_ARGUMENT;
+    }
+    sizing_base.mode = VM_LAYOUT_MODE_AUTOMATIC;
+
+    status = vm_layout_build_automatic_policy(&sizing_base, metadata, &policy, out_diagnostic);
+    if (status != VM_LAYOUT_STATUS_OK) {
+        return status;
+    }
+
+    if (randomized_mode == VM_LAYOUT_MODE_FRESH_RANDOMIZED) {
+        seed = vm_layout_generate_fresh_seed();
+    } else {
+        seed = sizing_base.has_random_seed ? sizing_base.random_seed : VM_LAYOUT_DEFAULT_RANDOM_SEED;
+    }
+
+    policy.mode = randomized_mode;
+    policy.has_random_seed = true;
+    policy.random_seed = seed;
+    policy.random_base_min = sizing_base.random_base_min;
+    policy.random_base_limit = sizing_base.random_base_limit;
+
+    status = vm_layout_place_randomized_regions(&policy, seed, out_diagnostic);
+    if (status != VM_LAYOUT_STATUS_OK) {
+        return status;
+    }
+
+    *out_policy = policy;
+    return VM_LAYOUT_STATUS_OK;
+}
+
 bool vm_layout_status_succeeded(VmLayoutStatus status) {
     return status == VM_LAYOUT_STATUS_OK;
 }
@@ -544,6 +765,8 @@ const char *vm_layout_status_name(VmLayoutStatus status) {
             return "integer-overflow";
         case VM_LAYOUT_STATUS_RESOURCE_LIMIT_EXCEEDED:
             return "resource-limit-exceeded";
+        case VM_LAYOUT_STATUS_RANDOMIZATION_UNAVAILABLE:
+            return "randomization-unavailable";
         default:
             return NULL;
     }
@@ -555,6 +778,10 @@ const char *vm_layout_mode_name(VmLayoutMode mode) {
             return "fixed";
         case VM_LAYOUT_MODE_AUTOMATIC:
             return "automatic";
+        case VM_LAYOUT_MODE_SEEDED_RANDOMIZED:
+            return "seeded-randomized";
+        case VM_LAYOUT_MODE_FRESH_RANDOMIZED:
+            return "fresh-randomized";
         default:
             return NULL;
     }

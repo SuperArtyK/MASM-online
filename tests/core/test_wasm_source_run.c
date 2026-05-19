@@ -1,11 +1,11 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 34 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 35 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
  * changes as JSON, and returns
- * structured simulator messages for parse and argument errors.
+ * structured simulator messages for parse, argument, layout, and runtime errors.
  */
 
 #include <stdio.h>
@@ -2519,6 +2519,190 @@ static int test_phase34_automatic_layout_excessive_heap_size_json(void) {
     return failures;
 }
 
+
+/// Returns a deterministic randomized layout policy for source-run tests.
+///
+/// @param seed Seed to install in the returned policy.
+/// @return Layout policy configured for seeded randomized tests.
+static VmLayoutPolicy make_phase35_seeded_source_run_policy(uint32_t seed) {
+    VmLayoutPolicy policy = vm_layout_default_policy();
+    policy.has_random_seed = true;
+    policy.random_seed = seed;
+    return policy;
+}
+
+/// Verifies OFFSET-based source remains valid under seeded randomized layout.
+///
+/// @return Number of failures.
+static int test_phase35_seeded_randomized_layout_offset_program_succeeds(void) {
+    VmLayoutPolicy policy = make_phase35_seeded_source_run_policy(1U);
+    const char *json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".data\n"
+        "value DWORD 123\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+        &policy
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "seeded randomized OFFSET program should execute");
+    failures += expect_json_contains(json, "\"layout\":{\"mode\":\"seeded-randomized\"", "seeded randomized result should expose layout metadata");
+    failures += expect_json_contains(json, "\"seed\":1,\"hasSeed\":true", "seeded randomized result should expose selected seed");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "OFFSET program should load value through relocated symbol address");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "seeded randomized OFFSET program should complete");
+    failures += expect_json_not_contains(json, "\"address\":\"00500000h\"", "randomized layout should not report fixed data base for relocated symbol access");
+
+    return failures;
+}
+
+/// Verifies hardcoded fixed-layout data addresses are unreliable under randomized layout.
+///
+/// @return Number of failures.
+static int test_phase35_seeded_randomized_layout_hardcoded_data_address_fails(void) {
+    VmLayoutPolicy policy = make_phase35_seeded_source_run_policy(1U);
+    const char *json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 00500000h\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+        &policy
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "hardcoded fixed data address should not be reliable under randomized layout");
+    failures += expect_json_contains(json, "\"layout\":{\"mode\":\"seeded-randomized\"", "hardcoded-address failure should still expose randomized layout metadata");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "hardcoded-address program should fail at runtime, not parse time");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "hardcoded fixed data address should produce invalid-address under selected test seed");
+    failures += expect_json_not_contains(json, "execution-complete", "hardcoded-address failure should not report execution complete");
+
+    return failures;
+}
+
+/// Verifies .CONST permissions remain enforced after randomized relocation.
+///
+/// @return Number of failures.
+static int test_phase35_seeded_randomized_layout_const_write_stays_read_only(void) {
+    VmLayoutPolicy policy = make_phase35_seeded_source_run_policy(2U);
+    const char *json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+        &policy
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "randomized .CONST computed write should fail");
+    failures += expect_json_contains(json, "\"layout\":{\"mode\":\"seeded-randomized\"", "randomized .CONST failure should expose layout metadata");
+    failures += expect_json_contains(json, "\"code\":\"permission-denied\"", "randomized .CONST write should fail through memory permissions");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "failed randomized .CONST write should not produce memory-change rows");
+
+    return failures;
+}
+
+/// Verifies .DATA? remains writable and zero-filled after randomized relocation.
+///
+/// @return Number of failures.
+static int test_phase35_seeded_randomized_layout_data_question_writable(void) {
+    VmLayoutPolicy policy = make_phase35_seeded_source_run_policy(3U);
+    const char *json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".DATA?\n"
+        "buf BYTE 4 DUP(?)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, SIZEOF buf\n"
+        "    mov ebx, OFFSET buf\n"
+        "    mov BYTE PTR [ebx], 12h\n"
+        "    mov ecx, 0\n"
+        "    mov cl, BYTE PTR [ebx]\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+        &policy
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "randomized .DATA? program should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "randomized .DATA? SIZEOF should remain valid");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000012h\",\"unsigned\":18}", "randomized .DATA? write/read should preserve writable zero-filled storage");
+    failures += expect_json_contains(json, "\"symbol\":\"buf\"", "randomized .DATA? memory change should still resolve symbol metadata");
+    failures += expect_json_not_contains(json, "\"address\":\"00500000h\"", "randomized .DATA? symbol row should not use fixed data base");
+
+    return failures;
+}
+
+
+/// Verifies randomized source-run reports unavailable placement as a structured layout error.
+///
+/// @return Number of failures.
+static int test_phase35_randomized_layout_unavailable_source_run_json(void) {
+    VmLayoutPolicy policy = make_phase35_seeded_source_run_policy(4U);
+    const char *json = NULL;
+    int failures = 0;
+
+    policy.random_base_min = 0x01000000U;
+    policy.random_base_limit = policy.random_base_min + policy.region_alignment;
+    json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".data\n"
+        "value DWORD 123\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
+        &policy
+    );
+
+    failures += expect_json_contains(json, "\"ok\":false", "unavailable randomized layout source-run should fail");
+    failures += expect_json_contains(json, "\"status\":\"resource-limit-exceeded\"", "unavailable randomized layout should use resource-limit outcome");
+    failures += expect_json_contains(json, "\"code\":\"randomization-unavailable\"", "unavailable randomized layout should expose a specific diagnostic code");
+    failures += expect_json_contains(json, "Randomized layout could not place", "unavailable randomized layout should explain placement failure");
+    failures += expect_json_contains(json, "\"kind\":\"resource-limit-error\"", "unavailable randomized layout should use resource-limit message kind");
+    failures += expect_json_not_contains(json, "execution-complete", "unavailable randomized layout should not execute");
+
+    return failures;
+}
+
+/// Verifies fresh randomized source-run returns generated seed metadata.
+///
+/// @return Number of failures.
+static int test_phase35_fresh_randomized_layout_returns_seed_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_randomized_layout_policy(
+        ".data\n"
+        "value DWORD 77\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        VM_LAYOUT_MODE_FRESH_RANDOMIZED,
+        NULL
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "fresh randomized OFFSET program should execute");
+    failures += expect_json_contains(json, "\"layout\":{\"mode\":\"fresh-randomized\"", "fresh randomized result should expose layout metadata");
+    failures += expect_json_contains(json, "\"hasSeed\":true", "fresh randomized result should record generated seed availability");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000004Dh\",\"unsigned\":77}", "fresh randomized source-run should load value through relocated address");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -2597,6 +2781,12 @@ int main(void) {
     failures += test_phase34_automatic_layout_excessive_stack_size_json();
     failures += test_phase34_automatic_layout_uses_configured_heap_size();
     failures += test_phase34_automatic_layout_excessive_heap_size_json();
+    failures += test_phase35_seeded_randomized_layout_offset_program_succeeds();
+    failures += test_phase35_seeded_randomized_layout_hardcoded_data_address_fails();
+    failures += test_phase35_seeded_randomized_layout_const_write_stays_read_only();
+    failures += test_phase35_seeded_randomized_layout_data_question_writable();
+    failures += test_phase35_randomized_layout_unavailable_source_run_json();
+    failures += test_phase35_fresh_randomized_layout_returns_seed_metadata();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -2605,6 +2795,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 34 regression coverage passed.");
+    puts("Source execution tests through Phase 35 regression coverage passed.");
     return 0;
 }
