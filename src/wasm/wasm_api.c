@@ -69,6 +69,9 @@
 /// Maximum simulator warnings retained for one source run.
 #define MASM32_SIM_WASM_MAX_RUN_WARNINGS 64U
 
+/// Maximum allocated-object warnings retained for one source run.
+#define MASM32_SIM_WASM_MAX_OBJECT_WARNINGS 64U
+
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
@@ -135,6 +138,22 @@ typedef struct Masm32SimWasmUnalignedWarning {
     uint32_t source_line;
 } Masm32SimWasmUnalignedWarning;
 
+/// Describes one allocated-object memory validation warning returned to the UI.
+typedef struct Masm32SimWasmObjectBoundsWarning {
+    /// Stable classification assigned by the object-map range classifier.
+    VmObjectMapRangeClass range_class;
+    /// Whether the access read or wrote memory.
+    VmExecMemoryAccessKind access_kind;
+    /// First simulated address in the validated memory access range.
+    uint32_t start_address;
+    /// Inclusive final simulated address in the validated memory access range.
+    uint32_t end_address;
+    /// Number of bytes requested by the access.
+    uint32_t size_bytes;
+    /// Source line associated with the instruction, or zero when unknown.
+    uint32_t source_line;
+} Masm32SimWasmObjectBoundsWarning;
+
 /// Describes one source-mapped layout failure message.
 typedef struct Masm32SimWasmLayoutMessage {
     /// Stable diagnostic code used by Simulator Messages.
@@ -181,6 +200,10 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmUnalignedWarning warnings[MASM32_SIM_WASM_MAX_RUN_WARNINGS];
     /// Number of valid entries in @ref warnings.
     size_t warning_count;
+    /// Allocated-object memory validation warnings collected during execution.
+    Masm32SimWasmObjectBoundsWarning object_warnings[MASM32_SIM_WASM_MAX_OBJECT_WARNINGS];
+    /// Number of valid entries in @ref object_warnings.
+    size_t object_warning_count;
     /// Copied source text retained by IR instruction metadata.
     char source_text_storage[MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES];
 } Masm32SimWasmRunStorage;
@@ -694,6 +717,118 @@ static bool masm32_sim_wasm_access_is_unaligned(const VmExecMemoryAccess *access
     return access != NULL && access->status == VM_MEMORY_STATUS_OK_UNALIGNED;
 }
 
+/// Returns whether a checked memory access completed successfully.
+///
+/// @param access Checked memory access to inspect.
+/// @return true when the low-level memory helper allowed the access.
+static bool masm32_sim_wasm_access_succeeded(const VmExecMemoryAccess *access) {
+    return access != NULL && vm_memory_status_succeeded(access->status);
+}
+
+/// Returns whether an object-map classification should produce a warning.
+///
+/// @param range_class Classification to inspect.
+/// @return true when Phase 37 warning mode should emit a simulator warning.
+static bool masm32_sim_wasm_range_class_warns(VmObjectMapRangeClass range_class) {
+    return range_class == VM_OBJECT_MAP_RANGE_CLASS_REGION_GAP ||
+           range_class == VM_OBJECT_MAP_RANGE_CLASS_STARTS_IN_OBJECT ||
+           range_class == VM_OBJECT_MAP_RANGE_CLASS_ENDS_IN_OBJECT ||
+           range_class == VM_OBJECT_MAP_RANGE_CLASS_SPANS_OBJECTS;
+}
+
+/// Returns a lowercase name for one memory access kind.
+///
+/// @param kind Executor memory access kind.
+/// @return Static lowercase access kind name.
+static const char *masm32_sim_wasm_exec_memory_access_kind_name(VmExecMemoryAccessKind kind) {
+    switch (kind) {
+        case VM_EXEC_MEMORY_ACCESS_READ:
+            return "read";
+        case VM_EXEC_MEMORY_ACCESS_WRITE:
+            return "write";
+        default:
+            return "access";
+    }
+}
+
+/// Records one allocated-object warning when capacity allows it.
+///
+/// @param storage Source-run storage to mutate.
+/// @param instruction Instruction associated with the warning.
+/// @param access Checked memory access that should be classified.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+static void masm32_sim_wasm_collect_object_warning_for_access(
+    Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    const VmExecMemoryAccess *access,
+    const VmLayoutPolicy *layout_policy
+) {
+    VmObjectMapRangeClassification classification;
+    VmObjectMapStatus status = VM_OBJECT_MAP_STATUS_OK;
+    Masm32SimWasmObjectBoundsWarning *warning = NULL;
+    uint32_t size_bytes = 0U;
+
+    if (storage == NULL || instruction == NULL || access == NULL || storage->object_warning_count >= (size_t)MASM32_SIM_WASM_MAX_OBJECT_WARNINGS) {
+        return;
+    }
+    if (!masm32_sim_wasm_access_succeeded(access) || access->width_bits == 0U || (access->width_bits % 8U) != 0U) {
+        return;
+    }
+
+    size_bytes = (uint32_t)(access->width_bits / 8U);
+    status = vm_object_map_classify_range(
+        storage->object_map_entries,
+        storage->object_map_entry_count,
+        layout_policy,
+        NULL,
+        access->address,
+        size_bytes,
+        access->kind == VM_EXEC_MEMORY_ACCESS_WRITE,
+        &classification
+    );
+    if (status != VM_OBJECT_MAP_STATUS_OK || !masm32_sim_wasm_range_class_warns(classification.range_class)) {
+        return;
+    }
+
+    warning = &storage->object_warnings[storage->object_warning_count];
+    warning->range_class = classification.range_class;
+    warning->access_kind = access->kind;
+    warning->start_address = classification.start_address;
+    warning->end_address = classification.end_address;
+    warning->size_bytes = size_bytes;
+    warning->source_line = instruction->source_line;
+    storage->object_warning_count += 1U;
+}
+
+/// Collects allocated-object warnings from one successful instruction.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose last delta should be inspected.
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+static void masm32_sim_wasm_collect_object_warnings(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const VmLayoutPolicy *layout_policy
+) {
+    const VmExecDelta *delta = NULL;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL || validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS) {
+        return;
+    }
+
+    delta = vm_last_delta(vm);
+    if (delta == NULL || !delta->has_instruction) {
+        return;
+    }
+
+    for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        masm32_sim_wasm_collect_object_warning_for_access(storage, &delta->instruction, &delta->memory_accesses[index], layout_policy);
+    }
+}
+
 /// Records one unaligned memory warning when capacity allows it.
 ///
 /// @param storage Source-run storage to mutate.
@@ -774,6 +909,123 @@ static bool masm32_sim_json_append_warnings(
             return false;
         }
         if (!masm32_sim_json_append_message(writer, "simulator-warning", "unaligned-memory-access", message, warning->source_line, 0U)) {
+            return false;
+        }
+        *inout_has_message = true;
+    }
+
+    return true;
+}
+
+/// Builds user-facing text for one allocated-object warning.
+///
+/// @param warning Warning to describe.
+/// @param buffer Destination buffer for the formatted message.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_object_warning_message(
+    const Masm32SimWasmObjectBoundsWarning *warning,
+    char *buffer,
+    size_t buffer_size
+) {
+    const char *access_name = warning != NULL ? masm32_sim_wasm_exec_memory_access_kind_name(warning->access_kind) : "access";
+    const char *class_name = warning != NULL ? vm_object_map_range_class_name(warning->range_class) : NULL;
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+    if (class_name == NULL) {
+        class_name = "unknown";
+    }
+
+    if (warning == NULL) {
+        (void)snprintf(buffer, buffer_size, "Memory access escaped declared object bounds.");
+        return;
+    }
+
+    switch (warning->range_class) {
+        case VM_OBJECT_MAP_RANGE_CLASS_REGION_GAP:
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s at %08Xh for %u byte%s is inside a valid region but outside any declared data object.",
+                access_name,
+                (unsigned int)warning->start_address,
+                (unsigned int)warning->size_bytes,
+                warning->size_bytes == 1U ? "" : "s"
+            );
+            return;
+        case VM_OBJECT_MAP_RANGE_CLASS_STARTS_IN_OBJECT:
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh starts inside a declared data object and extends outside it (%s).",
+                access_name,
+                (unsigned int)warning->start_address,
+                (unsigned int)warning->end_address,
+                class_name
+            );
+            return;
+        case VM_OBJECT_MAP_RANGE_CLASS_ENDS_IN_OBJECT:
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh starts outside declared data objects and ends inside one (%s).",
+                access_name,
+                (unsigned int)warning->start_address,
+                (unsigned int)warning->end_address,
+                class_name
+            );
+            return;
+        case VM_OBJECT_MAP_RANGE_CLASS_SPANS_OBJECTS:
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh spans multiple declared data objects (%s).",
+                access_name,
+                (unsigned int)warning->start_address,
+                (unsigned int)warning->end_address,
+                class_name
+            );
+            return;
+        default:
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh crosses declared object bounds (%s).",
+                access_name,
+                (unsigned int)warning->start_address,
+                (unsigned int)warning->end_address,
+                class_name
+            );
+            return;
+    }
+}
+
+/// Appends collected allocated-object warnings to the simulatorMessages array.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing object warnings.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @return true when warnings fit without overflowing the buffer.
+static bool masm32_sim_json_append_object_warnings(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    bool *inout_has_message
+) {
+    size_t index = 0U;
+
+    if (storage == NULL || inout_has_message == NULL) {
+        return true;
+    }
+
+    for (index = 0U; index < storage->object_warning_count; index += 1U) {
+        const Masm32SimWasmObjectBoundsWarning *warning = &storage->object_warnings[index];
+        char message[256];
+        masm32_sim_wasm_format_object_warning_message(warning, message, sizeof(message));
+        if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_message(writer, "simulator-warning", "object-bounds-warning", message, warning->source_line, 0U)) {
             return false;
         }
         *inout_has_message = true;
@@ -1111,6 +1363,7 @@ static const char *masm32_sim_wasm_build_run_json(
             has_message = true;
         }
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
+        (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
@@ -1578,11 +1831,11 @@ static bool masm32_sim_wasm_relocate_parser_output(
     return true;
 }
 
-/// Builds Phase 36 declared-object map metadata from final selected-layout symbols.
+/// Builds declared-object map metadata from final selected-layout symbols.
 ///
-/// The map is retained for tests/internal tooling only. It is intentionally not
-/// serialized into default source-run JSON and does not participate in runtime
-/// validation in this phase.
+/// The map is retained for tests/internal tooling and optional memory-validation
+/// modes. It is intentionally not serialized into default source-run JSON, and
+/// region-only execution remains unchanged unless a validation mode consumes it.
 ///
 /// @param result Parser result containing symbol count metadata.
 /// @param storage Source-run storage that owns symbols and object entries.
@@ -1610,8 +1863,14 @@ static bool masm32_sim_wasm_build_declared_object_map(const VmParserResult *resu
 /// @param source Source text to run.
 /// @param requested_layout_mode Fixed, automatic, seeded-randomized, or fresh-randomized layout mode.
 /// @param base_policy Optional base policy for non-fixed layout modes.
+/// @param validation_mode Optional memory validation behavior for runtime accesses.
 /// @return Pointer to the static JSON result buffer.
-static const char *masm32_sim_wasm_run_source_json_internal(const char *source, VmLayoutMode requested_layout_mode, const VmLayoutPolicy *base_policy) {
+static const char *masm32_sim_wasm_run_source_json_internal(
+    const char *source,
+    VmLayoutMode requested_layout_mode,
+    const VmLayoutPolicy *base_policy,
+    Masm32SimWasmMemoryValidationMode validation_mode
+) {
     VmParserConfig config;
     VmParserResult parser_result;
     Vm vm;
@@ -1740,6 +1999,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
         exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
+            masm32_sim_wasm_collect_object_warnings(&g_masm32_sim_wasm_run_storage, &vm, validation_mode, runtime_policy);
             masm32_sim_wasm_collect_memory_change(&g_masm32_sim_wasm_run_storage, &vm, &parser_result);
         }
     }
@@ -1766,15 +2026,27 @@ static const char *masm32_sim_wasm_run_source_json_internal(const char *source, 
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
+}
+
+const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode
+) {
+    if (validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

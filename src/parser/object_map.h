@@ -3,9 +3,9 @@
  * @brief Declared-object allocation map metadata for MASM32 data storage.
  *
  * This module builds metadata entries for parser-declared `.data`, `.DATA?`,
- * and `.CONST` symbols. The map is intentionally diagnostic-neutral in Phase
- * 36: it exposes query helpers for later object-bounds and visualization work
- * without changing baseline VM memory execution or permission checks.
+ * and `.CONST` symbols. The map remains metadata-only by itself: callers
+ * decide whether to keep baseline region-only execution, emit educational
+ * object-bounds warnings, or apply later stricter validation modes.
  */
 
 #ifndef MASM32_SIM_OBJECT_MAP_H
@@ -180,9 +180,10 @@ VmObjectMapStatus vm_object_map_find_by_range(
 
 /// Classifies a full access range against declared objects and selected layout regions.
 ///
-/// This helper is metadata-only in Phase 36. It does not emit warnings, stop
-/// execution, or replace central VM memory permission checks. Future validation
-/// modes can use the returned classification to decide whether to warn or fail.
+/// This helper is metadata-only by itself. It does not emit warnings, stop
+/// execution, or replace central VM memory permission checks. Source-run
+/// validation modes can use the returned classification to decide whether to
+/// warn or fail after lower-level memory checks have completed.
 ///
 /// @param entries Object-map entries to inspect.
 /// @param entry_count Number of valid entries in @p entries.

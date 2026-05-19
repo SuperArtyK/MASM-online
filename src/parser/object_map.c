@@ -3,8 +3,9 @@
  * @brief Declared-object allocation map construction and lookup helpers.
  *
  * The object map mirrors parser-declared storage symbols as final byte ranges.
- * It is metadata only in Phase 36 and deliberately does not participate in VM
- * memory validation, which remains owned by the checked memory region helpers.
+ * It is metadata-only by itself and deliberately does not replace VM memory
+ * permission checks. Optional validation modes may consume its classifications
+ * after checked memory region helpers have accepted an access.
  */
 
 #include "object_map.h"

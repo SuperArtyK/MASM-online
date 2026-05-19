@@ -26,16 +26,17 @@ class TestFailure(RuntimeError):
     """Raised when a command-line test step fails."""
 
 
-def run_command(command: list[str], *, cwd: pathlib.Path = ROOT) -> None:
+def run_command(command: list[str], *, cwd: pathlib.Path = ROOT, env: dict[str, str] | None = None) -> None:
     """Run one command and raise TestFailure when it fails.
 
     Args:
         command: Command and arguments to execute.
         cwd: Working directory for the subprocess.
+        env: Optional environment variables for the subprocess.
     """
 
     print("$ " + " ".join(command))
-    completed = subprocess.run(command, cwd=cwd, check=False)
+    completed = subprocess.run(command, cwd=cwd, env=env, check=False)
     if completed.returncode != 0:
         raise TestFailure(f"command failed with exit code {completed.returncode}: {' '.join(command)}")
 
@@ -305,6 +306,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_test")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json")
+    assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmMemoryValidationMode")
+    assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_memory_validation_mode")
     assert_text_contains("src/wasm/wasm_api.c", "/// Appends compact JSON")
     assert_text_contains("tests/core/test_vm_exec.c", "/*\n * @file test_vm_exec.c")
     assert_text_contains("tests/core/test_vm_exec.c", "/// Verifies that the hardcoded Milestone 4 sample")
@@ -327,8 +330,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Milestone 36")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 36")
+    assert_text_contains("README.md", "Milestone 37")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 37")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -373,6 +376,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/object_map.h", "/// Classifies how one full access range relates to declared objects and valid regions")
     assert_text_contains("src/parser/object_map.c", "/// Writes one object-map entry from one symbol")
     assert_text_contains("src/parser/object_map.c", "/// Finds the selected layout region that wholly contains one inclusive range")
+    assert_text_contains("src/wasm/wasm_api.c", "object-bounds-warning")
+    assert_text_contains("src/wasm/wasm_api.c", "/// Records one allocated-object warning when capacity allows it")
     assert_text_contains("src/parser/parser.c", "/// Owns mutable parser state")
     assert_text_contains("tests/core/test_parser.c", "/*\n * @file test_parser.c")
     assert_text_contains("tests/core/test_parser.c", "/// Verifies that the guide's minimal program parses")
@@ -408,6 +413,22 @@ def run_structure_tests() -> None:
     print("Milestone structure tests passed.")
 
 
+def executable_output_path(output_name: str) -> pathlib.Path:
+    """Return the platform-specific path for a native test executable.
+
+    Args:
+        output_name: Extensionless test executable name used by the runner.
+
+    Returns:
+        Build-directory path with a Windows `.exe` suffix when needed.
+    """
+
+    executable_name = output_name
+    if os.name == "nt" and pathlib.Path(output_name).suffix == "":
+        executable_name = output_name + ".exe"
+    return BUILD_DIR / executable_name
+
+
 def compile_c_binary(output_name: str, sources: list[str]) -> pathlib.Path:
     """Compile one C test-support binary.
 
@@ -421,7 +442,7 @@ def compile_c_binary(output_name: str, sources: list[str]) -> pathlib.Path:
 
     compiler = os.environ.get("CC", "cc")
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
-    output = BUILD_DIR / output_name
+    output = executable_output_path(output_name)
     run_command([
         compiler,
         "-std=c99",
@@ -632,7 +653,10 @@ def run_js_tests() -> None:
         raise TestFailure("node is required for JavaScript and diagnostic rendering tests")
     run_command(["node", "tests/web/test_protocol.mjs"])
     run_command(["node", "tests/web/test_formatters.mjs"])
-    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"])
+
+    diagnostic_env = os.environ.copy()
+    diagnostic_env["MASM32_DIAGNOSTIC_JSON_PRODUCER"] = str(executable_output_path("diagnostic_json_producer").resolve())
+    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_env)
 
 
 def main() -> int:

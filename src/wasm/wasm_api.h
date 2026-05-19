@@ -12,6 +12,14 @@
 
 #include "../core/vm_layout.h"
 
+/// Selects optional memory validation behavior for source-run helpers.
+typedef enum Masm32SimWasmMemoryValidationMode {
+    /// Validate memory using the default region and permission checks only.
+    MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY = 0,
+    /// Emit non-fatal warnings for accesses that escape declared data objects.
+    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
+} Masm32SimWasmMemoryValidationMode;
+
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
 ///
 /// @return The deterministic value returned by the C core Phase 0 helper.
@@ -60,6 +68,21 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const c
 /// @param base_policy Optional policy supplying limits/defaults/range/seed.
 /// @return Pointer to a null-terminated JSON result string.
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy);
+
+/// Parses and executes source with an explicit memory validation mode.
+///
+/// This test/configuration-facing helper keeps the browser default in
+/// region-only validation while allowing native tests to enable allocated-object
+/// warnings from Phase 37. The returned pointer refers to the same internal
+/// static buffer as @ref masm32_sim_wasm_run_source_json.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param validation_mode Memory validation behavior to apply during execution.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode
+);
 
 /// Copies the simulator version string through the WebAssembly export boundary.
 ///

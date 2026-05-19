@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatSimulatorMessages } from "../../web/src/formatters.js";
@@ -18,8 +18,38 @@ import { formatSimulatorMessages } from "../../web/src/formatters.js";
 /** Default native producer path built by scripts/run_tests.py before this harness runs. */
 const DEFAULT_PRODUCER_PATH = "./build/tests/diagnostic_json_producer";
 
+/**
+ * Resolves the native producer path used by this harness.
+ *
+ * Windows clang toolchains commonly append `.exe` even when the runner passes
+ * an extensionless `-o` path, so the harness probes that suffix before
+ * spawning the producer.
+ *
+ * @returns {string} Native producer executable path.
+ */
+function resolveProducerPath() {
+  const override = process.env.MASM32_DIAGNOSTIC_JSON_PRODUCER;
+  if (override !== undefined && override.length > 0) {
+    return override;
+  }
+
+  const windowsProducerPath = `${DEFAULT_PRODUCER_PATH}.exe`;
+  if (process.platform === "win32") {
+    if (existsSync(windowsProducerPath)) {
+      return windowsProducerPath;
+    }
+    return windowsProducerPath;
+  }
+
+  if (existsSync(DEFAULT_PRODUCER_PATH)) {
+    return DEFAULT_PRODUCER_PATH;
+  }
+
+  return DEFAULT_PRODUCER_PATH;
+}
+
 /** Native producer path used by this harness; override for direct local runs. */
-const PRODUCER_PATH = process.env.MASM32_DIAGNOSTIC_JSON_PRODUCER ?? DEFAULT_PRODUCER_PATH;
+const PRODUCER_PATH = resolveProducerPath();
 
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} ExpectedMessage */
 /** @typedef {{source: string, reason: string}} DiagnosticFixture */
@@ -67,7 +97,7 @@ function fixtureContext(name, source, rawJson, rendered) {
  */
 function runFixture(name, source, extraEnv = {}) {
   const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: { ...process.env, ...extraEnv } });
-  assert.equal(result.status, 0, `producer failed for ${name}: ${result.stderr}`);
+  assert.equal(result.status, 0, `producer failed for ${name}: ${result.error?.message ?? result.stderr ?? "unknown spawn failure"}`);
   assert.equal(result.stderr, "", `producer wrote unexpected stderr for ${name}`);
   assert.match(result.stdout, /^\{/, `producer stdout must contain raw JSON only for ${name}`);
 
@@ -91,7 +121,7 @@ function runFixtureFile(name, source) {
   try {
     writeFileSync(fixturePath, source, "utf8");
     const result = spawnSync(PRODUCER_PATH, [fixturePath], { encoding: "utf8" });
-    assert.equal(result.status, 0, `producer failed for ${name}: ${result.stderr}`);
+    assert.equal(result.status, 0, `producer failed for ${name}: ${result.error?.message ?? result.stderr ?? "unknown spawn failure"}`);
     assert.equal(result.stderr, "", `producer wrote unexpected stderr for ${name}`);
     assert.match(result.stdout, /^\{/, `producer stdout must contain raw JSON only for ${name}`);
 
@@ -242,6 +272,18 @@ main ENDP
 END main
 `,
     reason: "Simulator warning plus successful completion fixture."
+  },
+  objectBoundsWarning: {
+    source: `.data
+var1 DWORD 12345
+.code
+main PROC
+    mov eax, OFFSET var1
+    test [eax+40h], eax
+main ENDP
+END main
+`,
+    reason: "Allocated-object warning mode diagnostic fixture."
   },
   success: {
     source: `.code
@@ -520,6 +562,30 @@ test("renders unaligned warning followed by successful execution exactly", () =>
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders allocated-object warning followed by successful execution exactly", () => {
+  const name = "objectBoundsWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "object-bounds-warning",
+      message: "Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.",
+      line: 6
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 6: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.\n[info] execution-complete: Execution completed successfully.");
 });
 
 

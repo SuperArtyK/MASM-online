@@ -8,6 +8,17 @@
  * feed the exact result through the browser Simulator Messages formatter.
  */
 
+/*
+ * Suppress Microsoft CRT deprecation annotations for fopen/getenv when this
+ * portable C99 test utility is compiled by Clang against the MSVC/UCRT headers.
+ * Some clang driver configurations include the UCRT headers without defining
+ * _MSC_VER early enough for a guarded MSVC-only definition to be reliable. The
+ * project warning policy still treats ordinary compiler warnings as errors.
+ */
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
 #include "../../src/wasm/wasm_api.h"
 
 #include <stdio.h>
@@ -187,6 +198,14 @@ static int diagnostic_json_producer_use_automatic_layout(void) {
     return mode != NULL && strcmp(mode, "automatic") == 0;
 }
 
+/// Returns whether the producer should enable allocated-object warning mode.
+///
+/// @return Nonzero when MASM32_DIAGNOSTIC_MEMORY_VALIDATION=allocated-object-warnings.
+static int diagnostic_json_producer_use_object_warnings(void) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_MEMORY_VALIDATION");
+    return mode != NULL && strcmp(mode, "allocated-object-warnings") == 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -249,7 +268,12 @@ static int diagnostic_json_producer_emit_json(const char *source) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
     }
 
-    if (diagnostic_json_producer_use_automatic_layout()) {
+    if (diagnostic_json_producer_use_object_warnings()) {
+        json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+            source,
+            MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
+        );
+    } else if (diagnostic_json_producer_use_automatic_layout()) {
         policy = vm_layout_default_policy();
         if (diagnostic_json_producer_apply_layout_env(&policy) != 0) {
             return 1;

@@ -361,5 +361,4 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/build/dev-server.pid
-/build/dev-server.pid
+/build/*

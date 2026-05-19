@@ -212,7 +212,7 @@ static int test_object_map_records_declared_objects(void) {
         ".code\n"
         "main PROC\n"
         "END main\n";
-    ObjectMapTestBuffers buffers;
+    static ObjectMapTestBuffers buffers;
     VmParserResult result;
     size_t object_count = 0U;
     const VmObjectMapEntry *buf = NULL;
@@ -289,7 +289,7 @@ static int test_adjacent_objects_are_not_merged(void) {
         ".code\n"
         "main PROC\n"
         "END main\n";
-    ObjectMapTestBuffers buffers;
+    static ObjectMapTestBuffers buffers;
     VmParserResult result;
     const VmObjectMapEntry *found = NULL;
     const VmObjectMapEntry *a = NULL;
@@ -319,7 +319,7 @@ static int test_full_range_lookup_and_overflow(void) {
         ".code\n"
         "main PROC\n"
         "END main\n";
-    ObjectMapTestBuffers buffers;
+    static ObjectMapTestBuffers buffers;
     VmParserResult result;
     const VmObjectMapEntry *arr = NULL;
     const VmObjectMapEntry *found = NULL;
@@ -353,7 +353,7 @@ static int test_full_range_classification_categories(void) {
         ".code\n"
         "main PROC\n"
         "END main\n";
-    ObjectMapTestBuffers buffers;
+    static ObjectMapTestBuffers buffers;
     VmParserResult result;
     VmObjectMapRangeClassification classification;
     const VmObjectMapEntry *a = NULL;
@@ -480,7 +480,7 @@ static int test_object_map_uses_selected_layout_bases(void) {
         ".code\n"
         "main PROC\n"
         "END main\n";
-    ObjectMapTestBuffers buffers;
+    static ObjectMapTestBuffers buffers;
     VmParserResult result;
     VmLayoutProgramMetadata metadata;
     VmLayoutPolicy automatic_policy;
