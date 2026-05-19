@@ -4,8 +4,10 @@
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
- * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routines,
- * full MASM expression parsing remains a later milestone. Recognizable textbook
+ * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routine bodies,
+ * and full MASM expression parsing remain later milestones. The parser records
+ * virtual Irvine32 include metadata and routine classifications without loading
+ * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
  * unsupported-feature diagnostics, safely skipped when recoverable, and surfaced
  * lexer diagnostics remain specific instead of generic umbrella errors.
@@ -179,6 +181,14 @@ typedef struct VmParserUnsupportedFeature {
     const char *message;
 } VmParserUnsupportedFeature;
 
+/// Describes one known name in the virtual Irvine32 registry.
+typedef struct VmParserIrvine32RegistryEntry {
+    /// Canonical Irvine32 routine, pseudo-instruction, or external name.
+    const char *name;
+    /// Milestone classification for the known name.
+    VmIrvine32SymbolClass symbol_class;
+} VmParserIrvine32RegistryEntry;
+
 /// Describes the outcome of shared parser memory-width resolution.
 typedef enum VmParserMemoryWidthResolutionStatus {
     /// All required memory widths are known or were inferred safely.
@@ -271,6 +281,70 @@ static char vm_parser_ascii_lower(char ch) {
 
     return ch;
 }
+
+/// Virtual Irvine32 names recognized once `INCLUDE Irvine32.inc` is active.
+static const VmParserIrvine32RegistryEntry VM_PARSER_IRVINE32_REGISTRY[] = {
+    {"exit", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"Crlf", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteChar", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteString", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteDec", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteInt", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteHex", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WriteBin", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"DumpRegs", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"DumpMem", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"Randomize", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"Random32", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"RandomRange", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"WaitMsg", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"ReadChar", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"ReadInt", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"ReadDec", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"ReadHex", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"ReadString", VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE},
+    {"MsgBox", VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL},
+    {"MsgBoxAsk", VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL},
+    {"ExitProcess", VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL},
+    {"OpenInputFile", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"CreateOutputFile", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"ReadFromFile", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"WriteToFile", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"CloseFile", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"Clrscr", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"Gotoxy", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"SetTextColor", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE},
+    {"Delay", VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE}
+};
+
+/// Returns whether a source span matches a null-terminated literal ignoring ASCII case.
+///
+/// @param text Source bytes to inspect.
+/// @param text_length Number of bytes available in @p text.
+/// @param literal Null-terminated literal to match.
+/// @return true when the source span and literal match ignoring ASCII case.
+static bool vm_parser_span_equals_ascii_case_insensitive(const char *text, size_t text_length, const char *literal) {
+    size_t index = 0U;
+    size_t literal_length = 0U;
+
+    if (text == NULL || literal == NULL) {
+        return false;
+    }
+
+    literal_length = strlen(literal);
+    if (text_length != literal_length) {
+        return false;
+    }
+
+    for (index = 0U; index < literal_length; index += 1U) {
+        if (vm_parser_ascii_lower(text[index]) != vm_parser_ascii_lower(literal[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 
 /// Compares a token lexeme to a null-terminated ASCII literal case-insensitively.
 ///
@@ -5007,6 +5081,39 @@ static bool vm_parser_emit_instruction(
     return true;
 }
 
+/// Emits a Phase 41 unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
+///
+/// The registry is active only after `INCLUDE Irvine32.inc`. CALL target
+/// classification is deliberately deferred until CALL exists, so this helper
+/// handles only bare mnemonic-like executable forms currently recognized by the
+/// parser.
+///
+/// @param state Parser state to mutate.
+/// @param mnemonic_token Candidate executable mnemonic token.
+/// @return true when a diagnostic was emitted for a known Irvine32 name.
+static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state, const VmLexerToken *mnemonic_token) {
+    VmIrvine32SymbolClass symbol_class = VM_IRVINE32_SYMBOL_CLASS_UNKNOWN;
+
+    if (state == NULL || state->result == NULL || mnemonic_token == NULL ||
+        !state->result->has_irvine32_virtual_include ||
+        mnemonic_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    symbol_class = vm_parser_classify_irvine32_symbol(mnemonic_token->lexeme, mnemonic_token->lexeme_length);
+    if (symbol_class == VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        return false;
+    }
+
+    if (symbol_class == VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, mnemonic_token, "Recognized external or Windows API name from Irvine32 context. Windows/API execution and linking are not supported.");
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, mnemonic_token, "Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.");
+    return true;
+}
+
 /// Parses one implemented instruction.
 ///
 /// @param state Parser state to mutate.
@@ -5020,6 +5127,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     const VmLexerToken *source_token = NULL;
 
     if (!vm_parser_parse_opcode(mnemonic_token, &opcode)) {
+        if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
+            return false;
+        }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "Unsupported instruction for the current milestone.");
         return false;
     }
@@ -5500,7 +5610,12 @@ static bool vm_parser_parse_include_directive(VmParserState *state) {
     const VmLexerToken *include_token = vm_parser_current_token(state);
 
     if (vm_parser_include_path_matches(state, "irvine32") || vm_parser_include_path_matches(state, "macros")) {
+        bool is_irvine32_include = vm_parser_include_path_matches(state, "irvine32");
         const VmLexerToken *extension_token = vm_parser_peek_token(state, 2U);
+        if (is_irvine32_include && state != NULL && state->result != NULL) {
+            state->result->has_irvine32_virtual_include = true;
+            state->result->irvine32_virtual_symbol_count = vm_parser_irvine32_registry_symbol_count();
+        }
         if (extension_token != NULL && extension_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
             vm_parser_advance_many(state, 3U);
         } else {
@@ -5988,6 +6103,43 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     return out_result->status;
 }
 
+VmIrvine32SymbolClass vm_parser_classify_irvine32_symbol(const char *name, size_t name_length) {
+    size_t index = 0U;
+
+    if (name == NULL) {
+        return VM_IRVINE32_SYMBOL_CLASS_UNKNOWN;
+    }
+
+    for (index = 0U; index < sizeof(VM_PARSER_IRVINE32_REGISTRY) / sizeof(VM_PARSER_IRVINE32_REGISTRY[0]); index += 1U) {
+        if (vm_parser_span_equals_ascii_case_insensitive(name, name_length, VM_PARSER_IRVINE32_REGISTRY[index].name)) {
+            return VM_PARSER_IRVINE32_REGISTRY[index].symbol_class;
+        }
+    }
+
+    return VM_IRVINE32_SYMBOL_CLASS_UNKNOWN;
+}
+
+size_t vm_parser_irvine32_registry_symbol_count(void) {
+    return sizeof(VM_PARSER_IRVINE32_REGISTRY) / sizeof(VM_PARSER_IRVINE32_REGISTRY[0]);
+}
+
+const char *vm_parser_irvine32_symbol_class_name(VmIrvine32SymbolClass symbol_class) {
+    switch (symbol_class) {
+        case VM_IRVINE32_SYMBOL_CLASS_UNKNOWN:
+            return "unknown";
+        case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC:
+            return "supported-virtual-intrinsic";
+        case VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE:
+            return "planned-routine";
+        case VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE:
+            return "unsupported-routine";
+        case VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL:
+            return "windows-api-or-external";
+        default:
+            return NULL;
+    }
+}
+
 const char *vm_parser_status_name(VmParserStatus status) {
     switch (status) {
         case VM_PARSER_STATUS_OK:
@@ -6127,6 +6279,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "casemap-policy-changed";
         case VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE:
             return "invalid-option-value";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE:
+            return "unsupported-irvine32-routine";
         default:
             return NULL;
     }

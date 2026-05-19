@@ -362,6 +362,16 @@ END main
 `,
     reason: "Bracketed uninitialized-read strict source-span fixture."
   },
+  irvine32UnsupportedRoutine: {
+    source: `INCLUDE Irvine32.inc
+.code
+main PROC
+    WriteString
+main ENDP
+END main
+`,
+    reason: "Phase 41 known Irvine32 routine diagnostic fixture."
+  },
   success: {
     source: `.code
 main PROC
@@ -548,6 +558,29 @@ test("renders unknown symbol diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unknown-symbol line 3, column 14, byte offset 29, span length 7: Unknown data symbol.");
+});
+
+
+test("renders known Irvine32 routine diagnostic exactly", () => {
+  const name = "irvine32UnsupportedRoutine";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.virtualIncludes.irvine32, true);
+  assert.ok(json.virtualIncludes.irvine32SymbolCount > 0);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-irvine32-routine",
+      message: "Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.",
+      line: 4,
+      column: 5,
+      byteOffset: 41,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 11: Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.");
 });
 
 test("renders unsupported feature diagnostic exactly", () => {

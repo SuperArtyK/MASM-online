@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 35A.
+ * @brief Unit and integration tests for the parser through Milestone 41.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -1818,6 +1818,115 @@ static int test_phase35a_casemap_parser_policy(void) {
     return failures;
 }
 
+
+/// Verifies INCLUDE Irvine32.inc records virtual registry metadata.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase41_virtual_irvine32_include_records_registry(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        "include irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Irvine32 virtual include should parse without diagnostics");
+    failures += expect_size(result.diagnostic_count, 0U, "Irvine32 virtual include should not produce diagnostics by itself");
+    if (!result.has_irvine32_virtual_include) {
+        failures += record_failure("Irvine32 virtual include should set parser metadata");
+    }
+    failures += expect_size(result.irvine32_virtual_symbol_count, vm_parser_irvine32_registry_symbol_count(), "Irvine32 virtual include should record registry count");
+    if (result.irvine32_virtual_symbol_count == 0U) {
+        failures += record_failure("Irvine32 virtual registry should contain known names");
+    }
+
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("exit", 4U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "exit should remain planned until the Phase 42 terminator milestone");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("WriteString", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should be a planned Irvine32 routine");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("writestring", 11U), VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "Irvine32 routine lookup should be case-insensitive");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("OpenInputFile", 13U), VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE, "file I/O routines should be known unsupported routines");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("ExitProcess", 11U), VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL, "Windows API names should be classified separately");
+    failures += expect_u32(vm_parser_classify_irvine32_symbol("UnknownRoutine", 14U), VM_IRVINE32_SYMBOL_CLASS_UNKNOWN, "unknown names should remain unknown");
+
+    status = parse_for_test(
+        "include macros.inc\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    );
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Macros.inc virtual no-op should still parse");
+    if (result.has_irvine32_virtual_include) {
+        failures += record_failure("Macros.inc should not populate Irvine32 registry metadata");
+    }
+    failures += expect_size(result.irvine32_virtual_symbol_count, 0U, "Macros.inc should leave Irvine32 registry count at zero");
+
+    return failures;
+}
+
+/// Verifies known Irvine32 names produce specific diagnostics only after the virtual include.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase41_irvine32_routine_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *with_include =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    WriteString\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *without_include =
+        ".code\n"
+        "main PROC\n"
+        "    WriteString\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *windows_name =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    ExitProcess\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *exit_line =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(with_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Known Irvine32 routine should produce a specific diagnostic after include");
+    if (!result.has_irvine32_virtual_include) {
+        failures += record_failure("Known routine diagnostic program should retain include metadata");
+    }
+    failures += expect_size(result.diagnostic_count, 1U, "Known routine diagnostic program should emit one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "Known Irvine32 routine diagnostic code should match");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "Known Irvine32 routine diagnostic should point at executable line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "Known Irvine32 routine diagnostic should point at routine name");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Recognized Irvine32 routine", "Known Irvine32 routine diagnostic should explain registry classification");
+
+    failures += expect_parser_status(parse_for_test(without_include, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Known Irvine32 name without include should remain an unsupported instruction");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "Irvine32 registry should not be implicit without include");
+    if (result.has_irvine32_virtual_include) {
+        failures += record_failure("Source without Irvine32 include must not set include metadata");
+    }
+
+    failures += expect_parser_status(parse_for_test(windows_name, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Windows/API name should produce a specific Irvine32-context diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "Windows/API name diagnostic should use Irvine32 routine code until CALL classification exists");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Windows/API", "Windows/API diagnostic should describe non-goal behavior");
+
+    failures += expect_parser_status(parse_for_test(exit_line, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "exit should remain non-executable until Phase 42");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "exit should report the Phase 41 Irvine32 routine diagnostic before Phase 42");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred", "exit diagnostic should explain deferred routine execution");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1863,6 +1972,27 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE), "invalid-option-value") != 0) {
         failures += record_failure("parser diagnostic helper should name invalid option value diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE), "unsupported-irvine32-routine") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported Irvine32 routine diagnostics");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC), "supported-virtual-intrinsic") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name supported virtual intrinsics");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE), "planned-routine") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name planned routines");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE), "unsupported-routine") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name unsupported routines");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL), "windows-api-or-external") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name Windows/API external routines");
+    }
+    if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_UNKNOWN), "unknown") != 0) {
+        failures += record_failure("Irvine32 symbol-class helper should name unknown symbols");
+    }
+    if (vm_parser_irvine32_symbol_class_name((VmIrvine32SymbolClass)999) != NULL) {
+        failures += record_failure("invalid Irvine32 symbol class name should be NULL");
+    }
     if (strcmp(vm_parser_diagnostic_severity_name(VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING), "warning") != 0) {
         failures += record_failure("parser diagnostic helper should name warning severity");
     }
@@ -1879,7 +2009,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 35A.
+/// Runs all parser regression tests through Milestone 41.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -1925,6 +2055,8 @@ int main(void) {
     failures += test_phase26_header_directive_error_paths();
     failures += test_phase26_broader_directive_backlog_diagnostics();
     failures += test_phase35a_casemap_parser_policy();
+    failures += test_phase41_virtual_irvine32_include_records_registry();
+    failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

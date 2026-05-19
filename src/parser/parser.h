@@ -4,13 +4,14 @@
  *
  * This module converts the lexer token stream into data symbols, a .data image,
  * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to implemented writable, uninitialized, and constant data declarations, numeric equates, extended constant expressions, nested DUP initializers, OFFSET, direct symbol
- * memory operands, constant symbol-offset memory operands, signed and unsigned PTR width overrides,
- * register-indirect memory operands, TYPE, LENGTHOF, SIZEOF, packed character
- * literal expressions for mov/add/sub, sign and zero extension
- * instructions, and explicit unsupported-feature
- * diagnostics and safe recovery for recognized MASM textbook constructs, and
- * surfaced lexer diagnostics without collapsing them into umbrella parse errors.
+ * remains limited to implemented writable, uninitialized, and constant data
+ * declarations, numeric equates, extended constant expressions, nested DUP
+ * initializers, OFFSET, direct symbol memory operands, constant symbol-offset
+ * memory operands, signed and unsigned PTR width overrides, register-indirect
+ * memory operands, TYPE, LENGTHOF, SIZEOF, packed character literals,
+ * implemented instruction groups, explicit unsupported-feature diagnostics,
+ * safe recovery for recognized MASM textbook constructs, specific surfaced
+ * lexer diagnostics, and virtual Irvine32 registry metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -160,9 +161,26 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED,
     /// An OPTION CASEMAP directive used an invalid value.
     VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE,
+    /// A recognized Irvine32 virtual symbol was used before its routine implementation exists.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
+
+
+/// Classifies one known or unknown Irvine32 virtual symbol name.
+typedef enum VmIrvine32SymbolClass {
+    /// The name is not part of the simulator's known Irvine32 registry.
+    VM_IRVINE32_SYMBOL_CLASS_UNKNOWN = 0,
+    /// The name is registered as a virtual intrinsic symbol available to current metadata consumers.
+    VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC,
+    /// The name is recognized as a planned Irvine32 routine for a later milestone.
+    VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE,
+    /// The name is recognized but explicitly unsupported in the v1 simulator target.
+    VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE,
+    /// The name represents Windows API, external-linkage, or host-environment behavior.
+    VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL
+} VmIrvine32SymbolClass;
 
 /// Identifies whether a parser diagnostic blocks execution.
 typedef enum VmParserDiagnosticSeverity {
@@ -270,6 +288,10 @@ typedef struct VmParserResult {
     bool has_requested_stack_size;
     /// Requested stack size in bytes from `.stack size`; runtime stack behavior is deferred.
     uint32_t requested_stack_size;
+    /// Whether `INCLUDE Irvine32.inc` registered the virtual Irvine32 symbol table.
+    bool has_irvine32_virtual_include;
+    /// Number of known virtual Irvine32 symbols registered by `INCLUDE Irvine32.inc`.
+    size_t irvine32_virtual_symbol_count;
 } VmParserResult;
 
 /// Parses a MASM-like source file into implemented data layout and executable IR.
@@ -318,5 +340,27 @@ const char *vm_parser_diagnostic_severity_name(VmParserDiagnosticSeverity severi
 /// @param diagnostic Diagnostic to inspect.
 /// @return true when @p diagnostic is non-NULL and has error severity.
 bool vm_parser_diagnostic_is_error(const VmParserDiagnostic *diagnostic);
+
+/// Classifies one Irvine32 routine or external name using the virtual registry.
+///
+/// Lookup is ASCII case-insensitive and does not require `INCLUDE Irvine32.inc`;
+/// callers decide whether the virtual include is active before using the result
+/// to affect parser diagnostics or execution.
+///
+/// @param name Routine or external name bytes to classify.
+/// @param name_length Number of bytes in @p name.
+/// @return Registry classification, or @ref VM_IRVINE32_SYMBOL_CLASS_UNKNOWN.
+VmIrvine32SymbolClass vm_parser_classify_irvine32_symbol(const char *name, size_t name_length);
+
+/// Returns the number of known names in the virtual Irvine32 registry.
+///
+/// @return Number of registry entries available after `INCLUDE Irvine32.inc`.
+size_t vm_parser_irvine32_registry_symbol_count(void);
+
+/// Returns a stable display name for one Irvine32 symbol class.
+///
+/// @param symbol_class Symbol class to inspect.
+/// @return Static symbol-class name, or NULL for invalid values.
+const char *vm_parser_irvine32_symbol_class_name(VmIrvine32SymbolClass symbol_class);
 
 #endif
