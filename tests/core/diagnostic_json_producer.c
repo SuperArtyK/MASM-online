@@ -221,6 +221,14 @@ static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemo
         *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT;
         return 1;
     }
+    if (strcmp(mode, "uninitialized-read-warnings") == 0) {
+        *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+        return 1;
+    }
+    if (strcmp(mode, "uninitialized-read-strict") == 0) {
+        *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+        return 1;
+    }
 
     return 0;
 }

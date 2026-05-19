@@ -19,7 +19,11 @@ typedef enum Masm32SimWasmMemoryValidationMode {
     /// Emit non-fatal warnings for accesses that escape declared data objects.
     MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS,
     /// Stop execution when an access escapes declared data-object bounds.
-    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT,
+    /// Emit non-fatal warnings when reads use uninitialized-origin bytes.
+    MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS,
+    /// Stop execution before reads that would use uninitialized-origin bytes.
+    MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
 } Masm32SimWasmMemoryValidationMode;
 
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
@@ -75,7 +79,8 @@ const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const 
 ///
 /// This test/configuration-facing helper keeps the browser default in
 /// region-only validation while allowing native tests to enable allocated-object
-/// warnings from Phase 37 or allocated-object strict validation from Phase 38.
+/// warnings from Phase 37, allocated-object strict validation from Phase 38,
+/// or uninitialized-read warning/strict validation from Phase 40.
 /// The returned pointer refers to the same internal static buffer as
 /// @ref masm32_sim_wasm_run_source_json.
 ///
@@ -87,6 +92,19 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
     Masm32SimWasmMemoryValidationMode validation_mode
 );
 
+/// Parses and executes source with memory validation and test-only initialization metadata.
+///
+/// This helper is for native tests that need to verify how warning or strict
+/// validation interacts with Phase 39 write tracking. The normal browser export
+/// intentionally omits the metadata and keeps region-only validation.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param validation_mode Memory validation behavior to apply during execution.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode
+);
 
 /// Parses and executes source while appending test-only uninitialized-origin metadata.
 ///

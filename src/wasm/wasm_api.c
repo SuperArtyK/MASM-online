@@ -78,6 +78,9 @@
 /// Maximum allocated-object warnings retained for one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_WARNINGS 64U
 
+/// Maximum uninitialized-read diagnostics retained for one source run.
+#define MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS 64U
+
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
@@ -168,6 +171,44 @@ typedef struct Masm32SimWasmObjectBoundsDiagnostic {
     bool has_source_span;
 } Masm32SimWasmObjectBoundsDiagnostic;
 
+/// Describes one uninitialized-origin read diagnostic returned to the UI.
+typedef struct Masm32SimWasmUninitializedReadDiagnostic {
+    /// First simulated address in the read range.
+    uint32_t start_address;
+    /// Inclusive final simulated address in the read range.
+    uint32_t end_address;
+    /// Number of bytes read.
+    uint32_t size_bytes;
+    /// Number of bytes in the read range that remain uninitialized-origin.
+    uint32_t uninitialized_byte_count;
+    /// Number of bytes in the read range already marked initialized.
+    uint32_t initialized_byte_count;
+    /// Name of the containing declared data symbol when known.
+    char symbol_name[VM_SYMBOL_NAME_CAPACITY];
+    /// Whether @ref symbol_name identifies a containing declared object.
+    bool has_symbol_name;
+    /// Byte offset from the containing declared symbol base when known.
+    uint32_t symbol_byte_offset;
+    /// Source line associated with the memory operand, or zero when unknown.
+    uint32_t source_line;
+    /// Source column associated with the memory operand, or zero when unknown.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the memory operand.
+    size_t source_byte_offset;
+    /// Source span length of the memory operand in bytes.
+    size_t source_span_length;
+    /// Whether byte-offset and span-length fields identify a real source span.
+    bool has_source_span;
+} Masm32SimWasmUninitializedReadDiagnostic;
+
+/// Describes one planned memory read before an instruction is stepped.
+typedef struct Masm32SimWasmPlannedMemoryRead {
+    /// Memory operand that will be read if execution proceeds.
+    VmIrOperand operand;
+    /// Width of the planned read in bits.
+    uint8_t width_bits;
+} Masm32SimWasmPlannedMemoryRead;
+
 /// Describes one source-mapped layout failure message.
 typedef struct Masm32SimWasmLayoutMessage {
     /// Stable diagnostic code used by Simulator Messages.
@@ -226,6 +267,14 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmObjectBoundsDiagnostic object_violation;
     /// Whether @ref object_violation contains a fatal strict-mode diagnostic.
     bool has_object_violation;
+    /// Uninitialized-read warnings collected during execution.
+    Masm32SimWasmUninitializedReadDiagnostic uninitialized_read_warnings[MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS];
+    /// Number of valid entries in @ref uninitialized_read_warnings.
+    size_t uninitialized_read_warning_count;
+    /// Fatal uninitialized-read strict diagnostic captured before execution.
+    Masm32SimWasmUninitializedReadDiagnostic uninitialized_read_violation;
+    /// Whether @ref uninitialized_read_violation contains a fatal strict-mode diagnostic.
+    bool has_uninitialized_read_violation;
     /// Original source text for calculating runtime diagnostic source spans.
     const char *source_text;
     /// Copied source text retained by IR instruction metadata.
@@ -1080,6 +1129,481 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses(
     return VM_EXEC_STATUS_OK;
 }
 
+/// Returns whether a validation mode enables uninitialized-read diagnostics.
+///
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @return true for Phase 40 warning or strict uninitialized-read modes.
+static bool masm32_sim_wasm_validation_checks_uninitialized_reads(Masm32SimWasmMemoryValidationMode validation_mode) {
+    return validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+}
+
+/// Returns whether a validation mode stops on uninitialized-origin reads.
+///
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @return true when uninitialized reads should be fatal.
+static bool masm32_sim_wasm_validation_strict_uninitialized_reads(Masm32SimWasmMemoryValidationMode validation_mode) {
+    return validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+}
+
+/// Returns whether an IR operand is a memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true when @p operand describes an absolute or register-computed memory address.
+static bool masm32_sim_wasm_operand_is_memory(const VmIrOperand *operand) {
+    return operand != NULL &&
+        (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS || operand->kind == VM_IR_OPERAND_MEMORY_REGISTER);
+}
+
+/// Resolves an operand width using IR metadata and register aliases.
+///
+/// @param operand Operand whose width should be resolved.
+/// @param out_width_bits Receives the width in bits.
+/// @return true when a supported 8-, 16-, or 32-bit width is available.
+static bool masm32_sim_wasm_operand_width(const VmIrOperand *operand, uint8_t *out_width_bits) {
+    uint8_t width_bits = 0U;
+
+    if (out_width_bits != NULL) {
+        *out_width_bits = 0U;
+    }
+    if (operand == NULL || out_width_bits == NULL) {
+        return false;
+    }
+
+    if (operand->width_bits != 0U) {
+        width_bits = operand->width_bits;
+    } else if (operand->kind == VM_IR_OPERAND_REGISTER) {
+        width_bits = vm_cpu_register_width_bits(operand->reg);
+    }
+
+    if (!vm_ir_width_is_supported(width_bits)) {
+        return false;
+    }
+
+    *out_width_bits = width_bits;
+    return true;
+}
+
+/// Resolves the effective address for a planned memory read.
+///
+/// This mirrors the executor's current register-indirect address arithmetic so
+/// pre-step strict diagnostics can stop read-modify-write instructions before
+/// write-back without broadening VM execution semantics.
+///
+/// @param vm VM whose register values should be inspected.
+/// @param operand Memory operand to resolve.
+/// @param out_address Receives the effective simulated address.
+/// @return true when the operand is a supported memory operand.
+static bool masm32_sim_wasm_resolve_memory_operand_address(const Vm *vm, const VmIrOperand *operand, uint32_t *out_address) {
+    uint32_t base_value = 0U;
+    uint32_t address = 0U;
+
+    if (out_address != NULL) {
+        *out_address = 0U;
+    }
+    if (vm == NULL || operand == NULL || out_address == NULL) {
+        return false;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+        *out_address = operand->address;
+        return true;
+    }
+    if (operand->kind != VM_IR_OPERAND_MEMORY_REGISTER) {
+        return false;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, operand->reg, &base_value)) {
+        return false;
+    }
+
+    address = operand->address + base_value;
+    if ((int32_t)operand->immediate < 0) {
+        uint32_t magnitude = (uint32_t)(-(int64_t)(int32_t)operand->immediate);
+        address -= magnitude;
+    } else {
+        address += (uint32_t)(int32_t)operand->immediate;
+    }
+
+    *out_address = address;
+    return true;
+}
+
+/// Adds one planned read to a fixed probe list when the operand reads memory.
+///
+/// Duplicate ranges in the same instruction are suppressed so a construct such
+/// as TEST over the same memory operand emits one warning for the read range.
+///
+/// @param reads Output planned-read array.
+/// @param read_capacity Number of entries available in @p reads.
+/// @param inout_read_count Current count to update.
+/// @param operand Operand that may read memory.
+/// @param width_bits Read width in bits.
+static void masm32_sim_wasm_add_planned_read(
+    Masm32SimWasmPlannedMemoryRead *reads,
+    size_t read_capacity,
+    size_t *inout_read_count,
+    const VmIrOperand *operand,
+    uint8_t width_bits
+) {
+    size_t index = 0U;
+
+    if (reads == NULL || inout_read_count == NULL || operand == NULL || !masm32_sim_wasm_operand_is_memory(operand) ||
+        !vm_ir_width_is_supported(width_bits)) {
+        return;
+    }
+
+    for (index = 0U; index < *inout_read_count; index += 1U) {
+        if (reads[index].operand.kind == operand->kind && reads[index].operand.address == operand->address &&
+            reads[index].operand.immediate == operand->immediate && reads[index].operand.reg == operand->reg &&
+            reads[index].width_bits == width_bits) {
+            return;
+        }
+    }
+
+    if (*inout_read_count >= read_capacity) {
+        return;
+    }
+
+    reads[*inout_read_count].operand = *operand;
+    reads[*inout_read_count].width_bits = width_bits;
+    *inout_read_count += 1U;
+}
+
+/// Collects memory reads that an instruction will perform if stepped.
+///
+/// The collector is intentionally limited to opcodes already implemented by
+/// the executor. Future memory-capable instructions should add their read
+/// patterns here when their milestones implement the instruction semantics.
+///
+/// @param instruction Instruction to inspect.
+/// @param reads Output planned-read array.
+/// @param read_capacity Number of entries available in @p reads.
+/// @return Number of planned reads collected.
+static size_t masm32_sim_wasm_collect_planned_reads(
+    const VmIrInstruction *instruction,
+    Masm32SimWasmPlannedMemoryRead *reads,
+    size_t read_capacity
+) {
+    size_t read_count = 0U;
+    uint8_t width_bits = 0U;
+
+    if (instruction == NULL || reads == NULL || read_capacity == 0U) {
+        return 0U;
+    }
+
+    switch (instruction->opcode) {
+        case VM_IR_OPCODE_MOV:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_ADD:
+        case VM_IR_OPCODE_SUB:
+        case VM_IR_OPCODE_ADC:
+        case VM_IR_OPCODE_SBB:
+        case VM_IR_OPCODE_TEST:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_NEG:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_XCHG:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
+            }
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_MOVSX:
+        case VM_IR_OPCODE_MOVZX:
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
+            }
+            break;
+        default:
+            /* TODO: Add future memory read-modify-write opcodes here when those instruction milestones implement them. */
+            break;
+    }
+
+    return read_count;
+}
+
+/// Copies best-effort bracketed memory operand source-span metadata.
+///
+/// @param instruction Instruction associated with the memory operand.
+/// @param source Original source text for byte-offset reconstruction.
+/// @param out_column Receives a one-based source column, or zero.
+/// @param out_byte_offset Receives the zero-based source byte offset.
+/// @param out_span_length Receives source span length in bytes.
+/// @param out_has_source_span Receives whether byte offset and span length are valid.
+static void masm32_sim_wasm_copy_bracketed_memory_source_span(
+    const VmIrInstruction *instruction,
+    const char *source,
+    uint32_t *out_column,
+    size_t *out_byte_offset,
+    size_t *out_span_length,
+    bool *out_has_source_span
+) {
+    const char *line_text = instruction != NULL ? instruction->source_text : NULL;
+    const char *span_start = NULL;
+    const char *span_end = NULL;
+    size_t line_start_offset = 0U;
+
+    if (out_column != NULL) {
+        *out_column = 0U;
+    }
+    if (out_byte_offset != NULL) {
+        *out_byte_offset = 0U;
+    }
+    if (out_span_length != NULL) {
+        *out_span_length = 0U;
+    }
+    if (out_has_source_span != NULL) {
+        *out_has_source_span = false;
+    }
+    if (instruction == NULL || source == NULL || line_text == NULL || instruction->source_line == 0U ||
+        out_column == NULL || out_byte_offset == NULL || out_span_length == NULL || out_has_source_span == NULL ||
+        !masm32_sim_wasm_find_line_start_offset(source, instruction->source_line, &line_start_offset)) {
+        return;
+    }
+
+    span_start = strchr(line_text, '[');
+    if (span_start == NULL) {
+        return;
+    }
+    span_end = strchr(span_start, ']');
+    if (span_end == NULL || span_end < span_start) {
+        return;
+    }
+
+    {
+        const char *source_line = source + line_start_offset;
+        const char *source_line_end = strchr(source_line, '\n');
+        const char *line_text_start = NULL;
+        size_t line_text_offset = 0U;
+
+        if (source_line_end == NULL) {
+            source_line_end = source_line + strlen(source_line);
+        }
+        line_text_start = strstr(source_line, line_text);
+        if (line_text_start != NULL && line_text_start <= source_line_end) {
+            line_text_offset = (size_t)(line_text_start - source_line);
+        }
+
+        *out_column = (uint32_t)(line_text_offset + (size_t)(span_start - line_text) + 1U);
+        *out_byte_offset = line_start_offset + (size_t)(*out_column - 1U);
+    }
+    *out_span_length = (size_t)(span_end - span_start) + 1U;
+    *out_has_source_span = true;
+}
+
+/// Counts bytes in a planned read that are still marked uninitialized-origin.
+///
+/// @param storage Source-run storage containing the initialization mask.
+/// @param address Effective simulated read address.
+/// @param size_bytes Number of bytes in the read range.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return Number of bytes in the read range that remain uninitialized-origin.
+static uint32_t masm32_sim_wasm_count_uninitialized_read_bytes(
+    const Masm32SimWasmRunStorage *storage,
+    uint32_t address,
+    uint32_t size_bytes,
+    const VmLayoutPolicy *layout_policy
+) {
+    VmLayoutPolicy default_policy;
+    const VmLayoutPolicy *effective_policy = layout_policy;
+    const VmLayoutRegionPolicy *data_region = NULL;
+    uint32_t offset = 0U;
+    uint32_t index = 0U;
+
+    if (storage == NULL || size_bytes == 0U) {
+        return 0U;
+    }
+    if (effective_policy == NULL) {
+        default_policy = vm_layout_default_policy();
+        effective_policy = &default_policy;
+    }
+
+    data_region = &effective_policy->regions[VM_LAYOUT_REGION_DATA];
+    if (address < data_region->base || address >= data_region->limit) {
+        return 0U;
+    }
+    offset = address - data_region->base;
+    if ((uint64_t)offset + (uint64_t)size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+        return 0U;
+    }
+
+    {
+        uint32_t uninitialized_count = 0U;
+
+        for (index = 0U; index < size_bytes; index += 1U) {
+            if (storage->data_initialized_mask[(size_t)offset + (size_t)index] == MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
+                uninitialized_count += 1U;
+            }
+        }
+
+        return uninitialized_count;
+    }
+}
+
+/// Fills one uninitialized-read diagnostic from a planned read.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param storage Source-run storage containing object metadata.
+/// @param instruction Instruction associated with the planned read.
+/// @param address Effective simulated read address.
+/// @param size_bytes Number of bytes in the read range.
+/// @param uninitialized_count Number of bytes in the range still uninitialized-origin.
+static void masm32_sim_wasm_fill_uninitialized_read_diagnostic(
+    Masm32SimWasmUninitializedReadDiagnostic *diagnostic,
+    const Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    uint32_t address,
+    uint32_t size_bytes,
+    uint32_t uninitialized_count
+) {
+    const VmObjectMapEntry *object = NULL;
+    uint32_t end_address = address;
+
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    (void)vm_object_map_inclusive_end(address, size_bytes, &end_address);
+    diagnostic->start_address = address;
+    diagnostic->end_address = end_address;
+    diagnostic->size_bytes = size_bytes;
+    diagnostic->uninitialized_byte_count = uninitialized_count;
+    diagnostic->initialized_byte_count = uninitialized_count <= size_bytes ? size_bytes - uninitialized_count : 0U;
+    diagnostic->source_line = instruction != NULL ? instruction->source_line : 0U;
+
+    if (storage != NULL) {
+        object = vm_object_map_find_by_address(storage->object_map_entries, storage->object_map_entry_count, address);
+    }
+    if (object != NULL) {
+        (void)snprintf(diagnostic->symbol_name, sizeof(diagnostic->symbol_name), "%s", object->symbol_name);
+        diagnostic->has_symbol_name = true;
+        diagnostic->symbol_byte_offset = address - object->base_address;
+    }
+
+    masm32_sim_wasm_copy_bracketed_memory_source_span(
+        instruction,
+        storage != NULL ? storage->source_text : NULL,
+        &diagnostic->source_column,
+        &diagnostic->source_byte_offset,
+        &diagnostic->source_span_length,
+        &diagnostic->has_source_span
+    );
+}
+
+/// Validates one planned memory read against Phase 40 uninitialized-origin metadata.
+///
+/// Warning mode records a non-fatal diagnostic. Strict mode records the first
+/// fatal diagnostic and asks the execution loop to stop before stepping the
+/// instruction, preserving read-modify-write write-back state.
+///
+/// @param storage Source-run storage to mutate.
+/// @param instruction Instruction associated with the planned read.
+/// @param vm VM whose registers are used for effective-address calculation.
+/// @param read Planned memory read to validate.
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return true when execution may continue, false for strict uninitialized reads.
+static bool masm32_sim_wasm_validate_uninitialized_read(
+    Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    const Vm *vm,
+    const Masm32SimWasmPlannedMemoryRead *read,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const VmLayoutPolicy *layout_policy
+) {
+    uint32_t address = 0U;
+    uint32_t size_bytes = 0U;
+    uint32_t uninitialized_count = 0U;
+
+    if (storage == NULL || instruction == NULL || vm == NULL || read == NULL ||
+        !masm32_sim_wasm_validation_checks_uninitialized_reads(validation_mode) ||
+        read->width_bits == 0U || (read->width_bits % 8U) != 0U ||
+        !masm32_sim_wasm_resolve_memory_operand_address(vm, &read->operand, &address)) {
+        return true;
+    }
+
+    size_bytes = (uint32_t)(read->width_bits / 8U);
+    uninitialized_count = masm32_sim_wasm_count_uninitialized_read_bytes(storage, address, size_bytes, layout_policy);
+    if (uninitialized_count == 0U) {
+        return true;
+    }
+
+    if (masm32_sim_wasm_validation_strict_uninitialized_reads(validation_mode)) {
+        masm32_sim_wasm_fill_uninitialized_read_diagnostic(
+            &storage->uninitialized_read_violation,
+            storage,
+            instruction,
+            address,
+            size_bytes,
+            uninitialized_count
+        );
+        storage->has_uninitialized_read_violation = true;
+        return false;
+    }
+
+    if (storage->uninitialized_read_warning_count < (size_t)MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS) {
+        masm32_sim_wasm_fill_uninitialized_read_diagnostic(
+            &storage->uninitialized_read_warnings[storage->uninitialized_read_warning_count],
+            storage,
+            instruction,
+            address,
+            size_bytes,
+            uninitialized_count
+        );
+        storage->uninitialized_read_warning_count += 1U;
+    }
+
+    return true;
+}
+
+/// Validates planned memory reads for the next instruction before stepping it.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose next instruction should be inspected.
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return OK when execution may continue, or MEMORY_ERROR for strict failures.
+static VmExecStatus masm32_sim_wasm_validate_uninitialized_reads_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const VmLayoutPolicy *layout_policy
+) {
+    Masm32SimWasmPlannedMemoryRead reads[2];
+    const VmIrInstruction *instruction = NULL;
+    size_t read_count = 0U;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL || !masm32_sim_wasm_validation_checks_uninitialized_reads(validation_mode) ||
+        vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    memset(reads, 0, sizeof(reads));
+    instruction = &vm->program[vm->instruction_pointer];
+    read_count = masm32_sim_wasm_collect_planned_reads(instruction, reads, sizeof(reads) / sizeof(reads[0]));
+    for (index = 0U; index < read_count; index += 1U) {
+        if (!masm32_sim_wasm_validate_uninitialized_read(storage, instruction, vm, &reads[index], validation_mode, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Records one unaligned memory warning when capacity allows it.
 ///
 /// @param storage Source-run storage to mutate.
@@ -1308,6 +1832,225 @@ static bool masm32_sim_json_append_object_violation(
         diagnostic != NULL ? diagnostic->source_span_length : 0U,
         diagnostic != NULL && diagnostic->has_source_span
     );
+}
+
+/// Builds user-facing text for one uninitialized-read diagnostic.
+///
+/// @param diagnostic Uninitialized-read diagnostic to describe.
+/// @param buffer Destination buffer for the formatted message.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_uninitialized_read_message(
+    const Masm32SimWasmUninitializedReadDiagnostic *diagnostic,
+    char *buffer,
+    size_t buffer_size
+) {
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+    if (diagnostic == NULL) {
+        (void)snprintf(buffer, buffer_size, "Read from uninitialized-origin storage.");
+        return;
+    }
+
+    if (diagnostic->has_symbol_name) {
+        (void)snprintf(
+            buffer,
+            buffer_size,
+            "Memory read range %08Xh..%08Xh reads %u byte%s from %s + %u; %u of those byte%s still originated from uninitialized storage.",
+            (unsigned int)diagnostic->start_address,
+            (unsigned int)diagnostic->end_address,
+            (unsigned int)diagnostic->size_bytes,
+            diagnostic->size_bytes == 1U ? "" : "s",
+            diagnostic->symbol_name,
+            (unsigned int)diagnostic->symbol_byte_offset,
+            (unsigned int)diagnostic->uninitialized_byte_count,
+            diagnostic->uninitialized_byte_count == 1U ? "" : "s"
+        );
+        return;
+    }
+
+    (void)snprintf(
+        buffer,
+        buffer_size,
+        "Memory read range %08Xh..%08Xh reads %u byte%s; %u of those byte%s still originated from uninitialized storage.",
+        (unsigned int)diagnostic->start_address,
+        (unsigned int)diagnostic->end_address,
+        (unsigned int)diagnostic->size_bytes,
+        diagnostic->size_bytes == 1U ? "" : "s",
+        (unsigned int)diagnostic->uninitialized_byte_count,
+        diagnostic->uninitialized_byte_count == 1U ? "" : "s"
+    );
+}
+
+/// Appends one uninitialized-read message object with diagnostic metadata.
+///
+/// @param writer Writer to mutate.
+/// @param kind Simulator-message kind to emit.
+/// @param diagnostic Diagnostic to render.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_uninitialized_read_message(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const Masm32SimWasmUninitializedReadDiagnostic *diagnostic
+) {
+    char message[256];
+
+    if (writer == NULL) {
+        return false;
+    }
+
+    masm32_sim_wasm_format_uninitialized_read_message(diagnostic, message, sizeof(message));
+    if (!masm32_sim_json_append(writer, "{\"kind\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, kind)) {
+        return false;
+    }
+    if (!masm32_sim_json_append(writer, ",\"code\":\"uninitialized-read\",\"message\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, message)) {
+        return false;
+    }
+    if (diagnostic != NULL && diagnostic->source_line > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"line\":%u", (unsigned int)diagnostic->source_line)) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL && diagnostic->source_column > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"column\":%u", (unsigned int)diagnostic->source_column)) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL && diagnostic->has_source_span) {
+        if (!masm32_sim_json_append(writer, ",\"byteOffset\":%llu", (unsigned long long)diagnostic->source_byte_offset)) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"spanLength\":%llu", (unsigned long long)diagnostic->source_span_length)) {
+            return false;
+        }
+    }
+    if (diagnostic == NULL || diagnostic->source_line == 0U) {
+        if (!masm32_sim_json_append(writer, ",\"sourceLocation\":null")) {
+            return false;
+        }
+    } else {
+        if (!masm32_sim_json_append(
+                writer,
+                ",\"sourceLocation\":{\"line\":%u,\"column\":",
+                (unsigned int)diagnostic->source_line
+            )) {
+            return false;
+        }
+        if (diagnostic->source_column > 0U) {
+            if (!masm32_sim_json_append(writer, "%u", (unsigned int)diagnostic->source_column)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, "null")) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"byteOffset\":")) {
+            return false;
+        }
+        if (diagnostic->has_source_span) {
+            if (!masm32_sim_json_append(writer, "%llu", (unsigned long long)diagnostic->source_byte_offset)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, "null")) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"spanLength\":")) {
+            return false;
+        }
+        if (diagnostic->has_source_span) {
+            if (!masm32_sim_json_append(writer, "%llu", (unsigned long long)diagnostic->source_span_length)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, "null")) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, "}")) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL) {
+        if (!masm32_sim_json_append(writer, ",\"symbolName\":")) {
+            return false;
+        }
+        if (diagnostic->has_symbol_name) {
+            if (!masm32_sim_json_append_string(writer, diagnostic->symbol_name)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, "null")) {
+            return false;
+        }
+        if (!masm32_sim_json_append(
+                writer,
+                ",\"accessStartAddress\":\"%08Xh\",\"accessEndAddress\":\"%08Xh\",\"accessSizeBytes\":%u,\"uninitializedByteCount\":%u,\"initializedByteCount\":%u",
+                (unsigned int)diagnostic->start_address,
+                (unsigned int)diagnostic->end_address,
+                (unsigned int)diagnostic->size_bytes,
+                (unsigned int)diagnostic->uninitialized_byte_count,
+                (unsigned int)diagnostic->initialized_byte_count
+            )) {
+            return false;
+        }
+        if (diagnostic->has_symbol_name) {
+            if (!masm32_sim_json_append(writer, ",\"accessByteOffset\":%u", (unsigned int)diagnostic->symbol_byte_offset)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, ",\"accessByteOffset\":null")) {
+            return false;
+        }
+    }
+
+    return masm32_sim_json_append(writer, "}");
+}
+
+/// Appends collected uninitialized-read warnings to the simulatorMessages array.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing uninitialized-read warnings.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @return true when warnings fit without overflowing the buffer.
+static bool masm32_sim_json_append_uninitialized_read_warnings(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    bool *inout_has_message
+) {
+    size_t index = 0U;
+
+    if (storage == NULL || inout_has_message == NULL) {
+        return true;
+    }
+
+    for (index = 0U; index < storage->uninitialized_read_warning_count; index += 1U) {
+        if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_uninitialized_read_message(
+                writer,
+                "simulator-warning",
+                &storage->uninitialized_read_warnings[index]
+            )) {
+            return false;
+        }
+        *inout_has_message = true;
+    }
+
+    return true;
+}
+
+/// Appends one uninitialized-read strict runtime diagnostic.
+///
+/// @param writer Writer to mutate.
+/// @param diagnostic Strict uninitialized-read diagnostic to render.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_uninitialized_read_violation(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmUninitializedReadDiagnostic *diagnostic
+) {
+    return masm32_sim_json_append_uninitialized_read_message(writer, "runtime-error", diagnostic);
 }
 
 /// Returns the simulator-message category for one parser diagnostic.
@@ -1704,7 +2447,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":30,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":40,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -1729,6 +2472,7 @@ static const char *masm32_sim_wasm_build_run_json(
         }
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
+        (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
@@ -1744,6 +2488,8 @@ static const char *masm32_sim_wasm_build_run_json(
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR) {
         if (storage != NULL && storage->has_object_violation) {
             (void)masm32_sim_json_append_object_violation(&writer, &storage->object_violation);
+        } else if (storage != NULL && storage->has_uninitialized_read_violation) {
+            (void)masm32_sim_json_append_uninitialized_read_violation(&writer, &storage->uninitialized_read_violation);
         } else {
             (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
         }
@@ -1770,7 +2516,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":30,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":40,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 
@@ -2380,6 +3126,16 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+        exec_status = masm32_sim_wasm_validate_uninitialized_reads_before_step(
+            &g_masm32_sim_wasm_run_storage,
+            &vm,
+            validation_mode,
+            runtime_policy
+        );
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
@@ -2430,13 +3186,29 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
 ) {
     if (validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS &&
-        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT) {
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT) {
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
     return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, false);
 }
 
+const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode
+) {
+    if (validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS &&
+        validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, true);
+}
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
     return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, true);

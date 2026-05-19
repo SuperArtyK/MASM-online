@@ -51,6 +51,60 @@ function resolveProducerPath() {
 /** Native producer path used by this harness; override for direct local runs. */
 const PRODUCER_PATH = resolveProducerPath();
 
+/** Environment variables that control the native diagnostic producer. */
+const PRODUCER_CONTROL_ENV_KEYS = [
+  "MASM32_DIAGNOSTIC_MEMORY_VALIDATION",
+  "MASM32_DIAGNOSTIC_LAYOUT_MODE",
+  "MASM32_DIAGNOSTIC_AUTO_DATA_LIMIT",
+  "MASM32_DIAGNOSTIC_AUTO_STACK_LIMIT",
+  "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
+  "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
+  "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT"
+];
+
+/**
+ * Deletes an environment variable by case-insensitive name.
+ *
+ * Windows treats environment variable names case-insensitively, but Node.js can
+ * expose differently-cased keys in `process.env`. Removing every matching key
+ * prevents stale shell variables from changing fixture behavior.
+ *
+ * @param {NodeJS.ProcessEnv} env Environment object to mutate.
+ * @param {string} key Environment key to delete case-insensitively.
+ * @returns {void}
+ */
+function deleteEnvKeyCaseInsensitive(env, key) {
+  const lowerKey = key.toLowerCase();
+  for (const existingKey of Object.keys(env)) {
+    if (existingKey.toLowerCase() === lowerKey) {
+      delete env[existingKey];
+    }
+  }
+}
+
+/**
+ * Builds a child-process environment with deterministic producer controls.
+ *
+ * Manual environment variables such as
+ * `MASM32_DIAGNOSTIC_MEMORY_VALIDATION=uninitialized-read-warnings` are useful
+ * for one-off producer runs, but they must not affect this test harness. This
+ * helper removes all producer-control variables before applying per-fixture
+ * overrides, while preserving unrelated variables such as PATH and the producer
+ * executable override.
+ *
+ * @param {Record<string, string>} extraEnv Additional environment variables for the producer.
+ * @returns {NodeJS.ProcessEnv} Environment object for `spawnSync`.
+ */
+function buildChildEnv(extraEnv = {}) {
+  const env = { ...process.env };
+
+  for (const key of PRODUCER_CONTROL_ENV_KEYS) {
+    deleteEnvKeyCaseInsensitive(env, key);
+  }
+
+  return { ...env, ...extraEnv };
+}
+
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} ExpectedMessage */
 /** @typedef {{source: string, reason: string}} DiagnosticFixture */
 
@@ -96,7 +150,7 @@ function fixtureContext(name, source, rawJson, rendered) {
  * @returns {{json: any, rawJson: string, rendered: string}} Parsed and rendered result.
  */
 function runFixture(name, source, extraEnv = {}) {
-  const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: { ...process.env, ...extraEnv } });
+  const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: buildChildEnv(extraEnv) });
   assert.equal(result.status, 0, `producer failed for ${name}: ${result.error?.message ?? result.stderr ?? "unknown spawn failure"}`);
   assert.equal(result.stderr, "", `producer wrote unexpected stderr for ${name}`);
   assert.match(result.stdout, /^\{/, `producer stdout must contain raw JSON only for ${name}`);
@@ -120,7 +174,7 @@ function runFixtureFile(name, source) {
 
   try {
     writeFileSync(fixturePath, source, "utf8");
-    const result = spawnSync(PRODUCER_PATH, [fixturePath], { encoding: "utf8" });
+    const result = spawnSync(PRODUCER_PATH, [fixturePath], { encoding: "utf8", env: buildChildEnv() });
     assert.equal(result.status, 0, `producer failed for ${name}: ${result.error?.message ?? result.stderr ?? "unknown spawn failure"}`);
     assert.equal(result.stderr, "", `producer wrote unexpected stderr for ${name}`);
     assert.match(result.stdout, /^\{/, `producer stdout must contain raw JSON only for ${name}`);
@@ -284,6 +338,29 @@ main ENDP
 END main
 `,
     reason: "Allocated-object warning mode diagnostic fixture."
+  },
+  uninitializedRead: {
+    source: `.data
+x DWORD ?
+.code
+main PROC
+    mov eax, x
+main ENDP
+END main
+`,
+    reason: "Uninitialized-read warning and strict diagnostic fixture."
+  },
+  uninitializedReadBracketed: {
+    source: `.data
+x DWORD ?
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Bracketed uninitialized-read strict source-span fixture."
   },
   success: {
     source: `.code
@@ -610,6 +687,79 @@ test("renders allocated-object strict violation exactly", () => {
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] object-bounds-violation line 6, column 10, byte offset 73, span length 9: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.");
+});
+
+test("renders uninitialized-read warning followed by successful execution exactly", () => {
+  const name = "uninitializedRead";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      sourceLocation: {
+        line: 5,
+        column: null,
+        byteOffset: null,
+        spanLength: null
+      },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders uninitialized-read strict violation with source span exactly", () => {
+  const name = "uninitializedReadBracketed";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 6,
+      column: 24,
+      byteOffset: 77,
+      spanLength: 5,
+      sourceLocation: {
+        line: 6,
+        column: 24,
+        byteOffset: 77,
+        spanLength: 5
+      },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] uninitialized-read line 6, column 24, byte offset 77, span length 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.");
 });
 
 test("renders automatic layout resource-limit diagnostic exactly", () => {

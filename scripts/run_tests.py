@@ -331,7 +331,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 39")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 40")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -383,6 +383,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/wasm/wasm_api.c", "/// Validates one memory access against the allocated-object mode")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_uninitialized_metadata")
     assert_text_contains("src/wasm/wasm_api.c", "uninitializedOrigin")
+    assert_text_contains("src/wasm/wasm_api.c", "uninitializedByteCount")
     assert_text_contains("src/wasm/wasm_api.c", "/// Marks successful writes from the last executed instruction as initialized")
     assert_text_contains("src/parser/parser.c", "/// Owns mutable parser state")
     assert_text_contains("tests/core/test_parser.c", "/*\n * @file test_parser.c")
@@ -402,7 +403,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies Phase 39 preserves default zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 30")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 40")
     assert_text_contains("web/src/formatters.js", "Formats final canonical registers")
     assert_text_contains("tests/web/test_formatters.mjs", "/*\n * @file test_formatters.mjs")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "/*\n * @file test_diagnostic_rendering.mjs")
@@ -663,6 +664,16 @@ def run_js_tests() -> None:
     run_command(["node", "tests/web/test_formatters.mjs"])
 
     diagnostic_env = os.environ.copy()
+    for key in [
+        "MASM32_DIAGNOSTIC_MEMORY_VALIDATION",
+        "MASM32_DIAGNOSTIC_LAYOUT_MODE",
+        "MASM32_DIAGNOSTIC_AUTO_DATA_LIMIT",
+        "MASM32_DIAGNOSTIC_AUTO_STACK_LIMIT",
+        "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
+        "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
+        "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT",
+    ]:
+        diagnostic_env.pop(key, None)
     diagnostic_env["MASM32_DIAGNOSTIC_JSON_PRODUCER"] = str(executable_output_path("diagnostic_json_producer").resolve())
     run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_env)
 
