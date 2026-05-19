@@ -223,6 +223,15 @@ typedef struct VmParserConfig {
     uint8_t *data_image;
     /// Number of bytes available in @ref data_image.
     size_t data_image_capacity;
+    /// Optional caller-owned per-byte initialization mask for .data/.DATA? bytes.
+    ///
+    /// A value of 1 means the byte is initialized by an explicit initializer.
+    /// A value of 0 means the byte originated from `?` or `.DATA?` storage and
+    /// remains deterministic zero-filled until a successful program write marks
+    /// it initialized. NULL disables Phase 39 metadata emission.
+    uint8_t *data_initialized_mask;
+    /// Number of bytes available in @ref data_initialized_mask.
+    size_t data_initialized_mask_capacity;
     /// Caller-owned .CONST image bytes laid out from VM_MEMORY_DEFAULT_CONST_BASE.
     uint8_t *const_image;
     /// Number of bytes available in @ref const_image.
@@ -247,9 +256,9 @@ typedef struct VmParserResult {
     size_t lexer_diagnostic_count;
     /// Number of data symbols written to the configured symbol buffer.
     size_t symbol_count;
-    /// Number of initialized bytes written to the configured .data/.DATA? image buffer.
+    /// Number of bytes written to the configured .data/.DATA? image buffer.
     size_t data_size;
-    /// Number of initialized bytes written to the configured .CONST image buffer.
+    /// Number of bytes written to the configured .CONST image buffer.
     size_t const_size;
     /// Whether a `.stack` directive source span was parsed.
     bool has_stack_directive_source_span;

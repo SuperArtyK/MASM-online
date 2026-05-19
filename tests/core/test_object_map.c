@@ -1,9 +1,10 @@
 /*
  * @file test_object_map.c
- * @brief Phase 36 declared-object allocation map tests.
+ * @brief Declared-object allocation map and initialization-origin metadata tests.
  *
  * These tests verify that declared `.data`, `.DATA?`, and `.CONST` symbols are
- * mirrored into metadata-only object ranges without changing runtime memory
+ * mirrored into metadata-only object ranges and, in Phase 39 test-only paths,
+ * carry per-byte initialization-origin counts without changing default runtime
  * validation or source-run JSON output.
  */
 
@@ -61,6 +62,8 @@ typedef struct ObjectMapTestBuffers {
     char source_text[TEST_OBJECT_SOURCE_TEXT];
     /// Writable data image.
     uint8_t data_image[TEST_OBJECT_DATA_BYTES];
+    /// Per-byte initialized-state mask for writable data image bytes.
+    uint8_t data_initialized_mask[TEST_OBJECT_DATA_BYTES];
     /// Read-only const image.
     uint8_t const_image[TEST_OBJECT_CONST_BYTES];
 } ObjectMapTestBuffers;
@@ -165,6 +168,8 @@ static VmParserStatus parse_for_object_map_test(const char *source, ObjectMapTes
     config.symbol_capacity = TEST_OBJECT_SYMBOLS;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_OBJECT_DATA_BYTES;
+    config.data_initialized_mask = buffers->data_initialized_mask;
+    config.data_initialized_mask_capacity = TEST_OBJECT_DATA_BYTES;
     config.const_image = buffers->const_image;
     config.const_image_capacity = TEST_OBJECT_CONST_BYTES;
     config.diagnostics = buffers->diagnostics;
@@ -185,6 +190,30 @@ static int build_default_object_map(const char *source, ObjectMapTestBuffers *bu
 
     object_status = vm_object_map_build_from_symbols(buffers->symbols, out_result->symbol_count, buffers->objects, TEST_OBJECTS, out_count);
     return expect_object_status(object_status, VM_OBJECT_MAP_STATUS_OK, "object map should build from parsed symbols");
+}
+
+
+/// Parses one fixture and builds an object map with Phase 39 initialization-origin metadata.
+static int build_tracked_object_map(const char *source, ObjectMapTestBuffers *buffers, VmParserResult *out_result, size_t *out_count) {
+    VmParserStatus parser_status = parse_for_object_map_test(source, buffers, out_result);
+    VmObjectMapStatus object_status = VM_OBJECT_MAP_STATUS_OK;
+
+    if (parser_status != VM_PARSER_STATUS_OK) {
+        fprintf(stderr, "FAIL: parser should succeed for tracked object-map fixture (status=%s diagnostics=%zu)\n", vm_parser_status_name(parser_status), out_result->diagnostic_count);
+        return 1;
+    }
+
+    object_status = vm_object_map_build_from_symbols_with_initialization_mask(
+        buffers->symbols,
+        out_result->symbol_count,
+        NULL,
+        buffers->data_initialized_mask,
+        out_result->data_size,
+        buffers->objects,
+        TEST_OBJECTS,
+        out_count
+    );
+    return expect_object_status(object_status, VM_OBJECT_MAP_STATUS_OK, "tracked object map should build from parsed symbols");
 }
 
 /// Finds an object-map entry by symbol name.
@@ -277,6 +306,65 @@ static int test_object_map_records_declared_objects(void) {
     }
 
     failures += expect_string(vm_object_initialization_origin_state_name(VM_OBJECT_INITIALIZATION_ORIGIN_NOT_TRACKED), "not-tracked", "initialization-origin status name should be stable");
+    return failures;
+}
+
+
+/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts.
+static int test_phase39_object_map_tracks_initialization_origin_counts(void) {
+    static const char *source =
+        ".DATA?\n"
+        "buf BYTE 2 DUP(2 DUP(?))\n"
+        ".data\n"
+        "x DWORD ?\n"
+        "y DWORD 123\n"
+        "mixed BYTE ?, 1\n"
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "END main\n";
+    static ObjectMapTestBuffers buffers;
+    VmParserResult result;
+    size_t object_count = 0U;
+    const VmObjectMapEntry *buf = NULL;
+    const VmObjectMapEntry *x = NULL;
+    const VmObjectMapEntry *y = NULL;
+    const VmObjectMapEntry *mixed = NULL;
+    const VmObjectMapEntry *limit = NULL;
+    int failures = build_tracked_object_map(source, &buffers, &result, &object_count);
+
+    buf = find_object_by_name(buffers.objects, object_count, "buf");
+    x = find_object_by_name(buffers.objects, object_count, "x");
+    y = find_object_by_name(buffers.objects, object_count, "y");
+    mixed = find_object_by_name(buffers.objects, object_count, "mixed");
+    limit = find_object_by_name(buffers.objects, object_count, "limit");
+
+    failures += expect_bool(buf != NULL && x != NULL && y != NULL && mixed != NULL && limit != NULL, "tracked-origin fixture objects should exist");
+
+    if (buf != NULL) {
+        failures += expect_bool(buf->initialization_origin_state == VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED, ".DATA? object should have tracked origin metadata");
+        failures += expect_u32(buf->initialized_byte_count, 0U, ".DATA? nested DUP(?) should have zero initialized bytes");
+        failures += expect_u32(buf->uninitialized_byte_count, 4U, ".DATA? nested DUP(?) should have four uninitialized-origin bytes");
+    }
+    if (x != NULL) {
+        failures += expect_u32(x->initialized_byte_count, 0U, "DWORD ? should have zero initialized bytes");
+        failures += expect_u32(x->uninitialized_byte_count, 4U, "DWORD ? should have four uninitialized-origin bytes");
+    }
+    if (y != NULL) {
+        failures += expect_u32(y->initialized_byte_count, 4U, "explicit DWORD initializer should have four initialized bytes");
+        failures += expect_u32(y->uninitialized_byte_count, 0U, "explicit DWORD initializer should have zero uninitialized-origin bytes");
+    }
+    if (mixed != NULL) {
+        failures += expect_u32(mixed->initialized_byte_count, 1U, "mixed initializer should count one initialized byte");
+        failures += expect_u32(mixed->uninitialized_byte_count, 1U, "mixed initializer should count one uninitialized-origin byte");
+    }
+    if (limit != NULL) {
+        failures += expect_u32(limit->initialized_byte_count, 4U, ".CONST initializer should be counted initialized");
+        failures += expect_u32(limit->uninitialized_byte_count, 0U, ".CONST initializer should not have uninitialized-origin bytes");
+    }
+
+    failures += expect_string(vm_object_initialization_origin_state_name(VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED), "tracked", "tracked initialization-origin status name should be stable");
     return failures;
 }
 
@@ -489,11 +577,14 @@ static int test_object_map_uses_selected_layout_bases(void) {
     VmLayoutDiagnostic diagnostic;
     VmObjectMapEntry automatic_objects[TEST_OBJECTS];
     VmObjectMapEntry randomized_objects[TEST_OBJECTS];
+    VmObjectMapEntry randomized_tracked_objects[TEST_OBJECTS];
     const VmObjectMapEntry *automatic_value = NULL;
     const VmObjectMapEntry *automatic_limit = NULL;
     const VmObjectMapEntry *randomized_value = NULL;
+    const VmObjectMapEntry *randomized_tracked_value = NULL;
     size_t automatic_count = 0U;
     size_t randomized_count = 0U;
+    size_t randomized_tracked_count = 0U;
     int failures = 0;
 
     if (parse_for_object_map_test(source, &buffers, &result) != VM_PARSER_STATUS_OK) {
@@ -531,6 +622,30 @@ static int test_object_map_uses_selected_layout_bases(void) {
         failures += expect_bool(randomized_value->base_address != VM_MEMORY_DEFAULT_DATA_BASE || randomized_policy.regions[VM_LAYOUT_REGION_DATA].base == VM_MEMORY_DEFAULT_DATA_BASE, "randomized object base should follow selected policy exactly");
     } else {
         failures += expect_bool(false, "randomized selected-layout object should be discoverable");
+    }
+
+    failures += expect_object_status(
+        vm_object_map_build_from_symbols_with_initialization_mask(
+            buffers.symbols,
+            result.symbol_count,
+            &randomized_policy,
+            buffers.data_initialized_mask,
+            result.data_size,
+            randomized_tracked_objects,
+            TEST_OBJECTS,
+            &randomized_tracked_count
+        ),
+        VM_OBJECT_MAP_STATUS_OK,
+        "randomized tracked object map should build from parser-fixed symbols"
+    );
+    randomized_tracked_value = find_object_by_name(randomized_tracked_objects, randomized_tracked_count, "value");
+    if (randomized_tracked_value != NULL) {
+        failures += expect_u32(randomized_tracked_value->base_address, randomized_policy.regions[VM_LAYOUT_REGION_DATA].base, "randomized tracked data object should use selected randomized base");
+        failures += expect_bool(randomized_tracked_value->initialization_origin_state == VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED, "randomized tracked object should preserve initialization-origin state");
+        failures += expect_u32(randomized_tracked_value->initialized_byte_count, 4U, "randomized tracked explicit initializer should remain initialized");
+        failures += expect_u32(randomized_tracked_value->uninitialized_byte_count, 0U, "randomized tracked explicit initializer should not report uninitialized-origin bytes");
+    } else {
+        failures += expect_bool(false, "randomized tracked selected-layout object should be discoverable");
     }
     return failures;
 }
@@ -571,11 +686,12 @@ static int test_runtime_behavior_is_unchanged(void) {
     return failures;
 }
 
-/// Runs all Phase 36 declared-object map tests.
+/// Runs all declared-object map and initialization-origin tests.
 int main(void) {
     int failures = 0;
 
     failures += test_object_map_records_declared_objects();
+    failures += test_phase39_object_map_tracks_initialization_origin_counts();
     failures += test_adjacent_objects_are_not_merged();
     failures += test_full_range_lookup_and_overflow();
     failures += test_full_range_classification_categories();

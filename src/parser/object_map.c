@@ -163,13 +163,61 @@ bool vm_object_map_inclusive_end(uint32_t base, uint32_t size, uint32_t *out_end
     return true;
 }
 
+/// Counts initialized bytes for one data object from a section-offset mask.
+///
+/// @param object_offset Offset of the object from the selected `.data` region base.
+/// @param object_size Number of bytes occupied by the object.
+/// @param data_initialized_mask Per-byte initialized-state mask.
+/// @param data_initialized_mask_size Number of bytes available in @p data_initialized_mask.
+/// @param out_initialized_count Receives the number of initialized bytes.
+/// @return true when the requested mask range is available.
+static bool vm_object_map_count_initialized_bytes(
+    uint32_t object_offset,
+    uint32_t object_size,
+    const uint8_t *data_initialized_mask,
+    size_t data_initialized_mask_size,
+    uint32_t *out_initialized_count
+) {
+    uint32_t index = 0U;
+    uint32_t initialized_count = 0U;
+
+    if (out_initialized_count != NULL) {
+        *out_initialized_count = 0U;
+    }
+    if (data_initialized_mask == NULL || out_initialized_count == NULL || object_size == 0U) {
+        return false;
+    }
+    if ((uint64_t)object_offset + (uint64_t)object_size > (uint64_t)data_initialized_mask_size) {
+        return false;
+    }
+
+    for (index = 0U; index < object_size; index += 1U) {
+        if (data_initialized_mask[(size_t)object_offset + (size_t)index] != 0U) {
+            initialized_count += 1U;
+        }
+    }
+
+    *out_initialized_count = initialized_count;
+    return true;
+}
+
 /// Writes one object-map entry from one symbol and base address.
 ///
 /// @param symbol Source symbol to copy.
 /// @param base_address Final base address to store in the entry.
+/// @param selected_data_base Base address used to index @p data_initialized_mask.
+/// @param data_initialized_mask Optional per-byte initialized-state mask.
+/// @param data_initialized_mask_size Number of bytes available in @p data_initialized_mask.
 /// @param entry Output entry to populate.
 /// @return Object-map construction status.
-static VmObjectMapStatus vm_object_map_entry_from_symbol(const VmSymbol *symbol, uint32_t base_address, VmObjectMapEntry *entry) {
+static VmObjectMapStatus vm_object_map_entry_from_symbol(
+    const VmSymbol *symbol,
+    uint32_t base_address,
+    uint32_t selected_data_base,
+    const uint8_t *data_initialized_mask,
+    size_t data_initialized_mask_size,
+    VmObjectMapEntry *entry
+) {
     uint32_t end_address = 0U;
 
     if (symbol == NULL || entry == NULL) {
@@ -196,6 +244,20 @@ static VmObjectMapStatus vm_object_map_entry_from_symbol(const VmSymbol *symbol,
     entry->source_location = symbol->source_location;
     entry->source_span_length = symbol->source_span_length;
     entry->initialization_origin_state = VM_OBJECT_INITIALIZATION_ORIGIN_NOT_TRACKED;
+
+    if (symbol->section == VM_SYMBOL_SECTION_CONST) {
+        entry->initialized_byte_count = symbol->size_bytes;
+        entry->uninitialized_byte_count = 0U;
+    } else if (data_initialized_mask != NULL && base_address >= selected_data_base) {
+        uint32_t object_offset = base_address - selected_data_base;
+        uint32_t initialized_count = 0U;
+        if (vm_object_map_count_initialized_bytes(object_offset, symbol->size_bytes, data_initialized_mask, data_initialized_mask_size, &initialized_count)) {
+            entry->initialization_origin_state = VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED;
+            entry->initialized_byte_count = initialized_count;
+            entry->uninitialized_byte_count = symbol->size_bytes - initialized_count;
+        }
+    }
+
     return VM_OBJECT_MAP_STATUS_OK;
 }
 
@@ -224,7 +286,7 @@ VmObjectMapStatus vm_object_map_build_from_symbols(
         if (count >= entry_capacity) {
             return VM_OBJECT_MAP_STATUS_CAPACITY_EXCEEDED;
         }
-        status = vm_object_map_entry_from_symbol(&symbols[index], symbols[index].address, &entries[count]);
+        status = vm_object_map_entry_from_symbol(&symbols[index], symbols[index].address, VM_MEMORY_DEFAULT_DATA_BASE, NULL, 0U, &entries[count]);
         if (status != VM_OBJECT_MAP_STATUS_OK) {
             return status;
         }
@@ -287,7 +349,91 @@ VmObjectMapStatus vm_object_map_build_from_symbols_with_layout(
             return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
         }
 
-        status = vm_object_map_entry_from_symbol(symbol, final_base, &entries[count]);
+        status = vm_object_map_entry_from_symbol(symbol, final_base, selected_policy != NULL ? selected_policy->regions[VM_LAYOUT_REGION_DATA].base : VM_MEMORY_DEFAULT_DATA_BASE, NULL, 0U, &entries[count]);
+        if (status != VM_OBJECT_MAP_STATUS_OK) {
+            return status;
+        }
+        count += 1U;
+    }
+
+    *out_entry_count = count;
+    return VM_OBJECT_MAP_STATUS_OK;
+}
+
+VmObjectMapStatus vm_object_map_build_from_symbols_with_initialization_mask(
+    const VmSymbol *symbols,
+    size_t symbol_count,
+    const VmLayoutPolicy *selected_policy,
+    const uint8_t *data_initialized_mask,
+    size_t data_initialized_mask_size,
+    VmObjectMapEntry *entries,
+    size_t entry_capacity,
+    size_t *out_entry_count
+) {
+    size_t index = 0U;
+    size_t count = 0U;
+    uint32_t selected_data_base = VM_MEMORY_DEFAULT_DATA_BASE;
+    uint32_t selected_data_limit = VM_MEMORY_DEFAULT_DATA_BASE + VM_MEMORY_DEFAULT_DATA_SIZE;
+
+    if (out_entry_count != NULL) {
+        *out_entry_count = 0U;
+    }
+    if ((symbols == NULL && symbol_count > 0U) || entries == NULL || out_entry_count == NULL) {
+        return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_object_map_selected_bounds_for_section(selected_policy, VM_SYMBOL_SECTION_DATA, &selected_data_base, &selected_data_limit)) {
+        return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
+    }
+    (void)selected_data_limit;
+
+    for (index = 0U; index < symbol_count; index += 1U) {
+        VmObjectMapStatus status = VM_OBJECT_MAP_STATUS_OK;
+        const VmSymbol *symbol = &symbols[index];
+        uint32_t fixed_base = 0U;
+        uint32_t selected_base = 0U;
+        uint32_t selected_limit = 0U;
+        uint32_t offset = 0U;
+        uint32_t final_base = 0U;
+        uint32_t final_end = 0U;
+
+        if (symbol->size_bytes == 0U) {
+            continue;
+        }
+        if (count >= entry_capacity) {
+            return VM_OBJECT_MAP_STATUS_CAPACITY_EXCEEDED;
+        }
+        if (!vm_object_map_fixed_base_for_section(symbol->section, &fixed_base) ||
+            !vm_object_map_selected_bounds_for_section(selected_policy, symbol->section, &selected_base, &selected_limit)) {
+            return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (symbol->address >= selected_base && symbol->address < selected_limit) {
+            final_base = symbol->address;
+        } else if (symbol->address >= fixed_base) {
+            offset = symbol->address - fixed_base;
+            if (selected_base > UINT32_MAX - offset) {
+                return VM_OBJECT_MAP_STATUS_INTEGER_OVERFLOW;
+            }
+            final_base = selected_base + offset;
+        } else {
+            return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (!vm_object_map_inclusive_end(final_base, symbol->size_bytes, &final_end)) {
+            return VM_OBJECT_MAP_STATUS_INTEGER_OVERFLOW;
+        }
+        if (final_base >= selected_limit || final_end >= selected_limit) {
+            return VM_OBJECT_MAP_STATUS_INVALID_ARGUMENT;
+        }
+
+        status = vm_object_map_entry_from_symbol(
+            symbol,
+            final_base,
+            selected_data_base,
+            data_initialized_mask,
+            data_initialized_mask_size,
+            &entries[count]
+        );
         if (status != VM_OBJECT_MAP_STATUS_OK) {
             return status;
         }
@@ -467,6 +613,8 @@ const char *vm_object_initialization_origin_state_name(VmObjectInitializationOri
     switch (state) {
         case VM_OBJECT_INITIALIZATION_ORIGIN_NOT_TRACKED:
             return "not-tracked";
+        case VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED:
+            return "tracked";
         default:
             return NULL;
     }

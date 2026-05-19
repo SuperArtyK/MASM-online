@@ -38,8 +38,10 @@ typedef struct VmObjectMapEntry VmObjectMapEntry;
 
 /// Describes the current initialization-origin tracking state for one object.
 typedef enum VmObjectInitializationOriginState {
-    /// Per-byte initialization origin is intentionally not tracked before the later uninitialized-origin phase.
-    VM_OBJECT_INITIALIZATION_ORIGIN_NOT_TRACKED = 0
+    /// Per-byte initialization origin is not available for this object-map entry.
+    VM_OBJECT_INITIALIZATION_ORIGIN_NOT_TRACKED = 0,
+    /// Per-object initialized/uninitialized-origin byte counts were computed.
+    VM_OBJECT_INITIALIZATION_ORIGIN_TRACKED
 } VmObjectInitializationOriginState;
 
 /// Classifies how one full access range relates to declared objects and valid regions.
@@ -106,8 +108,12 @@ struct VmObjectMapEntry {
     VmLexerSourceLocation source_location;
     /// Source span length of the declaration symbol token in bytes.
     size_t source_span_length;
-    /// Placeholder initialization-origin state before byte-level origin tracking is implemented.
+    /// Initialization-origin tracking state for this object.
     VmObjectInitializationOriginState initialization_origin_state;
+    /// Number of bytes currently marked initialized inside this object.
+    uint32_t initialized_byte_count;
+    /// Number of bytes that originated from uninitialized storage and remain uninitialized.
+    uint32_t uninitialized_byte_count;
 };
 
 /// Builds declared-object entries from symbols that already contain final addresses.
@@ -148,6 +154,34 @@ VmObjectMapStatus vm_object_map_build_from_symbols_with_layout(
     const VmSymbol *symbols,
     size_t symbol_count,
     const VmLayoutPolicy *selected_policy,
+    VmObjectMapEntry *entries,
+    size_t entry_capacity,
+    size_t *out_entry_count
+);
+
+/// Builds declared-object entries from symbols plus a section-offset initialization mask.
+///
+/// The mask is indexed from the selected `.data`/`.DATA?` region base. A mask
+/// byte of 1 means the corresponding storage byte is initialized; 0 means it
+/// originated from `?` or `.DATA?` and remains uninitialized-origin. `.CONST`
+/// entries are always counted as initialized because they must have explicit
+/// initializers.
+///
+/// @param symbols Parser-emitted data symbols to convert.
+/// @param symbol_count Number of valid symbols in @p symbols.
+/// @param selected_policy Selected runtime layout policy; NULL uses the fixed default policy.
+/// @param data_initialized_mask Optional `.data`/`.DATA?` initialization mask.
+/// @param data_initialized_mask_size Number of bytes available in @p data_initialized_mask.
+/// @param entries Caller-owned output entry buffer.
+/// @param entry_capacity Number of entries available in @p entries.
+/// @param out_entry_count Receives the number of object entries written.
+/// @return Object-map construction status.
+VmObjectMapStatus vm_object_map_build_from_symbols_with_initialization_mask(
+    const VmSymbol *symbols,
+    size_t symbol_count,
+    const VmLayoutPolicy *selected_policy,
+    const uint8_t *data_initialized_mask,
+    size_t data_initialized_mask_size,
     VmObjectMapEntry *entries,
     size_t entry_capacity,
     size_t *out_entry_count

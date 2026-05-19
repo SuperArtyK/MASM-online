@@ -57,6 +57,12 @@
 /// Maximum declared-object map entries retained by one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES MASM32_SIM_WASM_MAX_RUN_SYMBOLS
 
+/// Mask value used for bytes that are currently initialized.
+#define MASM32_SIM_WASM_DATA_BYTE_INITIALIZED 1U
+
+/// Mask value used for bytes that remain uninitialized-origin.
+#define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
+
 /// Maximum .data/.DATA? bytes laid out by the source-run API.
 #define MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES VM_MEMORY_DEFAULT_DATA_SIZE
 
@@ -198,6 +204,10 @@ typedef struct Masm32SimWasmRunStorage {
     size_t object_map_entry_count;
     /// Data image bytes emitted by the parser for `.data` and `.DATA?`.
     uint8_t data_image[MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES];
+    /// Per-byte initialization mask for `.data` and `.DATA?` bytes.
+    uint8_t data_initialized_mask[MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES];
+    /// Number of `.data`/`.DATA?` bytes covered by @ref data_initialized_mask.
+    size_t data_initialized_mask_size;
     /// Constant image bytes emitted by the parser for `.CONST`.
     uint8_t const_image[MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES];
     /// Symbol-aware memory changes collected during execution.
@@ -970,6 +980,72 @@ static bool masm32_sim_wasm_validate_object_access(
     return true;
 }
 
+
+/// Marks one successful write access as initialized in the Phase 39 data mask.
+///
+/// @param storage Source-run storage containing the initialization mask.
+/// @param access Successful checked memory write access to apply.
+/// @param layout_policy Selected runtime layout policy, or NULL for the fixed default.
+static void masm32_sim_wasm_mark_initialized_for_access(
+    Masm32SimWasmRunStorage *storage,
+    const VmExecMemoryAccess *access,
+    const VmLayoutPolicy *layout_policy
+) {
+    VmLayoutPolicy default_policy;
+    const VmLayoutPolicy *effective_policy = layout_policy;
+    const VmLayoutRegionPolicy *data_region = NULL;
+    uint32_t size_bytes = 0U;
+    uint32_t offset = 0U;
+    uint32_t index = 0U;
+
+    if (storage == NULL || access == NULL || access->kind != VM_EXEC_MEMORY_ACCESS_WRITE ||
+        !masm32_sim_wasm_access_succeeded(access) || access->width_bits == 0U || (access->width_bits % 8U) != 0U) {
+        return;
+    }
+
+    if (effective_policy == NULL) {
+        default_policy = vm_layout_default_policy();
+        effective_policy = &default_policy;
+    }
+
+    data_region = &effective_policy->regions[VM_LAYOUT_REGION_DATA];
+    size_bytes = (uint32_t)(access->width_bits / 8U);
+    if (access->address < data_region->base || access->address >= data_region->limit) {
+        return;
+    }
+    offset = access->address - data_region->base;
+    if ((uint64_t)offset + (uint64_t)size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+        return;
+    }
+
+    for (index = 0U; index < size_bytes; index += 1U) {
+        storage->data_initialized_mask[(size_t)offset + (size_t)index] = MASM32_SIM_WASM_DATA_BYTE_INITIALIZED;
+    }
+}
+
+/// Marks successful writes from the last executed instruction as initialized.
+///
+/// @param storage Source-run storage containing the initialization mask.
+/// @param vm VM whose last delta should be inspected.
+/// @param layout_policy Selected runtime layout policy, or NULL for the fixed default.
+static void masm32_sim_wasm_mark_initialized_writes(Masm32SimWasmRunStorage *storage, const Vm *vm, const VmLayoutPolicy *layout_policy) {
+    const VmExecDelta *delta = NULL;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL) {
+        return;
+    }
+
+    delta = vm_last_delta(vm);
+    if (delta == NULL || !delta->has_instruction) {
+        return;
+    }
+
+    for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        masm32_sim_wasm_mark_initialized_for_access(storage, &delta->memory_accesses[index], layout_policy);
+    }
+}
+
 /// Applies allocated-object validation to all accesses from the last instruction.
 ///
 /// @param storage Source-run storage to mutate.
@@ -1511,6 +1587,90 @@ static bool masm32_sim_json_append_layout_metadata(Masm32SimJsonWriter *writer, 
     return masm32_sim_json_append(writer, "}},");
 }
 
+
+/// Appends a compact test-only view of per-object initialized-byte masks.
+///
+/// This metadata is intentionally omitted from the normal browser source-run
+/// export. It exists so native tests can inspect Phase 39 uninitialized-origin
+/// tracking without adding uninitialized-read diagnostics.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing object entries and byte masks.
+/// @return true when the metadata was omitted or appended successfully.
+static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *writer, const Masm32SimWasmRunStorage *storage) {
+    size_t index = 0U;
+    bool has_object = false;
+
+    if (writer == NULL || storage == NULL) {
+        return false;
+    }
+
+    if (!masm32_sim_json_append(writer, ",\"uninitializedOrigin\":{\"tracked\":true,\"objects\":[")) {
+        return false;
+    }
+
+    for (index = 0U; index < storage->object_map_entry_count; index += 1U) {
+        const VmObjectMapEntry *object = &storage->object_map_entries[index];
+        uint32_t byte_index = 0U;
+        uint32_t data_offset = 0U;
+
+        if (object->section == VM_SYMBOL_SECTION_CONST) {
+            continue;
+        }
+        if (object->base_address < VM_MEMORY_DEFAULT_DATA_BASE) {
+            continue;
+        }
+        data_offset = object->base_address - VM_MEMORY_DEFAULT_DATA_BASE;
+        if ((uint64_t)data_offset + (uint64_t)object->size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+            continue;
+        }
+
+        if (has_object && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        has_object = true;
+
+        {
+            uint32_t initialized_count = 0U;
+            uint32_t uninitialized_count = 0U;
+            for (byte_index = 0U; byte_index < object->size_bytes; byte_index += 1U) {
+                if (storage->data_initialized_mask[(size_t)data_offset + (size_t)byte_index] != 0U) {
+                    initialized_count += 1U;
+                }
+            }
+            uninitialized_count = object->size_bytes - initialized_count;
+
+            if (!masm32_sim_json_append(writer, "{\"symbol\":") ||
+                !masm32_sim_json_append_string(writer, object->symbol_name) ||
+                !masm32_sim_json_append(
+                    writer,
+                    ",\"state\":\"%s\",\"initializedByteCount\":%u,\"uninitializedByteCount\":%u,\"initializedMask\":\"",
+                    vm_object_initialization_origin_state_name(object->initialization_origin_state),
+                    (unsigned int)initialized_count,
+                    (unsigned int)uninitialized_count
+                )) {
+                return false;
+            }
+
+            for (byte_index = 0U; byte_index < object->size_bytes; byte_index += 1U) {
+                if (!masm32_sim_json_append(
+                        writer,
+                        "%c",
+                        storage->data_initialized_mask[(size_t)data_offset + (size_t)byte_index] != 0U ? '1' : '0'
+                    )) {
+                    return false;
+                }
+            }
+        }
+
+        if (!masm32_sim_json_append(writer, "\"}")) {
+            return false;
+        }
+    }
+
+    return masm32_sim_json_append(writer, "]}");
+}
+
 /// Builds a full JSON response into the static source-run buffer.
 ///
 /// @param outcome High-level result outcome.
@@ -1521,6 +1681,7 @@ static bool masm32_sim_json_append_layout_metadata(Masm32SimJsonWriter *writer, 
 /// @param storage Optional source-run storage containing symbol-aware memory changes.
 /// @param layout_policy Optional selected randomized layout policy to serialize.
 /// @param layout_message Optional layout failure message to serialize.
+/// @param include_uninitialized_metadata Whether to append test-only Phase 39 metadata.
 /// @return Pointer to the static JSON response buffer.
 static const char *masm32_sim_wasm_build_run_json(
     Masm32SimWasmRunOutcome outcome,
@@ -1530,7 +1691,8 @@ static const char *masm32_sim_wasm_build_run_json(
     VmExecStatus exec_status,
     const Masm32SimWasmRunStorage *storage,
     const VmLayoutPolicy *layout_policy,
-    const Masm32SimWasmLayoutMessage *layout_message
+    const Masm32SimWasmLayoutMessage *layout_message,
+    bool include_uninitialized_metadata
 ) {
     Masm32SimJsonWriter writer;
     uint64_t instruction_count = vm != NULL ? vm->instruction_count : 0U;
@@ -1553,6 +1715,9 @@ static const char *masm32_sim_wasm_build_run_json(
     }
 
     (void)masm32_sim_json_append_memory_changes(&writer, storage);
+    if (include_uninitialized_metadata) {
+        (void)masm32_sim_json_append_uninitialized_metadata(&writer, storage);
+    }
     (void)masm32_sim_json_append(&writer, ",");
 
     (void)masm32_sim_json_append(&writer, "\"simulatorMessages\":[");
@@ -2043,17 +2208,25 @@ static bool masm32_sim_wasm_relocate_parser_output(
 ///
 /// @param result Parser result containing symbol count metadata.
 /// @param storage Source-run storage that owns symbols and object entries.
+/// @param runtime_policy Selected runtime layout policy, or NULL for the fixed default.
 /// @return true when object-map metadata was built successfully.
-static bool masm32_sim_wasm_build_declared_object_map(const VmParserResult *result, Masm32SimWasmRunStorage *storage) {
+static bool masm32_sim_wasm_build_declared_object_map(
+    const VmParserResult *result,
+    Masm32SimWasmRunStorage *storage,
+    const VmLayoutPolicy *runtime_policy
+) {
     VmObjectMapStatus status = VM_OBJECT_MAP_STATUS_OK;
 
     if (result == NULL || storage == NULL) {
         return false;
     }
 
-    status = vm_object_map_build_from_symbols(
+    status = vm_object_map_build_from_symbols_with_initialization_mask(
         storage->symbols,
         result->symbol_count,
+        runtime_policy,
+        storage->data_initialized_mask,
+        storage->data_initialized_mask_size,
         storage->object_map_entries,
         (size_t)MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES,
         &storage->object_map_entry_count
@@ -2073,7 +2246,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     const char *source,
     VmLayoutMode requested_layout_mode,
     const VmLayoutPolicy *base_policy,
-    Masm32SimWasmMemoryValidationMode validation_mode
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
     VmParserResult parser_result;
@@ -2091,7 +2265,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     bool use_randomized_layout = requested_layout_mode == VM_LAYOUT_MODE_SEEDED_RANDOMIZED || requested_layout_mode == VM_LAYOUT_MODE_FRESH_RANDOMIZED;
 
     if (source == NULL) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, include_uninitialized_metadata);
     }
 
     memset(&g_masm32_sim_wasm_run_storage, 0, sizeof(g_masm32_sim_wasm_run_storage));
@@ -2118,12 +2292,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     config.symbol_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_SYMBOLS;
     config.data_image = g_masm32_sim_wasm_run_storage.data_image;
     config.data_image_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
+    config.data_initialized_mask = g_masm32_sim_wasm_run_storage.data_initialized_mask;
+    config.data_initialized_mask_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
     config.const_image = g_masm32_sim_wasm_run_storage.const_image;
     config.const_image_capacity = (size_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES;
     config.diagnostics = g_masm32_sim_wasm_run_storage.parser_diagnostics;
     config.diagnostic_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS;
 
     parser_status = vm_parser_parse_program(&config, &parser_result);
+    g_masm32_sim_wasm_run_storage.data_initialized_mask_size = parser_result.data_size;
     if ((parser_status != VM_PARSER_STATUS_OK && parser_status != VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS) ||
         masm32_sim_wasm_parser_diagnostics_have_errors(g_masm32_sim_wasm_run_storage.parser_diagnostics, parser_result.diagnostic_count)) {
         return masm32_sim_wasm_build_run_json(
@@ -2134,7 +2311,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             VM_EXEC_STATUS_INVALID_ARGUMENT,
             &g_masm32_sim_wasm_run_storage,
             NULL,
-            NULL
+            NULL,
+            include_uninitialized_metadata
         );
     }
 
@@ -2158,12 +2336,13 @@ static const char *masm32_sim_wasm_run_source_json_internal(
                 VM_EXEC_STATUS_INVALID_ARGUMENT,
                 &g_masm32_sim_wasm_run_storage,
                 NULL,
-                &layout_message
+                &layout_message,
+                include_uninitialized_metadata
             );
         }
 
         if (use_randomized_layout && !masm32_sim_wasm_relocate_parser_output(&parser_result, &g_masm32_sim_wasm_run_storage, &selected_policy)) {
-            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         }
 
         runtime_policy = &selected_policy;
@@ -2173,26 +2352,26 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
     }
     vm_initialized = true;
 
-    if (!masm32_sim_wasm_build_declared_object_map(&parser_result, &g_masm32_sim_wasm_run_storage)) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+    if (!masm32_sim_wasm_build_declared_object_map(&parser_result, &g_masm32_sim_wasm_run_storage, runtime_policy)) {
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         vm_deinit(&vm);
         return json;
     }
@@ -2206,6 +2385,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
             exec_status = masm32_sim_wasm_validate_object_accesses(&g_masm32_sim_wasm_run_storage, &vm, validation_mode, runtime_policy);
             if (exec_status == VM_EXEC_STATUS_OK) {
+                masm32_sim_wasm_mark_initialized_writes(&g_masm32_sim_wasm_run_storage, &vm, runtime_policy);
                 masm32_sim_wasm_collect_memory_change(&g_masm32_sim_wasm_run_storage, &vm, &parser_result);
             }
         }
@@ -2216,7 +2396,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -2224,7 +2404,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -2233,15 +2413,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
@@ -2251,10 +2431,15 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
     if (validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, false);
+}
+
+
+const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

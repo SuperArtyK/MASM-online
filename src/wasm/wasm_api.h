@@ -87,6 +87,17 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
     Masm32SimWasmMemoryValidationMode validation_mode
 );
 
+
+/// Parses and executes source while appending test-only uninitialized-origin metadata.
+///
+/// The normal browser source-run export intentionally omits this metadata. This
+/// helper is for native tests that need to inspect Phase 39 write tracking
+/// without adding uninitialized-read warnings, strict errors, or UI output.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source);
+
 /// Copies the simulator version string through the WebAssembly export boundary.
 ///
 /// @param out_buffer Destination buffer owned by the caller.

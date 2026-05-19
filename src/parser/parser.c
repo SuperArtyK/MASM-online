@@ -1862,31 +1862,99 @@ static bool vm_parser_data_has_capacity(VmParserState *state, const VmLexerToken
     return true;
 }
 
-/// Appends one byte to the active data image.
+/// Returns the active .data/.DATA? initialization mask, if one was configured.
+///
+/// @param state Parser state to inspect.
+/// @param out_mask Receives the mask pointer, or NULL when tracking is disabled.
+/// @param out_capacity Receives the mask capacity in bytes.
+/// @return true when the active section can use the optional mask metadata.
+static bool vm_parser_get_active_data_initialized_mask(VmParserState *state, uint8_t **out_mask, size_t *out_capacity) {
+    if (out_mask != NULL) {
+        *out_mask = NULL;
+    }
+    if (out_capacity != NULL) {
+        *out_capacity = 0U;
+    }
+    if (state == NULL || state->config == NULL || out_mask == NULL || out_capacity == NULL) {
+        return false;
+    }
+    if (state->section == VM_PARSER_SECTION_CONST || state->config->data_initialized_mask == NULL) {
+        return true;
+    }
+
+    *out_mask = state->config->data_initialized_mask;
+    *out_capacity = state->config->data_initialized_mask_capacity;
+    return true;
+}
+
+/// Appends one byte to the active data image and optional initialization mask.
+///
+/// @param state Parser state to mutate.
+/// @param value Byte value to append.
+/// @param token Token used for diagnostics on failure.
+/// @param is_initialized Whether this byte came from an explicit initializer.
+/// @return true when the byte was appended.
+static bool vm_parser_append_data_byte_with_initialization(VmParserState *state, uint8_t value, const VmLexerToken *token, bool is_initialized) {
+    uint8_t *image = NULL;
+    uint8_t *mask = NULL;
+    size_t capacity = 0U;
+    size_t mask_capacity = 0U;
+    uint32_t *offset = NULL;
+    size_t *size = NULL;
+
+    if (!vm_parser_data_has_capacity(state, token) ||
+        !vm_parser_get_active_data_image(state, &image, &capacity, &offset, &size) || image == NULL || offset == NULL || size == NULL ||
+        !vm_parser_get_active_data_initialized_mask(state, &mask, &mask_capacity)) {
+        (void)capacity;
+        return false;
+    }
+
+    if (mask != NULL && (size_t)(*offset) >= mask_capacity) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DATA_CAPACITY_EXCEEDED, token, "Data initialization metadata capacity exceeded.");
+        state->stop_status = VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED;
+        return false;
+    }
+
+    image[*offset] = value;
+    if (mask != NULL) {
+        mask[*offset] = is_initialized ? 1U : 0U;
+    }
+    *offset += 1U;
+    *size = (size_t)(*offset);
+    return true;
+}
+
+/// Appends one initialized byte to the active data image.
 ///
 /// @param state Parser state to mutate.
 /// @param value Byte value to append.
 /// @param token Token used for diagnostics on failure.
 /// @return true when the byte was appended.
 static bool vm_parser_append_data_byte(VmParserState *state, uint8_t value, const VmLexerToken *token) {
-    uint8_t *image = NULL;
-    size_t capacity = 0U;
-    uint32_t *offset = NULL;
-    size_t *size = NULL;
+    return vm_parser_append_data_byte_with_initialization(state, value, token, true);
+}
 
-    if (!vm_parser_data_has_capacity(state, token) ||
-        !vm_parser_get_active_data_image(state, &image, &capacity, &offset, &size) || image == NULL || offset == NULL || size == NULL) {
-        (void)capacity;
-        return false;
+/// Appends a little-endian integer element to the .data image with explicit initialization state.
+///
+/// @param state Parser state to mutate.
+/// @param value Value to encode.
+/// @param size_bytes Number of little-endian bytes to write.
+/// @param token Token used for diagnostics on failure.
+/// @param is_initialized Whether all bytes came from an explicit initializer.
+/// @return true when the integer was appended.
+static bool vm_parser_append_data_integer_with_initialization(VmParserState *state, uint64_t value, uint8_t size_bytes, const VmLexerToken *token, bool is_initialized) {
+    uint8_t index = 0U;
+
+    for (index = 0U; index < size_bytes; index += 1U) {
+        if (!vm_parser_append_data_byte_with_initialization(state, (uint8_t)((value >> (8U * index)) & 0xFFU), token, is_initialized)) {
+            return false;
+        }
     }
 
-    image[*offset] = value;
-    *offset += 1U;
-    *size = (size_t)(*offset);
     return true;
 }
 
-/// Appends a little-endian integer element to the .data image.
+/// Appends a little-endian initialized integer element to the .data image.
 ///
 /// @param state Parser state to mutate.
 /// @param value Value to encode.
@@ -1894,15 +1962,7 @@ static bool vm_parser_append_data_byte(VmParserState *state, uint8_t value, cons
 /// @param token Token used for diagnostics on failure.
 /// @return true when the integer was appended.
 static bool vm_parser_append_data_integer(VmParserState *state, uint64_t value, uint8_t size_bytes, const VmLexerToken *token) {
-    uint8_t index = 0U;
-
-    for (index = 0U; index < size_bytes; index += 1U) {
-        if (!vm_parser_append_data_byte(state, (uint8_t)((value >> (8U * index)) & 0xFFU), token)) {
-            return false;
-        }
-    }
-
-    return true;
+    return vm_parser_append_data_integer_with_initialization(state, value, size_bytes, token, true);
 }
 
 /// Returns the maximum integer value representable by a data element size.
@@ -2353,7 +2413,7 @@ static bool vm_parser_parse_single_data_initializer(
     }
 
     if (token->kind == VM_LEXER_TOKEN_QUESTION) {
-        if (!vm_parser_append_data_integer(state, 0U, element_size, token)) {
+        if (!vm_parser_append_data_integer_with_initialization(state, 0U, element_size, token, false)) {
             return false;
         }
         vm_parser_advance(state);
@@ -2511,7 +2571,14 @@ static bool vm_parser_parse_dup_initializer(
     for (repeat_index = 1U; repeat_index < repeat_count; repeat_index += 1U) {
         size_t byte_index = 0U;
         for (byte_index = 0U; byte_index < instance_size; byte_index += 1U) {
-            if (!vm_parser_append_data_byte(state, active_image[instance_start + byte_index], repeat_token)) {
+            uint8_t *active_mask = NULL;
+            size_t active_mask_capacity = 0U;
+            bool copied_byte_is_initialized = true;
+            (void)vm_parser_get_active_data_initialized_mask(state, &active_mask, &active_mask_capacity);
+            if (active_mask != NULL && instance_start + byte_index < active_mask_capacity) {
+                copied_byte_is_initialized = active_mask[instance_start + byte_index] != 0U;
+            }
+            if (!vm_parser_append_data_byte_with_initialization(state, active_image[instance_start + byte_index], repeat_token, copied_byte_is_initialized)) {
                 return false;
             }
         }

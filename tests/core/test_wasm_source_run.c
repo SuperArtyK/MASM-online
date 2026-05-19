@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 38 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 39 regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -3477,6 +3477,159 @@ static int test_phase38_strict_const_permission_error_precedes_object_violation(
     return failures;
 }
 
+
+/// Verifies Phase 39 preserves default zero-filled reads without warnings or metadata output.
+///
+/// @return Number of failures.
+static int test_phase39_default_uninitialized_read_has_no_warning(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "default uninitialized-origin read should still execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "default read from ? storage should return deterministic zero");
+    failures += expect_json_not_contains(json, "uninitialized-read", "Phase 39 must not emit uninitialized-read diagnostics");
+    failures += expect_json_not_contains(json, "uninitializedOrigin", "normal source-run JSON should not expose test-only metadata");
+
+    return failures;
+}
+
+/// Verifies Phase 39 metadata distinguishes explicit initializers from ? storage.
+///
+/// @return Number of failures.
+static int test_phase39_initial_uninitialized_origin_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".DATA?\n"
+        "buf BYTE 2 DUP(2 DUP(?))\n"
+        ".data\n"
+        "x DWORD ?\n"
+        "y DWORD 123\n"
+        "mixed BYTE ?, 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "metadata inspection source should execute");
+    failures += expect_json_contains(json, "\"uninitializedOrigin\":{\"tracked\":true", "metadata helper should expose test-only tracking object");
+    failures += expect_json_contains(json, "\"symbol\":\"buf\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", ".DATA? nested DUP(?) bytes should start uninitialized-origin");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "scalar DWORD ? should start uninitialized-origin");
+    failures += expect_json_contains(json, "\"symbol\":\"y\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "explicit DWORD initializer should start initialized");
+    failures += expect_json_contains(json, "\"symbol\":\"mixed\",\"state\":\"tracked\",\"initializedByteCount\":1,\"uninitializedByteCount\":1,\"initializedMask\":\"01\"", "mixed .data initializer should preserve byte-level origin");
+    failures += expect_json_not_contains(json, "uninitialized-read", "metadata inspection must not emit read diagnostics");
+
+    return failures;
+}
+
+/// Verifies Phase 39 partial and full writes update initialized-byte state.
+///
+/// @return Number of failures.
+static int test_phase39_partial_and_full_writes_mark_initialized_bytes(void) {
+    char partial_copy[TEST_JSON_COPY_CAPACITY];
+    const char *partial_json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov BYTE PTR x, 12h\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    const char *full_json = NULL;
+    int failures = 0;
+
+    copy_source_run_json(partial_copy, sizeof(partial_copy), partial_json);
+    full_json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov x, 123\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+
+    failures += expect_json_contains(partial_copy, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":1,\"uninitializedByteCount\":3,\"initializedMask\":\"1000\"", "BYTE write should initialize only the written byte");
+    failures += expect_json_contains(full_json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "DWORD write should initialize all destination bytes");
+
+    return failures;
+}
+
+/// Verifies Phase 39 failed writes do not mark bytes initialized.
+///
+/// @return Number of failures.
+static int test_phase39_failed_writes_do_not_mark_initialized(void) {
+    char const_copy[TEST_JSON_COPY_CAPACITY];
+    const char *const_json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    const char *invalid_json = NULL;
+    copy_source_run_json(const_copy, sizeof(const_copy), const_json);
+    invalid_json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    mov DWORD PTR [eax], 20\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(const_copy, "\"ok\":false", ".CONST indirect write should fail");
+    failures += expect_json_contains(const_copy, "permission-denied", ".CONST failed write should preserve permission diagnostic");
+    failures += expect_json_contains(const_copy, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", ".CONST failed write should not initialize unrelated data bytes");
+    failures += expect_json_contains(invalid_json, "\"ok\":false", "invalid-address write should fail");
+    failures += expect_json_contains(invalid_json, "invalid-address", "invalid-address write should preserve memory diagnostic");
+    failures += expect_json_contains(invalid_json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "invalid-address failed write should not initialize data bytes");
+
+    return failures;
+}
+
+/// Verifies Phase 39 intentionally does not track register-value taint.
+///
+/// @return Number of failures.
+static int test_phase39_register_copy_marks_destination_initialized(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        "y DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "    mov y, eax\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "no-taint copy source should execute");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "reading x should not mark x initialized");
+    failures += expect_json_contains(json, "\"symbol\":\"y\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "storing register into y should mark y initialized even when EAX came from x");
+    failures += expect_json_not_contains(json, "uninitialized-read", "Phase 39 must not implement read diagnostics");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -3577,6 +3730,11 @@ int main(void) {
     failures += test_phase38_strict_unaligned_inside_object_succeeds();
     failures += test_phase38_strict_invalid_address_precedes_object_violation();
     failures += test_phase38_strict_const_permission_error_precedes_object_violation();
+    failures += test_phase39_default_uninitialized_read_has_no_warning();
+    failures += test_phase39_initial_uninitialized_origin_metadata();
+    failures += test_phase39_partial_and_full_writes_mark_initialized_bytes();
+    failures += test_phase39_failed_writes_do_not_mark_initialized();
+    failures += test_phase39_register_copy_marks_destination_initialized();
     failures += test_phase35a_casemap_all_source_run_programs();
     failures += test_phase35a_casemap_none_source_run_programs();
     failures += test_phase35a_casemap_equate_source_run_programs();
@@ -3589,6 +3747,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 38 regression coverage passed.");
+    puts("Source execution tests through Phase 39 regression coverage passed.");
     return 0;
 }
