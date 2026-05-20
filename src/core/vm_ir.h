@@ -70,6 +70,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_SHL,
     /// Arithmetic-left-shift alias for SHL.
     VM_IR_OPCODE_SAL,
+    /// Shift a register or memory destination right, filling high bits with zero.
+    VM_IR_OPCODE_SHR,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

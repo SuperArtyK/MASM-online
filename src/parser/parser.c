@@ -3063,6 +3063,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_SAL;
         return true;
     }
+    if (vm_parser_token_equals(token, "shr")) {
+        *out_opcode = VM_IR_OPCODE_SHR;
+        return true;
+    }
 
     return false;
 }
@@ -3129,12 +3133,12 @@ static bool vm_parser_opcode_is_logical_binary(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_XOR;
 }
 
-/// Returns whether an opcode uses shift-left operand validation rules.
+/// Returns whether an opcode uses shift operand validation rules.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for SHL and SAL.
-static bool vm_parser_opcode_is_shift_left(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_SHL || opcode == VM_IR_OPCODE_SAL;
+/// @return true for SHL, SAL, and SHR.
+static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_SHL || opcode == VM_IR_OPCODE_SAL || opcode == VM_IR_OPCODE_SHR;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5016,35 +5020,38 @@ static bool vm_parser_validate_logical_binary_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
-/// Returns the uppercase mnemonic for a shift-left instruction.
+/// Returns the uppercase mnemonic for a shift instruction.
 ///
 /// @param opcode Opcode to classify.
 /// @return Stable uppercase mnemonic, or "shift" for unsupported opcodes.
-static const char *vm_parser_shift_left_mnemonic(VmIrOpcode opcode) {
+static const char *vm_parser_shift_mnemonic(VmIrOpcode opcode) {
     if (opcode == VM_IR_OPCODE_SHL) {
         return "SHL";
     }
     if (opcode == VM_IR_OPCODE_SAL) {
         return "SAL";
     }
+    if (opcode == VM_IR_OPCODE_SHR) {
+        return "SHR";
+    }
     return "shift";
 }
 
-/// Validates operands for SHL and SAL.
+/// Validates operands for shift instructions.
 ///
-/// Shift-left instructions accept register or known-width memory destinations
+/// Shift instructions accept register or known-width memory destinations
 /// and an immediate byte count or CL count source. The CL source supplies a
 /// count, not an operand width, so untyped memory destinations remain
 /// ambiguous and must use PTR or symbol metadata.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
-/// @param opcode Shift-left opcode being validated.
+/// @param opcode Shift opcode being validated.
 /// @param destination Destination operand that will be mutated.
 /// @param source Count source operand to validate and normalize.
 /// @param destination_token Token associated with the destination operand.
 /// @param source_token Token associated with the count operand.
-/// @return true when the shift-left operand pair is supported.
-static bool vm_parser_validate_shift_left_operands(
+/// @return true when the shift operand pair is supported.
+static bool vm_parser_validate_shift_operands(
     VmParserState *state,
     VmIrOpcode opcode,
     const VmIrOperand *destination,
@@ -5053,7 +5060,7 @@ static bool vm_parser_validate_shift_left_operands(
     const VmLexerToken *source_token
 ) {
     uint8_t destination_width = 0U;
-    const char *mnemonic = vm_parser_shift_left_mnemonic(opcode);
+    const char *mnemonic = vm_parser_shift_mnemonic(opcode);
     char message[128];
 
     if (state == NULL || destination == NULL || source == NULL) {
@@ -5417,7 +5424,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
-    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift_left(opcode)) &&
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode)) &&
         destination_token != NULL &&
         (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
          destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
@@ -5427,14 +5434,14 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         const char *message = opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_DEC ? "DEC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_NOT ? "NOT requires a register or memory destination." :
-                              vm_parser_opcode_is_shift_left(opcode) ? "Shift-left instructions require a register or memory destination." :
+                              vm_parser_opcode_is_shift(opcode) ? "Shift instructions require a register or memory destination." :
                               "Logical instructions require a register or memory destination.";
         char logical_message[96];
         if (vm_parser_opcode_is_logical_binary(opcode)) {
             (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory destination.", vm_parser_logical_binary_mnemonic(opcode));
             message = logical_message;
-        } else if (vm_parser_opcode_is_shift_left(opcode)) {
-            (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory destination.", opcode == VM_IR_OPCODE_SHL ? "SHL" : "SAL");
+        } else if (vm_parser_opcode_is_shift(opcode)) {
+            (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory destination.", vm_parser_shift_mnemonic(opcode));
             message = logical_message;
         }
         vm_parser_add_diagnostic(
@@ -5514,8 +5521,8 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (!vm_parser_validate_logical_binary_operands(state, opcode, &destination, &source, destination_token, source_token)) {
             return false;
         }
-    } else if (vm_parser_opcode_is_shift_left(opcode)) {
-        if (!vm_parser_validate_shift_left_operands(state, opcode, &destination, &source, destination_token, source_token)) {
+    } else if (vm_parser_opcode_is_shift(opcode)) {
+        if (!vm_parser_validate_shift_operands(state, opcode, &destination, &source, destination_token, source_token)) {
             return false;
         }
     } else {
@@ -5531,12 +5538,12 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return false;
     }
 
-    if ((vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift_left(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+    if ((vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         char message[96];
         if (vm_parser_opcode_is_logical_binary(opcode)) {
             (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_logical_binary_mnemonic(opcode));
         } else {
-            (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", opcode == VM_IR_OPCODE_SHL ? "SHL" : "SAL");
+            (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_shift_mnemonic(opcode));
         }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), message);
         return false;

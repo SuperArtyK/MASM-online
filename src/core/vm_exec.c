@@ -634,7 +634,7 @@ static VmExecStatus vm_exec_execute_logical_binary(Vm *vm, const VmIrInstruction
     return status;
 }
 
-/// Reads the raw shift count for SHL/SAL.
+/// Reads the raw shift count for shift instructions.
 ///
 /// Counts are either an encoded immediate byte or the current low 8 bits of
 /// CL. The parser normally enforces these shapes; this helper keeps the
@@ -748,6 +748,103 @@ static VmExecStatus vm_exec_execute_shift_left(Vm *vm, const VmIrInstruction *in
         bool new_sign = (result & sign_bit) != 0U;
         bool new_cf = false;
         if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &new_cf) || !vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, new_sign != new_cf)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+/// Executes one SHR instruction.
+///
+/// SHR shifts the destination right logically, filling high bits with zero. The
+/// effective count is raw_count & 31. Count zero is a complete no-op. Multi-bit
+/// and oversized counts preserve modeled flags that the source specification
+/// classifies as undefined; source-run code emits the corresponding warning or
+/// strict diagnostic before this helper executes.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction SHR instruction to execute.
+/// @param width_bits Destination execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_shift_right(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    uint8_t raw_count = 0U;
+    uint8_t effective_count = 0U;
+    uint8_t index = 0U;
+    bool original_cf = false;
+    bool original_of = false;
+    bool original_sign = false;
+    bool shifted_out = false;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (instruction->opcode != VM_IR_OPCODE_SHR) {
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+
+    status = vm_exec_read_shift_count(vm, &instruction->source, &raw_count);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    effective_count = (uint8_t)(raw_count & 31U);
+    if (effective_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &original_cf) || !vm_cpu_read_flag(&vm->cpu, VM_FLAG_OF, &original_of)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    result = value & mask;
+    original_sign = (result & sign_bit) != 0U;
+    for (index = 0U; index < effective_count; index += 1U) {
+        shifted_out = (result & 1U) != 0U;
+        result = (result >> 1U) & mask;
+    }
+
+    if (effective_count < width_bits) {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, shifted_out)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_SF, (result & sign_bit) != 0U)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (effective_count == 1U) {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_sign)) {
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
@@ -1640,11 +1737,15 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_logical_binary(vm, instruction, width_bits);
         case VM_IR_OPCODE_SHL:
         case VM_IR_OPCODE_SAL:
+        case VM_IR_OPCODE_SHR:
             if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
             if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            if (instruction->opcode == VM_IR_OPCODE_SHR) {
+                return vm_exec_execute_shift_right(vm, instruction, width_bits);
             }
             return vm_exec_execute_shift_left(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:

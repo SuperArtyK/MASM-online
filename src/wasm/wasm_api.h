@@ -103,7 +103,7 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
 /// Parses and executes source with explicit shift-undefined-flag validation.
 ///
 /// The normal browser export uses warning mode. This test/configuration-facing
-/// helper allows native tests to verify strict Phase 46 behavior without adding
+/// helper allows native tests to verify strict shift behavior without adding
 /// a browser UI setting in the same milestone.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.

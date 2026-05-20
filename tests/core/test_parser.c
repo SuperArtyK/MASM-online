@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 46.
+ * @brief Unit and integration tests for the parser through Milestone 47.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -2275,7 +2275,7 @@ static int test_phase44_logical_binary_parse_error_paths(void) {
     return failures;
 }
 
-/// Verifies Milestone 45 NOT parser acceptance and IR shapes as a Phase 46 regression.
+/// Verifies Milestone 45 NOT parser acceptance and IR shapes as a Phase 47 regression.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase45_not_parse_to_ir(void) {
@@ -2332,7 +2332,7 @@ static int test_phase45_not_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies Milestone 45 NOT parser diagnostics as a Phase 46 regression.
+/// Verifies Milestone 45 NOT parser diagnostics as a Phase 47 regression.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase45_not_parse_error_paths(void) {
@@ -2575,6 +2575,208 @@ static int test_phase46_shift_left_parse_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies Phase 47 SHR parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase47_shr_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 1\n"
+        "bytes BYTE 1, 2\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    shr al, 1\n"
+        "    ShR ax, 2\n"
+        "    shr eax, cl\n"
+        "    shr eax, 32\n"
+        "    shr BYTE PTR [esi], 1\n"
+        "    shr WORD PTR [esi], cl\n"
+        "    shr DWORD PTR [esi], 3\n"
+        "    shr SBYTE PTR [esi], 1\n"
+        "    shr SWORD PTR [esi], 1\n"
+        "    shr SDWORD PTR [esi], 1\n"
+        "    shr value, 1\n"
+        "    shr bytes[1], 1\n"
+        "    shr arr[4], cl\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 47 SHR program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 47 SHR program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 13U, "Phase 47 SHR program should emit thirteen instructions");
+    if (result.instruction_count == 13U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_SHR, "shr al should emit SHR opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "shr al destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_AL, "shr al destination should be AL");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_IMMEDIATE, "shr al source should be immediate count");
+        failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "shr al immediate count should be one");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_SHR, "mixed-case ShR should emit SHR opcode");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_AX, "ShR ax destination should be AX");
+        failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_REGISTER, "shr eax, cl source should be register count");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_CL, "shr eax, cl should use CL count register");
+        failures += expect_u32(buffers.instructions[4].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "shr BYTE PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[4].destination.width_bits, 8U, "shr BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[5].destination.width_bits, 16U, "shr WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[6].destination.width_bits, 32U, "shr DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[7].destination.width_bits, 8U, "shr SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[8].destination.width_bits, 16U, "shr SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[9].destination.width_bits, 32U, "shr SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[10].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "shr value should emit direct memory destination");
+        failures += expect_u32(buffers.instructions[10].destination.width_bits, 32U, "shr value should infer DWORD width");
+        failures += expect_u32(buffers.instructions[11].destination.width_bits, 8U, "shr bytes[1] should infer BYTE width");
+        failures += expect_u32(buffers.instructions[12].destination.width_bits, 32U, "shr arr[4] should infer DWORD width");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 47 SHR parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase47_shr_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr 1, al\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "SHR immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR invalid count register should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR invalid count register should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "immediate byte count or CL", "SHR invalid count diagnostic should explain CL requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax, cx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR CX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR CX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax, ecx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR ECX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR ECX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr [eax], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "SHR ambiguous memory diagnostic should be ambiguous-memory-width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "SHR ambiguous memory diagnostic should point at the memory operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax, 256\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR out-of-range count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR out-of-range count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR missing count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "SHR missing count currently uses expected-comma diagnostic");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    shr QWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR QWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SHR QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    shr SQWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR SQWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SHR SQWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    shr limit, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "SHR direct .CONST destination should use const-write diagnostic");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    shr eax, 1, 2\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SHR extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SHR extra operand should use invalid-instruction-operands");
+
+    return failures;
+}
+
 /// Verifies Phase 42 parser behavior for the Irvine32 exit terminator.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2725,7 +2927,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 46.
+/// Runs all parser regression tests through Milestone 47.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -2782,6 +2984,8 @@ int main(void) {
     failures += test_phase45_not_parse_error_paths();
     failures += test_phase46_shift_left_parse_to_ir();
     failures += test_phase46_shift_left_parse_error_paths();
+    failures += test_phase47_shr_parse_to_ir();
+    failures += test_phase47_shr_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
