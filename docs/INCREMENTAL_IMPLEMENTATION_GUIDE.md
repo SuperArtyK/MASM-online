@@ -4051,7 +4051,7 @@ The flags remain as set by `cmp eax, eax`; `not` does not update them.
 
 ### Goal
 
-Implement `shl` and `sal` as aliases with a precise educational-mode shift-count policy.
+Implement `shl` and `sal` as aliases with MASM-compatible shift-count execution and educational warning/strict diagnostics for architecturally undefined modeled flags.
 
 This phase must not implement `shr`, `sar`, rotates, multiplication, division, labels, or jumps.
 
@@ -4077,48 +4077,114 @@ sal mem, imm
 sal mem, cl
 ```
 
-Memory destinations must have known width.
+Memory destinations must have known width through an explicit `PTR`, declaration metadata, symbol-offset metadata, or another existing global memory-width source.
+
+`imm` is an encoded immediate shift count and must fit the implemented immediate-count range. `cl` means the low 8 bits of `ECX`; no other register count operand is accepted.
+
+### Rejected syntax
+
+Reject genuinely invalid or out-of-scope forms, including:
+
+```asm
+shl 1, al          ; immediate destination
+shl eax, ebx       ; only CL is accepted as a register count
+shl eax, cx        ; only CL is accepted as a register count
+shl [eax], 1       ; ambiguous memory width
+shl QWORD PTR q, 1 ; executable QWORD remains unsupported in MASM32 Educational Mode
+```
+
+These rejections are not shift-count compatibility rejections. Do not reject a MASM-valid instruction solely because the effective shift count is greater than or equal to the destination width.
 
 ### Shared count policy
 
 - Raw count is an unsigned immediate or the low 8 bits of `CL`.
-- Effective count is `raw_count & 31`.
+- Effective count is `raw_count & 31` for 8-bit, 16-bit, and 32-bit destinations.
 - Effective count `0` is a no-op: destination and modeled flags unchanged.
-- Effective count `1..operand_width-1` executes normally.
-- Effective count greater than or equal to operand width produces `unsupported-shift-count` in MASM32 Educational Mode.
-- This rejection is an educational simulator policy for undefined/awkward real x86 flag cases, not a MASM syntax rejection.
+- Nonzero effective counts execute using the destination width.
+- Effective count greater than or equal to operand width is accepted in default MASM32 Educational Mode and executes with the same deterministic result computation as the repeated left-shift operation.
+- This acceptance is the MASM/x86 compatibility policy. Undefined modeled flags are handled by warning or strict diagnostics, not by assembly rejection.
 
 Examples:
 
 ```asm
-shl eax, 32  ; raw 32 -> effective 0, no-op
-shl al, 8    ; raw 8 -> effective 8, rejected because 8 >= operand width
+shl eax, 32  ; raw 32 -> effective 0, accepted no-op
+shl al, 8    ; raw 8 -> effective 8, accepted; warns by default because modeled flags are undefined
+shl eax, cl  ; raw count is CL, effective count is CL & 31
 ```
 
 ### Runtime semantics
 
 - Shift left by effective count.
 - Fill low bits with zero.
+- Apply the result at the selected destination width.
 - `sal` must behave exactly like `shl`.
+- Memory destinations are read-modify-write operations and must use checked memory read/write helpers.
+- Failed validation, read, or write must not partially mutate registers, flags, memory, console state, or memory-change rows.
 
 ### Flag behavior
 
-For supported nonzero counts:
+For effective count `0`:
+
+- Destination is unchanged.
+- `CF`, `ZF`, `SF`, and `OF` are unchanged.
+- No undefined-shift warning is emitted.
+
+For effective count `1`:
+
+- `CF` is the bit shifted out of the most significant bit position.
+- `ZF` and `SF` update from the result.
+- `OF` is `new_sign_bit XOR CF`.
+- No undefined-shift warning is emitted.
+
+For effective count greater than `1` and less than operand width:
 
 - `CF` is the last bit shifted out of the most significant bit position.
 - `ZF` and `SF` update from the result.
-- `OF` is defined for effective count 1 as `new_sign_bit XOR CF`.
-- For larger supported counts, preserve prior `OF` as the deterministic simulator policy.
+- `OF` is architecturally undefined. Preserve the previous simulator `OF` value as the deterministic fallback.
+- Default mode emits `undefined-shift-flag` as a warning.
+- Shift undefined-flag strict mode reports `undefined-shift-flag` as a runtime error before mutation.
+
+For effective count greater than or equal to operand width:
+
+- The destination result is still computed and written in default mode.
+- `ZF` and `SF` update from the result.
+- `CF` and `OF` are architecturally undefined. Preserve their previous simulator values as the deterministic fallback.
+- Default mode emits `undefined-shift-flag` as a warning.
+- Shift undefined-flag strict mode reports `undefined-shift-flag` as a runtime error before mutation.
+
+Required diagnostic code:
+
+```text
+undefined-shift-flag
+```
+
+Suggested warning wording:
+
+```text
+SHL/SAL with this effective count has architecturally undefined modeled flag result(s). The simulator executed the MASM-compatible shift and preserved deterministic values for undefined modeled flags.
+```
 
 ### Required tests
 
-- `shl al, 1` with `80h` sets `CF=1`, result `00h`, `ZF=1`.
+Success and compatibility tests:
+
+- `shl al, 1` with `80h` sets `CF=1`, result `00h`, `ZF=1`, and `OF=1`.
 - `sal eax, 1` equals `shl eax, 1`.
-- `shl eax, 32` is a no-op including flags.
-- `shl al, 8` reports `unsupported-shift-count`.
+- `shl eax, 32` is a no-op including flags and emits no warning because the effective count is `0`.
+- `shl al, 8` is accepted and executes; the result is `00h`, `ZF=1`, `SF=0`, and default mode emits `undefined-shift-flag` rather than `unsupported-shift-count`.
+- `shl eax, 2` executes and emits `undefined-shift-flag` because `OF` is undefined for multi-bit shifts.
 - `shl BYTE PTR [esi], 1` uses checked memory read/write.
-- `shl [esi], 1` reports ambiguous memory width.
 - `shl eax, cl` uses `CL`, not full `ECX`.
+
+Diagnostic and strict-mode tests:
+
+- `shl [esi], 1` reports `ambiguous-memory-width`.
+- `shl eax, ebx` reports `invalid-instruction-operands` or the existing stable invalid-count-register diagnostic.
+- `shl QWORD PTR q, 1` keeps the existing executable QWORD/SQWORD rejection in MASM32 Educational Mode.
+- In default mode, `shl al, 8` has a structured warning and still completes execution.
+- In shift undefined-flag strict mode, `shl al, 8` reports `undefined-shift-flag` as a runtime error and stops before write-back.
+- Rendered Simulator Messages tests must cover both the default warning and strict runtime-error forms.
+- Static or regression checks must ensure `unsupported-shift-count` is not used for MASM-valid `shl`/`sal` counts.
 
 ---
 
@@ -4136,7 +4202,7 @@ Runtime instruction behavior.
 
 ### Accepted and rejected syntax
 
-Use the same destination/count forms and count policy as Phase 44, replacing the mnemonic with `shr`.
+Use the same destination/count forms and MASM-compatible count/undefined-flag diagnostic policy as Phase 46, replacing the mnemonic with `shr`.
 
 ### Runtime semantics
 
@@ -4157,7 +4223,7 @@ For supported nonzero counts:
 - `shr al, 1` with `01h` sets `CF=1`, result `00h`, `ZF=1`.
 - `shr al, 1` with `80h` produces `40h`, `SF=0`, `OF=1` for count 1.
 - `shr eax, 32` is no-op.
-- `shr al, 8` reports `unsupported-shift-count`.
+- `shr al, 8` is accepted in default mode, executes with `undefined-shift-flag` warning, and fails before mutation only in shift undefined-flag strict mode.
 - `shr eax, cl` uses `CL`.
 - Memory destination and ambiguous memory-width diagnostics.
 
@@ -4177,7 +4243,7 @@ Runtime instruction behavior.
 
 ### Accepted and rejected syntax
 
-Use the same destination/count forms and count policy as Phase 44, replacing the mnemonic with `sar`.
+Use the same destination/count forms and MASM-compatible count/undefined-flag diagnostic policy as Phase 46, replacing the mnemonic with `sar`.
 
 ### Runtime semantics
 
@@ -4198,7 +4264,7 @@ For supported nonzero counts:
 - `sar al, 1` with `80h` produces `C0h`, `SF=1`, `OF=0`.
 - `sar al, 1` with `01h` produces `00h`, `CF=1`, `ZF=1`.
 - `sar eax, 32` is no-op.
-- `sar al, 8` reports `unsupported-shift-count`.
+- `sar al, 8` is accepted in default mode, executes with `undefined-shift-flag` warning, and fails before mutation only in shift undefined-flag strict mode.
 - `sar eax, cl` uses `CL`.
 - Memory destination and ambiguous memory-width diagnostics.
 
@@ -8121,59 +8187,1146 @@ Rendered UI/Node tests:
 
 - final register/flag text includes PF/AF where flag display is active.
 
-## 114. Phase 110 - PF/AF Updates for Existing Arithmetic, Logical, and TEST Helpers
+## 114. Phase 110 - PF/AF Integration Split
 
 ### Goal
 
-Retrofitting existing arithmetic, logical, compare, and test helpers to update PF and AF deterministically.
+Split `PF` and `AF` integration into focused, testable subphases.
 
-### Work type
+This is intentionally not one implementation milestone. Do not implement all `PF`/`AF` behavior in one assistant session.
 
-Core flag-helper update plus regression tests across existing instructions.
+Phase 110 is a parent roadmap section only. Implementation must proceed through:
+
+```text
+Phase 110A - PF/AF for arithmetic and compare helpers
+Phase 110B - PF/AF for logical and TEST helpers
+Phase 110C - PF/AF policy for shifts and rotates
+Phase 110D - PF/AF preservation and undefined-policy checks for multiply and divide
+Phase 110E - PF/AF preservation regression for flag-preserving instructions
+Phase 110F - PF/AF display integration for debugger, source-run, UI, and Irvine32 DumpRegs
+```
+
+If a future implementation session refers only to “Phase 110” without a subphase letter, the intended next target is Phase 110A unless the user explicitly selects a different 110 subphase. Do not implement Phase 110A through Phase 110F in one session.
+
+Before Phase 110F, `PF` and `AF` may be stored internally and validated by native/helper/source-run tests without being exposed in every final UI, debugger, or Irvine32 display. Phase 110F owns display integration unless an earlier phase explicitly chooses to expose the flags.
 
 ### Dependencies
 
-- Phase 68 PF/AF storage.
-- Existing add/sub/cmp/adc/sbb/neg/inc/dec/logical/test helpers.
+- Phase 109 `PF`/`AF` storage and CPU helper scaffolding.
+- Existing instruction behavior through the phase immediately before Phase 110.
+- Existing source-run JSON path.
+- Existing rendered Simulator Messages test harness.
+- Existing debugger and Irvine32 display phases, where Phase 110F applies.
 
-### Semantics
+### Global PF/AF definitions
 
-PF:
+`PF` is the parity flag:
 
-- Set when the low byte of the result has even parity.
-- Clear otherwise.
+```text
+PF = 1 when the low byte of the result has an even number of 1 bits.
+PF = 0 when the low byte of the result has an odd number of 1 bits.
+```
 
-AF:
+`AF` is the auxiliary carry flag:
 
-- Addition-like helpers: set on carry from bit 3 to bit 4.
-- Subtraction-like helpers: set on borrow from bit 4.
-- Logical/test helpers: clear AF under the simulator's deterministic educational policy.
-- Instructions documented as preserving flags continue to preserve PF/AF.
+```text
+For addition-family operations:
+  AF = 1 when there is a carry from bit 3 to bit 4.
 
-### Required tests
+For subtraction-family operations:
+  AF = 1 when there is a borrow across bit 4.
+```
 
-Core helper tests:
+Implementation helpers may use:
 
-- add `0Fh + 1` sets AF.
-- add `01h + 1` clears AF.
-- sub `10h - 1` sets AF.
-- sub `11h - 1` clears AF.
-- result low byte `00h` sets PF.
-- result low byte `01h` clears PF.
-- result low byte `03h` sets PF.
+```text
+AF = ((lhs ^ rhs ^ result) & 10h) != 0
+```
 
-Instruction regression tests:
+only if tests prove the helper is correct for both addition-family and subtraction-family operations.
 
-- `add`, `sub`, `cmp`, `adc`, `sbb`, `neg`, `inc`, `dec`, `and`, `or`, `xor`, `test` update or preserve PF/AF according to contract.
-- `mov`, `lea`, `xchg`, `nop`, `clc`, `stc`, `cmc`, jumps, calls preserve PF/AF unless otherwise documented.
+### Global no-partial-mutation rule
 
-Source-run JSON tests:
+Every Phase 110 subphase must preserve the existing validation-first behavior:
 
-- final EFLAGS includes expected PF/AF.
+- failed assembly prevents execution;
+- failed runtime validation stops before committing the instruction;
+- failed memory reads do not mutate registers, flags, memory, console state, or memory-change rows;
+- failed memory writes roll back any tentative register/flag changes;
+- divide-error paths do not mutate newly modeled `PF`/`AF`;
+- strict validation errors stop before mutation;
+- warning-only paths may execute only if the relevant validation mode permits execution.
 
-Rendered Simulator Messages tests:
+### Global testing rule
 
-- at least one diagnostic-free run shows PF/AF in final flags display if flag display is user-visible.
+Every Phase 110 subphase must include:
+
+- native helper tests for `PF` and/or `AF` formulas introduced by that subphase;
+- executor tests for the affected instruction family;
+- source-run JSON tests for representative accepted programs;
+- regression tests proving existing `CF`, `ZF`, `SF`, and `OF` behavior remains unchanged;
+- no-partial-mutation tests for failing memory or validation paths where the affected instructions can access memory;
+- rendered Simulator Messages tests for any new warning or runtime-error diagnostic;
+- static/documentation checks if supported-syntax or user-facing flag documentation changes.
+
+A subphase that adds no new diagnostic path does not need new rendered Simulator Messages diagnostics, but it must not remove existing rendered diagnostic coverage.
+
+### Phase 110A - PF/AF for Arithmetic and Compare Helpers
+
+#### Goal
+
+Add `PF` and `AF` updates to existing arithmetic and compare instructions.
+
+#### Scope
+
+This phase covers exactly:
+
+```text
+add
+adc
+sub
+sbb
+cmp
+neg
+inc
+dec
+```
+
+Do not implement logical/test `PF`/`AF`, shifts, rotates, multiply/divide behavior, UI display changes, Irvine32 `DumpRegs` changes, `DF`, string instructions, or any new instruction syntax in this phase.
+
+#### Required behavior
+
+##### ADD and ADC
+
+For `add` and `adc`:
+
+- compute `PF` from the low byte of the arithmetic result;
+- compute `AF` from carry out of bit 3;
+- preserve already implemented `CF`, `ZF`, `SF`, and `OF` behavior;
+- support every already-implemented register and memory operand form for these instructions;
+- preserve existing immediate range behavior;
+- preserve existing memory diagnostics and rollback behavior.
+
+`ADC` must include the incoming `CF` in both the result and `AF` calculation.
+
+##### SUB, SBB, and CMP
+
+For `sub`, `sbb`, and `cmp`:
+
+- compute `PF` from the low byte of the subtraction result;
+- compute `AF` from borrow across bit 4;
+- preserve already implemented `CF`, `ZF`, `SF`, and `OF` behavior;
+- preserve existing immediate range behavior;
+- preserve existing memory diagnostics and rollback behavior.
+
+`SBB` must include the incoming `CF` borrow in both the result and `AF` calculation.
+
+`CMP` updates flags only. It must not mutate the destination and must not create memory-change rows.
+
+##### NEG
+
+For `neg`:
+
+- treat the operation as `0 - destination`;
+- compute `PF` from the low byte of the result;
+- compute `AF` from the borrow across bit 4 in `0 - destination`;
+- preserve existing `CF`, `ZF`, `SF`, and `OF` behavior;
+- preserve existing memory diagnostics and rollback behavior.
+
+##### INC and DEC
+
+For `inc`:
+
+- compute `PF` from the low byte of `destination + 1`;
+- compute `AF` from carry out of bit 3 in `destination + 1`;
+- preserve `CF` exactly;
+- preserve existing `ZF`, `SF`, and `OF` behavior.
+
+For `dec`:
+
+- compute `PF` from the low byte of `destination - 1`;
+- compute `AF` from borrow across bit 4 in `destination - 1`;
+- preserve `CF` exactly;
+- preserve existing `ZF`, `SF`, and `OF` behavior.
+
+#### Required tests
+
+##### Native helper tests
+
+Add helper-level tests for:
+
+```text
+PF low-byte even parity:
+  00h -> PF=1
+  01h -> PF=0
+  03h -> PF=1
+  FFh -> PF=1
+
+AF addition:
+  0Fh + 01h -> AF=1
+  10h + 01h -> AF=0
+  FFh + 01h -> AF=1
+
+AF subtraction:
+  10h - 01h -> AF=1
+  11h - 01h -> AF=0
+  00h - 01h -> AF=1
+```
+
+##### Executor/source-run tests
+
+At minimum, include programs or executor tests for:
+
+```asm
+.code
+main PROC
+    mov eax, 0Fh
+    add eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000010h
+AF = 1
+PF from low byte 10h
+```
+
+```asm
+.code
+main PROC
+    mov eax, 10h
+    sub eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 0000000Fh
+AF = 1
+PF from low byte 0Fh
+```
+
+```asm
+.code
+main PROC
+    stc
+    mov eax, 0Eh
+    adc eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000010h
+AF = 1
+CF/ZF/SF/OF follow existing ADC behavior
+```
+
+```asm
+.code
+main PROC
+    stc
+    mov eax, 11h
+    sbb eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 0000000Fh
+AF = 1
+CF/ZF/SF/OF follow existing SBB behavior
+```
+
+```asm
+.code
+main PROC
+    mov eax, 10h
+    cmp eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX remains 00000010h
+AF = 1
+PF from comparison result 0Fh
+No memory changes.
+```
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    neg eax
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000000h
+PF = 1
+AF = 0
+Existing NEG flags preserved.
+```
+
+```asm
+.code
+main PROC
+    stc
+    mov eax, 0Fh
+    inc eax
+    dec eax
+main ENDP
+END main
+```
+
+Expected after final `dec`:
+
+```text
+EAX = 0000000Fh
+CF = 1
+AF reflects the DEC operation
+PF reflects low byte 0Fh
+```
+
+##### Memory rollback tests
+
+For each affected memory-capable instruction family, include at least one failing memory write/read path proving `PF` and `AF` do not partially mutate.
+
+Examples:
+
+```asm
+.CONST
+limit DWORD 0Fh
+
+.code
+main PROC
+    add limit, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+assembly or runtime const-write diagnostic according to existing .CONST path
+No PF/AF mutation visible from the failed ADD.
+No memory changes.
+```
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    add DWORD PTR [eax], 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+runtime invalid memory diagnostic
+No PF/AF mutation visible from the failed ADD.
+No memory changes.
+```
+
+#### Acceptance criteria
+
+- `PF` and `AF` are stored and updated for all Phase 110A instructions.
+- Existing `CF`, `ZF`, `SF`, and `OF` tests still pass.
+- Existing instruction operand support is unchanged.
+- Existing diagnostics and rendered Simulator Messages remain stable except for intentional flag-output changes.
+- No logical/test, shift/rotate, multiply/divide, UI, debugger, Irvine32, or `DF` work is implemented in this phase.
+
+### Phase 110B - PF/AF for Logical and TEST Helpers
+
+#### Goal
+
+Add `PF` and deterministic `AF` behavior to logical and `TEST` instructions.
+
+#### Scope
+
+This phase covers exactly:
+
+```text
+and
+or
+xor
+test
+```
+
+Do not implement arithmetic `PF`/`AF`, shifts, rotates, multiply/divide behavior, UI display changes, Irvine32 `DumpRegs` changes, `DF`, string instructions, or any new instruction syntax in this phase.
+
+#### Required behavior
+
+For `and`, `or`, `xor`, and `test`:
+
+- compute the logical result using existing operand and width rules;
+- compute `PF` from the low byte of the logical result;
+- preserve existing `ZF` and `SF` result behavior;
+- preserve existing `CF` and `OF` clearing behavior;
+- use this deterministic v1 simulator policy for `AF`:
+
+```text
+AF is cleared to 0 for AND, OR, XOR, and TEST.
+```
+
+This `AF` rule is a simulator contract for deterministic educational output. It must be documented as deterministic simulator behavior, not as a portable guarantee for real x86 programs.
+
+Do not emit undefined-flag warnings for `AF` on `AND`, `OR`, `XOR`, or `TEST`. The v1 simulator deliberately clears `AF` to `0` for these logical/test instructions as deterministic educational behavior.
+
+`TEST` must remain non-mutating:
+
+- it updates flags;
+- it does not write the logical result back to the destination;
+- it does not create memory-change rows.
+
+`AND`, `OR`, and `XOR` remain destination-mutating according to their existing behavior.
+
+#### Required tests
+
+##### Source-run tests
+
+```asm
+.code
+main PROC
+    mov eax, 03h
+    and eax, 01h
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000001h
+PF = 0
+AF = 0
+CF = 0
+OF = 0
+ZF = 0
+SF = 0
+```
+
+```asm
+.code
+main PROC
+    mov eax, 03h
+    xor eax, 03h
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000000h
+PF = 1
+AF = 0
+CF = 0
+OF = 0
+ZF = 1
+SF = 0
+```
+
+```asm
+.code
+main PROC
+    mov eax, 03h
+    test eax, 03h
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX remains 00000003h
+PF = 1
+AF = 0
+CF = 0
+OF = 0
+ZF = 0
+SF = 0
+No memory changes.
+```
+
+##### Memory tests
+
+Include register/memory, memory/register, and memory/immediate tests for `AND`, `OR`, and `XOR` using already-supported memory forms.
+
+Include a `TEST` memory-source test proving no memory mutation.
+
+Include one invalid memory path proving `PF` and `AF` do not partially mutate.
+
+#### Acceptance criteria
+
+- `PF` is result-based for all Phase 110B instructions.
+- `AF` is cleared for all Phase 110B instructions under the documented simulator policy.
+- `TEST` remains read-only.
+- Existing `CF`, `ZF`, `SF`, and `OF` behavior remains unchanged.
+- Existing ambiguous-width diagnostics remain unchanged.
+- No shift/rotate, arithmetic, multiply/divide, UI, debugger, Irvine32, or `DF` work is implemented in this phase.
+
+### Phase 110C - PF/AF Policy for Shifts and Rotates
+
+#### Goal
+
+Integrate `PF` and `AF` with the existing shift and rotate instruction families without changing their already-defined count, `CF`, `OF`, `ZF`, or `SF` contracts.
+
+#### Scope
+
+This phase covers exactly:
+
+```text
+shl
+sal
+shr
+sar
+rol
+ror
+```
+
+Do not implement new shift or rotate syntax in this phase. Do not reintroduce `unsupported-shift-count` for MASM-valid shift counts. Do not implement arithmetic/logical/test `PF`/`AF`, multiply/divide behavior, UI display changes, Irvine32 `DumpRegs` changes, `DF`, string instructions, or any new instruction family.
+
+#### Dependencies
+
+- Completed shift phases for `SHL`/`SAL`, `SHR`, and `SAR`.
+- Completed rotate phases for `ROL` and `ROR`.
+- Completed shift-count compatibility policy that accepts MASM-valid counts and handles undefined modeled flags through the documented warning/strict mechanism.
+- Phase 109 `PF`/`AF` storage.
+- Phase 110A and Phase 110B may be completed first, but this phase must not depend on their implementation details except shared helper functions.
+
+#### Required behavior for SHL/SAL/SHR/SAR
+
+For:
+
+```text
+shl
+sal
+shr
+sar
+```
+
+the phase must apply the following rules.
+
+##### Effective count zero
+
+If the effective count is zero:
+
+- destination is unchanged;
+- `PF` is preserved;
+- `AF` is preserved;
+- all other modeled flags follow the existing shift-count-zero contract.
+
+##### Effective count nonzero
+
+If the effective count is nonzero and the instruction executes:
+
+- destination is updated according to the existing shift semantics;
+- `PF` is computed from the low byte of the shifted result;
+- `AF` is architecturally undefined and must follow the existing shift undefined-flag simulator policy.
+
+The required v1 simulator policy for `AF` on nonzero shifts is:
+
+```text
+Default mode:
+  Preserve previous AF.
+  Emit undefined-shift-flag warning only if the existing shift policy emits a warning for undefined modeled flags for this instruction/count case.
+
+Strict undefined-shift mode:
+  If the existing shift policy treats the instruction/count as a strict undefined-flag error, stop before mutation and preserve AF.
+```
+
+Phase 110C must not expand the `undefined-shift-flag` warning trigger set merely because `AF` has become modeled. The warning/strict trigger set remains the one defined by the shift-count compatibility phase. `AF` follows that policy only when the existing shift policy already warns or errors for the instruction/count case.
+
+`PF` is not undefined for nonzero shifts; it is result-based.
+
+#### Required behavior for ROL/ROR
+
+For:
+
+```text
+rol
+ror
+```
+
+the phase must apply the following rules.
+
+##### Effective count zero
+
+If the effective count is zero:
+
+- destination is unchanged;
+- `PF` is preserved;
+- `AF` is preserved;
+- all other modeled flags are preserved.
+
+##### Effective count nonzero
+
+If the effective count is nonzero and the instruction executes:
+
+- destination is rotated according to existing rotate semantics;
+- `PF` is preserved;
+- `AF` is preserved;
+- `SF` and `ZF` remain preserved according to the rotate contract;
+- `CF` follows the rotate contract;
+- `OF` follows the rotate contract, including undefined multi-bit rotate policy if the rotate phase has one.
+
+This phase must not compute `PF` from rotate results. `ROL` and `ROR` do not use result-based `PF` in the simulator.
+
+#### Required tests
+
+##### Shift tests
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    shl eax, 0
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX unchanged
+PF preserved
+AF preserved
+No new warning from Phase 110C
+```
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    shl eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000002h
+PF = 0
+AF follows the shift undefined-flag policy
+Existing CF/OF/ZF/SF behavior unchanged
+```
+
+```asm
+.code
+main PROC
+    mov eax, 3
+    shl eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000006h
+PF = 1
+AF follows the shift undefined-flag policy
+```
+
+```asm
+.code
+main PROC
+    mov al, 1
+    shl al, 8
+main ENDP
+END main
+```
+
+Expected in default compatibility mode:
+
+```text
+Program executes according to the existing MASM-compatible shift-count policy.
+PF is computed from the result if the instruction executes with nonzero effective count.
+AF follows the existing undefined-shift-flag policy.
+No unsupported-shift-count assembly error.
+```
+
+Expected in strict undefined-shift mode, if that mode is active:
+
+```text
+runtime-error undefined-shift-flag according to existing strict policy
+No destination mutation
+No PF/AF mutation
+```
+
+Add equivalent representative tests for `shr` and `sar`.
+
+`SAL` must be tested as an alias of `SHL`.
+
+##### Rotate tests
+
+```asm
+.code
+main PROC
+    mov eax, 80000001h
+    rol eax, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX rotated according to existing ROL behavior
+PF preserved
+AF preserved
+CF/OF follow existing ROL behavior
+ZF/SF preserved
+```
+
+```asm
+.code
+main PROC
+    mov eax, 80000001h
+    ror eax, 4
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX rotated according to existing ROR behavior
+PF preserved
+AF preserved
+CF follows existing ROR behavior
+OF follows existing multi-bit rotate policy
+ZF/SF preserved
+```
+
+#### Acceptance criteria
+
+- Shifts update `PF` from result when effective count is nonzero.
+- Shifts preserve `PF` and `AF` when effective count is zero.
+- Shifts preserve or diagnose `AF` exactly according to the existing undefined-shift policy.
+- Rotates preserve `PF` and `AF`.
+- Existing shift/rotate `CF`, `OF`, `ZF`, and `SF` behavior remains unchanged.
+- MASM-valid shift counts remain accepted in default mode.
+- No new shift/rotate syntax is added.
+- No arithmetic/logical/test, multiply/divide, UI, debugger, Irvine32, or `DF` work is implemented in this phase.
+
+### Phase 110D - PF/AF Preservation and Undefined-Policy Checks for Multiply and Divide
+
+#### Goal
+
+Define and test `PF` and `AF` behavior for multiply and divide instruction families without changing their implicit-register semantics or error behavior.
+
+#### Scope
+
+This phase covers the already-implemented forms, and only the already-implemented forms, of:
+
+```text
+mul
+imul
+div
+idiv
+```
+
+If the roadmap has split one-operand, two-operand, or three-operand `IMUL` into separate earlier phases, this phase must cover only the forms that are implemented by the time Phase 110D begins.
+
+Do not add a missing multiply/divide form to make this phase’s tests broader.
+
+Do not implement new multiply/divide forms in this phase. Do not implement arithmetic/logical/test `PF`/`AF`, shifts, rotates, UI display changes, Irvine32 `DumpRegs` changes, `DF`, string instructions, or any new instruction family.
+
+#### Required behavior
+
+For all covered multiply/divide forms:
+
+```text
+PF is preserved.
+AF is preserved.
+```
+
+This is the v1 deterministic simulator policy unless the earlier multiply/divide phase explicitly selected a different undefined-flag policy. If an earlier phase explicitly chose a different policy, Phase 110D must follow that phase and document the reason.
+
+For divide-error paths:
+
+- `PF` is preserved;
+- `AF` is preserved;
+- existing register/memory/flag rollback behavior is preserved;
+- no partial quotient/remainder mutation occurs;
+- existing runtime diagnostic and rendered Simulator Messages behavior remains unchanged.
+
+For multiply overflow or high-half-result cases:
+
+- existing `CF` and `OF` behavior remains unchanged;
+- `PF` and `AF` remain preserved unless the multiply phase explicitly documented otherwise.
+
+#### Required tests
+
+```asm
+.code
+main PROC
+    mov eax, 2
+    mov ebx, 3
+    mul ebx
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+MUL result follows existing MUL contract.
+PF preserved.
+AF preserved.
+Existing CF/OF behavior unchanged.
+```
+
+```asm
+.code
+main PROC
+    mov eax, 6
+    mov ebx, 3
+    div ebx
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+DIV result follows existing DIV contract.
+PF preserved.
+AF preserved.
+Existing divide behavior unchanged.
+```
+
+Divide-error test:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    mov ebx, 0
+    div ebx
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+runtime divide diagnostic according to existing DIV phase
+No quotient/remainder mutation
+PF preserved
+AF preserved
+```
+
+Add equivalent tests for every implemented `IMUL` and `IDIV` form.
+
+#### Acceptance criteria
+
+- `PF` and `AF` preservation is tested for all implemented multiply/divide forms.
+- Divide-error paths preserve `PF` and `AF`.
+- Existing multiply/divide implicit register behavior remains unchanged.
+- Existing multiply/divide `CF`/`OF` behavior remains unchanged.
+- No new multiply/divide syntax is added.
+- No arithmetic/logical/test, shift/rotate, UI, debugger, Irvine32, or `DF` work is implemented in this phase.
+
+### Phase 110E - PF/AF Preservation Regression for Flag-Preserving Instructions
+
+#### Goal
+
+Add regression coverage proving instructions that should not affect `PF` or `AF` preserve them.
+
+This phase is mostly tests. It should require little or no executor logic if earlier phases implemented flag preservation correctly.
+
+#### Scope
+
+This phase covers already-implemented flag-preserving instructions and instruction families, including:
+
+```text
+mov
+movsx
+movzx
+cbw
+cwde
+cwd
+cdq
+lea
+xchg
+nop
+clc
+stc
+cmc
+jmp and conditional jumps
+loop-family instructions
+push
+pop
+call
+ret
+leave
+ret imm16
+exit
+Irvine32 routines unless a specific routine contract says otherwise
+```
+
+Only include instructions that are implemented by the time Phase 110E begins. Do not implement missing instructions just to test them.
+
+Do not implement new instruction syntax, UI display changes, Irvine32 `DumpRegs` changes, `DF`, string instructions, or any new runtime feature.
+
+#### Required behavior
+
+The covered instructions must preserve `PF` and `AF` unless their own phase explicitly documented flag mutation.
+
+Special rules:
+
+- `CLC`, `STC`, and `CMC` mutate `CF` only. They must preserve `PF` and `AF`.
+- `XCHG` preserves all modeled flags, including `PF` and `AF`.
+- `NOP` preserves all modeled flags.
+- `MOV`, `MOVSX`, `MOVZX`, `CBW`, `CWDE`, `CWD`, and `CDQ` preserve all modeled flags.
+- `LEA` preserves all modeled flags.
+- Branches and loop-family instructions preserve `PF` and `AF`; they may read flags or counters according to their own branch condition, but they must not mutate `PF` or `AF`.
+- Stack/procedure instructions preserve `PF` and `AF` unless their own phase explicitly says otherwise.
+- `exit` preserves `PF` and `AF`.
+- Irvine32 routines preserve `PF` and `AF` unless the routine contract explicitly documents flag mutation.
+
+#### Required tests
+
+Use helper setup to force known initial `PF` and `AF` values, then execute one instruction and verify they are unchanged.
+
+At minimum:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    mov ebx, 123
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+MOV preserves PF/AF.
+```
+
+```asm
+.code
+main PROC
+    mov eax, 0
+    xchg eax, ebx
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+XCHG preserves PF/AF.
+```
+
+```asm
+.code
+main PROC
+    stc
+    clc
+    stc
+    cmc
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+CLC/STC/CMC mutate CF according to existing behavior.
+PF preserved.
+AF preserved.
+```
+
+```asm
+INCLUDE Irvine32.inc
+
+.code
+main PROC
+    mov eax, 123
+    exit
+    mov eax, 999
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+exit terminates according to existing behavior.
+PF preserved.
+AF preserved.
+Instruction after exit does not execute.
+```
+
+Add tests for each branch/control-flow family that exists by this point. Branch tests must cover both taken and not-taken paths where practical.
+
+Add tests for each stack/procedure family that exists by this point.
+
+Add tests for each Irvine32 routine implemented by this point. If a routine mutates flags by contract, test that exact contract instead of preservation.
+
+#### Acceptance criteria
+
+- Covered flag-preserving instructions preserve `PF` and `AF`.
+- Existing control-flow behavior remains unchanged.
+- Existing stack/procedure behavior remains unchanged.
+- Existing Irvine32 behavior remains unchanged.
+- No missing instruction is implemented merely to satisfy this phase.
+- No UI, debugger, DumpRegs, or `DF` work is implemented in this phase.
+
+### Phase 110F - PF/AF Display Integration for Debugger, Source-Run, UI, and Irvine32 DumpRegs
+
+#### Goal
+
+Expose already-modeled `PF` and `AF` in user-visible displays and protocol payloads.
+
+This phase is display and integration work only. It must not change instruction semantics.
+
+#### Scope
+
+This phase covers:
+
+```text
+final register/flag output
+source-run JSON flag payloads
+worker protocol flag payloads
+debugger flags table
+last-step flag delta display
+Irvine32 DumpRegs output, if DumpRegs exists by this point
+supported-syntax/user documentation updates
+```
+
+Do not implement new instruction behavior, new flag semantics, `DF`, string instructions, new Irvine32 routines, or new diagnostics unrelated to display/protocol validation.
+
+If `DumpRegs` is not implemented when Phase 110F begins, do not implement `DumpRegs` in this phase. Instead, update the future `DumpRegs` phase or supported-syntax documentation to state that `DumpRegs` must include `PF` and `AF` when implemented.
+
+#### Required behavior
+
+After this phase:
+
+- final flag display includes `PF` and `AF`;
+- source-run JSON includes `PF` and `AF` in the same flag model used for `CF`, `ZF`, `SF`, and `OF`;
+- worker protocol payloads remain structured-clone-safe and JSON-compatible;
+- debugger flags table includes `PF` and `AF`;
+- last-step deltas show `PF` and `AF` changes when they change;
+- unchanged `PF` and `AF` may be omitted from compact last-step deltas if that matches existing delta UI policy;
+- `DumpRegs`, if implemented, includes `PF` and `AF` in Program Console output;
+- Program Console and Simulator Messages remain separate streams;
+- tests and documentation stop describing the modeled flag set as only `CF`, `ZF`, `SF`, and `OF` after this phase.
+
+#### Required tests
+
+##### Source-run JSON tests
+
+Run a program known to set `PF` and `AF`:
+
+```asm
+.code
+main PROC
+    mov eax, 0Fh
+    add eax, 1
+main ENDP
+END main
+```
+
+Expected JSON includes:
+
+```text
+PF present
+AF present
+PF value matches low-byte parity
+AF = 1
+```
+
+##### Rendered final-output tests
+
+Expected final display includes `PF` and `AF` in the same section or format as other modeled flags.
+
+##### Debugger tests
+
+Step through:
+
+```asm
+.code
+main PROC
+    mov eax, 0Fh
+    add eax, 1
+    xor eax, eax
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+Step after ADD shows PF/AF values or deltas according to debugger policy.
+Step after XOR shows PF and AF according to Phase 110B behavior.
+```
+
+##### DumpRegs tests
+
+If `DumpRegs` exists:
+
+```asm
+INCLUDE Irvine32.inc
+
+.code
+main PROC
+    mov eax, 0Fh
+    add eax, 1
+    call DumpRegs
+    exit
+main ENDP
+END main
+```
+
+Expected Program Console includes:
+
+```text
+PF=<value>
+AF=<value>
+```
+
+The exact ordering and spacing must be frozen by the DumpRegs phase or this phase.
+
+The output must appear in Program Console, not Simulator Messages.
+
+##### Documentation/static tests
+
+Add static checks so docs and supported-syntax references do not continue to say only `CF`, `ZF`, `SF`, and `OF` are modeled after Phase 110F.
+
+#### Acceptance criteria
+
+- `PF` and `AF` appear in final flags output.
+- `PF` and `AF` appear in debugger flags output.
+- `PF` and `AF` appear in last-step deltas when changed.
+- `DumpRegs` includes `PF` and `AF` if DumpRegs is already implemented.
+- Program Console and Simulator Messages remain separated.
+- No instruction semantics change in this phase.
+- No `DF` or string-instruction work is implemented in this phase.
 
 ## 115. Phase 111 - DF Flag and CLD/STD
 

@@ -1041,6 +1041,56 @@ Core expansion groups must remain distinct:
 - label metadata, instruction watchdogs, direct `jmp`, `cmp`, equality jumps, signed relational jumps, and unsigned relational jumps are separately staged;
 - string instruction families are split by data movement, accumulator behavior, comparison behavior, and REP/REPE/REPNE repetition semantics.
 
+#### 8.6.6 Shift Count and Undefined-Flag Compatibility Policy
+
+Runtime shift instructions must prefer MASM/x86-compatible execution over rejecting MASM-valid source.
+
+This policy applies to `shl`/`sal` when Phase 46 implements them and should be reused by `shr` and `sar` when their later phases implement them. Rotate instructions have their own later flag rules, but they should follow the same principle: accept MASM-valid operand forms and use warnings or strict diagnostics for educational concerns rather than misclassifying valid assembly as syntax errors.
+
+Shift count handling in MASM32 Educational Mode:
+
+- Immediate shift counts are accepted when they fit the encoded immediate-count form selected by the instruction phase.
+- `CL` counts use the low 8 bits of `ECX` as the raw count.
+- For 8-bit, 16-bit, and 32-bit destinations, the effective count is `raw_count & 31`.
+- Effective count `0` is a no-op: the destination and all modeled flags remain unchanged.
+- Nonzero effective counts execute using the destination width.
+- MASM-valid counts must not be rejected solely because the effective count is greater than or equal to the destination width.
+
+Undefined modeled flag handling:
+
+- The simulator currently models `CF`, `ZF`, `SF`, and `OF`.
+- When a shift result defines `ZF` and `SF`, update them from the deterministic result.
+- When an architectural rule defines `CF` or `OF`, update the modeled flag accordingly.
+- When an architectural rule leaves a modeled flag undefined, preserve that flag's previous simulator value as the deterministic fallback.
+- In default MASM32 Educational Mode, emit a structured warning for any successful shift that leaves one or more modeled flags architecturally undefined.
+- In a shift undefined-flag strict mode, the same condition becomes a runtime error and the instruction must stop before mutating registers, flags, memory, console state, or memory-change rows.
+
+Required diagnostic code:
+
+```text
+undefined-shift-flag
+```
+
+Suggested default warning wording:
+
+```text
+SHL/SAL with this effective count has architecturally undefined modeled flag result(s). The simulator executed the MASM-compatible shift and preserved deterministic values for undefined modeled flags.
+```
+
+Diagnostic classification rule:
+
+```text
+Do not use unsupported-shift-count for MASM-valid shift counts. Reserve unsupported diagnostics for genuinely unsupported operand forms, unsupported widths, or simulator-mode non-goals.
+```
+
+Examples:
+
+```asm
+shl eax, 32  ; raw 32 -> effective 0, accepted no-op, no warning
+shl al, 8    ; raw 8 -> effective 8, accepted; result executes and undefined modeled flags warn by default
+shl eax, cl  ; raw count is CL, effective count is CL & 31
+```
+
 ### 8.7 Unsupported Initially
 
 Initially unsupported:
@@ -1083,7 +1133,7 @@ Important textbook/compatibility areas to track explicitly:
 - Include/library declarations: broader `INCLUDE`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, and `COMM` handling. Only built-in virtual includes are accepted initially.
 - Expression parser: `+`, `-`, `*`, `/`, `MOD`, `SHL`, `SHR`, `AND`, `OR`, `XOR`, `NOT`, relational operators, parentheses, `HIGH`, `LOW`, `HIGHWORD`, `LOWWORD`, `SHORT`, `THIS`, and segment-related operators where applicable.
 - Instruction prefixes and string instructions: `REP`, `REPE`, `REPNE`, `LOCK`, `movsb`, `movsd`, `stosb`, `stosd`, `lodsb`, `cmpsb`, `scasb`, and direction-flag behavior through `cld` and `std`.
-- Extended flag model: `PF`, `AF`, and `DF`, with updated arithmetic/logical/test helpers and debugger/Irvine display.
+- Extended flag model: `PF`, `AF`, and `DF`. `PF`/`AF` integration must be split by instruction-family behavior rather than implemented as one large catch-all phase: arithmetic/compare helpers, logical/TEST helpers, shift/rotate helpers, multiply/divide preservation or undefined-policy checks, flag-preserving instruction regressions, and debugger/Irvine/UI display updates. `DF` remains a later prerequisite for string instructions and `CLD`/`STD`.
 - Irvine32 runtime compatibility: virtual include symbols, `exit`, output routines, input routines with flag semantics, debug routines, random routines, console-control policy, and explicit unsupported diagnostics for file routines and Windows-specific routines.
 
 These features should not be silently accepted before they are implemented. Unsupported forms should produce explicit diagnostics with source location.
@@ -1095,6 +1145,7 @@ The post-Milestone-30 roadmap expands the supported MASM subset through tightly 
 The following staging rules are normative:
 
 - scalar instruction groups must be split by distinct flag behavior and operand shape;
+- extended flag integration must also be split by distinct flag behavior. `PF`/`AF` storage, arithmetic updates, logical/test updates, shift/rotate policy, multiply/divide preservation, flag-preserving regression coverage, and display/Irvine/debugger integration are separate implementation slices. A future assistant must not treat `PF`/`AF` support as one broad executor-wide patch;
 - memory-capable instruction phases must state width-resolution sources and ambiguous-width diagnostics;
 - branch phases must separate target classification from runtime instruction-pointer mutation when needed;
 - CALL/RET/procedure phases must use simulator return tokens, not native addresses;
@@ -1219,20 +1270,275 @@ Memory effective addresses remain 32-bit VM addresses in Extended 32-bit Mode. A
 
 ## 10. Flag Model
 
-Initial flags:
+The simulator models only named flags that have been explicitly implemented by the roadmap. The VM must not imply that unimplemented EFLAGS bits have meaningful x86 behavior.
+
+### 10.1 Initially Modeled Flags
+
+The initial modeled flags are:
 
 - `CF` carry flag
 - `ZF` zero flag
 - `SF` sign flag
 - `OF` overflow flag
 
-Later flags:
+These flags are stored in the VM CPU/EFLAGS model and are displayed by the debugger, final register/flag output, and Irvine32 `DumpRegs` once the corresponding display phases exist.
+
+### 10.2 Extended Modeled Flags
+
+The extended flag roadmap adds:
 
 - `PF` parity flag
 - `AF` auxiliary carry flag
-- `DF` direction flag, especially if string instructions are added
+- `DF` direction flag
 
-Flag behavior must be tested carefully for arithmetic, comparisons, signed jumps, and unsigned jumps.
+`PF` and `AF` must be added before any feature depends on full textbook `EFLAGS` display or auxiliary/parity behavior. `DF` must be added before string instructions and `CLD`/`STD` behavior.
+
+Adding storage for a flag is not the same as updating every instruction. The implementation guide owns the phase split for storage, instruction-helper updates, preservation regression tests, and UI/Irvine display integration.
+
+### 10.3 PF Definition
+
+When an instruction defines `PF`, the simulator must set `PF` from the low 8 bits of the instruction result.
+
+Definition:
+
+```text
+PF = 1 if the low byte of the result contains an even number of one bits.
+PF = 0 if the low byte of the result contains an odd number of one bits.
+```
+
+Examples:
+
+```text
+result low byte = 00h -> PF = 1
+result low byte = 01h -> PF = 0
+result low byte = 03h -> PF = 1
+result low byte = FFh -> PF = 1
+```
+
+If an instruction does not produce a result value, the phase text for that instruction family must explicitly say whether `PF` is updated, preserved, cleared, or handled by a deterministic undefined-flag policy.
+
+### 10.4 AF Definition
+
+When an arithmetic instruction defines `AF`, the simulator must set `AF` according to carry or borrow across bit 3 into bit 4.
+
+For addition-family instructions:
+
+```text
+AF = 1 if adding the low nibbles carries out of bit 3.
+AF = 0 otherwise.
+```
+
+For subtraction-family instructions:
+
+```text
+AF = 1 if subtracting the low nibbles borrows across bit 4.
+AF = 0 otherwise.
+```
+
+Implementation helpers may use the standard bit expression:
+
+```text
+AF = ((lhs ^ rhs ^ result) & 10h) != 0
+```
+
+provided the helper is validated separately for addition, subtraction, compare, `NEG`, `INC`, and `DEC` semantics.
+
+`NEG destination` must compute `AF` as `0 - destination`.
+
+`INC` and `DEC` must update `AF` from the increment/decrement operation while preserving `CF`, matching their existing `CF` contract.
+
+### 10.5 Undefined or Architecturally Unspecified Flag Results
+
+Some real x86 instructions leave specific flags undefined. The simulator must not expose nondeterministic or host-dependent flag values.
+
+When a modeled flag is architecturally undefined, the implementation phase must choose one explicit simulator policy for that instruction family:
+
+```text
+preserve:
+  Keep the previous simulator flag value.
+
+clear:
+  Set the flag to 0 as a deterministic educational simplification.
+
+warn-or-strict:
+  In default mode, execute deterministically and emit a warning.
+  In strict mode, stop before mutation with a runtime diagnostic.
+```
+
+A phase must not silently invent behavior for an undefined modeled flag without documenting the policy and adding tests.
+
+The preferred default for rare or suspicious undefined-flag cases is `warn-or-strict`.
+
+The preferred default for common textbook instructions where the undefined flag is rarely observed, such as `AF` after logical instructions, is a documented deterministic policy without warning. This avoids making ordinary code noisy.
+
+### 10.6 PF/AF Policy by Instruction Family
+
+The implementation guide owns phase numbers, but the stable behavior target for `PF` and `AF` is defined here.
+
+#### Arithmetic and compare instructions
+
+These instructions must update both `PF` and `AF` once their `PF`/`AF` integration phase is complete:
+
+```text
+add
+adc
+sub
+sbb
+cmp
+neg
+inc
+dec
+```
+
+Rules:
+
+- `PF` is computed from the low byte of the arithmetic result.
+- `AF` is computed from carry/borrow across bit 3.
+- `CMP` updates flags but does not mutate the destination.
+- `INC` and `DEC` update `PF` and `AF` but preserve `CF`.
+- Failed validation or failed memory write paths must not partially mutate `PF` or `AF`.
+
+#### Logical and TEST instructions
+
+These instructions must update `PF` once their `PF`/`AF` integration phase is complete:
+
+```text
+and
+or
+xor
+test
+```
+
+Rules:
+
+- `PF` is computed from the low byte of the logical result.
+- `CF` and `OF` retain their existing logical-instruction behavior.
+- `TEST` must not mutate the destination.
+- The simulator uses the guide-defined deterministic policy for `AF` on these logical/test instructions. The phase text must state that policy explicitly and test it.
+
+The required v1 policy is:
+
+```text
+AF is cleared to 0 for AND, OR, XOR, and TEST as a deterministic educational simplification.
+```
+
+Do not emit undefined-flag warnings for `AF` on `AND`, `OR`, `XOR`, or `TEST`. This is a deliberate simulator contract. Programs must not rely on it as portable real-x86 behavior.
+
+#### Shift instructions
+
+These instructions must be covered by the `PF`/`AF` shift integration phase:
+
+```text
+shl
+sal
+shr
+sar
+```
+
+Rules:
+
+- If the effective count is zero, `PF` and `AF` are preserved because the instruction has no effect.
+- If the effective count is nonzero, `PF` is computed from the low byte of the shifted result.
+- `AF` is architecturally undefined for nonzero shift counts. The simulator must use the same deterministic undefined-flag policy family established for shift-count compatibility.
+- Adding `AF` to the modeled flag set must not expand `undefined-shift-flag` warnings by itself. The warning/strict trigger set remains the one defined by the shift-count compatibility phase.
+- The `PF`/`AF` integration phase must not reintroduce `unsupported-shift-count` for MASM-valid shift counts.
+- The `PF`/`AF` integration phase must not change already-defined `CF`, `OF`, `ZF`, or `SF` behavior for shifts except where a bug fix is explicitly documented.
+
+#### Rotate instructions
+
+These instructions must be covered by the `PF`/`AF` rotate integration phase:
+
+```text
+rol
+ror
+```
+
+Rules:
+
+- `PF` and `AF` are preserved for `ROL` and `ROR`.
+- `SF` and `ZF` are also preserved for `ROL` and `ROR`.
+- `CF` and `OF` follow the rotate phase contract.
+- If the effective count is zero, all modeled flags are preserved.
+- If a rotate phase implements undefined-`OF` warning/strict diagnostics for multi-bit rotates, the `PF`/`AF` phase must preserve that behavior and must not add new `PF`/`AF` mutation.
+
+#### Multiply and divide instructions
+
+These instruction families must be covered by a separate `PF`/`AF` preservation or undefined-policy phase:
+
+```text
+mul
+imul
+div
+idiv
+```
+
+Rules:
+
+- Only already-implemented multiply/divide forms are in scope for that phase.
+- `PF` and `AF` must be preserved unless the instruction family phase explicitly documented a different deterministic undefined-flag policy.
+- Divide-error paths must not mutate `PF` or `AF`.
+- Multiply overflow/result-size behavior must preserve the instruction family’s existing `CF`/`OF` contract.
+- The `PF`/`AF` phase for multiply/divide must not change implicit-register behavior, memory behavior, quotient/remainder behavior, or divide-error behavior.
+
+#### Flag-preserving instructions
+
+These instructions and instruction families must preserve `PF` and `AF` unless their own phase explicitly documents flag mutation:
+
+```text
+mov
+movsx
+movzx
+cbw
+cwde
+cwd
+cdq
+lea
+xchg
+nop
+clc
+stc
+cmc
+jmp and conditional jumps
+loop-family instructions
+push
+pop
+call
+ret
+leave
+ret imm16
+exit
+Irvine32 routines unless a specific routine contract says otherwise
+```
+
+`CLC`, `STC`, and `CMC` mutate `CF` only. They must preserve `PF` and `AF`.
+
+### 10.7 Display Requirements for Extended Flags
+
+After `PF` and `AF` are implemented and integrated:
+
+- final register/flag output must include `PF` and `AF`;
+- debugger flags table must include `PF` and `AF`;
+- last-step flag deltas must show `PF` and `AF` changes when they change;
+- `DumpRegs` must include `PF` and `AF` in its Program Console output once its update phase is reached;
+- source-run JSON and worker protocol payloads must remain structured-clone-safe and JSON-compatible;
+- rendered output must remain deterministic and testable.
+
+Display phases must not change instruction semantics. They only expose already-modeled state.
+
+Before the display integration phase, `PF` and `AF` may be stored internally and validated by native/helper/source-run tests without being shown in every final UI, debugger, or Irvine32 display, unless an earlier phase explicitly chooses to expose them.
+
+### 10.8 Testing Requirements for Flag Changes
+
+Every phase that changes modeled flag behavior must include:
+
+- native CPU/helper tests for the flag formulas;
+- executor tests for register and memory operand paths where applicable;
+- source-run JSON tests for representative programs;
+- rendered Simulator Messages tests for any new warning or runtime-error diagnostic;
+- regression tests proving existing `CF`, `ZF`, `SF`, and `OF` behavior did not change accidentally;
+- no-partial-mutation tests for failed memory reads, failed memory writes, permission failures, strict validation failures, and divide errors where applicable.
+
+A flag phase must not advance metadata unless all implemented instruction families listed in that phase have explicit pass/fail coverage.
 
 ## 11. Memory Model
 
