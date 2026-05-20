@@ -26,6 +26,14 @@ typedef enum Masm32SimWasmMemoryValidationMode {
     MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
 } Masm32SimWasmMemoryValidationMode;
 
+/// Selects handling for shift counts whose modeled flags are architecturally undefined.
+typedef enum Masm32SimWasmShiftValidationMode {
+    /// Emit non-fatal warnings and preserve undefined modeled flags deterministically.
+    MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS = 0,
+    /// Stop execution before mutating state when a shift would make modeled flags undefined.
+    MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
+} Masm32SimWasmShiftValidationMode;
+
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
 ///
 /// @return The deterministic value returned by the C core Phase 0 helper.
@@ -90,6 +98,20 @@ const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
     const char *source,
     Masm32SimWasmMemoryValidationMode validation_mode
+);
+
+/// Parses and executes source with explicit shift-undefined-flag validation.
+///
+/// The normal browser export uses warning mode. This test/configuration-facing
+/// helper allows native tests to verify strict Phase 46 behavior without adding
+/// a browser UI setting in the same milestone.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param shift_mode Shift undefined modeled-flag validation behavior.
+/// @return Pointer to the same static JSON buffer used by other source-run helpers.
+const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
+    const char *source,
+    Masm32SimWasmShiftValidationMode shift_mode
 );
 
 /// Parses and executes source with memory validation and test-only initialization metadata.

@@ -66,6 +66,10 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_XOR,
     /// Compute the bitwise complement of a register or memory destination without changing flags.
     VM_IR_OPCODE_NOT,
+    /// Shift a register or memory destination left, filling low bits with zero.
+    VM_IR_OPCODE_SHL,
+    /// Arithmetic-left-shift alias for SHL.
+    VM_IR_OPCODE_SAL,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

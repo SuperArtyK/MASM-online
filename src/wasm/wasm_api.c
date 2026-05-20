@@ -81,6 +81,9 @@
 /// Maximum uninitialized-read diagnostics retained for one source run.
 #define MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS 64U
 
+/// Maximum undefined shift-flag diagnostics retained for one source run.
+#define MASM32_SIM_WASM_MAX_SHIFT_WARNINGS 64U
+
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
@@ -201,6 +204,28 @@ typedef struct Masm32SimWasmUninitializedReadDiagnostic {
     bool has_source_span;
 } Masm32SimWasmUninitializedReadDiagnostic;
 
+/// Describes one SHL/SAL undefined-modeled-flag diagnostic returned to the UI.
+typedef struct Masm32SimWasmShiftDiagnostic {
+    /// Stable instruction mnemonic associated with the diagnostic.
+    const char *mnemonic;
+    /// Destination width in bits.
+    uint8_t width_bits;
+    /// Raw shift count before the x86-compatible count mask.
+    uint8_t raw_count;
+    /// Effective count after applying raw_count & 31.
+    uint8_t effective_count;
+    /// One-based source line, or zero when unavailable.
+    uint32_t source_line;
+    /// One-based source column, or zero when unavailable.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the instruction span.
+    size_t source_byte_offset;
+    /// Source span length in bytes.
+    size_t source_span_length;
+    /// Whether byte offset and span length identify a real source span.
+    bool has_source_span;
+} Masm32SimWasmShiftDiagnostic;
+
 /// Describes one planned memory read before an instruction is stepped.
 typedef struct Masm32SimWasmPlannedMemoryRead {
     /// Memory operand that will be read if execution proceeds.
@@ -275,6 +300,14 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmUninitializedReadDiagnostic uninitialized_read_violation;
     /// Whether @ref uninitialized_read_violation contains a fatal strict-mode diagnostic.
     bool has_uninitialized_read_violation;
+    /// Undefined shift-flag warnings collected during execution.
+    Masm32SimWasmShiftDiagnostic shift_warnings[MASM32_SIM_WASM_MAX_SHIFT_WARNINGS];
+    /// Number of valid entries in @ref shift_warnings.
+    size_t shift_warning_count;
+    /// Fatal strict undefined shift-flag diagnostic captured before execution.
+    Masm32SimWasmShiftDiagnostic shift_violation;
+    /// Whether @ref shift_violation contains a fatal strict-mode diagnostic.
+    bool has_shift_violation;
     /// Original source text for calculating runtime diagnostic source spans.
     const char *source_text;
     /// Copied source text retained by IR instruction metadata.
@@ -1309,6 +1342,8 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             break;
         case VM_IR_OPCODE_NEG:
         case VM_IR_OPCODE_NOT:
+        case VM_IR_OPCODE_SHL:
+        case VM_IR_OPCODE_SAL:
             if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
             }
@@ -1402,6 +1437,164 @@ static void masm32_sim_wasm_copy_bracketed_memory_source_span(
     }
     *out_span_length = (size_t)(span_end - span_start) + 1U;
     *out_has_source_span = true;
+}
+
+/// Copies best-effort full-instruction source-span metadata.
+///
+/// @param instruction Instruction associated with a runtime diagnostic.
+/// @param source Original source text for byte-offset reconstruction.
+/// @param out_column Receives a one-based source column, or zero.
+/// @param out_byte_offset Receives the zero-based source byte offset.
+/// @param out_span_length Receives source span length in bytes.
+/// @param out_has_source_span Receives whether byte offset and span length are valid.
+static void masm32_sim_wasm_copy_instruction_source_span(
+    const VmIrInstruction *instruction,
+    const char *source,
+    uint32_t *out_column,
+    size_t *out_byte_offset,
+    size_t *out_span_length,
+    bool *out_has_source_span
+) {
+    const char *line_text = instruction != NULL ? instruction->source_text : NULL;
+    size_t line_start_offset = 0U;
+    size_t line_text_length = line_text != NULL ? strlen(line_text) : 0U;
+
+    if (out_column != NULL) {
+        *out_column = 0U;
+    }
+    if (out_byte_offset != NULL) {
+        *out_byte_offset = 0U;
+    }
+    if (out_span_length != NULL) {
+        *out_span_length = 0U;
+    }
+    if (out_has_source_span != NULL) {
+        *out_has_source_span = false;
+    }
+    if (instruction == NULL || source == NULL || line_text == NULL || instruction->source_line == 0U || line_text_length == 0U ||
+        out_column == NULL || out_byte_offset == NULL || out_span_length == NULL || out_has_source_span == NULL ||
+        !masm32_sim_wasm_find_line_start_offset(source, instruction->source_line, &line_start_offset)) {
+        return;
+    }
+
+    {
+        const char *source_line = source + line_start_offset;
+        const char *source_line_end = strchr(source_line, '\n');
+        const char *line_text_start = NULL;
+        size_t line_text_offset = 0U;
+
+        if (source_line_end == NULL) {
+            source_line_end = source_line + strlen(source_line);
+        }
+        line_text_start = strstr(source_line, line_text);
+        if (line_text_start != NULL && line_text_start <= source_line_end) {
+            line_text_offset = (size_t)(line_text_start - source_line);
+        }
+
+        *out_column = (uint32_t)(line_text_offset + 1U);
+        *out_byte_offset = line_start_offset + line_text_offset;
+        *out_span_length = line_text_length;
+        *out_has_source_span = true;
+    }
+}
+
+/// Reads a SHL/SAL raw shift count without mutating execution state.
+///
+/// @param vm VM whose CPU supplies CL when selected.
+/// @param instruction Shift-left instruction to inspect.
+/// @param out_raw_count Receives the unsigned raw count.
+/// @return true when the count source is valid and readable.
+static bool masm32_sim_wasm_read_shift_count(const Vm *vm, const VmIrInstruction *instruction, uint8_t *out_raw_count) {
+    uint32_t value = 0U;
+
+    if (vm == NULL || instruction == NULL || out_raw_count == NULL) {
+        return false;
+    }
+
+    if (instruction->source.kind == VM_IR_OPERAND_IMMEDIATE && instruction->source.immediate <= 255U) {
+        *out_raw_count = (uint8_t)instruction->source.immediate;
+        return true;
+    }
+
+    if (instruction->source.kind == VM_IR_OPERAND_REGISTER && instruction->source.reg == VM_REGISTER_CL) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_CL, &value)) {
+            return false;
+        }
+        *out_raw_count = (uint8_t)(value & 0xFFU);
+        return true;
+    }
+
+    return false;
+}
+
+/// Fills an undefined shift-flag diagnostic for a SHL/SAL instruction.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param instruction Instruction associated with the diagnostic.
+/// @param storage Source-run storage carrying original source text.
+/// @param width_bits Destination width in bits.
+/// @param raw_count Raw shift count before masking.
+/// @param effective_count Effective count after raw_count & 31.
+static void masm32_sim_wasm_fill_shift_diagnostic(
+    Masm32SimWasmShiftDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    const Masm32SimWasmRunStorage *storage,
+    uint8_t width_bits,
+    uint8_t raw_count,
+    uint8_t effective_count
+) {
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->mnemonic = instruction != NULL && instruction->opcode == VM_IR_OPCODE_SAL ? "SAL" : "SHL";
+    diagnostic->width_bits = width_bits;
+    diagnostic->raw_count = raw_count;
+    diagnostic->effective_count = effective_count;
+    diagnostic->source_line = instruction != NULL ? instruction->source_line : 0U;
+    masm32_sim_wasm_copy_instruction_source_span(
+        instruction,
+        storage != NULL ? storage->source_text : NULL,
+        &diagnostic->source_column,
+        &diagnostic->source_byte_offset,
+        &diagnostic->source_span_length,
+        &diagnostic->has_source_span
+    );
+}
+
+/// Determines whether a SHL/SAL instruction makes modeled flags undefined.
+///
+/// @param storage Source-run storage used to populate diagnostics.
+/// @param vm VM positioned before the instruction is stepped.
+/// @param instruction Shift-left instruction to inspect.
+/// @param out_diagnostic Optional diagnostic populated when the shift is undefined.
+/// @return true when the instruction has an effective count that makes modeled flags undefined.
+static bool masm32_sim_wasm_shift_has_undefined_modeled_flags(
+    const Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    const VmIrInstruction *instruction,
+    Masm32SimWasmShiftDiagnostic *out_diagnostic
+) {
+    uint8_t width_bits = 0U;
+    uint8_t raw_count = 0U;
+    uint8_t effective_count = 0U;
+
+    if (vm == NULL || instruction == NULL || (instruction->opcode != VM_IR_OPCODE_SHL && instruction->opcode != VM_IR_OPCODE_SAL)) {
+        return false;
+    }
+
+    if (!masm32_sim_wasm_operand_width(&instruction->destination, &width_bits) || !masm32_sim_wasm_read_shift_count(vm, instruction, &raw_count)) {
+        return false;
+    }
+
+    effective_count = (uint8_t)(raw_count & 31U);
+    if (effective_count <= 1U) {
+        return false;
+    }
+
+    masm32_sim_wasm_fill_shift_diagnostic(out_diagnostic, instruction, storage, width_bits, raw_count, effective_count);
+    return true;
 }
 
 /// Counts bytes in a planned read that are still marked uninitialized-origin.
@@ -1600,6 +1793,47 @@ static VmExecStatus masm32_sim_wasm_validate_uninitialized_reads_before_step(
         if (!masm32_sim_wasm_validate_uninitialized_read(storage, instruction, vm, &reads[index], validation_mode, layout_policy)) {
             return VM_EXEC_STATUS_MEMORY_ERROR;
         }
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Validates SHL/SAL undefined modeled-flag behavior before stepping.
+///
+/// Warning mode records a non-fatal message and allows execution. Strict mode
+/// records a runtime diagnostic and stops before the instruction mutates state.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose next instruction should be inspected.
+/// @param shift_mode Shift undefined-flag validation behavior.
+/// @return OK when execution may continue, or INVALID_INSTRUCTION for strict failures.
+static VmExecStatus masm32_sim_wasm_validate_shift_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmShiftValidationMode shift_mode
+) {
+    Masm32SimWasmShiftDiagnostic diagnostic;
+    const VmIrInstruction *instruction = NULL;
+
+    if (storage == NULL || vm == NULL || vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    instruction = &vm->program[vm->instruction_pointer];
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    if (!masm32_sim_wasm_shift_has_undefined_modeled_flags(storage, vm, instruction, &diagnostic)) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    if (shift_mode == MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT) {
+        storage->shift_violation = diagnostic;
+        storage->has_shift_violation = true;
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+
+    if (storage->shift_warning_count < (size_t)MASM32_SIM_WASM_MAX_SHIFT_WARNINGS) {
+        storage->shift_warnings[storage->shift_warning_count] = diagnostic;
+        storage->shift_warning_count += 1U;
     }
 
     return VM_EXEC_STATUS_OK;
@@ -2042,6 +2276,138 @@ static bool masm32_sim_json_append_uninitialized_read_warnings(
     return true;
 }
 
+/// Returns the English article for a shift destination width phrase.
+///
+/// @param width_bits Destination width in bits.
+/// @return "an" for 8-bit destinations, otherwise "a".
+static const char *masm32_sim_wasm_shift_width_article(uint8_t width_bits) {
+    return width_bits == 8U ? "an" : "a";
+}
+
+/// Formats one undefined shift-flag diagnostic message.
+///
+/// @param diagnostic Diagnostic to format.
+/// @param buffer Destination buffer.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_shift_diagnostic(
+    const Masm32SimWasmShiftDiagnostic *diagnostic,
+    char *buffer,
+    size_t buffer_size
+) {
+    const char *mnemonic = "SHL";
+    const char *article = "a";
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+
+    if (diagnostic == NULL) {
+        (void)snprintf(buffer, buffer_size, "Shift count makes modeled flags undefined.");
+        return;
+    }
+
+    mnemonic = diagnostic->mnemonic != NULL ? diagnostic->mnemonic : "SHL";
+    article = masm32_sim_wasm_shift_width_article(diagnostic->width_bits);
+
+    if (diagnostic->effective_count >= diagnostic->width_bits) {
+        (void)snprintf(
+            buffer,
+            buffer_size,
+            "%s count %u has effective count %u for %s %u-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+            mnemonic,
+            (unsigned int)diagnostic->raw_count,
+            (unsigned int)diagnostic->effective_count,
+            article,
+            (unsigned int)diagnostic->width_bits
+        );
+        return;
+    }
+
+    (void)snprintf(
+        buffer,
+        buffer_size,
+        "%s count %u has effective count %u for %s %u-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.",
+        mnemonic,
+        (unsigned int)diagnostic->raw_count,
+        (unsigned int)diagnostic->effective_count,
+        article,
+        (unsigned int)diagnostic->width_bits
+    );
+}
+
+/// Appends one undefined shift-flag message object.
+///
+/// @param writer Writer to mutate.
+/// @param kind Simulator-message kind to emit.
+/// @param diagnostic Diagnostic to render.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_shift_message(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const Masm32SimWasmShiftDiagnostic *diagnostic
+) {
+    char message[512];
+
+    if (writer == NULL) {
+        return false;
+    }
+
+    masm32_sim_wasm_format_shift_diagnostic(diagnostic, message, sizeof(message));
+    return masm32_sim_json_append_message_with_span(
+        writer,
+        kind,
+        "undefined-shift-flag",
+        message,
+        diagnostic != NULL ? diagnostic->source_line : 0U,
+        diagnostic != NULL ? diagnostic->source_column : 0U,
+        diagnostic != NULL ? diagnostic->source_byte_offset : 0U,
+        diagnostic != NULL ? diagnostic->source_span_length : 0U,
+        diagnostic != NULL && diagnostic->has_source_span
+    );
+}
+
+/// Appends collected undefined shift-flag warnings to Simulator Messages.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing shift warnings.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @return true when warnings fit without overflowing the buffer.
+static bool masm32_sim_json_append_shift_warnings(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    bool *inout_has_message
+) {
+    size_t index = 0U;
+
+    if (storage == NULL || inout_has_message == NULL) {
+        return true;
+    }
+
+    for (index = 0U; index < storage->shift_warning_count; index += 1U) {
+        if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_shift_message(writer, "simulator-warning", &storage->shift_warnings[index])) {
+            return false;
+        }
+        *inout_has_message = true;
+    }
+
+    return true;
+}
+
+/// Appends one strict undefined shift-flag runtime diagnostic.
+///
+/// @param writer Writer to mutate.
+/// @param diagnostic Strict shift diagnostic to render.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_shift_violation(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmShiftDiagnostic *diagnostic
+) {
+    return masm32_sim_json_append_shift_message(writer, "runtime-error", diagnostic);
+}
+
 /// Appends one uninitialized-read strict runtime diagnostic.
 ///
 /// @param writer Writer to mutate.
@@ -2449,7 +2815,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":45,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":46,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -2481,6 +2847,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
+        (void)masm32_sim_json_append_shift_warnings(&writer, storage, &has_message);
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
@@ -2498,6 +2865,8 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_object_violation(&writer, &storage->object_violation);
         } else if (storage != NULL && storage->has_uninitialized_read_violation) {
             (void)masm32_sim_json_append_uninitialized_read_violation(&writer, &storage->uninitialized_read_violation);
+        } else if (storage != NULL && storage->has_shift_violation) {
+            (void)masm32_sim_json_append_shift_violation(&writer, &storage->shift_violation);
         } else {
             (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
         }
@@ -2524,7 +2893,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":45,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":46,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 
@@ -3001,6 +3370,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     VmLayoutMode requested_layout_mode,
     const VmLayoutPolicy *base_policy,
     Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmShiftValidationMode shift_mode,
     bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
@@ -3144,6 +3514,11 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             break;
         }
 
+        exec_status = masm32_sim_wasm_validate_shift_before_step(&g_masm32_sim_wasm_run_storage, &vm, shift_mode);
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
@@ -3177,15 +3552,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
@@ -3200,7 +3575,19 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
+}
+
+const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
+    const char *source,
+    Masm32SimWasmShiftValidationMode shift_mode
+) {
+    if (shift_mode != MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS &&
+        shift_mode != MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, shift_mode, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
@@ -3215,11 +3602,11 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

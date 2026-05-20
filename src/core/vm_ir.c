@@ -148,6 +148,10 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "xor";
         case VM_IR_OPCODE_NOT:
             return "not";
+        case VM_IR_OPCODE_SHL:
+            return "shl";
+        case VM_IR_OPCODE_SAL:
+            return "sal";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

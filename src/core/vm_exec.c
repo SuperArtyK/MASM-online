@@ -4,7 +4,7 @@
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
- * test, inc, and dec over the currently supported register and memory operand forms. It records last-step
+ * test, inc, dec, and, or, xor, not, shl, and sal over the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -622,6 +622,136 @@ static VmExecStatus vm_exec_execute_logical_binary(Vm *vm, const VmIrInstruction
     }
 
     if (!vm_exec_update_logical_flags(&vm->cpu, result, width_bits)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+/// Reads the raw shift count for SHL/SAL.
+///
+/// Counts are either an encoded immediate byte or the current low 8 bits of
+/// CL. The parser normally enforces these shapes; this helper keeps the
+/// executor defensive for hand-built IR tests.
+///
+/// @param vm VM whose CPU supplies CL when used.
+/// @param source Count source operand.
+/// @param out_raw_count Receives the unsigned raw count.
+/// @return Executor status for the count operand.
+static VmExecStatus vm_exec_read_shift_count(const Vm *vm, const VmIrOperand *source, uint8_t *out_raw_count) {
+    uint32_t register_value = 0U;
+
+    if (vm == NULL || source == NULL || out_raw_count == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (source->kind == VM_IR_OPERAND_IMMEDIATE && source->immediate <= 255U) {
+        *out_raw_count = (uint8_t)source->immediate;
+        return VM_EXEC_STATUS_OK;
+    }
+
+    if (source->kind == VM_IR_OPERAND_REGISTER && source->reg == VM_REGISTER_CL) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_CL, &register_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        *out_raw_count = (uint8_t)(register_value & 0xFFU);
+        return VM_EXEC_STATUS_OK;
+    }
+
+    return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+}
+
+/// Executes one SHL or SAL instruction.
+///
+/// SAL is an alias for SHL in the supported MASM32 subset. The effective count
+/// is raw_count & 31. Count zero is a complete no-op, including for memory
+/// destinations. Multi-bit and oversized counts preserve modeled flags that
+/// the source specification classifies as undefined; source-run code emits the
+/// corresponding warning or strict diagnostic.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Shift-left instruction to execute.
+/// @param width_bits Destination execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_shift_left(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    uint8_t raw_count = 0U;
+    uint8_t effective_count = 0U;
+    uint8_t index = 0U;
+    bool original_cf = false;
+    bool original_of = false;
+    bool shifted_out = false;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (instruction->opcode != VM_IR_OPCODE_SHL && instruction->opcode != VM_IR_OPCODE_SAL) {
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+
+    status = vm_exec_read_shift_count(vm, &instruction->source, &raw_count);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    effective_count = (uint8_t)(raw_count & 31U);
+    if (effective_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &original_cf) || !vm_cpu_read_flag(&vm->cpu, VM_FLAG_OF, &original_of)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    result = value & mask;
+    for (index = 0U; index < effective_count; index += 1U) {
+        shifted_out = (result & sign_bit) != 0U;
+        result = (result << 1U) & mask;
+    }
+
+    if (effective_count < width_bits) {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, shifted_out)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_SF, (result & sign_bit) != 0U)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (effective_count == 1U) {
+        bool new_sign = (result & sign_bit) != 0U;
+        bool new_cf = false;
+        if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_CF, &new_cf) || !vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, new_sign != new_cf)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
         vm->cpu = before_cpu;
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
@@ -1508,6 +1638,15 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
                 return vm_exec_execute_test(vm, instruction, width_bits);
             }
             return vm_exec_execute_logical_binary(vm, instruction, width_bits);
+        case VM_IR_OPCODE_SHL:
+        case VM_IR_OPCODE_SAL:
+            if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            if (!vm_exec_operand_width(&instruction->destination, &width_bits)) {
+                return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+            }
+            return vm_exec_execute_shift_left(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:
             return vm_exec_execute_movx(vm, instruction, true);
         case VM_IR_OPCODE_MOVZX:

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 45.
+ * @brief Unit tests for the VM executor through Milestone 46.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -1600,6 +1600,175 @@ static int test_not_memory_destinations_and_errors(void) {
     return failures;
 }
 
+
+/// Verifies SHL/SAL register destinations, counts, and modeled flags.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_shift_left_register_flags_and_counts(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction single_bit_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000080U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 80h", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl al, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00008000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 8000h", 2U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "shl ax, 1", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov eax, 80000000h", 4U},
+        {VM_IR_OPCODE_SAL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "sal eax, 1", 5U}
+    };
+    const VmIrInstruction zero_count_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x12345678U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 12345678h", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 32U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl eax, 32", 1U}
+    };
+    const VmIrInstruction cl_count_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000102U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov ecx, 102h", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 8U, 0U, VM_REGISTER_CL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "shl eax, cl", 2U}
+    };
+    const VmIrInstruction oversized_byte_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl al, 8", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for single-bit shift test");
+    failures += expect_status(vm_load_program(&vm, single_bit_program, sizeof(single_bit_program) / sizeof(single_bit_program[0])), VM_EXEC_STATUS_OK, "single-bit shift program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before SHL AL should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL AL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after SHL AL should succeed");
+    failures += expect_u32(eax, 0x00000000U, "SHL AL should clear AL after shifting out bit 7");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "SHL AL by one should set CF from old sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "SHL AL by one should set ZF for zero result");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "SHL AL by one should clear SF for zero result");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "SHL AL by one should set OF to new sign XOR CF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before SHL AX should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL AX should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "SHL AX by one should set CF from old sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "SHL AX by one should set OF to new sign XOR CF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before SAL EAX should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SAL EAX should execute as SHL alias");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after SAL EAX should succeed");
+    failures += expect_u32(eax, 0x00000000U, "SAL EAX should shift left exactly like SHL");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "SAL EAX by one should set CF from old sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "SAL EAX by one should set OF to new sign XOR CF");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for zero-count shift test");
+    failures += expect_status(vm_load_program(&vm, zero_count_program, sizeof(zero_count_program) / sizeof(zero_count_program[0])), VM_EXEC_STATUS_OK, "zero-count shift program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before zero-count SHL should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup before zero-count SHL should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, false) ? 0 : record_failure("ZF setup before zero-count SHL should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup before zero-count SHL should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before zero-count SHL should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL EAX, 32 should be a count-zero no-op");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after zero-count SHL should succeed");
+    failures += expect_u32(eax, 0x12345678U, "zero effective count should not change EAX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "zero effective count should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "zero effective count should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "zero effective count should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "zero effective count should preserve OF");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CL shift test");
+    failures += expect_status(vm_load_program(&vm, cl_count_program, sizeof(cl_count_program) / sizeof(cl_count_program[0])), VM_EXEC_STATUS_OK, "CL shift program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV ECX before CL shift should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV EAX before CL shift should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before CL shift should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL EAX, CL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after SHL EAX, CL should succeed");
+    failures += expect_u32(eax, 4U, "SHL EAX, CL should use only CL as count");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "multi-bit SHL should preserve undefined OF deterministically");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for oversized byte shift test");
+    failures += expect_status(vm_load_program(&vm, oversized_byte_program, sizeof(oversized_byte_program) / sizeof(oversized_byte_program[0])), VM_EXEC_STATUS_OK, "oversized byte shift program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before oversized byte shift should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup before oversized byte shift should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before oversized byte shift should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL AL, 8 should execute in deterministic default semantics");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after SHL AL, 8 should succeed");
+    failures += expect_u32(eax, 0U, "SHL AL, 8 should deterministically clear AL");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "oversized byte shift should preserve undefined CF deterministically");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "oversized byte shift should preserve undefined OF deterministically");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "oversized byte shift should update ZF from result");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "oversized byte shift should update SF from result");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies SHL/SAL memory destinations and executor error paths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_shift_left_memory_destinations_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    uint8_t memory_byte = 0U;
+    uint16_t memory_word = 0U;
+    uint32_t memory_dword = 0U;
+    const VmIrInstruction memory_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x80U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov BYTE PTR b, 80h", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl BYTE PTR b, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x0001U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov WORD PTR w, 1", 2U},
+        {VM_IR_OPCODE_SAL, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "sal WORD PTR w, 4", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x40000000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov DWORD PTR d, 40000000h", 4U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "shl DWORD PTR d, 1", 5U}
+    };
+    const VmIrInstruction invalid_count[] = {
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 256U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "shl eax, 256", 0U}
+    };
+    const VmIrInstruction invalid_address[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl DWORD PTR [0], 1", 1U}
+    };
+    const VmIrInstruction const_write[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_CONST_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl DWORD PTR [const], 1", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for shift memory test");
+    failures += expect_status(vm_load_program(&vm, memory_program, sizeof(memory_program) / sizeof(memory_program[0])), VM_EXEC_STATUS_OK, "shift memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory byte initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory byte instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory word initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory word instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory dword initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory dword instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "shift memory program should halt after all instructions");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after SHL");
+    failures += expect_u32((uint32_t)memory_byte, 0x00U, "SHL byte memory should store 00h");
+    failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after SAL");
+    failures += expect_u32((uint32_t)memory_word, 0x0010U, "SAL word memory should shift by four");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, &memory_dword, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory dword read should succeed after SHL");
+    failures += expect_u32(memory_dword, 0x80000000U, "SHL dword memory should store shifted value");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid shift count test");
+    failures += expect_status(vm_load_program(&vm, invalid_count, 1U), VM_EXEC_STATUS_OK, "invalid shift count program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "executor should reject malformed immediate shift count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid shift address test");
+    failures += expect_status(vm_load_program(&vm, invalid_address, sizeof(invalid_address) / sizeof(invalid_address[0])), VM_EXEC_STATUS_OK, "invalid shift address program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before failed shift should execute");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "SHL invalid memory destination should fail through checked memory read");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed SHL invalid-address read should preserve CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed SHL invalid-address read should not record memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for shift const-write test");
+    failures += expect_status(vm_load_program(&vm, const_write, sizeof(const_write) / sizeof(const_write[0])), VM_EXEC_STATUS_OK, "shift const-write program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute before failed shift const write");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "SHL .CONST write should fail through checked memory");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed SHL .CONST write should restore CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed SHL .CONST write should not record successful memory changes");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies the Irvine32 exit IR opcode halts without state mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1681,6 +1850,12 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_NOT), "not") != 0) {
         failures += record_failure("NOT opcode name should be not");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_SHL), "shl") != 0) {
+        failures += record_failure("SHL opcode name should be shl");
+    }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_SAL), "sal") != 0) {
+        failures += record_failure("SAL opcode name should be sal");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -1703,7 +1878,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 45.
+/// Runs all executor tests through Milestone 46.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -1743,6 +1918,8 @@ int main(void) {
     failures += test_logical_binary_error_paths();
     failures += test_not_register_destinations_preserve_flags();
     failures += test_not_memory_destinations_and_errors();
+    failures += test_shift_left_register_flags_and_counts();
+    failures += test_shift_left_memory_destinations_and_errors();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -1751,6 +1928,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 45 passed.");
+    puts("Executor tests through Milestone 46 passed.");
     return 0;
 }

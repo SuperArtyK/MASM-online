@@ -233,6 +233,34 @@ static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemo
     return 0;
 }
 
+
+/// Returns the requested shift validation mode from the diagnostic environment.
+///
+/// @param out_mode Receives the selected shift validation mode.
+/// @return Nonzero when MASM32_DIAGNOSTIC_SHIFT_VALIDATION selects strict mode.
+static int diagnostic_json_producer_get_shift_validation_mode(Masm32SimWasmShiftValidationMode *out_mode) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_SHIFT_VALIDATION");
+
+    if (out_mode == NULL) {
+        return 0;
+    }
+
+    *out_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "strict") == 0) {
+        *out_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT;
+        return 1;
+    }
+    if (strcmp(mode, "warnings") == 0) {
+        *out_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -291,6 +319,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     const char *json = NULL;
     VmLayoutPolicy policy;
     Masm32SimWasmMemoryValidationMode validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -304,6 +333,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
             return 1;
         }
         json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(source, &policy);
+    } else if (diagnostic_json_producer_get_shift_validation_mode(&shift_mode)) {
+        json = masm32_sim_wasm_run_source_json_with_shift_validation_mode(source, shift_mode);
     } else {
         json = masm32_sim_wasm_run_source_json(source);
     }

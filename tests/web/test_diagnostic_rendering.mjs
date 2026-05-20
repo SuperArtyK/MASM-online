@@ -59,7 +59,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_AUTO_STACK_LIMIT",
   "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
   "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
-  "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT"
+  "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT",
+  "MASM32_DIAGNOSTIC_SHIFT_VALIDATION"
 ];
 
 /**
@@ -436,6 +437,56 @@ END main
 `,
     reason: "Phase 44 XOR invalid destination-address runtime diagnostic fixture."
   },
+
+  shlAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    shl [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 46 SHL ambiguous memory-width diagnostic fixture."
+  },
+  shlInvalidCountRegister: {
+    source: `.code
+main PROC
+    shl eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 46 SHL invalid count-register diagnostic fixture."
+  },
+  shlUndefinedWarning: {
+    source: `.code
+main PROC
+    mov al, 1
+    shl al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 46 SHL undefined modeled flag warning fixture."
+  },
+  salUndefinedWarning: {
+    source: `.code
+main PROC
+    mov ecx, 00000102h
+    mov eax, 00000003h
+    sal eax, cl
+main ENDP
+END main
+`,
+    reason: "Phase 46 SAL undefined modeled flag warning fixture where CF remains defined."
+  },
+  shlUndefinedStrict: {
+    source: `.code
+main PROC
+    mov al, 1
+    shl al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 46 SHL strict undefined modeled flag diagnostic fixture."
+  },
   notAmbiguousMemoryWidth: {
     source: `.code
 main PROC
@@ -443,7 +494,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT ambiguous memory-width diagnostic fixture."
+    reason: "Milestone 45 NOT ambiguous memory-width diagnostic regression fixture under Phase 46."
   },
   notImmediateDestination: {
     source: `.code
@@ -452,7 +503,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT immediate-destination diagnostic fixture."
+    reason: "Milestone 45 NOT immediate-destination diagnostic regression fixture under Phase 46."
   },
   notExtraOperand: {
     source: `.code
@@ -461,7 +512,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT extra-operand diagnostic fixture."
+    reason: "Milestone 45 NOT extra-operand diagnostic regression fixture under Phase 46."
   },
   notConstDirectWrite: {
     source: `.CONST
@@ -472,7 +523,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT direct .CONST write diagnostic fixture."
+    reason: "Milestone 45 NOT direct .CONST write diagnostic regression fixture under Phase 46."
   },
   notConstRuntimeWrite: {
     source: `.CONST
@@ -484,7 +535,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT computed .CONST write diagnostic fixture."
+    reason: "Milestone 45 NOT computed .CONST write diagnostic regression fixture under Phase 46."
   },
   notInvalidAddress: {
     source: `.code
@@ -494,7 +545,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 45 NOT invalid destination-address runtime diagnostic fixture."
+    reason: "Milestone 45 NOT invalid destination-address runtime diagnostic regression fixture under Phase 46."
   },
   constRuntimeWrite: {
     source: `.CONST
@@ -1112,6 +1163,120 @@ test("renders XOR invalid destination-address diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+
+test("renders SHL ambiguous memory-width diagnostic exactly", () => {
+  const name = "shlAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders SHL invalid count-register diagnostic exactly", () => {
+  const name = "shlInvalidCountRegister";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "SHL count must be an immediate byte count or CL.",
+    line: 3,
+    column: 14,
+    byteOffset: 29,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 14, byte offset 29, span length 3: SHL count must be an immediate byte count or CL.");
+});
+
+test("renders SHL undefined modeled flag warning exactly", () => {
+  const name = "shlUndefinedWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+      line: 4,
+      column: 5,
+      byteOffset: 34,
+      spanLength: 9
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 34, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders SAL undefined modeled flag warning exactly", () => {
+  const name = "salUndefinedWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 3);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SAL count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.",
+      line: 5,
+      column: 5,
+      byteOffset: 66,
+      spanLength: 11
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 66, span length 11: SAL count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders SHL strict undefined modeled flag diagnostic exactly", () => {
+  const name = "shlUndefinedStrict";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SHIFT_VALIDATION: "strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "undefined-shift-flag",
+    message: "SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    line: 4,
+    column: 5,
+    byteOffset: 34,
+    spanLength: 9
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-shift-flag line 4, column 5, byte offset 34, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.");
 });
 
 test("renders NOT ambiguous memory-width diagnostic exactly", () => {
