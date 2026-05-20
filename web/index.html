@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 43 source-run UI: source editing, Run button,
+  This page provides the Milestone 44 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates INC/DEC carry preservation.
+  execution stay inside the worker/Wasm path; the default program demonstrates AND/OR/XOR logical operations.
 -->
 <html lang="en">
   <head>
@@ -18,14 +18,14 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 43: INC and DEC.</p>
+        <p class="muted">Milestone 44: AND, OR, and XOR.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    stc
-    mov eax, 0FFFFFFFFh
-    inc eax
-    dec eax
+    mov eax, 0F0F0h
+    and eax, 00FFh
+    or eax, 0100h
+    xor eax, 000Fh
 main ENDP
 END main</textarea>
         <div class="controls">

@@ -58,6 +58,12 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_INC,
     /// Decrement a register or memory destination and preserve CF.
     VM_IR_OPCODE_DEC,
+    /// Compute bitwise AND into a register or memory destination.
+    VM_IR_OPCODE_AND,
+    /// Compute bitwise OR into a register or memory destination.
+    VM_IR_OPCODE_OR,
+    /// Compute bitwise XOR into a register or memory destination.
+    VM_IR_OPCODE_XOR,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

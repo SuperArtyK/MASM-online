@@ -14,7 +14,7 @@
 /** @typedef {{runSource?: (source: string) => unknown}} WorkerRuntime */
 
 /** Latest user-visible MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 43;
+export const IMPLEMENTED_PHASE = 44;
 
 /**
  * Creates the initial worker readiness response.

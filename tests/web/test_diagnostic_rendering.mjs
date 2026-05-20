@@ -363,6 +363,79 @@ END main
 `,
     reason: "Phase 43 DEC invalid-address runtime diagnostic fixture."
   },
+  andAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    and [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 44 AND ambiguous memory-width diagnostic fixture."
+  },
+  orImmediateDestination: {
+    source: `.code
+main PROC
+    or 1, eax
+main ENDP
+END main
+`,
+    reason: "Phase 44 OR immediate-destination diagnostic fixture."
+  },
+  xorMemoryToMemory: {
+    source: `.data
+value DWORD 1
+other DWORD 2
+.code
+main PROC
+    xor value, other
+main ENDP
+END main
+`,
+    reason: "Phase 44 XOR memory-to-memory diagnostic fixture."
+  },
+  andConstDirectWrite: {
+    source: `.CONST
+limit DWORD 10
+.code
+main PROC
+    and limit, 1
+main ENDP
+END main
+`,
+    reason: "Phase 44 AND direct .CONST write diagnostic fixture."
+  },
+  orConstRuntimeWrite: {
+    source: `.CONST
+limit DWORD 10
+.code
+main PROC
+    mov eax, OFFSET limit
+    or DWORD PTR [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 44 OR computed .CONST write diagnostic fixture."
+  },
+  andInvalidSourceAddress: {
+    source: `.code
+main PROC
+    mov eax, 0
+    and ebx, DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 44 AND invalid source-address runtime diagnostic fixture."
+  },
+  xorInvalidAddress: {
+    source: `.code
+main PROC
+    mov eax, 0
+    xor DWORD PTR [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 44 XOR invalid destination-address runtime diagnostic fixture."
+  },
   constRuntimeWrite: {
     source: `.CONST
 limit DWORD 10
@@ -440,7 +513,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 43 exit without Irvine32 include diagnostic fixture."
+    reason: "Phase 42 exit without Irvine32 include diagnostic fixture."
   },
   exitWithOperand: {
     source: `INCLUDE Irvine32.inc
@@ -450,7 +523,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 43 invalid exit operand diagnostic fixture."
+    reason: "Phase 42 invalid exit operand diagnostic fixture."
   },
   success: {
     source: `.code
@@ -848,6 +921,126 @@ test("renders INC runtime CONST permission diagnostic exactly without memory cha
 test("renders DEC invalid-address diagnostic exactly", () => {
   const name = "decInvalidAddress";
   const source = fixtureSource("decInvalidAddress");
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "invalid-address",
+    message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
+    line: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+test("renders AND ambiguous memory width diagnostic exactly", () => {
+  const name = "andAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders OR immediate-destination diagnostic exactly", () => {
+  const name = "orImmediateDestination";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "OR requires a register or memory destination.",
+    line: 3,
+    column: 8,
+    byteOffset: 23,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 8, byte offset 23, span length 1: OR requires a register or memory destination.");
+});
+
+test("renders XOR memory-to-memory diagnostic exactly", () => {
+  const name = "xorMemoryToMemory";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "XOR does not support memory-to-memory operands.",
+    line: 6,
+    column: 16,
+    byteOffset: 65,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 6, column 16, byte offset 65, span length 5: XOR does not support memory-to-memory operands.");
+});
+
+test("renders AND direct CONST write diagnostic exactly", () => {
+  const name = "andConstDirectWrite";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "const-write",
+    message: "Cannot write to .CONST data. Constant data is read-only.",
+    line: 5,
+    column: 9,
+    byteOffset: 46,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] const-write line 5, column 9, byte offset 46, span length 5: Cannot write to .CONST data. Constant data is read-only.");
+});
+
+test("renders OR runtime CONST permission diagnostic exactly without memory change rows", () => {
+  const name = "orConstRuntimeWrite";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "permission-denied",
+    message: "Memory write at 00600000h for 4 bytes is not permitted in .const.",
+    line: 6
+  });
+  assert.equal(json.memoryChanges.length, 0);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const.");
+});
+
+test("renders AND invalid source-address diagnostic exactly", () => {
+  const name = "andInvalidSourceAddress";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "invalid-address",
+    message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
+    line: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+test("renders XOR invalid destination-address diagnostic exactly", () => {
+  const name = "xorInvalidAddress";
+  const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.instructionCount, 1);

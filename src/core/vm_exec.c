@@ -552,6 +552,89 @@ static VmExecStatus vm_exec_execute_test(Vm *vm, const VmIrInstruction *instruct
 }
 
 
+/// Updates modeled flags for a logical binary result.
+///
+/// Logical instructions set ZF and SF from the masked result and clear CF and
+/// OF. Other architectural flags remain outside the current educational model.
+///
+/// @param cpu CPU state whose modeled flags should be updated.
+/// @param result Unmasked logical result.
+/// @param width_bits Operand width in bits.
+/// @return true when all flag updates succeeded.
+static bool vm_exec_update_logical_flags(VmCpu *cpu, uint32_t result, uint8_t width_bits) {
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t masked_result = 0U;
+
+    if (cpu == NULL || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return false;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    masked_result = result & mask;
+    return vm_cpu_write_flag(cpu, VM_FLAG_ZF, masked_result == 0U) &&
+           vm_cpu_write_flag(cpu, VM_FLAG_SF, (masked_result & sign_bit) != 0U) &&
+           vm_cpu_clear_flag(cpu, VM_FLAG_CF) &&
+           vm_cpu_clear_flag(cpu, VM_FLAG_OF);
+}
+
+/// Executes one AND, OR, or XOR instruction.
+///
+/// The destination may be a register or memory operand and the source may be a
+/// register, immediate, or memory operand. Reads and writes use the central
+/// checked operand helpers, and CPU state is restored if the destination write
+/// fails after flag computation.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Logical binary instruction to execute.
+/// @param width_bits Execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_logical_binary(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    uint32_t left = 0U;
+    uint32_t right = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &left);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &right);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (instruction->opcode == VM_IR_OPCODE_AND) {
+        result = left & right;
+    } else if (instruction->opcode == VM_IR_OPCODE_OR) {
+        result = left | right;
+    } else if (instruction->opcode == VM_IR_OPCODE_XOR) {
+        result = left ^ right;
+    } else {
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+
+    if (!vm_exec_update_logical_flags(&vm->cpu, result, width_bits)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+
 /// Converts a masked operand value to a signed 64-bit value for a supported width.
 ///
 /// @param value Operand value before masking.
@@ -1351,6 +1434,9 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_ADC:
         case VM_IR_OPCODE_SBB:
         case VM_IR_OPCODE_TEST:
+        case VM_IR_OPCODE_AND:
+        case VM_IR_OPCODE_OR:
+        case VM_IR_OPCODE_XOR:
             if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
@@ -1375,7 +1461,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             if (instruction->opcode == VM_IR_OPCODE_SBB) {
                 return vm_exec_execute_sbb(vm, instruction, width_bits);
             }
-            return vm_exec_execute_test(vm, instruction, width_bits);
+            if (instruction->opcode == VM_IR_OPCODE_TEST) {
+                return vm_exec_execute_test(vm, instruction, width_bits);
+            }
+            return vm_exec_execute_logical_binary(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:
             return vm_exec_execute_movx(vm, instruction, true);
         case VM_IR_OPCODE_MOVZX:

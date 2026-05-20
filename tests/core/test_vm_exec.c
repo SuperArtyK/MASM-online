@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 43.
+ * @brief Unit tests for the VM executor through Milestone 44.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -1315,6 +1315,166 @@ static int test_inc_dec_memory_destinations_and_errors(void) {
     return failures;
 }
 
+/// Verifies AND, OR, and XOR register and flag behavior.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_logical_binary_register_flags(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x0000F0F0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 0F0F0h", 1U},
+        {VM_IR_OPCODE_AND, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x000000FFU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "and eax, 00FFh", 2U},
+        {VM_IR_OPCODE_OR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000100U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "or eax, 0100h", 3U},
+        {VM_IR_OPCODE_XOR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x0000000FU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "xor eax, 000Fh", 4U},
+        {VM_IR_OPCODE_XOR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "xor eax, eax", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000001U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov eax, 80000001h", 6U},
+        {VM_IR_OPCODE_AND, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "and eax, 80000000h", 7U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical register tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "logical register program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before logical tests should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "logical setup MOV should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "AND immediate should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "OR immediate should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "XOR immediate should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after acceptance logical sequence");
+    failures += expect_u32(eax, 0x000001FFU, "acceptance logical sequence should leave EAX = 000001FFh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "logical sequence should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "logical sequence should clear OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "logical sequence should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "logical sequence should clear SF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "XOR EAX,EAX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after XOR self");
+    failures += expect_u32(eax, 0U, "XOR EAX,EAX should clear EAX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "XOR EAX,EAX should set ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "XOR EAX,EAX should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "XOR EAX,EAX should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "XOR EAX,EAX should clear OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "sign-bit setup MOV should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "AND sign-bit immediate should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after sign-bit AND");
+    failures += expect_u32(eax, 0x80000000U, "AND sign-bit immediate should leave sign bit only");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "AND sign-bit result should set SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "AND sign-bit result should clear ZF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies AND, OR, and XOR alias and memory destination behavior.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_logical_binary_alias_and_memory_destinations(void) {
+    int failures = 0;
+    Vm vm;
+    uint8_t memory_byte = 0U;
+    uint32_t memory_dword = 0U;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x12345678U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 12345678h", 0U},
+        {VM_IR_OPCODE_XOR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0xFFU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "xor al, 0FFh", 1U},
+        {VM_IR_OPCODE_OR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x8000U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "or ax, 8000h", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0xF0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov BYTE PTR value, 0F0h", 3U},
+        {VM_IR_OPCODE_AND, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x0FU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "and BYTE PTR value, 0Fh", 4U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00FF00FFU, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "mov DWORD PTR other, 00FF00FFh", 5U},
+        {VM_IR_OPCODE_OR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "or DWORD PTR other, eax", 6U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical memory tests");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "logical memory program should load");
+    while (!vm.halted) {
+        VmExecStatus status = vm_step(&vm);
+        if (status != VM_EXEC_STATUS_OK && status != VM_EXEC_STATUS_HALTED) {
+            failures += expect_status(status, VM_EXEC_STATUS_OK, "logical memory program should execute without runtime errors");
+            break;
+        }
+    }
+
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after alias logical operations");
+    failures += expect_u32(eax, 0x1234D687U, "logical alias operations should mutate only selected register widths");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after AND");
+    failures += expect_u32((uint32_t)memory_byte, 0U, "AND memory byte should store zero");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, &memory_dword, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory dword read should succeed after OR");
+    failures += expect_u32(memory_dword, 0x12FFD6FFU, "OR memory dword should combine register bits");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "logical memory operations should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "logical memory operations should clear OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies logical binary executor error paths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_logical_binary_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    uint32_t ebx = 0U;
+    const VmIrInstruction memory_to_memory[] = {
+        {VM_IR_OPCODE_AND, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "and value, other", 0U}
+    };
+    const VmIrInstruction invalid_destination[] = {
+        {VM_IR_OPCODE_OR, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "or 1, eax", 0U}
+    };
+    const VmIrInstruction invalid_address[] = {
+        {VM_IR_OPCODE_XOR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "xor DWORD PTR [0], 1", 0U}
+    };
+    const VmIrInstruction invalid_source_address[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x12345678U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov ebx, 12345678h", 1U},
+        {VM_IR_OPCODE_AND, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "and ebx, DWORD PTR [0]", 2U}
+    };
+    const VmIrInstruction const_write[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_OR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_CONST_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "or DWORD PTR [const], 1", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical memory-to-memory error test");
+    failures += expect_status(vm_load_program(&vm, memory_to_memory, 1U), VM_EXEC_STATUS_OK, "logical memory-to-memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "logical memory-to-memory operands should be rejected by executor");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical invalid-destination test");
+    failures += expect_status(vm_load_program(&vm, invalid_destination, 1U), VM_EXEC_STATUS_OK, "logical invalid-destination program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "logical immediate destination should be rejected by executor");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical invalid-address test");
+    failures += expect_status(vm_load_program(&vm, invalid_address, 1U), VM_EXEC_STATUS_OK, "logical invalid-address program should load");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "logical invalid memory destination should fail through checked memory");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed logical invalid-address write should not record memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical invalid source-address test");
+    failures += expect_status(vm_load_program(&vm, invalid_source_address, sizeof(invalid_source_address) / sizeof(invalid_source_address[0])), VM_EXEC_STATUS_OK, "logical invalid source-address program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before logical invalid source-address should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before logical invalid source-address should execute");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "logical invalid source memory should fail through checked memory");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after invalid logical source read");
+    failures += expect_u32(ebx, 0x12345678U, "failed logical source read should not mutate destination register");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed logical source read should not clear CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed logical source read should not record memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for logical const-write test");
+    failures += expect_status(vm_load_program(&vm, const_write, sizeof(const_write) / sizeof(const_write[0])), VM_EXEC_STATUS_OK, "logical const-write program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute before failed logical const write");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "logical .CONST write should fail through checked memory");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed logical .CONST write should restore CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed logical .CONST write should not record successful memory changes");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies the Irvine32 exit IR opcode halts without state mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1384,6 +1544,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_DEC), "dec") != 0) {
         failures += record_failure("DEC opcode name should be dec");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_AND), "and") != 0) {
+        failures += record_failure("AND opcode name should be and");
+    }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_OR), "or") != 0) {
+        failures += record_failure("OR opcode name should be or");
+    }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_XOR), "xor") != 0) {
+        failures += record_failure("XOR opcode name should be xor");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -1406,7 +1575,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 43.
+/// Runs all executor tests through Milestone 44.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -1441,6 +1610,9 @@ int main(void) {
     failures += test_test_error_paths();
     failures += test_inc_dec_register_flags_and_carry_preservation();
     failures += test_inc_dec_memory_destinations_and_errors();
+    failures += test_logical_binary_register_flags();
+    failures += test_logical_binary_alias_and_memory_destinations();
+    failures += test_logical_binary_error_paths();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -1449,6 +1621,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 43 passed.");
+    puts("Executor tests through Milestone 44 passed.");
     return 0;
 }

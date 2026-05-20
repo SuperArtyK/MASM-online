@@ -3039,6 +3039,18 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_DEC;
         return true;
     }
+    if (vm_parser_token_equals(token, "and")) {
+        *out_opcode = VM_IR_OPCODE_AND;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "or")) {
+        *out_opcode = VM_IR_OPCODE_OR;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "xor")) {
+        *out_opcode = VM_IR_OPCODE_XOR;
+        return true;
+    }
 
     return false;
 }
@@ -3092,6 +3104,16 @@ static bool vm_parser_opcode_is_exchange(VmIrOpcode opcode) {
 /// @return true for TEST.
 static bool vm_parser_opcode_is_test(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_TEST;
+}
+
+/// Returns whether an opcode uses logical binary destination-mutation rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for AND, OR, and XOR.
+static bool vm_parser_opcode_is_logical_binary(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_AND ||
+           opcode == VM_IR_OPCODE_OR ||
+           opcode == VM_IR_OPCODE_XOR;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -4907,6 +4929,72 @@ static bool vm_parser_validate_test_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
+/// Returns the uppercase mnemonic for a logical binary instruction.
+///
+/// @param opcode Opcode to classify.
+/// @return Stable uppercase mnemonic, or "instruction" for unsupported opcodes.
+static const char *vm_parser_logical_binary_mnemonic(VmIrOpcode opcode) {
+    if (opcode == VM_IR_OPCODE_AND) {
+        return "AND";
+    }
+    if (opcode == VM_IR_OPCODE_OR) {
+        return "OR";
+    }
+    if (opcode == VM_IR_OPCODE_XOR) {
+        return "XOR";
+    }
+    return "instruction";
+}
+
+/// Validates source and destination widths for AND, OR, and XOR.
+///
+/// Logical binary instructions accept register or memory destinations with a
+/// register, immediate, or memory source. Memory-to-memory operands are rejected
+/// and untyped memory/immediate forms are diagnosed by the shared width resolver.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Logical binary opcode being validated.
+/// @param destination Destination operand that will be mutated.
+/// @param source Source operand to combine with the destination.
+/// @param destination_token Token associated with the destination operand.
+/// @param source_token Token associated with the source operand.
+/// @return true when the logical binary operand pair is supported.
+static bool vm_parser_validate_logical_binary_operands(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    const VmIrOperand *destination,
+    VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    char message[128];
+    const char *mnemonic = vm_parser_logical_binary_mnemonic(opcode);
+
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
+        (void)snprintf(message, sizeof(message), "%s requires a register or memory destination.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, message);
+        return false;
+    }
+
+    if (source->kind != VM_IR_OPERAND_IMMEDIATE && source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        (void)snprintf(message, sizeof(message), "%s requires a register, immediate, or memory source.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, message);
+        return false;
+    }
+
+    if (vm_parser_operand_is_memory(destination) && vm_parser_operand_is_memory(source)) {
+        (void)snprintf(message, sizeof(message), "%s does not support memory-to-memory operands.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, message);
+        return false;
+    }
+
+    return vm_parser_validate_source_width(state, destination, source, source_token);
+}
+
 /// Validates the destination operand for a single-destination instruction.
 ///
 /// NEG, INC, and DEC accept exactly one register or memory destination with a
@@ -5223,18 +5311,26 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
-    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC) &&
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || vm_parser_opcode_is_logical_binary(opcode)) &&
         destination_token != NULL &&
         (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
          destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
          destination_token->kind == VM_LEXER_TOKEN_PLUS ||
          destination_token->kind == VM_LEXER_TOKEN_MINUS ||
          destination_token->kind == VM_LEXER_TOKEN_LEFT_PAREN)) {
+        const char *message = opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." :
+                              opcode == VM_IR_OPCODE_DEC ? "DEC requires a register or memory destination." :
+                              "Logical instructions require a register or memory destination.";
+        char logical_message[96];
+        if (vm_parser_opcode_is_logical_binary(opcode)) {
+            (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory destination.", vm_parser_logical_binary_mnemonic(opcode));
+            message = logical_message;
+        }
         vm_parser_add_diagnostic(
             state,
             VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
             destination_token,
-            opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." : "DEC requires a register or memory destination."
+            message
         );
         return false;
     }
@@ -5297,6 +5393,13 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (!vm_parser_validate_test_operands(state, &destination, &source, destination_token, source_token)) {
             return false;
         }
+    } else if (vm_parser_opcode_is_logical_binary(opcode)) {
+        if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
+        if (!vm_parser_validate_logical_binary_operands(state, opcode, &destination, &source, destination_token, source_token)) {
+            return false;
+        }
     } else {
         if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
             return false;
@@ -5307,6 +5410,13 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     if (!vm_parser_reject_static_const_write(state, opcode, &destination, &source, destination_token, source_token)) {
+        return false;
+    }
+
+    if (vm_parser_opcode_is_logical_binary(opcode) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        char message[96];
+        (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_logical_binary_mnemonic(opcode));
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), message);
         return false;
     }
 
