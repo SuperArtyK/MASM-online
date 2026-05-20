@@ -64,6 +64,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_OR,
     /// Compute bitwise XOR into a register or memory destination.
     VM_IR_OPCODE_XOR,
+    /// Compute the bitwise complement of a register or memory destination without changing flags.
+    VM_IR_OPCODE_NOT,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

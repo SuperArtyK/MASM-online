@@ -1106,6 +1106,49 @@ static VmExecStatus vm_exec_execute_inc_dec(Vm *vm, const VmIrInstruction *instr
     return status;
 }
 
+/// Executes one NOT instruction without changing modeled flags.
+///
+/// NOT is a read-modify-write operation for memory destinations. It computes
+/// the bitwise complement at the destination width and stores the result while
+/// preserving CF, ZF, SF, and OF exactly. If the destination write fails, the
+/// CPU snapshot is restored so validation failures leave registers and flags
+/// unchanged.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_not(Vm *vm, const VmIrInstruction *instruction) {
+    VmCpu before_cpu;
+    uint8_t width_bits = 0U;
+    uint32_t mask = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_operand_is_destination(&instruction->destination) || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->destination, &width_bits) || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    result = (~value) & mask;
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+    return status;
+}
+
 /// Executes one NOP instruction.
 ///
 /// @param instruction Instruction to validate.
@@ -1485,6 +1528,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_inc_dec(vm, instruction, true);
         case VM_IR_OPCODE_DEC:
             return vm_exec_execute_inc_dec(vm, instruction, false);
+        case VM_IR_OPCODE_NOT:
+            return vm_exec_execute_not(vm, instruction);
         case VM_IR_OPCODE_NOP:
             return vm_exec_execute_nop(instruction);
         case VM_IR_OPCODE_CLC:
