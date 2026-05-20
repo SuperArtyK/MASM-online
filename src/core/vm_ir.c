@@ -154,6 +154,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "sal";
         case VM_IR_OPCODE_SHR:
             return "shr";
+        case VM_IR_OPCODE_SAR:
+            return "sar";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

@@ -1345,6 +1345,7 @@ static size_t masm32_sim_wasm_collect_planned_reads(
         case VM_IR_OPCODE_SHL:
         case VM_IR_OPCODE_SAL:
         case VM_IR_OPCODE_SHR:
+        case VM_IR_OPCODE_SAR:
             if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
             }
@@ -1553,6 +1554,8 @@ static void masm32_sim_wasm_fill_shift_diagnostic(
         diagnostic->mnemonic = "SAL";
     } else if (instruction != NULL && instruction->opcode == VM_IR_OPCODE_SHR) {
         diagnostic->mnemonic = "SHR";
+    } else if (instruction != NULL && instruction->opcode == VM_IR_OPCODE_SAR) {
+        diagnostic->mnemonic = "SAR";
     } else {
         diagnostic->mnemonic = "SHL";
     }
@@ -1587,7 +1590,7 @@ static bool masm32_sim_wasm_shift_has_undefined_modeled_flags(
     uint8_t raw_count = 0U;
     uint8_t effective_count = 0U;
 
-    if (vm == NULL || instruction == NULL || (instruction->opcode != VM_IR_OPCODE_SHL && instruction->opcode != VM_IR_OPCODE_SAL && instruction->opcode != VM_IR_OPCODE_SHR)) {
+    if (vm == NULL || instruction == NULL || (instruction->opcode != VM_IR_OPCODE_SHL && instruction->opcode != VM_IR_OPCODE_SAL && instruction->opcode != VM_IR_OPCODE_SHR && instruction->opcode != VM_IR_OPCODE_SAR)) {
         return false;
     }
 
@@ -2822,7 +2825,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":47,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":48,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -2900,7 +2903,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":47,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":48,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

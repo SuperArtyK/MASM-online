@@ -3067,6 +3067,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_SHR;
         return true;
     }
+    if (vm_parser_token_equals(token, "sar")) {
+        *out_opcode = VM_IR_OPCODE_SAR;
+        return true;
+    }
 
     return false;
 }
@@ -3136,9 +3140,9 @@ static bool vm_parser_opcode_is_logical_binary(VmIrOpcode opcode) {
 /// Returns whether an opcode uses shift operand validation rules.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for SHL, SAL, and SHR.
+/// @return true for SHL, SAL, SHR, and SAR.
 static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_SHL || opcode == VM_IR_OPCODE_SAL || opcode == VM_IR_OPCODE_SHR;
+    return opcode == VM_IR_OPCODE_SHL || opcode == VM_IR_OPCODE_SAL || opcode == VM_IR_OPCODE_SHR || opcode == VM_IR_OPCODE_SAR;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5033,6 +5037,9 @@ static const char *vm_parser_shift_mnemonic(VmIrOpcode opcode) {
     }
     if (opcode == VM_IR_OPCODE_SHR) {
         return "SHR";
+    }
+    if (opcode == VM_IR_OPCODE_SAR) {
+        return "SAR";
     }
     return "shift";
 }

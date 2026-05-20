@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 47.
+ * @brief Unit and integration tests for the parser through Milestone 48.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -2275,7 +2275,7 @@ static int test_phase44_logical_binary_parse_error_paths(void) {
     return failures;
 }
 
-/// Verifies Milestone 45 NOT parser acceptance and IR shapes as a Phase 47 regression.
+/// Verifies Milestone 45 NOT parser acceptance and IR shapes as a Phase 48 regression.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase45_not_parse_to_ir(void) {
@@ -2332,7 +2332,7 @@ static int test_phase45_not_parse_to_ir(void) {
     return failures;
 }
 
-/// Verifies Milestone 45 NOT parser diagnostics as a Phase 47 regression.
+/// Verifies Milestone 45 NOT parser diagnostics as a Phase 48 regression.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase45_not_parse_error_paths(void) {
@@ -2777,6 +2777,207 @@ static int test_phase47_shr_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 48 SAR parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase48_sar_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 1\n"
+        "bytes BYTE 1, 2\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    sar al, 1\n"
+        "    SaR ax, 2\n"
+        "    sar eax, cl\n"
+        "    sar eax, 32\n"
+        "    sar BYTE PTR [esi], 1\n"
+        "    sar WORD PTR [esi], cl\n"
+        "    sar DWORD PTR [esi], 3\n"
+        "    sar SBYTE PTR [esi], 1\n"
+        "    sar SWORD PTR [esi], 1\n"
+        "    sar SDWORD PTR [esi], 1\n"
+        "    sar value, 1\n"
+        "    sar bytes[1], 1\n"
+        "    sar arr[4], cl\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 48 SAR program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 48 SAR program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 13U, "Phase 48 SAR program should emit thirteen instructions");
+    if (result.instruction_count == 13U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_SAR, "sar al should emit SAR opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "sar al destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_AL, "sar al destination should be AL");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_IMMEDIATE, "sar al source should be immediate count");
+        failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "sar al immediate count should be one");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_SAR, "mixed-case SaR should emit SAR opcode");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_AX, "SaR ax destination should be AX");
+        failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_REGISTER, "sar eax, cl source should be register count");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_CL, "sar eax, cl should use CL count register");
+        failures += expect_u32(buffers.instructions[4].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "sar BYTE PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[4].destination.width_bits, 8U, "sar BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[5].destination.width_bits, 16U, "sar WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[6].destination.width_bits, 32U, "sar DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[7].destination.width_bits, 8U, "sar SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[8].destination.width_bits, 16U, "sar SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[9].destination.width_bits, 32U, "sar SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[10].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "sar value should emit direct memory destination");
+        failures += expect_u32(buffers.instructions[10].destination.width_bits, 32U, "sar value should infer DWORD width");
+        failures += expect_u32(buffers.instructions[11].destination.width_bits, 8U, "sar bytes[1] should infer BYTE width");
+        failures += expect_u32(buffers.instructions[12].destination.width_bits, 32U, "sar arr[4] should infer DWORD width");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 48 SAR parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase48_sar_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar 1, al\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "SAR immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR invalid count register should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR invalid count register should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "immediate byte count or CL", "SAR invalid count diagnostic should explain CL requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax, cx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR CX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR CX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax, ecx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR ECX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR ECX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar [eax], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "SAR ambiguous memory diagnostic should be ambiguous-memory-width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "SAR ambiguous memory diagnostic should point at the memory operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax, 256\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR out-of-range count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR out-of-range count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR missing count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "SAR missing count currently uses expected-comma diagnostic");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    sar QWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR QWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SAR QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    sar SQWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR SQWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "SAR SQWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    sar limit, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "SAR direct .CONST destination should use const-write diagnostic");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    sar eax, 1, 2\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "SAR extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "SAR extra operand should use invalid-instruction-operands");
+
+    return failures;
+}
+
 /// Verifies Phase 42 parser behavior for the Irvine32 exit terminator.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2927,7 +3128,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 47.
+/// Runs all parser regression tests through Milestone 48.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -2986,6 +3187,8 @@ int main(void) {
     failures += test_phase46_shift_left_parse_error_paths();
     failures += test_phase47_shr_parse_to_ir();
     failures += test_phase47_shr_parse_error_paths();
+    failures += test_phase48_sar_parse_to_ir();
+    failures += test_phase48_sar_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

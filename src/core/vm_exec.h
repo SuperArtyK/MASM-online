@@ -4,7 +4,7 @@
  *
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
- * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, and Irvine32 exit forms
+ * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, and Irvine32 exit forms
  * over the currently supported register and memory operand shapes. Control
  * flow, stack behavior, non-exit Irvine32 routines, and resource watchdogs
  * remain later milestones.

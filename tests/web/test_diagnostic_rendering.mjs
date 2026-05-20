@@ -526,6 +526,45 @@ END main
 `,
     reason: "Phase 47 SHR strict undefined modeled flag diagnostic fixture."
   },
+
+  sarAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    sar [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 48 SAR ambiguous memory-width diagnostic fixture."
+  },
+  sarInvalidCountRegister: {
+    source: `.code
+main PROC
+    sar eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 48 SAR invalid count-register diagnostic fixture."
+  },
+  sarUndefinedWarning: {
+    source: `.code
+main PROC
+    mov al, 80h
+    sar al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 48 SAR undefined modeled flag warning fixture."
+  },
+  sarUndefinedStrict: {
+    source: `.code
+main PROC
+    mov al, 80h
+    sar al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 48 SAR strict undefined modeled flag diagnostic fixture."
+  },
   notAmbiguousMemoryWidth: {
     source: `.code
 main PROC
@@ -533,7 +572,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT ambiguous memory-width diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT ambiguous memory-width diagnostic regression fixture under Phase 48."
   },
   notImmediateDestination: {
     source: `.code
@@ -542,7 +581,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT immediate-destination diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT immediate-destination diagnostic regression fixture under Phase 48."
   },
   notExtraOperand: {
     source: `.code
@@ -551,7 +590,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT extra-operand diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT extra-operand diagnostic regression fixture under Phase 48."
   },
   notConstDirectWrite: {
     source: `.CONST
@@ -562,7 +601,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT direct .CONST write diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT direct .CONST write diagnostic regression fixture under Phase 48."
   },
   notConstRuntimeWrite: {
     source: `.CONST
@@ -574,7 +613,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT computed .CONST write diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT computed .CONST write diagnostic regression fixture under Phase 48."
   },
   notInvalidAddress: {
     source: `.code
@@ -584,7 +623,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT invalid destination-address runtime diagnostic regression fixture under Phase 47."
+    reason: "Milestone 45 NOT invalid destination-address runtime diagnostic regression fixture under Phase 48."
   },
   constRuntimeWrite: {
     source: `.CONST
@@ -1402,6 +1441,91 @@ test("renders SHR strict undefined modeled flag diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SHR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.");
+});
+
+test("renders SAR ambiguous memory-width diagnostic exactly", () => {
+  const name = "sarAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders SAR invalid count-register diagnostic exactly", () => {
+  const name = "sarInvalidCountRegister";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "SAR count must be an immediate byte count or CL.",
+    line: 3,
+    column: 14,
+    byteOffset: 29,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 14, byte offset 29, span length 3: SAR count must be an immediate byte count or CL.");
+});
+
+test("renders SAR undefined modeled flag warning exactly", () => {
+  const name = "sarUndefinedWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+      line: 4,
+      column: 5,
+      byteOffset: 36,
+      spanLength: 9
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders SAR strict undefined modeled flag diagnostic exactly", () => {
+  const name = "sarUndefinedStrict";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SHIFT_VALIDATION: "strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "undefined-shift-flag",
+    message: "SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    line: 4,
+    column: 5,
+    byteOffset: 36,
+    spanLength: 9
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.");
 });
 
 test("renders NOT ambiguous memory-width diagnostic exactly", () => {
