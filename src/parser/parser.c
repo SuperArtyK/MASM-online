@@ -3051,6 +3051,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_XOR;
         return true;
     }
+    if (vm_parser_token_equals(token, "not")) {
+        *out_opcode = VM_IR_OPCODE_NOT;
+        return true;
+    }
 
     return false;
 }
@@ -3087,7 +3091,8 @@ static bool vm_parser_opcode_is_extension_move(VmIrOpcode opcode) {
 static bool vm_parser_opcode_is_single_destination_operand(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_NEG ||
            opcode == VM_IR_OPCODE_INC ||
-           opcode == VM_IR_OPCODE_DEC;
+           opcode == VM_IR_OPCODE_DEC ||
+           opcode == VM_IR_OPCODE_NOT;
 }
 
 /// Returns whether an opcode uses exchange operand validation rules.
@@ -4595,7 +4600,7 @@ static VmParserMemoryWidthResolutionStatus vm_parser_resolve_binary_memory_width
 
 /// Resolves memory operand width for a single-operand instruction.
 ///
-/// Memory-only instructions such as `neg [eax]`, `inc [eax]`, and `dec [eax]`
+/// Memory-only instructions such as `neg [eax]`, `inc [eax]`, `dec [eax]`, and `not [eax]`
 /// have no same-instruction register source. They therefore require PTR or
 /// symbol metadata instead of guessing a default width.
 ///
@@ -4997,10 +5002,11 @@ static bool vm_parser_validate_logical_binary_operands(
 
 /// Validates the destination operand for a single-destination instruction.
 ///
-/// NEG, INC, and DEC accept exactly one register or memory destination with a
+/// NEG, INC, DEC, and NOT accept exactly one register or memory destination with a
 /// known 8-bit, 16-bit, or 32-bit execution width. INC and DEC use the newer
 /// invalid-instruction-operands diagnostic category for malformed operand
-/// shapes; NEG keeps its existing diagnostic behavior for regression stability.
+/// shapes; NOT follows that newer diagnostic behavior, while NEG keeps its
+/// existing diagnostic behavior for regression stability.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
 /// @param opcode Single-destination opcode being validated.
@@ -5029,6 +5035,9 @@ static bool vm_parser_validate_single_destination_operand(
         invalid_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
     } else if (opcode == VM_IR_OPCODE_DEC) {
         mnemonic = "DEC";
+        invalid_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+    } else if (opcode == VM_IR_OPCODE_NOT) {
+        mnemonic = "NOT";
         invalid_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
     }
 
@@ -5311,7 +5320,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
-    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || vm_parser_opcode_is_logical_binary(opcode)) &&
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode)) &&
         destination_token != NULL &&
         (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
          destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
@@ -5320,6 +5329,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
          destination_token->kind == VM_LEXER_TOKEN_LEFT_PAREN)) {
         const char *message = opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_DEC ? "DEC requires a register or memory destination." :
+                              opcode == VM_IR_OPCODE_NOT ? "NOT requires a register or memory destination." :
                               "Logical instructions require a register or memory destination.";
         char logical_message[96];
         if (vm_parser_opcode_is_logical_binary(opcode)) {
@@ -5356,6 +5366,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
                 code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
             } else if (opcode == VM_IR_OPCODE_DEC) {
                 message = "DEC takes exactly one register or memory operand.";
+                code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+            } else if (opcode == VM_IR_OPCODE_NOT) {
+                message = "NOT takes exactly one register or memory operand.";
                 code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
             }
             vm_parser_add_diagnostic(state, code, vm_parser_current_token(state), message);

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 44.
+ * @brief Unit and integration tests for the parser through Milestone 45.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -2275,6 +2275,149 @@ static int test_phase44_logical_binary_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 45 NOT parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase45_not_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 0F0F0F0Fh\n"
+        "bytes BYTE 1, 2\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    not al\n"
+        "    NoT ax\n"
+        "    not eax\n"
+        "    not BYTE PTR [esi]\n"
+        "    not WORD PTR [esi]\n"
+        "    not DWORD PTR [esi]\n"
+        "    not SBYTE PTR [esi]\n"
+        "    not SWORD PTR [esi]\n"
+        "    not SDWORD PTR [esi]\n"
+        "    not value\n"
+        "    not bytes[1]\n"
+        "    not arr[4]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 45 NOT program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 45 NOT program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 12U, "Phase 45 NOT program should emit twelve instructions");
+    if (result.instruction_count == 12U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_NOT, "not al should emit NOT opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "not al destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_AL, "not al destination should be AL");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_NONE, "NOT should emit no source operand");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_NOT, "mixed-case NOT should emit NOT opcode");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_AX, "NoT ax destination should be AX");
+        failures += expect_u32(buffers.instructions[2].destination.reg, VM_REGISTER_EAX, "not eax destination should be EAX");
+        failures += expect_u32(buffers.instructions[3].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "not BYTE PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[3].destination.width_bits, 8U, "not BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[4].destination.width_bits, 16U, "not WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[5].destination.width_bits, 32U, "not DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[6].destination.width_bits, 8U, "not SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[7].destination.width_bits, 16U, "not SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[8].destination.width_bits, 32U, "not SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[9].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "not value should emit direct memory destination");
+        failures += expect_u32(buffers.instructions[9].destination.width_bits, 32U, "not value should infer DWORD width");
+        failures += expect_u32(buffers.instructions[10].destination.width_bits, 8U, "not bytes[1] should infer BYTE width");
+        failures += expect_u32(buffers.instructions[11].destination.width_bits, 32U, "not arr[4] should infer DWORD width");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 45 NOT parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase45_not_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    not 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "NOT immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "NOT immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    not eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "NOT extra operand should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "NOT extra operand diagnostic should describe operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    not [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "NOT ambiguous memory diagnostic should be ambiguous-memory-width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "NOT ambiguous memory diagnostic should point at the memory operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    not QWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT QWORD memory operation should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "NOT QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD -1\n"
+        ".code\n"
+        "main PROC\n"
+        "    not SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT SQWORD memory operation should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "NOT SQWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    not limit\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOT direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "NOT direct .CONST destination should use const-write diagnostic");
+
+    return failures;
+}
+
 /// Verifies Phase 42 parser behavior for the Irvine32 exit terminator.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2425,7 +2568,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 44.
+/// Runs all parser regression tests through Milestone 45.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -2478,6 +2621,8 @@ int main(void) {
     failures += test_phase43_inc_dec_parse_error_paths();
     failures += test_phase44_logical_binary_parse_to_ir();
     failures += test_phase44_logical_binary_parse_error_paths();
+    failures += test_phase45_not_parse_to_ir();
+    failures += test_phase45_not_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
