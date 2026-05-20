@@ -1932,6 +1932,33 @@ The completed phases 0-30 above remain unchanged. The post-30 phases below imple
 - Local preferences and simulator settings are distinct from share-safe project state; transient runtime state is never encoded in share URLs.
 - Extended 32-bit Mode remains part of v1, but true x64 MASM, `ml64`, Windows ABI, PE loading, and WinAPI behavior remain non-goals unless a later post-v1 section explicitly adds them.
 
+### Post-30 phase-reference hygiene
+
+The post-30 roadmap has been renumbered and corrected over time. A stale phase number can mislead future implementation sessions.
+
+Rules:
+
+- Cross-references should include both the phase number and the phase title whenever practical.
+- If a phase number and named feature disagree, the named feature and surrounding scope determine intent.
+- Correcting a stale cross-reference is a documentation fix unless the replacement text explicitly changes accepted syntax, runtime behavior, diagnostics, or tests.
+- Do not implement a future feature early because a stale dependency names the wrong phase.
+- Do not renumber existing phases to fix a stale reference. Fix the reference in place.
+- Before applying any global replacement, inspect the surrounding heading and confirm the reference is part of the active roadmap text, not a historical note, audit note, or stale-reference test fixture.
+- Do not rewrite completed phase history as if it originally used the corrected number. Correct only active forward-looking requirements, dependencies, tests, and examples.
+- When adding a new cross-reference, prefer this form:
+
+  ```text
+  Phase 72 - Call Depth Limit and Call Trace Diagnostics
+  ```
+
+  rather than:
+
+  ```text
+  Phase 72
+  ```
+
+Static documentation checks should flag stale references where feasible, especially references that point to a phase whose title does not match the feature being discussed.
+
 ### Required test categories at release gate
 
 The final v1 release gate must include native C tests, parser tests, source-run JSON tests, Node diagnostic-rendering tests, browser/worker smoke tests, static documentation checks, and Wasm/Emscripten builds. Exact command names are repository-dependent until the test runner matures.
@@ -4352,7 +4379,31 @@ Runtime instruction behavior.
 
 ### Accepted/rejected syntax and count policy
 
-Use the same destination/count forms and rotate count policy as Phase 47, replacing the mnemonic with `ror`.
+Use the same destination/count forms and rotate count policy as **Phase 49 - ROL**, replacing the mnemonic with `ror`.
+
+Accepted forms are:
+
+```asm
+ror reg, 1
+ror reg, imm
+ror reg, cl
+ror mem, 1
+ror mem, imm
+ror mem, cl
+```
+
+Memory destinations must have known width through an explicit `PTR`, symbol metadata, or another already-supported width-resolution rule.
+
+Count policy:
+
+- Raw count is an unsigned immediate or `CL`.
+- Effective count is `raw_count & 31`.
+- Effective count `0` is a full no-op: destination and all modeled flags are unchanged.
+- Nonzero effective count rotates by `effective_count % operand_width`.
+- Nonzero rotate counts greater than or equal to operand width are not rejected merely for that reason.
+- This rotate count policy is distinct from the shift undefined-flag policy used by `SHL`/`SAL`, `SHR`, and `SAR`.
+
+Do not reference Phase 47 for `ROR` count behavior. Phase 47 is `SHR`, not a rotate phase.
 
 ### Runtime semantics
 
@@ -4641,8 +4692,8 @@ imul symbol[offset]
 
 ```asm
 imul 5
-imul eax, ebx       ; deferred to Phase 52
-imul eax, ebx, 5    ; deferred to Phase 52
+imul eax, ebx       ; deferred to Phase 55 - Two- and Three-Operand IMUL
+imul eax, ebx, 5    ; deferred to Phase 55 - Two- and Three-Operand IMUL
 imul [eax]          ; ambiguous width
 imul QWORD PTR q    ; executable QWORD/SQWORD memory operation remains deferred
 ```
@@ -4673,7 +4724,7 @@ IMUL r/m32:  EDX:EAX = signed(EAX) * signed(r/m32)
 - Explicit `PTR [reg32]` memory source.
 - Readable `.CONST` memory source.
 - Invalid-address runtime diagnostic for register-indirect source.
-- Two-/three-operand forms produce `unsupported-instruction-form` until Phase 52.
+- Two-/three-operand forms produce `unsupported-instruction-form` until **Phase 55 - Two- and Three-Operand IMUL**.
 - No memory-change rows are produced by memory-source reads.
 
 ### Acceptance program
@@ -5657,7 +5708,7 @@ call Helper
 call helperName
 ```
 
-Target must classify as a user procedure entry from Phase 51.
+Target must classify as a user procedure entry using the target classifier from **Phase 68 - Call Target Classification and Procedure Entry Metadata**.
 
 ### Rejected syntax
 
@@ -5676,12 +5727,32 @@ call ExitProcess     ; external/API non-goal
 ### Runtime semantics
 
 1. Compute a 32-bit VM return token encoding the VM instruction index immediately after CALL. This token is not a native address.
-2. Validate call-depth limit before stack mutation if a call-depth limit already exists; otherwise defer depth-limit enforcement to Phase 55.
+2. Validate the call-depth limit before stack mutation if **Phase 72 - Call Depth Limit and Call Trace Diagnostics** has already been implemented. If Phase 72 is not implemented yet, Phase 69 must not add a temporary or partial call-depth limit; it must preserve the later Phase 72 ownership of depth accounting and diagnostics.
 3. Decrement ESP by 4.
 4. Write the return token to `[ESP]` through the central checked memory write helper.
 5. Set VM instruction pointer to the target procedure entry instruction.
 6. Record stack memory change for the pushed return token.
 7. Preserve all modeled flags.
+
+Phase-boundary note:
+
+```text
+Phase 69 owns direct CALL mechanics only:
+  - classify a user procedure target;
+  - push one VM return token;
+  - branch to the procedure entry;
+  - preserve modeled flags;
+  - roll back on failed stack write.
+
+Phase 69 does not own:
+  - RET execution;
+  - root procedure termination;
+  - call-depth diagnostics;
+  - PROC USES;
+  - LOCAL frames;
+  - INVOKE;
+  - Irvine32 call dispatch.
+```
 
 ### Runtime errors
 
@@ -5763,7 +5834,7 @@ RET
 ### Rejected syntax
 
 ```asm
-ret 4          ; later Phase 57
+ret 4          ; deferred to Phase 74 - RET imm16 Caller Cleanup
 ret eax
 ret WORD PTR [esp]
 retf
@@ -5802,7 +5873,7 @@ Executor tests:
 Parser tests:
 
 - `ret` accepted.
-- `ret 4` rejected until Phase 57.
+- `ret 4` rejected until **Phase 74 - RET imm16 Caller Cleanup**. Phase 70 implements only near `ret` with no immediate operand.
 - `retf` rejected as explicit non-goal.
 
 Source-run acceptance program:
@@ -5830,7 +5901,7 @@ EAX = 0000002Ah / 42
 EBX = 0000002Ah / 42
 ```
 
-This source-run program is an integrated regression after the root-termination phase. Phase 53 itself must use executor-level CALL/RET tests and parser diagnostics only; it must not implement `exit` or root termination early.
+This source-run program is an integrated regression after the root-termination phase. this phase must use executor-level CALL/RET tests and parser diagnostics only; it must not implement `exit` or root termination early.
 
 Rendered Simulator Messages tests:
 
@@ -6241,7 +6312,7 @@ MyProc PROC USES eax, ebx    ; reject comma form unless explicitly supported
 3. Reject duplicate registers.
 4. Reject ESP, aliases, invalid registers, and malformed lists.
 5. Do not save or restore registers at runtime yet.
-6. Add documentation that runtime USES behavior starts in Phase 60.
+6. Add documentation that runtime USES behavior starts in **Phase 77 - PROC USES Runtime Save/Restore**.
 
 ### Tests
 
@@ -6254,7 +6325,7 @@ Parser tests:
 
 Source-run tests:
 
-- A procedure with USES metadata may be parsed in this phase, but if it is called before Phase 60 lowering exists, source-run must report `unsupported-proc-uses-runtime`. Silent execution that ignores USES metadata is not allowed.
+- A procedure with USES metadata may be parsed in this phase, but runtime save/restore is not implemented until **Phase 77 - PROC USES Runtime Save/Restore**. If a procedure with USES metadata is called before Phase 77 behavior exists, source-run must report `unsupported-proc-uses-runtime` or an equivalent stable diagnostic. Silent execution that ignores USES metadata is not allowed.
 
 Rendered Simulator Messages tests:
 
@@ -6707,8 +6778,12 @@ mov eax, ADDR globalVar   ; reject unless general ADDR operands are explicitly s
 2. Resolve data, const, data?, and local symbols.
 3. Preserve source span for ADDR and the operand.
 4. Reject unsupported ADDR targets with specific diagnostics.
-5. `ADDR localVar` requires LOCAL runtime addressing from Phase 63. Before that exists, it must either be helper-tested without runtime execution or rejected with `addr-local-not-available`.
+5. `ADDR localVar` requires local symbol operand resolution and frame-relative addressing from **Phase 80 - LOCAL Operand Resolution and Addressing**. Before Phase 80 exists, it must either be helper-tested without runtime execution or rejected with `addr-local-not-available`. Do not implement LOCAL operand resolution or LOCAL frame addressing in Phase 82.
 6. Add tests independent of full INVOKE lowering if necessary by testing argument-lowering helpers.
+
+Phase-boundary note:
+
+`ADDR globalVar` and `ADDR constSymbol` may use global symbol addresses already available through existing data/const metadata. `ADDR localVar` is different: it depends on an active stack frame and local-symbol addressing. A future assistant must not implement Phase 80 local addressing merely to make Phase 82 tests pass.
 
 ### Diagnostics
 
@@ -7451,7 +7526,11 @@ A synthetic routine can place the VM into WAITING_FOR_INPUT, and the VM remains 
 
 ### Goal
 
-Implement virtual Irvine32 `WaitMsg` using the backend wait state from Phase 78.
+Implement virtual Irvine32 `WaitMsg` using the backend wait state from **Phase 98 - WAITING_FOR_INPUT VM State**.
+
+Phase-boundary note:
+
+Phase 99 must not create a second wait-state mechanism. It must reuse the `WAITING_FOR_INPUT` state, request-id model, stop/reset behavior, and source-run JSON representation defined by Phase 98.
 
 `WaitMsg` must not block the browser main thread or the worker event loop. It must not read host keyboard state directly.
 
@@ -7660,9 +7739,13 @@ Virtual Irvine32 routine runtime plus input protocol integration.
 
 ### Dependencies
 
-- Phase 61 input normalization.
+- Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Virtual Irvine32 routine registry.
 - Program Console input UI.
+
+Input-normalization ownership note:
+
+Read* routine phases must not each invent their own submitted-input payload format. They must consume the normalized input request/response shape from **Phase 102 - Input Request Payload Normalization**. Individual Read* phases own parsing and register/flag results for their routine only.
 
 ### Accepted syntax
 
@@ -7744,7 +7827,7 @@ Virtual Irvine32 routine runtime plus parser-independent numeric conversion.
 
 ### Dependencies
 
-- Phase 61 input normalization.
+- Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Extended or existing flag helpers for `OF`.
 
 ### Accepted syntax
@@ -7827,7 +7910,7 @@ Virtual Irvine32 routine runtime.
 
 ### Dependencies
 
-- Phase 61 input normalization.
+- Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Existing `CF` flag model.
 
 ### Accepted syntax
@@ -7904,7 +7987,7 @@ Virtual Irvine32 routine runtime.
 
 ### Dependencies
 
-- Phase 61 input normalization.
+- Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Existing `CF` flag model.
 
 ### Accepted syntax
@@ -7993,7 +8076,7 @@ Virtual Irvine32 routine runtime, memory validation, input protocol integration.
 
 ### Dependencies
 
-- Phase 61 input normalization.
+- Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Checked VM memory writes.
 - Program Console input UI.
 
@@ -8076,9 +8159,13 @@ Virtual Irvine32 routine runtime, checked memory writes, source-run/worker integ
 
 ### Dependencies
 
-- Phase 66 ReadString preflight.
+- Phase 107 - ReadString Buffer Preflight and Input Request, for validating the destination pointer, maximum character count, null-terminator space, request metadata, and pre-input no-mutation behavior.
 - Program Console byte policy.
 - Input submit/cancel protocol.
+
+Phase-boundary note:
+
+Phase 108 owns committing accepted ReadString input bytes to memory after input is supplied. It must not move preflight validation out of Phase 107, and it must not change the Phase 107 request shape except through an explicit documented compatibility update.
 
 ### Runtime completion contract
 
@@ -9340,7 +9427,13 @@ Core flags, parser, IR, executor.
 
 ### Dependencies
 
-- Phase 68 flag storage patterns.
+- Existing CPU/EFLAGS helper patterns from the initial flag model.
+- Phase 109 - PF/AF Storage and CPU Helper Scaffolding, as the most recent extended-flag storage precedent.
+- Existing debugger/source-run flag serialization conventions, if they already expose modeled flags.
+
+DF ownership note:
+
+Phase 111 adds `DF` storage plus `CLD` and `STD` behavior. It must not implement string instructions, REP prefixes, MOVS/STOS/LODS/CMPS/SCAS behavior, or debugger/UI display changes unless this phase explicitly says so. String instruction phases consume `DF`; they do not own initial `DF` storage.
 
 ### Accepted syntax
 
@@ -9397,6 +9490,38 @@ END main
 
 Expected final DF clear.
 
+### String-instruction phase dependency map
+
+The string-instruction phases depend on the current post-30 phase numbers below. Use this map when reading or editing the MOVS/STOS/LODS/CMPS/SCAS and REP/REPE/REPNE phases.
+
+```text
+Phase 111 - DF Flag and CLD/STD
+  Owns DF storage and CLD/STD flag mutation.
+
+Phase 112 - MOVS String Instructions Without REP
+  Owns non-repeated MOVS behavior, checked memory reads/writes, ESI/EDI updates, and DF-based pointer direction for MOVS.
+
+Phase 113 - STOS String Instructions Without REP
+  Owns non-repeated STOS behavior, checked memory writes, EDI updates, accumulator source values, and DF-based pointer direction for STOS.
+
+Phase 114 - LODS String Instructions Without REP
+  Owns non-repeated LODS behavior, checked memory reads, accumulator loading, ESI updates, and DF-based pointer direction for LODS.
+
+Phase 115 - CMPS String Instructions Without REP
+  Owns non-repeated CMPS behavior, checked memory reads, comparison flag updates, ESI/EDI updates, and DF-based pointer direction for CMPS.
+
+Phase 116 - SCAS String Instructions Without REP
+  Owns non-repeated SCAS behavior, checked memory reads, accumulator comparison, EDI updates, and DF-based pointer direction for SCAS.
+
+Phase 117 - REP for MOVS/STOS/LODS Operations
+  Owns count-based repeated movement/store/load behavior for MOVS, STOS, and LODS.
+
+Phase 118 - REPE/REPZ and REPNE/REPNZ for CMPS and SCAS
+  Owns flag-dependent repeated comparison/search behavior for CMPS and SCAS.
+```
+
+If later roadmap text refers to old names such as `Phase 70 DF`, `Phase 73 CMPS/SCAS`, or `Phase 74 prefix loop infrastructure`, replace them with the matching current phase from this map. Do not renumber phases.
+
 ## 116. Phase 112 - MOVS String Instructions Without REP
 
 ### Goal
@@ -9409,7 +9534,7 @@ Parser, IR, executor, checked memory access.
 
 ### Dependencies
 
-- Phase 70 DF.
+- Phase 111 - DF Flag and CLD/STD.
 - Existing memory validation modes.
 
 ### Accepted syntax
@@ -9572,7 +9697,9 @@ Parser prefix support, executor loop, instruction-limit integration.
 
 ### Dependencies
 
-- Phases 71 and 72.
+- Phase 112 - MOVS String Instructions Without REP.
+- Phase 113 - STOS String Instructions Without REP.
+- Phase 114 - LODS String Instructions Without REP.
 - Instruction-limit watchdog.
 
 ### Accepted syntax
@@ -9601,7 +9728,7 @@ rep lodsd
 ### Rejected syntax
 
 - `rep` before non-string instruction.
-- `rep cmps*` and `rep scas*` in this phase; comparison repeats are handled by Phase 75.
+- `rep cmps*` and `rep scas*` in this phase; comparison repeats are handled by **Phase 118 - REPE/REPZ and REPNE/REPNZ for CMPS and SCAS**.
 - multiple prefixes.
 - prefix without following instruction.
 
@@ -9637,8 +9764,9 @@ Parser prefix support, executor loop, flag-driven stop conditions.
 
 ### Dependencies
 
-- Phase 73 CMPS/SCAS.
-- Phase 74 prefix loop infrastructure.
+- Phase 115 - CMPS String Instructions Without REP.
+- Phase 116 - SCAS String Instructions Without REP.
+- Phase 117 - REP for MOVS/STOS/LODS Operations, for prefix parsing, IR representation, and repetition scaffolding.
 
 ### Accepted syntax
 
@@ -11187,7 +11315,7 @@ Render the backend register and flag snapshot in the browser.
 
 ### Acceptance Criteria
 
-After stepping `mov eax, 12345678h`, the UI shows `EAX`, `AX`, `AH`, and `AL` as in Phase 74 and highlights the changed values.
+After stepping `mov eax, 12345678h`, the UI shows `EAX`, `AX`, `AH`, and `AL` using the register-alias behavior established by **Phase 1 - Core CPU Register Model**, and highlights the changed values.
 
 ### Rejected / out of scope
 
@@ -14781,6 +14909,32 @@ Documentation validation only.
 - Feature-doc coverage script comparing docs to feature registry/fixtures.
 - Known-unsupported docs compare to diagnostic fixtures.
 - No roadmap-only feature appears in supported syntax reference.
+- Stale phase-reference check:
+  - Scan `FULL_IMPLEMENTATION_SPEC.md`, `INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `SUPPORTED_SYNTAX.md`, and tutorial/known-limitation docs for phase references.
+  - Flag references that use a phase number without a nearby title.
+  - Flag references where the named feature does not match the current phase title.
+  - Maintain an allowlist only for historical notes that explicitly say they are historical.
+  - After a phase-reference cleanup edit, search for each stale phrase from the correction list. Any remaining occurrence must be inside this stale-reference static-check list, inside an explicitly labeled historical/audit note, or intentionally preserved with an adjacent explanation.
+  - No active implementation requirement may still contain a stale reference.
+  - The check must fail on known stale patterns such as:
+    - `Phase 47` used as a rotate-policy reference for `ROR`;
+    - `Phase 52` used as the two-/three-operand `IMUL` phase;
+    - `Phase 51` used as the CALL target-classification phase;
+    - `Phase 55` used as the call-depth limit phase;
+    - `Phase 57` used as the `RET imm16` phase;
+    - `Phase 60` used as PROC USES runtime save/restore;
+    - `Phase 61 input normalization`;
+    - `Phase 63` used as LOCAL operand/addressing for `ADDR localVar`;
+    - `Phase 66 ReadString preflight`;
+    - `Phase 68 flag storage patterns`;
+    - `Phase 70 DF`;
+    - `Phases 71 and 72` used as REP MOVS/STOS/LODS dependencies;
+    - `Phase 73 CMPS/SCAS`;
+    - `Phase 74 prefix loop infrastructure`;
+    - `Phase 75` used as the comparison-repeat phase;
+    - `Phase 78` used as the `WAITING_FOR_INPUT` backend phase;
+    - `Phase 111 final regression orchestration`;
+    - `Phase 112 v1 release gate and known-limitations report`.
 
 ## 242. Phase 238 - Final Regression Orchestration
 
@@ -14837,7 +14991,7 @@ Release validation/reporting only.
 
 ### Dependencies
 
-- Phase 111 final regression orchestration.
+- Phase 238 - Final Regression Orchestration.
 - Documentation consistency audit.
 - Accessibility/responsive audits.
 
@@ -15051,8 +15205,8 @@ Release validation harness and report generation.
 
 ### Dependencies
 
-- Phase 111 final regression orchestration.
-- Phase 112 v1 release gate and known-limitations report.
+- Phase 238 - Final Regression Orchestration.
+- Phase 239 - v1 Release Gate and Known-Limitations Report.
 
 ### Accepted behavior
 

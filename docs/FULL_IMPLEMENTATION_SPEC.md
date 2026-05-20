@@ -195,6 +195,27 @@ Post-30 implementation sessions must follow these rules:
 - no silent no-op compatibility behavior unless explicitly listed as accepted no-op, metadata-only, or virtual built-in;
 - no broad MASM, x64, WinAPI, PE, linker, or macro behavior implied by local compatibility features.
 
+Phase-reference hygiene rule:
+
+```text
+When referencing another guide phase, include both the phase number and the phase title whenever practical.
+```
+
+Examples:
+
+```text
+Preferred: Phase 68 - Call Target Classification and Procedure Entry Metadata
+Avoid:     Phase 51
+```
+
+The guide has gone through roadmap renumbering. A bare phase number in a later section can become stale. If a cross-reference is found to point to the wrong feature, treat it as a documentation defect and correct the reference without changing implementation behavior.
+
+Future assistant rule:
+
+```text
+Do not implement a feature merely because a stale cross-reference names the wrong phase. Use the phase title, local scope, and current canonical guide sequence to determine the intended dependency.
+```
+
 ## 8. Supported MASM Subset, Version 1
 
 The numbered subsections in this section, such as `8.1` and `8.5`, are specification sections only. They are not implementation phase numbers. The incremental implementation guide owns phase numbering.
@@ -558,10 +579,12 @@ neg DWORD -1
 
 Notes:
 
-- `?` reserves storage. The initial deterministic simulator behavior may zero-fill the bytes while retaining metadata that the declaration was originally uninitialized.
+- `?` reserves storage. Runtime bytes are deterministic zero-filled at program load while retaining metadata that the declaration was originally uninitialized until overwritten by the simulated program. Default MASM32 Educational Mode does not warn on these reads unless an explicit uninitialized-read warning or strict mode is enabled.
 - `SBYTE`, `SWORD`, `SDWORD`, and `SQWORD` are signed integer data declarations. They use the same byte sizes as `BYTE`, `WORD`, `DWORD`, and `QWORD`, but their initializers are validated against signed ranges.
-- `QWORD` and `SQWORD` data declarations, layout, and metadata are supported in MASM32 Educational Mode. Executable 64-bit memory operations and 64-bit registers are deferred to Extended 32-bit Mode.
-- Nested `DUP`, `.data?`, and complex initializer expressions are later compatibility features.
+- `QWORD` and `SQWORD` data declarations, layout, and metadata are supported in MASM32 Educational Mode. Executable 64-bit memory operations and 64-bit registers remain deferred to Extended 32-bit Mode unless a later phase explicitly enables selected behavior.
+- Flat `DUP`, nested `DUP`, `.DATA?`, `.CONST`, numeric equates, constant expressions, and expression-backed initializer values are part of the staged v1 roadmap and must be documented according to their current implemented phase status. They must not be described as permanently unsupported or future-only after their implementation phases are complete.
+- Remaining deferred data-declaration families include non-integer or non-scalar types such as `REAL4`, `REAL8`, `REAL10`, `TBYTE`, `FWORD`, structures, records, unions, and typed fields unless a later phase explicitly implements them.
+- Supported syntax documentation must reflect the latest completed milestone. Historical notes may say a feature was unsupported initially, but current support sections must not classify already-implemented behavior as unsupported.
 
 ### 8.3 Numeric Literals
 
@@ -1091,24 +1114,50 @@ shl al, 8    ; raw 8 -> effective 8, accepted; result executes and undefined mod
 shl eax, cl  ; raw count is CL, effective count is CL & 31
 ```
 
-### 8.7 Unsupported Initially
+### 8.7 Historical Initial Limitations and Current Unsupported Families
 
-Initially unsupported:
+This section records early-version limitations and current non-goals. It must not be read as the current supported-syntax list.
 
-- Full MASM macro language.
-- Full conditional assembly.
-- `.IF`, `.ELSE`, `.ENDIF`, `.WHILE`, `.REPEAT` high-level MASM constructs.
-- `INVOKE`, `PROTO`, and full calling-convention modeling.
-- Full expression parsing, including arbitrary arithmetic expressions and parenthesized expressions.
-- Nested `DUP` initializers.
-- `.data?`, unless added as a later data-layout compatibility feature.
-- Full scaled-index addressing, until the staged memory-operand milestones reach it.
-- FPU instructions.
-- SSE/AVX instructions.
-- String instructions and `rep` prefixes, unless added in a later dedicated string-instruction milestone.
-- Segment registers and segment override behavior.
-- Interrupts.
-- Windows API calls.
+The authoritative current support state is determined by:
+
+1. the latest completed milestone;
+2. `docs/SUPPORTED_SYNTAX.md`;
+3. the current implementation guide phase ledger;
+4. passing tests for that feature.
+
+Features implemented by later phases, such as `.DATA?`, `.CONST`, signed integer declarations, signed `PTR` aliases, all-GPR register-indirect addressing, numeric equates, constant expressions, extended constant expressions, and nested `DUP`, must not remain listed as current unsupported behavior.
+
+Still unsupported or deferred in v1 unless a later guide phase explicitly implements them:
+
+- full MASM macro language;
+- full conditional assembly;
+- high-level MASM flow directives such as `.IF`, `.ELSE`, `.ENDIF`, `.WHILE`, `.REPEAT`, `.BREAK`, and `.CONTINUE` until their assigned lowering phases;
+- full `INVOKE`, `PROTO`, `LOCAL`, parameter, and calling-convention modeling until their assigned procedure phases;
+- text-substitution equates and full `TEXTEQU` behavior unless a later macro/text-equate phase implements them;
+- full scaled-index addressing until the staged memory-operand roadmap reaches it;
+- `STRUCT`, `UNION`, `RECORD`, fields, field initializers, and user-defined types until their assigned phases;
+- FPU instructions;
+- SSE/AVX instructions;
+- string instructions and `REP`/`REPE`/`REPNE` prefixes until their dedicated string-instruction phases;
+- segment registers and segment override behavior;
+- interrupts;
+- Windows API calls;
+- PE loading, object linking, import libraries, and host include-file loading;
+- true x64 MASM / `ml64` behavior.
+
+If the previous version of this section contained still-valid unsupported families not listed above, preserve them under this current unsupported/deferred list. Do not preserve entries for features already implemented or explicitly scheduled as implemented by completed phases.
+
+Classification rule:
+
+```text
+Historical unsupported wording is not enough to reject a construct. Before emitting an unsupported diagnostic, check whether a later phase implemented that construct or intentionally reclassified it.
+```
+
+Documentation rule:
+
+```text
+If this section conflicts with a later specific feature section, the later specific feature section wins for stable behavior. If it conflicts with the implementation guide's current phase ledger, update this section rather than treating the guide as wrong.
+```
 
 ### 8.8 MASM Compatibility Coverage Notes
 
@@ -1117,10 +1166,10 @@ The current target is **educational MASM32/Irvine32 compatibility**, not full MA
 Important textbook/compatibility areas to track explicitly:
 
 - Compatibility corrections for existing syntax: signed `PTR` aliases, all-GPR base registers, and global memory-width resolution.
-- Equates and constants: `=`, `EQU`, limited `TEXTEQU`, and expression-backed constants.
-- Additional data sections: `.DATA?` and `.CONST`, with deterministic simulator behavior for uninitialized storage and optional read-only metadata for constants.
+- Equates and constants: numeric `=` and numeric `EQU` plus staged constant-expression support are v1 roadmap features and must be documented according to their completed phase status. Text-substitution `TEXTEQU` and macro-time text behavior remain deferred unless a later phase explicitly implements them.
+- Additional data sections: `.DATA?` and `.CONST` are v1 MASM compatibility sections. `.DATA?` uses deterministic zero-filled storage plus uninitialized-origin metadata. `.CONST` is read-only by final effective address range through central memory-write checks, not only by static symbol metadata.
 - Additional non-integer data declarations: `REAL4`, `REAL8`, `REAL10`, `TBYTE`, and possibly `FWORD`. These remain deferred unless a floating-point/data-layout phase explicitly adds them.
-- Nested `DUP` and initializer expressions.
+- Nested `DUP` and initializer expressions: nested `DUP` plus expression-backed data initializers are staged v1 features and must not be listed as current unsupported behavior after their implementation phases are complete.
 - Native diagnostic rendering harness for exact Simulator Messages text.
 - Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, `WIDTH`, `MASK`, and structure initializers.
 - Procedure metadata: `USES`, `PROTO`, `INVOKE`, `LOCAL`, parameters, `ADDR`, calling-convention modeling, and root procedure termination.
