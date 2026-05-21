@@ -634,6 +634,78 @@ static VmExecStatus vm_exec_execute_logical_binary(Vm *vm, const VmIrInstruction
     return status;
 }
 
+/// Returns the stable undefined-flag diagnostic code for one producer opcode.
+///
+/// @param opcode Opcode whose undefined flag behavior is being recorded.
+/// @return Static diagnostic code, or NULL when the opcode is not a supported producer.
+static const char *vm_exec_undefined_flag_code_for_opcode(VmIrOpcode opcode) {
+    switch (opcode) {
+        case VM_IR_OPCODE_SHL:
+        case VM_IR_OPCODE_SAL:
+        case VM_IR_OPCODE_SHR:
+        case VM_IR_OPCODE_SAR:
+            return "undefined-shift-flag";
+        case VM_IR_OPCODE_ROL:
+        case VM_IR_OPCODE_ROR:
+            return "undefined-modeled-flag";
+        default:
+            return NULL;
+    }
+}
+
+/// Marks one modeled flag undefined using the current producer instruction metadata.
+///
+/// @param cpu CPU state whose flag metadata should be updated.
+/// @param flag Modeled flag left architecturally undefined by the producer.
+/// @param instruction Producer instruction containing opcode and source metadata.
+/// @return true when the metadata update succeeds.
+static bool vm_exec_mark_flag_undefined_from_instruction(VmCpu *cpu, VmFlag flag, const VmIrInstruction *instruction) {
+    const char *undefined_code = NULL;
+    const char *producer_mnemonic = NULL;
+
+    if (cpu == NULL || instruction == NULL) {
+        return false;
+    }
+
+    undefined_code = vm_exec_undefined_flag_code_for_opcode(instruction->opcode);
+    producer_mnemonic = vm_ir_opcode_name(instruction->opcode);
+    if (undefined_code == NULL || producer_mnemonic == NULL) {
+        return false;
+    }
+
+    return vm_cpu_mark_flag_undefined(
+        cpu,
+        flag,
+        undefined_code,
+        producer_mnemonic,
+        instruction->source_file,
+        instruction->source_line,
+        0U,
+        0U,
+        0U,
+        instruction->source_text,
+        instruction->instruction_index
+    );
+}
+
+/// Restores validity metadata for one modeled flag from an earlier CPU snapshot.
+///
+/// The EFLAGS bit itself is not changed. This is used by instructions such as
+/// INC and DEC that architecturally preserve CF while defining other flags.
+///
+/// @param cpu CPU state whose metadata should be restored.
+/// @param before Snapshot that owns the original flag metadata.
+/// @param flag Flag metadata slot to restore.
+/// @return true when the flag identifier is valid.
+static bool vm_exec_restore_flag_validity_from_snapshot(VmCpu *cpu, const VmCpu *before, VmFlag flag) {
+    if (cpu == NULL || before == NULL || (int)flag < 0 || (int)flag >= (int)VM_FLAG_COUNT) {
+        return false;
+    }
+
+    cpu->flag_validity[(int)flag] = before->flag_validity[(int)flag];
+    return true;
+}
+
 /// Reads the raw shift count for shift instructions.
 ///
 /// Counts are either an encoded immediate byte or the current low 8 bits of
@@ -733,9 +805,12 @@ static VmExecStatus vm_exec_execute_shift_left(Vm *vm, const VmIrInstruction *in
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_CF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
@@ -751,9 +826,12 @@ static VmExecStatus vm_exec_execute_shift_left(Vm *vm, const VmIrInstruction *in
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_OF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
@@ -832,9 +910,12 @@ static VmExecStatus vm_exec_execute_shift_right(Vm *vm, const VmIrInstruction *i
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_CF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
@@ -848,9 +929,12 @@ static VmExecStatus vm_exec_execute_shift_right(Vm *vm, const VmIrInstruction *i
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_OF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
@@ -933,9 +1017,12 @@ static VmExecStatus vm_exec_execute_shift_arithmetic_right(Vm *vm, const VmIrIns
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, original_cf) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_CF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_ZF, result == 0U) ||
@@ -949,9 +1036,12 @@ static VmExecStatus vm_exec_execute_shift_arithmetic_right(Vm *vm, const VmIrIns
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_OF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
@@ -1036,9 +1126,12 @@ static VmExecStatus vm_exec_execute_rotate_left(Vm *vm, const VmIrInstruction *i
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_OF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
@@ -1128,9 +1221,12 @@ static VmExecStatus vm_exec_execute_rotate_right(Vm *vm, const VmIrInstruction *
             vm->cpu = before_cpu;
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
         }
-    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
-        vm->cpu = before_cpu;
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    } else {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of) ||
+            !vm_exec_mark_flag_undefined_from_instruction(&vm->cpu, VM_FLAG_OF, instruction)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
     }
 
     status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
@@ -1602,7 +1698,8 @@ static VmExecStatus vm_exec_execute_inc_dec(Vm *vm, const VmIrInstruction *instr
         }
     }
 
-    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, carry_before)) {
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, carry_before) ||
+        !vm_exec_restore_flag_validity_from_snapshot(&vm->cpu, &before_cpu, VM_FLAG_CF)) {
         vm->cpu = before_cpu;
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }

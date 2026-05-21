@@ -86,7 +86,31 @@ typedef enum VmFlag {
     VM_FLAG_COUNT
 } VmFlag;
 
-/// Stores canonical 32-bit MASM32 CPU registers and EFLAGS bits.
+/// Describes validity and undefined-origin metadata for one modeled flag.
+typedef struct VmFlagValidityMetadata {
+    /// Whether the current deterministic flag bit is architecturally valid.
+    bool is_valid;
+    /// Stable diagnostic reason code for an invalid flag value, or NULL when valid.
+    const char *undefined_code;
+    /// Source mnemonic that produced the invalid flag value, or NULL when unavailable.
+    const char *producer_mnemonic;
+    /// Source file containing the producer instruction, or NULL when unavailable.
+    const char *producer_source_file;
+    /// One-based source line for the producer instruction, or zero when unavailable.
+    uint32_t producer_source_line;
+    /// One-based source column for the producer instruction, or zero when unavailable.
+    uint32_t producer_source_column;
+    /// Zero-based source byte offset for the producer instruction, or zero when unavailable.
+    uint32_t producer_byte_offset;
+    /// Source span length in bytes for the producer instruction, or zero when unavailable.
+    uint32_t producer_span_length;
+    /// Original source text for the producer instruction, or NULL when unavailable.
+    const char *producer_source_text;
+    /// VM instruction index of the producer instruction, or zero when unavailable.
+    uint32_t producer_instruction_index;
+} VmFlagValidityMetadata;
+
+/// Stores canonical 32-bit MASM32 CPU registers, EFLAGS bits, and flag validity metadata.
 typedef struct VmCpu {
     /// Canonical EAX storage.
     uint32_t eax;
@@ -108,6 +132,8 @@ typedef struct VmCpu {
     uint32_t eip;
     /// Canonical EFLAGS storage containing supported and future flag bits.
     uint32_t eflags;
+    /// Validity and undefined-origin metadata for currently modeled flags.
+    VmFlagValidityMetadata flag_validity[VM_FLAG_COUNT];
 } VmCpu;
 
 /// Initializes all canonical CPU registers to zero.
@@ -181,6 +207,57 @@ bool vm_cpu_set_flag(VmCpu *cpu, VmFlag flag);
 /// @param flag Named flag identifier.
 /// @return true when the flag is cleared; false for a NULL CPU pointer or invalid flag.
 bool vm_cpu_clear_flag(VmCpu *cpu, VmFlag flag);
+
+/// Reads validity and undefined-origin metadata for one supported named flag.
+///
+/// @param cpu CPU state to inspect.
+/// @param flag Named flag identifier.
+/// @param out_metadata Receives a copy of the flag metadata.
+/// @return true when the metadata is read; false for NULL pointers or invalid flags.
+bool vm_cpu_read_flag_validity(const VmCpu *cpu, VmFlag flag, VmFlagValidityMetadata *out_metadata);
+
+/// Marks one supported named flag architecturally valid and clears undefined-origin metadata.
+///
+/// The flag bit value itself is not changed. This helper is used when an API
+/// writes raw EFLAGS or when an instruction makes a previously undefined flag
+/// architecturally defined without changing other modeled flags.
+///
+/// @param cpu CPU state to mutate.
+/// @param flag Named flag identifier.
+/// @return true when metadata is updated; false for a NULL CPU pointer or invalid flag.
+bool vm_cpu_mark_flag_valid(VmCpu *cpu, VmFlag flag);
+
+/// Marks one supported named flag architecturally undefined without changing its bit value.
+///
+/// The deterministic EFLAGS bit is preserved. The supplied origin metadata is
+/// retained for later diagnostics that may consume the flag. All string pointers
+/// are borrowed from static diagnostic text or source buffers owned elsewhere.
+///
+/// @param cpu CPU state to mutate.
+/// @param flag Named flag identifier.
+/// @param undefined_code Stable diagnostic reason code, such as undefined-shift-flag.
+/// @param producer_mnemonic Source mnemonic that made the flag undefined.
+/// @param source_file Source file for the producer instruction, or NULL.
+/// @param source_line One-based source line for the producer instruction, or zero.
+/// @param source_column One-based source column for the producer instruction, or zero.
+/// @param byte_offset Zero-based source byte offset for the producer instruction, or zero.
+/// @param span_length Source span length in bytes for the producer instruction, or zero.
+/// @param source_text Original source text for the producer instruction, or NULL.
+/// @param instruction_index VM instruction index for the producer instruction.
+/// @return true when metadata is updated; false for a NULL CPU pointer or invalid flag.
+bool vm_cpu_mark_flag_undefined(
+    VmCpu *cpu,
+    VmFlag flag,
+    const char *undefined_code,
+    const char *producer_mnemonic,
+    const char *source_file,
+    uint32_t source_line,
+    uint32_t source_column,
+    uint32_t byte_offset,
+    uint32_t span_length,
+    const char *source_text,
+    uint32_t instruction_index
+);
 
 /// Updates arithmetic flags for an addition operation.
 ///

@@ -133,6 +133,51 @@ static bool vm_cpu_get_flag_metadata(VmFlag flag, const VmCpuFlagMetadata **out_
     return true;
 }
 
+/// Returns whether a flag identifier indexes current validity metadata.
+///
+/// @param flag Flag identifier to inspect.
+/// @return true when @p flag has a validity-metadata slot.
+static bool vm_cpu_flag_has_validity_slot(VmFlag flag) {
+    int flag_index = (int)flag;
+
+    return flag_index >= 0 && flag_index < (int)VM_FLAG_COUNT;
+}
+
+/// Clears undefined-origin metadata for one validity slot and marks it valid.
+///
+/// @param metadata Metadata slot to mutate.
+static void vm_cpu_clear_flag_origin(VmFlagValidityMetadata *metadata) {
+    if (metadata == NULL) {
+        return;
+    }
+
+    metadata->is_valid = true;
+    metadata->undefined_code = NULL;
+    metadata->producer_mnemonic = NULL;
+    metadata->producer_source_file = NULL;
+    metadata->producer_source_line = 0U;
+    metadata->producer_source_column = 0U;
+    metadata->producer_byte_offset = 0U;
+    metadata->producer_span_length = 0U;
+    metadata->producer_source_text = NULL;
+    metadata->producer_instruction_index = 0U;
+}
+
+/// Marks all modeled flag metadata valid.
+///
+/// @param cpu CPU state to mutate.
+static void vm_cpu_mark_all_flags_valid(VmCpu *cpu) {
+    int flag_index = 0;
+
+    if (cpu == NULL) {
+        return;
+    }
+
+    for (flag_index = 0; flag_index < (int)VM_FLAG_COUNT; flag_index += 1) {
+        vm_cpu_clear_flag_origin(&cpu->flag_validity[flag_index]);
+    }
+}
+
 /// Reads a full 32-bit canonical storage value.
 ///
 /// @param cpu CPU state to inspect.
@@ -310,6 +355,7 @@ void vm_cpu_init(VmCpu *cpu) {
     cpu->esp = 0U;
     cpu->eip = 0U;
     cpu->eflags = 0U;
+    vm_cpu_mark_all_flags_valid(cpu);
 }
 
 bool vm_cpu_read_register(const VmCpu *cpu, VmRegister reg, uint32_t *out_value) {
@@ -366,7 +412,15 @@ bool vm_cpu_write_register(VmCpu *cpu, VmRegister reg, uint32_t value) {
     shifted_value = (value & mask) << metadata->shift_bits;
     storage_value = (storage_value & ~shifted_mask) | shifted_value;
 
-    return vm_cpu_write_storage(cpu, metadata->storage, storage_value);
+    if (!vm_cpu_write_storage(cpu, metadata->storage, storage_value)) {
+        return false;
+    }
+
+    if (metadata->storage == VM_CPU_STORAGE_EFLAGS) {
+        vm_cpu_mark_all_flags_valid(cpu);
+    }
+
+    return true;
 }
 
 uint8_t vm_cpu_register_width_bits(VmRegister reg) {
@@ -421,7 +475,7 @@ bool vm_cpu_write_flag(VmCpu *cpu, VmFlag flag, bool is_set) {
         cpu->eflags &= ~metadata->mask;
     }
 
-    return true;
+    return vm_cpu_mark_flag_valid(cpu, flag);
 }
 
 bool vm_cpu_set_flag(VmCpu *cpu, VmFlag flag) {
@@ -430,6 +484,57 @@ bool vm_cpu_set_flag(VmCpu *cpu, VmFlag flag) {
 
 bool vm_cpu_clear_flag(VmCpu *cpu, VmFlag flag) {
     return vm_cpu_write_flag(cpu, flag, false);
+}
+
+bool vm_cpu_read_flag_validity(const VmCpu *cpu, VmFlag flag, VmFlagValidityMetadata *out_metadata) {
+    if (cpu == NULL || out_metadata == NULL || !vm_cpu_flag_has_validity_slot(flag)) {
+        return false;
+    }
+
+    *out_metadata = cpu->flag_validity[(int)flag];
+    return true;
+}
+
+bool vm_cpu_mark_flag_valid(VmCpu *cpu, VmFlag flag) {
+    if (cpu == NULL || !vm_cpu_flag_has_validity_slot(flag)) {
+        return false;
+    }
+
+    vm_cpu_clear_flag_origin(&cpu->flag_validity[(int)flag]);
+    return true;
+}
+
+bool vm_cpu_mark_flag_undefined(
+    VmCpu *cpu,
+    VmFlag flag,
+    const char *undefined_code,
+    const char *producer_mnemonic,
+    const char *source_file,
+    uint32_t source_line,
+    uint32_t source_column,
+    uint32_t byte_offset,
+    uint32_t span_length,
+    const char *source_text,
+    uint32_t instruction_index
+) {
+    VmFlagValidityMetadata *metadata = NULL;
+
+    if (cpu == NULL || !vm_cpu_flag_has_validity_slot(flag)) {
+        return false;
+    }
+
+    metadata = &cpu->flag_validity[(int)flag];
+    metadata->is_valid = false;
+    metadata->undefined_code = undefined_code;
+    metadata->producer_mnemonic = producer_mnemonic;
+    metadata->producer_source_file = source_file;
+    metadata->producer_source_line = source_line;
+    metadata->producer_source_column = source_column;
+    metadata->producer_byte_offset = byte_offset;
+    metadata->producer_span_length = span_length;
+    metadata->producer_source_text = source_text;
+    metadata->producer_instruction_index = instruction_index;
+    return true;
 }
 
 bool vm_cpu_update_add_flags(VmCpu *cpu, uint32_t left, uint32_t right, uint8_t width_bits, uint32_t *out_result) {

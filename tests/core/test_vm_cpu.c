@@ -1,9 +1,10 @@
 /*
  * @file test_vm_cpu.c
- * @brief Unit tests for the Milestone 1 MASM32 CPU register model.
+ * @brief Unit tests for the MASM32 CPU register and modeled-flag metadata model.
  *
- * These tests cover canonical register storage, alias masking, invalid input
- * handling, and metadata helpers without introducing parser or VM execution.
+ * These tests cover canonical register storage, alias masking, invalid input,
+ * flag validity metadata, and metadata helpers without introducing parser or VM
+ * execution.
  */
 
 #include <stdio.h>
@@ -62,6 +63,49 @@ static int expect_register_metadata(VmRegister reg, uint8_t expected_width, cons
     }
 
     return failures;
+}
+
+/// Verifies that one flag has the expected validity metadata.
+///
+/// @param cpu CPU state to inspect.
+/// @param flag Flag identifier to read.
+/// @param expected_valid Expected validity state.
+/// @param expected_code Expected undefined-origin code, or NULL.
+/// @param expected_mnemonic Expected producer mnemonic, or NULL.
+/// @param message Failure message when metadata differs.
+/// @return Zero on success, otherwise a positive failure count.
+static int expect_flag_validity(
+    const VmCpu *cpu,
+    VmFlag flag,
+    int expected_valid,
+    const char *expected_code,
+    const char *expected_mnemonic,
+    const char *message
+) {
+    VmFlagValidityMetadata metadata;
+
+    if (!vm_cpu_read_flag_validity(cpu, flag, &metadata)) {
+        return record_failure("flag validity read should succeed");
+    }
+
+    if ((metadata.is_valid ? 1 : 0) != expected_valid) {
+        fprintf(stderr, "FAIL: %s validity mismatch (actual=%d expected=%d)\n", message, metadata.is_valid ? 1 : 0, expected_valid);
+        return 1;
+    }
+
+    if ((metadata.undefined_code == NULL) != (expected_code == NULL) ||
+        (metadata.undefined_code != NULL && strcmp(metadata.undefined_code, expected_code) != 0)) {
+        fprintf(stderr, "FAIL: %s undefined-code mismatch\n", message);
+        return 1;
+    }
+
+    if ((metadata.producer_mnemonic == NULL) != (expected_mnemonic == NULL) ||
+        (metadata.producer_mnemonic != NULL && strcmp(metadata.producer_mnemonic, expected_mnemonic) != 0)) {
+        fprintf(stderr, "FAIL: %s producer-mnemonic mismatch\n", message);
+        return 1;
+    }
+
+    return 0;
 }
 
 /// Verifies zero initialization across canonical and alias registers.
@@ -279,6 +323,69 @@ static int test_register_metadata(void) {
     return failures;
 }
 
+/// Verifies default modeled-flag validity metadata after CPU initialization.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_initialization_marks_modeled_flags_valid(void) {
+    int failures = 0;
+    VmCpu cpu;
+
+    vm_cpu_init(&cpu);
+
+    failures += expect_flag_validity(&cpu, VM_FLAG_CF, 1, NULL, NULL, "initialized CF should be valid");
+    failures += expect_flag_validity(&cpu, VM_FLAG_ZF, 1, NULL, NULL, "initialized ZF should be valid");
+    failures += expect_flag_validity(&cpu, VM_FLAG_SF, 1, NULL, NULL, "initialized SF should be valid");
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, 1, NULL, NULL, "initialized OF should be valid");
+
+    return failures;
+}
+
+/// Verifies modeled-flag validity helper behavior.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_flag_validity_metadata_helpers(void) {
+    int failures = 0;
+    VmCpu cpu;
+    VmFlagValidityMetadata metadata;
+
+    vm_cpu_init(&cpu);
+    failures += vm_cpu_write_flag(&cpu, VM_FLAG_OF, 1) ? 0 : record_failure("OF write should succeed before undefined metadata");
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_OF, "undefined-modeled-flag", "rol", "main.asm", 4U, 5U, 40U, 10U, "rol eax, 2", 3U) ? 0 : record_failure("mark OF undefined should succeed");
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, 0, "undefined-modeled-flag", "rol", "OF should be invalid after metadata helper");
+    failures += vm_cpu_read_flag_validity(&cpu, VM_FLAG_OF, &metadata) ? 0 : record_failure("OF metadata read should succeed");
+    if (metadata.producer_source_line != 4U ||
+        metadata.producer_source_column != 5U ||
+        metadata.producer_byte_offset != 40U ||
+        metadata.producer_span_length != 10U ||
+        metadata.producer_instruction_index != 3U) {
+        failures += record_failure("undefined metadata should preserve producer source span and instruction index");
+    }
+
+    failures += vm_cpu_clear_flag(&cpu, VM_FLAG_OF) ? 0 : record_failure("OF clear should succeed");
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, 1, NULL, NULL, "OF write should clear undefined metadata");
+
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_CF, "undefined-shift-flag", "shl", "main.asm", 2U, 5U, 20U, 9U, "shl al, 8", 1U) ? 0 : record_failure("mark CF undefined should succeed");
+    failures += expect_flag_validity(&cpu, VM_FLAG_CF, 0, "undefined-shift-flag", "shl", "CF should be invalid before raw EFLAGS write");
+    failures += vm_cpu_write_register(&cpu, VM_REGISTER_EFLAGS, 0U) ? 0 : record_failure("raw EFLAGS write should succeed");
+    failures += expect_flag_validity(&cpu, VM_FLAG_CF, 1, NULL, NULL, "raw EFLAGS write should mark CF valid");
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, 1, NULL, NULL, "raw EFLAGS write should mark OF valid");
+
+    if (vm_cpu_read_flag_validity(NULL, VM_FLAG_CF, &metadata)) {
+        failures += record_failure("flag validity read should reject NULL CPU");
+    }
+    if (vm_cpu_read_flag_validity(&cpu, VM_FLAG_CF, NULL)) {
+        failures += record_failure("flag validity read should reject NULL output");
+    }
+    if (vm_cpu_mark_flag_valid(&cpu, (VmFlag)VM_FLAG_COUNT)) {
+        failures += record_failure("mark flag valid should reject invalid flag");
+    }
+    if (vm_cpu_mark_flag_undefined(NULL, VM_FLAG_CF, "undefined-shift-flag", "shl", NULL, 0U, 0U, 0U, 0U, NULL, 0U)) {
+        failures += record_failure("mark flag undefined should reject NULL CPU");
+    }
+
+    return failures;
+}
+
 /// Verifies invalid and NULL argument handling.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -332,13 +439,15 @@ int main(void) {
     failures += test_index_and_pointer_alias_reads();
     failures += test_alias_writes_preserve_bits();
     failures += test_register_metadata();
+    failures += test_initialization_marks_modeled_flags_valid();
+    failures += test_flag_validity_metadata_helpers();
     failures += test_invalid_input_handling();
 
     if (failures != 0) {
-        fprintf(stderr, "%d Milestone 1 CPU register test failure(s).\n", failures);
+        fprintf(stderr, "%d CPU register and flag metadata test failure(s).\n", failures);
         return 1;
     }
 
-    puts("Milestone 1 CPU register tests passed.");
+    puts("CPU register and flag metadata tests passed.");
     return 0;
 }

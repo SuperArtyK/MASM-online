@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 50.
+ * @brief Unit tests for the VM executor through Milestone 50A.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -86,6 +86,56 @@ static int expect_flag(const VmCpu *cpu, VmFlag flag, bool expected, const char 
 
     if (actual != expected) {
         fprintf(stderr, "FAIL: %s (actual=%d expected=%d)\n", message, actual ? 1 : 0, expected ? 1 : 0);
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Verifies that a modeled flag has expected validity and origin metadata.
+///
+/// @param cpu CPU state to inspect.
+/// @param flag Flag to inspect.
+/// @param expected_valid Expected validity state.
+/// @param expected_code Expected undefined-origin code, or NULL.
+/// @param expected_mnemonic Expected producer mnemonic, or NULL.
+/// @param expected_line Expected producer source line, or zero.
+/// @param message Failure message when metadata differs.
+/// @return Zero on success, otherwise one failure.
+static int expect_flag_validity(
+    const VmCpu *cpu,
+    VmFlag flag,
+    bool expected_valid,
+    const char *expected_code,
+    const char *expected_mnemonic,
+    uint32_t expected_line,
+    const char *message
+) {
+    VmFlagValidityMetadata metadata;
+
+    if (!vm_cpu_read_flag_validity(cpu, flag, &metadata)) {
+        return record_failure("flag validity read should succeed");
+    }
+
+    if (metadata.is_valid != expected_valid) {
+        fprintf(stderr, "FAIL: %s validity mismatch (actual=%d expected=%d)\n", message, metadata.is_valid ? 1 : 0, expected_valid ? 1 : 0);
+        return 1;
+    }
+
+    if ((metadata.undefined_code == NULL) != (expected_code == NULL) ||
+        (metadata.undefined_code != NULL && strcmp(metadata.undefined_code, expected_code) != 0)) {
+        fprintf(stderr, "FAIL: %s undefined-code mismatch\n", message);
+        return 1;
+    }
+
+    if ((metadata.producer_mnemonic == NULL) != (expected_mnemonic == NULL) ||
+        (metadata.producer_mnemonic != NULL && strcmp(metadata.producer_mnemonic, expected_mnemonic) != 0)) {
+        fprintf(stderr, "FAIL: %s producer-mnemonic mismatch\n", message);
+        return 1;
+    }
+
+    if (metadata.producer_source_line != expected_line) {
+        fprintf(stderr, "FAIL: %s producer-line mismatch (actual=%u expected=%u)\n", message, (unsigned int)metadata.producer_source_line, (unsigned int)expected_line);
         return 1;
     }
 
@@ -2497,6 +2547,197 @@ static int test_exit_terminator_halts_without_mutation(void) {
     return failures;
 }
 
+/// Verifies Phase 50A modeled-flag validity metadata for shift producers.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50a_shift_flag_validity_metadata(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl eax, 2", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 80h", 2U},
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_REGISTER, 8U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "shl al, 8", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov eax, 80h", 4U},
+        {VM_IR_OPCODE_SHR, {VM_IR_OPERAND_REGISTER, 8U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "shr al, 8", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov eax, 80h", 6U},
+        {VM_IR_OPCODE_SAR, {VM_IR_OPERAND_REGISTER, 8U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "sar al, 8", 7U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 50A shift metadata test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 50A shift metadata program should load");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "setup before SHL EAX,2 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL EAX,2 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-shift-flag", "shl", 2U, "SHL EAX,2 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "SHL EAX,2 should leave CF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "SHL EAX,2 should leave ZF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "SHL EAX,2 should leave SF valid");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "setup before SHL AL,8 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHL AL,8 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "undefined-shift-flag", "shl", 4U, "SHL AL,8 should mark CF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-shift-flag", "shl", 4U, "SHL AL,8 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "SHL AL,8 should leave ZF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "SHL AL,8 should leave SF valid");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "setup before SHR AL,8 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHR AL,8 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "undefined-shift-flag", "shr", 6U, "SHR AL,8 should mark CF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-shift-flag", "shr", 6U, "SHR AL,8 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "SHR AL,8 should leave ZF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "SHR AL,8 should leave SF valid");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "setup before SAR AL,8 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SAR AL,8 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "undefined-shift-flag", "sar", 8U, "SAR AL,8 should mark CF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-shift-flag", "sar", 8U, "SAR AL,8 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "SAR AL,8 should leave ZF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "SAR AL,8 should leave SF valid");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 50A modeled-flag validity metadata for rotate producers.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50a_rotate_flag_validity_metadata(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "test eax, eax", 0U},
+        {VM_IR_OPCODE_ROL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "rol eax, 2", 1U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ror eax, 2", 2U},
+        {VM_IR_OPCODE_ROL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "rol eax, 1", 3U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "ror eax, 1", 4U}
+    };
+    const VmIrInstruction zero_count[] = {
+        {VM_IR_OPCODE_ROL, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 32U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "rol eax, 32", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 32U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "ror eax, 32", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 50A rotate metadata test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 50A rotate metadata program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST should define all modeled flags before rotate metadata test");
+
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_ZF, "seed-invalid", "seed", "seed.asm", 7U, 1U, 70U, 4U, "seed", 0U) ? 0 : record_failure("seed ZF invalidity should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_SF, "seed-invalid", "seed", "seed.asm", 8U, 1U, 80U, 4U, "seed", 0U) ? 0 : record_failure("seed SF invalidity should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL EAX,2 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-modeled-flag", "rol", 2U, "ROL EAX,2 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "ROL EAX,2 should mark CF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, false, "seed-invalid", "seed", 7U, "ROL should preserve ZF validity");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, false, "seed-invalid", "seed", 8U, "ROL should preserve SF validity");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX,2 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "undefined-modeled-flag", "ror", 3U, "ROR EAX,2 should mark OF invalid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "ROR EAX,2 should mark CF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, false, "seed-invalid", "seed", 7U, "ROR should preserve ZF validity");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, false, "seed-invalid", "seed", 8U, "ROR should preserve SF validity");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL EAX,1 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, true, NULL, NULL, 0U, "ROL EAX,1 should mark OF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "ROL EAX,1 should keep CF valid");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX,1 should execute");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, true, NULL, NULL, 0U, "ROR EAX,1 should mark OF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "ROR EAX,1 should keep CF valid");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for zero-count rotate validity test");
+    failures += expect_status(vm_load_program(&vm, zero_count, sizeof(zero_count) / sizeof(zero_count[0])), VM_EXEC_STATUS_OK, "zero-count rotate metadata program should load");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity should succeed before zero-count rotates");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL EAX,32 should execute as no-op");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "ROL EAX,32 should preserve OF validity metadata");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX,32 should execute as no-op");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "ROR EAX,32 should preserve OF validity metadata");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies Phase 50A validity behavior for defined and preserved flags.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50a_defined_and_preserved_flag_validity_metadata(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 123U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 123", 0U},
+        {VM_IR_OPCODE_NOT, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "not eax", 1U},
+        {VM_IR_OPCODE_CLC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "clc", 2U},
+        {VM_IR_OPCODE_TEST, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "test eax, eax", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 50A define/preserve metadata test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 50A define/preserve metadata program should load");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 5U, 1U, 50U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before MOV should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_CF, "seed-invalid", "seed", "seed.asm", 6U, 1U, 60U, 4U, "seed", 0U) ? 0 : record_failure("seed CF invalidity before MOV should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV should execute while preserving modeled flag metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 5U, "MOV should preserve OF validity metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "seed-invalid", "seed", 6U, "MOV should preserve CF validity metadata");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "NOT should execute while preserving modeled flag metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 5U, "NOT should preserve OF validity metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "seed-invalid", "seed", 6U, "NOT should preserve CF validity metadata");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CLC should execute and define CF validity");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "CLC should mark CF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 5U, "CLC should preserve OF validity metadata");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "TEST should execute and define all modeled flag validity");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, true, NULL, NULL, 0U, "TEST should mark CF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "TEST should mark ZF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_SF, true, NULL, NULL, 0U, "TEST should mark SF valid");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, true, NULL, NULL, 0U, "TEST should mark OF valid");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies Phase 50A rollback and architecturally preserved flag metadata.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50a_flag_validity_rollback_and_preservation(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction inc_program[] = {
+        {VM_IR_OPCODE_INC, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "inc eax", 0U}
+    };
+    const VmIrInstruction const_write[] = {
+        {VM_IR_OPCODE_SHL, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_CONST_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "shl DWORD PTR [const], 2", 0U}
+    };
+    const VmIrInstruction invalid_address[] = {
+        {VM_IR_OPCODE_ROL, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "rol DWORD PTR [0], 2", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for INC CF validity preservation test");
+    failures += expect_status(vm_load_program(&vm, inc_program, 1U), VM_EXEC_STATUS_OK, "INC metadata preservation program should load");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_CF, "seed-invalid", "seed", "seed.asm", 5U, 1U, 50U, 4U, "seed", 0U) ? 0 : record_failure("seed CF invalidity before INC should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "INC should execute while preserving CF metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "seed-invalid", "seed", 5U, "INC should preserve CF validity metadata");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, true, NULL, NULL, 0U, "INC should define ZF as valid");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for const write rollback test");
+    failures += expect_status(vm_load_program(&vm, const_write, 1U), VM_EXEC_STATUS_OK, "const write rollback program should load");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 6U, 1U, 60U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before const write should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "SHL .CONST write should fail after tentative flag computation");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 6U, "failed .CONST write should restore OF validity metadata");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed .CONST write should not record successful memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid read rollback test");
+    failures += expect_status(vm_load_program(&vm, invalid_address, 1U), VM_EXEC_STATUS_OK, "invalid read rollback program should load");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 7U, 1U, 70U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before invalid read should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "ROL invalid memory read should fail before mutation");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 7U, "invalid read should preserve OF validity metadata");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "invalid read should not record successful memory changes");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2564,7 +2805,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 50.
+/// Runs all executor tests through Milestone 50A.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -2614,6 +2855,10 @@ int main(void) {
     failures += test_rotate_left_memory_destinations_and_errors();
     failures += test_rotate_right_register_flags_and_counts();
     failures += test_rotate_right_memory_destinations_and_errors();
+    failures += test_phase50a_shift_flag_validity_metadata();
+    failures += test_phase50a_rotate_flag_validity_metadata();
+    failures += test_phase50a_defined_and_preserved_flag_validity_metadata();
+    failures += test_phase50a_flag_validity_rollback_and_preservation();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -2622,6 +2867,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 50 passed.");
+    puts("Executor tests through Milestone 50A passed.");
     return 0;
 }
