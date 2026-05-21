@@ -76,6 +76,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_SAR,
     /// Rotate a register or memory destination left within its selected width.
     VM_IR_OPCODE_ROL,
+    /// Rotate a register or memory destination right within its selected width.
+    VM_IR_OPCODE_ROR,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

@@ -9,7 +9,7 @@
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
  * instructions, accumulator conversions, exchange/negation/no-op
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
- * INC/DEC, bitwise logical instructions, shifts, ROL, the virtual Irvine32
+ * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, the virtual Irvine32
  * `exit` terminator, and recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -1349,6 +1349,7 @@ static size_t masm32_sim_wasm_collect_planned_reads(
         case VM_IR_OPCODE_SHR:
         case VM_IR_OPCODE_SAR:
         case VM_IR_OPCODE_ROL:
+        case VM_IR_OPCODE_ROR:
             if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
             }
@@ -1561,6 +1562,8 @@ static void masm32_sim_wasm_fill_shift_diagnostic(
         diagnostic->mnemonic = "SAR";
     } else if (instruction != NULL && instruction->opcode == VM_IR_OPCODE_ROL) {
         diagnostic->mnemonic = "ROL";
+    } else if (instruction != NULL && instruction->opcode == VM_IR_OPCODE_ROR) {
+        diagnostic->mnemonic = "ROR";
     } else {
         diagnostic->mnemonic = "SHL";
     }
@@ -1612,13 +1615,13 @@ static bool masm32_sim_wasm_shift_has_undefined_modeled_flags(
     return true;
 }
 
-/// Determines whether a ROL instruction makes OF undefined in the modeled flag set.
+/// Determines whether a rotate instruction makes OF undefined in the modeled flag set.
 ///
 /// @param storage Source-run storage used to populate diagnostics.
 /// @param vm VM positioned before the instruction is stepped.
-/// @param instruction ROL instruction to inspect.
+/// @param instruction Rotate instruction to inspect.
 /// @param out_diagnostic Optional diagnostic populated when OF is undefined.
-/// @return true when the ROL instruction has a non-one nonzero effective count.
+/// @return true when the rotate instruction has a non-one nonzero effective count.
 static bool masm32_sim_wasm_rotate_has_undefined_modeled_flags(
     const Masm32SimWasmRunStorage *storage,
     const Vm *vm,
@@ -1629,7 +1632,7 @@ static bool masm32_sim_wasm_rotate_has_undefined_modeled_flags(
     uint8_t raw_count = 0U;
     uint8_t effective_count = 0U;
 
-    if (vm == NULL || instruction == NULL || instruction->opcode != VM_IR_OPCODE_ROL) {
+    if (vm == NULL || instruction == NULL || (instruction->opcode != VM_IR_OPCODE_ROL && instruction->opcode != VM_IR_OPCODE_ROR)) {
         return false;
     }
 
@@ -2363,15 +2366,21 @@ static void masm32_sim_wasm_format_shift_diagnostic(
     mnemonic = diagnostic->mnemonic != NULL ? diagnostic->mnemonic : "SHL";
     article = masm32_sim_wasm_shift_width_article(diagnostic->width_bits);
 
-    if (strcmp(mnemonic, "ROL") == 0) {
+    if (strcmp(mnemonic, "ROL") == 0 || strcmp(mnemonic, "ROR") == 0) {
+        const char *cf_source = strcmp(mnemonic, "ROR") == 0 ? "most significant" : "least significant";
+        const uint8_t rotate_amount = diagnostic->width_bits != 0U ? (uint8_t)(diagnostic->effective_count % diagnostic->width_bits) : 0U;
         (void)snprintf(
             buffer,
             buffer_size,
-            "ROL count %u has effective count %u for %s %u-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+            "%s count %u has effective count %u and rotate amount %u for %s %u-bit destination. CF was updated from the %s bit of the rotated result. ZF and SF were preserved because %s does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+            mnemonic,
             (unsigned int)diagnostic->raw_count,
             (unsigned int)diagnostic->effective_count,
+            (unsigned int)rotate_amount,
             article,
-            (unsigned int)diagnostic->width_bits
+            (unsigned int)diagnostic->width_bits,
+            cf_source,
+            mnemonic
         );
         return;
     }
@@ -2423,7 +2432,7 @@ static bool masm32_sim_json_append_shift_message(
     return masm32_sim_json_append_message_with_span(
         writer,
         kind,
-        diagnostic != NULL && diagnostic->mnemonic != NULL && strcmp(diagnostic->mnemonic, "ROL") == 0 ? "undefined-modeled-flag" : "undefined-shift-flag",
+        diagnostic != NULL && diagnostic->mnemonic != NULL && (strcmp(diagnostic->mnemonic, "ROL") == 0 || strcmp(diagnostic->mnemonic, "ROR") == 0) ? "undefined-modeled-flag" : "undefined-shift-flag",
         message,
         diagnostic != NULL ? diagnostic->source_line : 0U,
         diagnostic != NULL ? diagnostic->source_column : 0U,
@@ -2882,7 +2891,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":49,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":50,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -2960,7 +2969,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":49,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":50,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

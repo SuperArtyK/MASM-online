@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 49.
+ * @brief Unit tests for the VM executor through Milestone 50.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -2276,6 +2276,173 @@ static int test_rotate_left_memory_destinations_and_errors(void) {
     return failures;
 }
 
+/// Verifies ROR register destinations, count policy, and modeled flags.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_rotate_right_register_flags_and_counts(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction single_bit_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x01U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov al, 01h", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror al, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x0003U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov ax, 0003h", 2U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ror ax, 1", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000003U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov eax, 00000003h", 4U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "ror eax, 1", 5U}
+    };
+    const VmIrInstruction zero_count_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x12345678U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 12345678h", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 32U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror eax, 32", 1U}
+    };
+    const VmIrInstruction cl_count_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000104U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov ecx, 104h", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x00000010U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 10h", 1U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 8U, 0U, VM_REGISTER_CL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ror eax, cl", 2U}
+    };
+    const VmIrInstruction full_width_byte_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x81U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov al, 81h", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror al, 8", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for single-bit ROR test");
+    failures += expect_status(vm_load_program(&vm, single_bit_program, sizeof(single_bit_program) / sizeof(single_bit_program[0])), VM_EXEC_STATUS_OK, "single-bit ROR program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before ROR AL should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup before ROR AL should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup before ROR AL should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR AL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after ROR AL should succeed");
+    failures += expect_u32(eax, 0x00000080U, "ROR AL should wrap bit 0 into the high bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "ROR AL by one should set CF from result sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "ROR AL by one should set OF from result sign xor second sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "ROR AL should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "ROR AL should preserve SF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before ROR AX should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR AX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after ROR AX should succeed");
+    failures += expect_u32(eax, 0x00008001U, "ROR AX should rotate within AX width");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before ROR EAX should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after ROR EAX should succeed");
+    failures += expect_u32(eax, 0x80000001U, "ROR EAX should rotate within EAX width");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for zero-count ROR test");
+    failures += expect_status(vm_load_program(&vm, zero_count_program, sizeof(zero_count_program) / sizeof(zero_count_program[0])), VM_EXEC_STATUS_OK, "zero-count ROR program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before zero-count ROR should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup before zero-count ROR should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup before zero-count ROR should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup before zero-count ROR should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before zero-count ROR should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX, 32 should be a complete no-op");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after zero-count ROR should succeed");
+    failures += expect_u32(eax, 0x12345678U, "ROR EAX, 32 should preserve destination");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "ROR EAX, 32 should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "ROR EAX, 32 should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "ROR EAX, 32 should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "ROR EAX, 32 should preserve OF");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CL ROR test");
+    failures += expect_status(vm_load_program(&vm, cl_count_program, sizeof(cl_count_program) / sizeof(cl_count_program[0])), VM_EXEC_STATUS_OK, "CL ROR program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV ECX before CL ROR should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV EAX before CL ROR should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before CL ROR should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR EAX, CL should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after ROR EAX, CL should succeed");
+    failures += expect_u32(eax, 0x00000001U, "ROR EAX, CL should use only CL as count");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "multi-bit ROR should preserve undefined OF deterministically");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for full-width byte ROR test");
+    failures += expect_status(vm_load_program(&vm, full_width_byte_program, sizeof(full_width_byte_program) / sizeof(full_width_byte_program[0])), VM_EXEC_STATUS_OK, "full-width byte ROR program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before full-width byte ROR should execute");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, false) ? 0 : record_failure("CF setup before full-width ROR should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before full-width ROR should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR AL, 8 should execute with nonzero rotate flag behavior");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after ROR AL, 8 should succeed");
+    failures += expect_u32(eax, 0x00000081U, "ROR AL, 8 should leave byte bits unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "ROR AL, 8 should set CF from unchanged result sign bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "ROR AL, 8 should preserve undefined OF deterministically");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies ROR memory destinations and executor error paths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_rotate_right_memory_destinations_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    uint8_t memory_byte = 0U;
+    uint16_t memory_word = 0U;
+    uint32_t memory_dword = 0U;
+    const VmIrInstruction memory_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 0x81U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov BYTE PTR b, 81h", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_MEMORY_ADDRESS, 8U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror BYTE PTR b, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0x8001U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov WORD PTR w, 8001h", 2U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_MEMORY_ADDRESS, 16U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 2U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ror WORD PTR w, 4", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x80000001U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov DWORD PTR d, 80000001h", 4U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "ror DWORD PTR d, 1", 5U}
+    };
+    const VmIrInstruction invalid_count[] = {
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 256U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "ror eax, 256", 0U}
+    };
+    const VmIrInstruction invalid_address[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror DWORD PTR [0], 1", 1U}
+    };
+    const VmIrInstruction const_write[] = {
+        {VM_IR_OPCODE_STC, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "stc", 0U},
+        {VM_IR_OPCODE_ROR, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_CONST_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "ror DWORD PTR [const], 1", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for ROR memory test");
+    failures += expect_status(vm_load_program(&vm, memory_program, sizeof(memory_program) / sizeof(memory_program[0])), VM_EXEC_STATUS_OK, "ROR memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory byte initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory byte instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory word initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory word instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory dword initializer should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory dword instruction should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "ROR memory program should halt after all instructions");
+    failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after ROR");
+    failures += expect_u32((uint32_t)memory_byte, 0xC0U, "ROR byte memory should store C0h");
+    failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after ROR");
+    failures += expect_u32((uint32_t)memory_word, 0x1800U, "ROR word memory should rotate by four");
+    failures += vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, &memory_dword, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory dword read should succeed after ROR");
+    failures += expect_u32(memory_dword, 0xC0000000U, "ROR dword memory should store rotated value");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid ROR count test");
+    failures += expect_status(vm_load_program(&vm, invalid_count, 1U), VM_EXEC_STATUS_OK, "invalid ROR count program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "executor should reject malformed immediate ROR count");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid ROR address test");
+    failures += expect_status(vm_load_program(&vm, invalid_address, sizeof(invalid_address) / sizeof(invalid_address[0])), VM_EXEC_STATUS_OK, "invalid ROR address program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC before failed ROR should execute");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "ROR invalid memory destination should fail through checked memory read");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed ROR invalid-address read should preserve CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed ROR invalid-address read should not record memory changes");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for ROR const-write test");
+    failures += expect_status(vm_load_program(&vm, const_write, sizeof(const_write) / sizeof(const_write[0])), VM_EXEC_STATUS_OK, "ROR const-write program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "STC should execute before failed ROR const write");
+    status = vm_step(&vm);
+    failures += expect_status(status, VM_EXEC_STATUS_MEMORY_ERROR, "ROR .CONST write should fail through checked memory");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed ROR .CONST write should restore CF");
+    failures += expect_size(vm_last_delta(&vm)->memory_change_count, 0U, "failed ROR .CONST write should not record successful memory changes");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+
 /// Verifies the Irvine32 exit IR opcode halts without state mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2372,6 +2539,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_ROL), "rol") != 0) {
         failures += record_failure("ROL opcode name should be rol");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_ROR), "ror") != 0) {
+        failures += record_failure("ROR opcode name should be ror");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -2394,7 +2564,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 49.
+/// Runs all executor tests through Milestone 50.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -2442,6 +2612,8 @@ int main(void) {
     failures += test_shift_arithmetic_right_memory_destinations_and_errors();
     failures += test_rotate_left_register_flags_and_counts();
     failures += test_rotate_left_memory_destinations_and_errors();
+    failures += test_rotate_right_register_flags_and_counts();
+    failures += test_rotate_right_memory_destinations_and_errors();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -2450,6 +2622,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 49 passed.");
+    puts("Executor tests through Milestone 50 passed.");
     return 0;
 }

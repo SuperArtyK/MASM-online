@@ -3075,6 +3075,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_ROL;
         return true;
     }
+    if (vm_parser_token_equals(token, "ror")) {
+        *out_opcode = VM_IR_OPCODE_ROR;
+        return true;
+    }
 
     return false;
 }
@@ -3144,13 +3148,14 @@ static bool vm_parser_opcode_is_logical_binary(VmIrOpcode opcode) {
 /// Returns whether an opcode uses shift/rotate count operand validation rules.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for SHL, SAL, SHR, SAR, and ROL.
+/// @return true for SHL, SAL, SHR, SAR, ROL, and ROR.
 static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_SHL ||
            opcode == VM_IR_OPCODE_SAL ||
            opcode == VM_IR_OPCODE_SHR ||
            opcode == VM_IR_OPCODE_SAR ||
-           opcode == VM_IR_OPCODE_ROL;
+           opcode == VM_IR_OPCODE_ROL ||
+           opcode == VM_IR_OPCODE_ROR;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5052,6 +5057,9 @@ static const char *vm_parser_shift_mnemonic(VmIrOpcode opcode) {
     if (opcode == VM_IR_OPCODE_ROL) {
         return "ROL";
     }
+    if (opcode == VM_IR_OPCODE_ROR) {
+        return "ROR";
+    }
     return "shift";
 }
 
@@ -5506,8 +5514,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
     }
 
-    if (opcode == VM_IR_OPCODE_ROL && vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "ROL takes exactly two operands.");
+    if ((opcode == VM_IR_OPCODE_ROL || opcode == VM_IR_OPCODE_ROR) && vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        char message[96];
+        (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_shift_mnemonic(opcode));
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, message);
         return false;
     }
 

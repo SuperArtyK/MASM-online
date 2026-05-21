@@ -4,7 +4,7 @@
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
- * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, and rol over the currently supported register and memory operand forms. It records last-step
+ * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, and ror over the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -1050,6 +1050,98 @@ static VmExecStatus vm_exec_execute_rotate_left(Vm *vm, const VmIrInstruction *i
 }
 
 
+/// Executes one ROR instruction.
+///
+/// ROR rotates the selected destination width right. Count zero after the
+/// standard raw_count & 31 mask is a complete no-op. For nonzero effective
+/// counts, CF receives the most significant bit of the rotated result, ZF and
+/// SF are preserved, and OF is defined only when the effective count is one.
+/// Source-run code emits the corresponding undefined-modeled-flag warning for
+/// non-one nonzero counts before this helper executes.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction ROR instruction to execute.
+/// @param width_bits Destination execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_rotate_right(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    VmCpu before_cpu;
+    uint32_t mask = 0U;
+    uint32_t sign_bit = 0U;
+    uint32_t second_sign_bit = 0U;
+    uint32_t value = 0U;
+    uint32_t result = 0U;
+    uint8_t raw_count = 0U;
+    uint8_t effective_count = 0U;
+    uint8_t rotate_count = 0U;
+    bool original_of = false;
+    bool new_cf = false;
+    bool new_sign = false;
+    bool new_second_sign = false;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_mask_for_width(width_bits, &mask)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (instruction->opcode != VM_IR_OPCODE_ROR) {
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+
+    status = vm_exec_read_shift_count(vm, &instruction->source, &raw_count);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    effective_count = (uint8_t)(raw_count & 31U);
+    if (effective_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    before_cpu = vm->cpu;
+    if (!vm_cpu_read_flag(&vm->cpu, VM_FLAG_OF, &original_of)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    result = value & mask;
+    rotate_count = (uint8_t)(effective_count % width_bits);
+    if (rotate_count != 0U) {
+        result = ((result >> rotate_count) | (result << (width_bits - rotate_count))) & mask;
+    }
+
+    sign_bit = width_bits == 32U ? 0x80000000U : (1U << (width_bits - 1U));
+    second_sign_bit = width_bits == 32U ? 0x40000000U : (1U << (width_bits - 2U));
+    new_cf = (result & sign_bit) != 0U;
+    new_sign = (result & sign_bit) != 0U;
+    new_second_sign = (result & second_sign_bit) != 0U;
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, new_cf)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (effective_count == 1U) {
+        if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, new_sign != new_second_sign)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, original_of)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, &instruction->destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+    }
+
+    return status;
+}
+
+
 
 /// Converts a masked operand value to a signed 64-bit value for a supported width.
 ///
@@ -1929,6 +2021,7 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_SHR:
         case VM_IR_OPCODE_SAR:
         case VM_IR_OPCODE_ROL:
+        case VM_IR_OPCODE_ROR:
             if (!vm_exec_operands_are_supported(&instruction->destination, &instruction->source)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
@@ -1943,6 +2036,9 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             }
             if (instruction->opcode == VM_IR_OPCODE_ROL) {
                 return vm_exec_execute_rotate_left(vm, instruction, width_bits);
+            }
+            if (instruction->opcode == VM_IR_OPCODE_ROR) {
+                return vm_exec_execute_rotate_right(vm, instruction, width_bits);
             }
             return vm_exec_execute_shift_left(vm, instruction, width_bits);
         case VM_IR_OPCODE_MOVSX:

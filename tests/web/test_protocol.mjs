@@ -22,7 +22,7 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 49);
+  assert.equal(IMPLEMENTED_PHASE, 50);
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -32,7 +32,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 49
+      phase: 50
     }
   });
 });
@@ -48,7 +48,7 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 49
+      phase: 50
     }
   });
 });

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 49.
+ * @brief Unit and integration tests for the parser through Milestone 50.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -3244,6 +3244,213 @@ static int test_phase49_rol_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 50 ROR parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50_ror_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value DWORD 1\n"
+        "bytes BYTE 1, 2\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".code\n"
+        "main PROC\n"
+        "    ror al, 1\n"
+        "    RoR ax, 2\n"
+        "    ror eax, cl\n"
+        "    ror eax, 0\n"
+        "    ror eax, 32\n"
+        "    ror BYTE PTR [esi], 1\n"
+        "    ror WORD PTR [esi], cl\n"
+        "    ror DWORD PTR [esi], 3\n"
+        "    ror SBYTE PTR [esi], 1\n"
+        "    ror SWORD PTR [esi], 1\n"
+        "    ror SDWORD PTR [esi], 1\n"
+        "    ror value, 1\n"
+        "    ror bytes[1], 1\n"
+        "    ror arr[4], cl\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 50 ROR program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 50 ROR program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 14U, "Phase 50 ROR program should emit fourteen instructions");
+    if (result.instruction_count == 14U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_ROR, "ror al should emit ROR opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "ror al destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_AL, "ror al destination should be AL");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_IMMEDIATE, "ror al source should be immediate count");
+        failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "ror al immediate count should be one");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_ROR, "mixed-case RoR should emit ROR opcode");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_AX, "RoR ax destination should be AX");
+        failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_REGISTER, "ror eax, cl source should be register count");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_CL, "ror eax, cl should use CL count register");
+        failures += expect_u32(buffers.instructions[3].source.immediate, 0U, "ror eax, 0 immediate count should be zero");
+        failures += expect_u32(buffers.instructions[4].source.immediate, 32U, "ror eax, 32 immediate count should be thirty-two");
+        failures += expect_u32(buffers.instructions[5].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "ror BYTE PTR [esi] should emit register-indirect memory");
+        failures += expect_u32(buffers.instructions[5].destination.width_bits, 8U, "ror BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[6].destination.width_bits, 16U, "ror WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[7].destination.width_bits, 32U, "ror DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[8].destination.width_bits, 8U, "ror SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[9].destination.width_bits, 16U, "ror SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[10].destination.width_bits, 32U, "ror SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[11].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "ror value should emit direct memory destination");
+        failures += expect_u32(buffers.instructions[11].destination.width_bits, 32U, "ror value should infer DWORD width");
+        failures += expect_u32(buffers.instructions[12].destination.width_bits, 8U, "ror bytes[1] should infer BYTE width");
+        failures += expect_u32(buffers.instructions[13].destination.width_bits, 32U, "ror arr[4] should infer DWORD width");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 50 ROR parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50_ror_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror 1, al\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR immediate destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR immediate destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory destination", "ROR immediate diagnostic should explain destination requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR invalid count register should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR invalid count register should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "immediate byte count or CL", "ROR invalid count diagnostic should explain CL requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax, cx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR CX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR CX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax, ecx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR ECX count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR ECX count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror [eax], 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR ambiguous memory should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "ROR ambiguous memory diagnostic should be ambiguous-memory-width");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "ROR ambiguous memory diagnostic should point at the memory operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax, 256\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR out-of-range count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR out-of-range count should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR missing count should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR missing count should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly two operands", "ROR missing count diagnostic should explain operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ror eax, 1, 2\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "ROR extra operand should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly two operands", "ROR extra operand diagnostic should explain operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    ror QWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR QWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "ROR QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    ror SQWORD PTR q, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR SQWORD destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "ROR SQWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    ror limit, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ROR direct .CONST destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_CONST_WRITE, "ROR direct .CONST destination should use const-write diagnostic");
+
+    return failures;
+}
+
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3332,7 +3539,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 49.
+/// Runs all parser regression tests through Milestone 50.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -3395,6 +3602,8 @@ int main(void) {
     failures += test_phase48_sar_parse_error_paths();
     failures += test_phase49_rol_parse_to_ir();
     failures += test_phase49_rol_parse_error_paths();
+    failures += test_phase50_ror_parse_to_ir();
+    failures += test_phase50_ror_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
