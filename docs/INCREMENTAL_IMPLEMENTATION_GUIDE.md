@@ -4303,11 +4303,20 @@ For supported nonzero counts:
 
 Implement rotate-left `rol` as a focused rotate milestone.
 
-This phase must not implement `ror`, carry rotates, shifts, multiplication, division, labels, or jumps.
+This phase implements only `ROL`. It must not implement `ROR`, carry rotates, shifts, multiplication, division, labels, jumps, smart undefined-flag validity metadata, or flag-consumer diagnostics.
 
 ### Behavior category
 
 Runtime instruction behavior.
+
+### Dependencies
+
+- Phase 46 - SHL and SAL, for established count-source parsing patterns.
+- Phase 47 - SHR, for shift-count compatibility precedent.
+- Phase 48 - SAR, for completed shift-family undefined modeled flag diagnostics.
+- Existing global memory-width resolution rules.
+- Existing checked memory helpers.
+- Existing rendered Simulator Messages test harness.
 
 ### Accepted syntax
 
@@ -4320,35 +4329,237 @@ rol mem, imm
 rol mem, cl
 ```
 
-Memory destinations must have known width.
+Accepted register destinations:
+
+```text
+reg8
+reg16
+reg32
+```
+
+Accepted memory destinations:
+
+```asm
+rol BYTE PTR [eax], 1
+rol WORD PTR [eax], 1
+rol DWORD PTR [eax], 1
+rol SBYTE PTR [eax], 1
+rol SWORD PTR [eax], 1
+rol SDWORD PTR [eax], 1
+rol value, 1
+rol values[4], 1
+```
+
+Memory destinations must have known width through one of the already-supported width sources:
+
+- explicit `BYTE PTR`, `WORD PTR`, or `DWORD PTR`;
+- explicit signed `SBYTE PTR`, `SWORD PTR`, or `SDWORD PTR`;
+- typed symbol metadata;
+- typed symbol-offset metadata;
+- another already-implemented unambiguous width-resolution rule.
+
+### Rejected syntax
+
+```asm
+rol 1, al
+rol eax, ebx
+rol eax, cx
+rol eax, ecx
+rol eax
+rol eax, 1, 2
+rol [eax], 1
+rol QWORD PTR q, 1
+rol SQWORD PTR q, 1
+```
+
+Expected diagnostics:
+
+- immediate destination: `invalid-instruction-operands`;
+- count register other than `CL`: `invalid-instruction-operands` or existing stable invalid-count-register diagnostic;
+- wrong operand count: `invalid-instruction-operands`;
+- untyped memory destination: `ambiguous-memory-width`;
+- executable `QWORD PTR` / `SQWORD PTR`: existing MASM32 Educational Mode unsupported-runtime diagnostic.
+
+Do not classify `rol al, 8`, `rol eax, 32`, or `rol eax, cl` as unsupported syntax.
 
 ### Count policy
 
-- Raw count is an unsigned immediate or `CL`.
-- Effective count is `raw_count & 31`.
-- Effective count `0` is a no-op: destination and all modeled flags unchanged.
-- Nonzero effective count rotates by `effective_count % operand_width`.
-- Unlike shifts, nonzero rotate counts greater than or equal to operand width are not rejected merely for that reason.
+Raw count source:
+
+- immediate byte count; or
+- low 8 bits of `ECX` when the count operand is `CL`.
+
+Effective count:
+
+```text
+effective_count = raw_count & 31
+```
+
+Count behavior:
+
+- Effective count `0` is a full no-op:
+  - destination unchanged;
+  - `CF`, `ZF`, `SF`, and `OF` unchanged;
+  - no undefined-modeled-flag warning.
+- Nonzero effective count rotates by:
+
+  ```text
+  rotate_count = effective_count % operand_width
+  ```
+
+- Nonzero effective count greater than or equal to operand width is not rejected.
+- If `rotate_count` is `0` but effective count is nonzero, the destination bits are unchanged, but nonzero-count flag behavior still applies.
+- For nonzero effective count where `rotate_count == 0`, do not treat the instruction as a full no-op. The destination bits are unchanged, but nonzero-count rotate flag behavior still applies: `CF` is updated according to the rotate result, `ZF` and `SF` are preserved, and `OF` is undefined unless the effective count is exactly `1`.
+- This rotate policy is distinct from shift behavior. Do not copy shift `CF`/`OF` rules blindly.
 
 ### Runtime semantics
 
+For nonzero effective counts:
+
 - Rotate bits left within the selected operand width.
+- Bits shifted out of the most significant bit position re-enter at the least significant bit position.
+- Apply the rotated result at the selected destination width.
+- Register destinations mutate only the selected register or alias width.
+- Memory destinations are read-modify-write operations through checked memory helpers.
+- Failed validation, failed memory read, or failed memory write must not partially mutate registers, flags, memory, console state, or memory-change rows.
 
 ### Flag behavior
 
-- For nonzero rotate counts, `CF` becomes the least significant bit of the rotated result.
-- For a one-bit rotate, `OF = new_most_significant_bit XOR CF`.
-- For other nonzero rotate counts, preserve prior `OF` as the deterministic simulator policy.
-- `ZF` and `SF` remain unchanged, even if the result is zero-looking or has the sign bit set.
+For effective count `0`:
+
+- destination unchanged;
+- `CF` unchanged;
+- `OF` unchanged;
+- `ZF` unchanged;
+- `SF` unchanged;
+- no undefined-modeled-flag warning.
+
+For nonzero effective count:
+
+- `CF` becomes the least significant bit of the rotated result.
+- `ZF` remains unchanged.
+- `SF` remains unchanged.
+
+For one-bit rotates where `effective_count == 1`:
+
+- `OF = new_most_significant_bit XOR CF`.
+- No undefined-modeled-flag warning is emitted.
+
+For other nonzero effective counts where `effective_count != 1`:
+
+- `OF` is architecturally undefined.
+- Preserve the previous simulator `OF` value as the deterministic fallback.
+- Default mode emits an eager producer warning.
+- This phase must not stop before mutation merely because `OF` is undefined.
+- This phase must not implement smart flag-validity metadata. Phase 50A owns metadata.
+- This phase must not implement use-warning or use-error behavior. Phase 50B owns flag-consumer diagnostics.
+
+Required producer warning code:
+
+```text
+undefined-modeled-flag
+```
+
+Suggested warning wording:
+
+```text
+ROL count <raw_count> has effective count <effective_count> for a <width>-bit destination. CF was updated from the rotated result. ZF and SF were preserved because ROL does not modify them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.
+```
+
+If the project chooses to reuse the existing shift-specific code temporarily, document that as a compatibility exception. Preferred new rotate code is `undefined-modeled-flag`, not `undefined-shift-flag`.
 
 ### Required tests
 
-- `rol al, 1` with `80h` produces `01h`, `CF=1`.
-- `rol al, 8` is destination no-op by modulo width but follows the nonzero-count flag policy documented by the implementation.
-- `rol eax, 32` is full no-op because effective count is zero.
-- `rol eax, cl` uses `CL`.
-- `ZF` and `SF` remain unchanged across a rotate that changes the sign bit.
-- Memory destination and ambiguous memory-width diagnostics.
+Parser tests:
+
+- `rol al, 1`
+- `rol ax, 1`
+- `rol eax, 1`
+- `rol eax, 0`
+- `rol eax, 32`
+- `rol eax, cl`
+- mixed-case mnemonic such as `RoL eax, cl`
+- explicit unsigned PTR memory destinations;
+- explicit signed PTR alias memory destinations;
+- typed symbol destination;
+- typed symbol-offset destination;
+- every rejected form listed above.
+
+Executor tests:
+
+- `rol al, 1` with `80h` produces `01h`, `CF=1`, and defined `OF`.
+- `rol al, 1` with `40h` produces `80h`, `CF=0`, and defined `OF`.
+- `rol al, 8` has nonzero effective count and rotate count zero:
+  - destination unchanged;
+  - `CF` updated according to nonzero rotate policy;
+  - `OF` preserved and warned because effective count is not 1.
+- `rol eax, 32` is a full no-op because effective count is zero:
+  - destination unchanged;
+  - all modeled flags unchanged;
+  - no warning.
+- `rol eax, cl` uses `CL`, not full `ECX`.
+- `ZF` and `SF` remain unchanged across a rotate that changes the visible sign bit.
+- Memory destination success uses checked read/write helpers.
+- Invalid memory read fails without mutation.
+- Failed memory write restores CPU/flag state and creates no successful memory-change rows.
+- `.CONST` memory destination fails through existing static or runtime protection as appropriate.
+
+Source-run JSON tests:
+
+```asm
+.code
+main PROC
+    mov al, 80h
+    rol al, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+AL = 01h
+CF = 1
+OF defined according to one-bit ROL rule
+No undefined-modeled-flag warning
+```
+
+```asm
+.code
+main PROC
+    mov al, 80h
+    rol al, 2
+main ENDP
+END main
+```
+
+Expected default behavior:
+
+```text
+Program executes successfully.
+Destination is rotated.
+CF is updated.
+OF is preserved.
+A simulator warning with code undefined-modeled-flag is emitted.
+execution-complete is present.
+```
+
+Rendered Simulator Messages tests:
+
+- successful `rol al, 1` has only execution-complete;
+- `rol al, 2` has `undefined-modeled-flag` warning and execution-complete;
+- ambiguous memory width renders correctly;
+- invalid count register renders correctly;
+- invalid memory/runtime diagnostic renders correctly.
+
+Regression tests:
+
+- Phase 46 `shl` / `sal` behavior unchanged.
+- Phase 47 `shr` behavior unchanged.
+- Phase 48 `sar` behavior unchanged.
+- Existing `undefined-shift-flag` tests remain stable.
+- No `ROR` opcode, parser case, or executor behavior is added in this phase.
+- No flag-validity metadata is added in this phase.
 
 ### Acceptance program
 
@@ -4361,7 +4572,14 @@ main ENDP
 END main
 ```
 
-Expected: `AL = 01h`, `CF = 1`; `ZF` and `SF` remain unchanged by the rotate itself.
+Expected:
+
+```text
+AL = 01h
+CF = 1
+ZF and SF remain unchanged by ROL.
+No undefined-modeled-flag warning.
+```
 
 ---
 
@@ -4371,13 +4589,20 @@ Expected: `AL = 01h`, `CF = 1`; `ZF` and `SF` remain unchanged by the rotate its
 
 Implement rotate-right `ror` as a focused rotate milestone.
 
-This phase must not implement carry rotates, multiplication, division, labels, or jumps.
+This phase implements only `ROR`. It must not implement carry rotates, multiplication, division, labels, jumps, smart undefined-flag validity metadata, or flag-consumer diagnostics.
 
 ### Behavior category
 
 Runtime instruction behavior.
 
-### Accepted/rejected syntax and count policy
+### Dependencies
+
+- Phase 49 - ROL, for shared rotate destination/count policy.
+- Existing global memory-width resolution rules.
+- Existing checked memory helpers.
+- Existing rendered Simulator Messages test harness.
+
+### Accepted syntax
 
 Use the same destination/count forms and rotate count policy as **Phase 49 - ROL**, replacing the mnemonic with `ror`.
 
@@ -4392,38 +4617,227 @@ ror mem, imm
 ror mem, cl
 ```
 
-Memory destinations must have known width through an explicit `PTR`, symbol metadata, or another already-supported width-resolution rule.
+Accepted register destinations:
 
-Count policy:
+```text
+reg8
+reg16
+reg32
+```
 
-- Raw count is an unsigned immediate or `CL`.
-- Effective count is `raw_count & 31`.
-- Effective count `0` is a full no-op: destination and all modeled flags are unchanged.
-- Nonzero effective count rotates by `effective_count % operand_width`.
-- Nonzero rotate counts greater than or equal to operand width are not rejected merely for that reason.
-- This rotate count policy is distinct from the shift undefined-flag policy used by `SHL`/`SAL`, `SHR`, and `SAR`.
+Accepted memory destinations:
+
+```asm
+ror BYTE PTR [eax], 1
+ror WORD PTR [eax], 1
+ror DWORD PTR [eax], 1
+ror SBYTE PTR [eax], 1
+ror SWORD PTR [eax], 1
+ror SDWORD PTR [eax], 1
+ror value, 1
+ror values[4], 1
+```
+
+Memory destinations must have known width through an explicit `PTR`, signed `PTR` alias, symbol metadata, symbol-offset metadata, or another already-supported width-resolution rule.
+
+### Rejected syntax
+
+```asm
+ror 1, al
+ror eax, ebx
+ror eax, cx
+ror eax, ecx
+ror eax
+ror eax, 1, 2
+ror [eax], 1
+ror QWORD PTR q, 1
+ror SQWORD PTR q, 1
+```
+
+Expected diagnostics match Phase 49 categories:
+
+- immediate destination: `invalid-instruction-operands`;
+- count register other than `CL`: `invalid-instruction-operands` or existing stable invalid-count-register diagnostic;
+- wrong operand count: `invalid-instruction-operands`;
+- untyped memory destination: `ambiguous-memory-width`;
+- executable `QWORD PTR` / `SQWORD PTR`: existing MASM32 Educational Mode unsupported-runtime diagnostic.
 
 Do not reference Phase 47 for `ROR` count behavior. Phase 47 is `SHR`, not a rotate phase.
 
+### Count policy
+
+Raw count source:
+
+- immediate byte count; or
+- low 8 bits of `ECX` when the count operand is `CL`.
+
+Effective count:
+
+```text
+effective_count = raw_count & 31
+```
+
+Count behavior:
+
+- Effective count `0` is a full no-op:
+  - destination unchanged;
+  - `CF`, `ZF`, `SF`, and `OF` unchanged;
+  - no undefined-modeled-flag warning.
+- Nonzero effective count rotates by:
+
+  ```text
+  rotate_count = effective_count % operand_width
+  ```
+
+- Nonzero effective count greater than or equal to operand width is not rejected.
+- If `rotate_count` is `0` but effective count is nonzero, the destination bits are unchanged, but nonzero-count flag behavior still applies.
+- For nonzero effective count where `rotate_count == 0`, do not treat the instruction as a full no-op. The destination bits are unchanged, but nonzero-count rotate flag behavior still applies: `CF` is updated according to the rotate result, `ZF` and `SF` are preserved, and `OF` is undefined unless the effective count is exactly `1`.
+
 ### Runtime semantics
 
+For nonzero effective counts:
+
 - Rotate bits right within the selected operand width.
+- Bits shifted out of the least significant bit position re-enter at the most significant bit position.
+- Apply the rotated result at the selected destination width.
+- Register destinations mutate only the selected register or alias width.
+- Memory destinations are read-modify-write operations through checked memory helpers.
+- Failed validation, failed memory read, or failed memory write must not partially mutate registers, flags, memory, console state, or memory-change rows.
 
 ### Flag behavior
 
-- For nonzero rotate counts, `CF` becomes the most significant bit of the rotated result.
-- For a one-bit rotate, `OF` is the XOR of the two most significant bits of the result.
-- For other nonzero rotate counts, preserve prior `OF` as the deterministic simulator policy.
-- `ZF` and `SF` remain unchanged, even if the result is zero-looking or has the sign bit set.
+For effective count `0`:
+
+- destination unchanged;
+- `CF` unchanged;
+- `OF` unchanged;
+- `ZF` unchanged;
+- `SF` unchanged;
+- no undefined-modeled-flag warning.
+
+For nonzero effective count:
+
+- `CF` becomes the most significant bit of the rotated result.
+- `ZF` remains unchanged.
+- `SF` remains unchanged.
+
+For one-bit rotates where `effective_count == 1`:
+
+- `OF` is the XOR of the two most significant bits of the result.
+- No undefined-modeled-flag warning is emitted.
+
+For other nonzero effective counts where `effective_count != 1`:
+
+- `OF` is architecturally undefined.
+- Preserve the previous simulator `OF` value as the deterministic fallback.
+- Default mode emits an eager producer warning.
+- This phase must not stop before mutation merely because `OF` is undefined.
+- This phase must not implement smart flag-validity metadata. Phase 50A owns metadata.
+- This phase must not implement use-warning or use-error behavior. Phase 50B owns flag-consumer diagnostics.
+
+Required producer warning code:
+
+```text
+undefined-modeled-flag
+```
+
+Suggested warning wording:
+
+```text
+ROR count <raw_count> has effective count <effective_count> for a <width>-bit destination. CF was updated from the rotated result. ZF and SF were preserved because ROR does not modify them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.
+```
 
 ### Required tests
 
-- `ror al, 1` with `01h` produces `80h`, `CF=1`.
-- `ror al, 8` is destination no-op by modulo width but follows documented nonzero-count flag policy.
-- `ror eax, 32` is full no-op because effective count is zero.
-- `ror eax, cl` uses `CL`.
-- `ZF` and `SF` remain unchanged across a rotate that changes the sign bit.
-- Memory destination and ambiguous memory-width diagnostics.
+Parser tests:
+
+- `ror al, 1`
+- `ror ax, 1`
+- `ror eax, 1`
+- `ror eax, 0`
+- `ror eax, 32`
+- `ror eax, cl`
+- mixed-case mnemonic such as `RoR eax, cl`
+- explicit unsigned PTR memory destinations;
+- explicit signed PTR alias memory destinations;
+- typed symbol destination;
+- typed symbol-offset destination;
+- every rejected form listed above.
+
+Executor tests:
+
+- `ror al, 1` with `01h` produces `80h`, `CF=1`, and defined `OF`.
+- `ror al, 1` with `02h` produces `01h`, `CF=0`, and defined `OF`.
+- `ror al, 8` has nonzero effective count and rotate count zero:
+  - destination unchanged;
+  - `CF` updated according to nonzero rotate policy;
+  - `OF` preserved and warned because effective count is not 1.
+- `ror eax, 32` is a full no-op because effective count is zero:
+  - destination unchanged;
+  - all modeled flags unchanged;
+  - no warning.
+- `ror eax, cl` uses `CL`, not full `ECX`.
+- `ZF` and `SF` remain unchanged across a rotate that changes the visible sign bit.
+- Memory destination success uses checked read/write helpers.
+- Invalid memory read fails without mutation.
+- Failed memory write restores CPU/flag state and creates no successful memory-change rows.
+- `.CONST` memory destination fails through existing static or runtime protection as appropriate.
+
+Source-run JSON tests:
+
+```asm
+.code
+main PROC
+    mov al, 01h
+    ror al, 1
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+AL = 80h
+CF = 1
+OF defined according to one-bit ROR rule
+No undefined-modeled-flag warning
+```
+
+```asm
+.code
+main PROC
+    mov al, 01h
+    ror al, 2
+main ENDP
+END main
+```
+
+Expected default behavior:
+
+```text
+Program executes successfully.
+Destination is rotated.
+CF is updated.
+OF is preserved.
+A simulator warning with code undefined-modeled-flag is emitted.
+execution-complete is present.
+```
+
+Rendered Simulator Messages tests:
+
+- successful `ror al, 1` has only execution-complete;
+- `ror al, 2` has `undefined-modeled-flag` warning and execution-complete;
+- ambiguous memory width renders correctly;
+- invalid count register renders correctly;
+- invalid memory/runtime diagnostic renders correctly.
+
+Regression tests:
+
+- Phase 49 `rol` behavior unchanged.
+- Phase 46-48 shift behavior unchanged.
+- Existing `undefined-shift-flag` tests remain stable.
+- No flag-validity metadata is added in this phase.
+- No flag-consumer diagnostics are added in this phase.
 
 ### Acceptance program
 
@@ -4436,7 +4850,617 @@ main ENDP
 END main
 ```
 
-Expected: `AL = 80h`, `CF = 1`; `ZF` and `SF` remain unchanged by the rotate itself.
+Expected:
+
+```text
+AL = 80h
+CF = 1
+ZF and SF remain unchanged by ROR.
+No undefined-modeled-flag warning.
+```
+
+---
+
+## 54A. Phase 50A - Undefined Modeled Flag Validity Metadata
+
+### Goal
+
+Add metadata that records whether each currently modeled flag value is architecturally valid or was preserved as a deterministic fallback after an undefined-flag producer instruction.
+
+This phase does not change ordinary instruction results. It adds validity metadata so later phases can warn or error when code actually depends on an undefined flag.
+
+### Behavior category
+
+Core CPU/flag metadata and diagnostics infrastructure.
+
+### Dependencies
+
+- Phase 46 - SHL and SAL.
+- Phase 47 - SHR.
+- Phase 48 - SAR.
+- Phase 49 - ROL.
+- Phase 50 - ROR.
+- Existing CPU/EFLAGS helper model.
+- Existing source-span metadata on IR instructions.
+- Existing source-run JSON and rendered Simulator Messages test harness.
+
+### Scope
+
+This phase covers currently modeled flags only:
+
+```text
+CF
+ZF
+SF
+OF
+```
+
+Do not add `PF`, `AF`, or `DF` in this phase.
+
+Do not change the visible deterministic flag values computed by existing instructions.
+
+Do not implement new instructions.
+
+Do not implement conditional jumps or labels.
+
+Do not implement consumer diagnostics beyond native/helper-level validation unless a real flag-consuming instruction already exists in the implementation at the time this phase is reached.
+
+Phase 50A is metadata-only for normal source execution. It must not change default warning behavior, final register values, final flag values, Program Console output, or Simulator Messages output except where internal test-only JSON exposure is explicitly added and documented.
+
+### Required data model
+
+Add validity metadata for every currently modeled flag.
+
+Conceptual model:
+
+```text
+flag_value[flag]:
+  Existing deterministic simulator bit value.
+
+flag_valid[flag]:
+  true if the flag value is architecturally valid.
+  false if the flag value was preserved because the producing instruction left that flag architecturally undefined.
+
+flag_undefined_code[flag]:
+  Stable reason code, such as undefined-modeled-flag or undefined-shift-flag.
+
+flag_undefined_producer_mnemonic[flag]:
+  Source mnemonic that made the flag invalid, such as shl, shr, sar, rol, or ror.
+
+flag_undefined_producer_span[flag]:
+  Source line, column, byte offset, and span length for the producer instruction when available.
+```
+
+The exact C representation may differ, but it must support these behaviors and must remain C99.
+
+### Required validity rules
+
+When an instruction defines a modeled flag architecturally:
+
+```text
+set flag value
+mark flag valid
+clear undefined-origin metadata for that flag
+```
+
+When an instruction explicitly clears or sets a modeled flag by contract:
+
+```text
+set flag value
+mark flag valid
+clear undefined-origin metadata for that flag
+```
+
+Examples:
+
+```text
+clc -> CF value 0, CF valid
+stc -> CF value 1, CF valid
+cmc -> CF toggled, CF valid
+test -> CF valid, OF valid, ZF valid, SF valid
+```
+
+When an instruction preserves a modeled flag architecturally:
+
+```text
+preserve flag value
+preserve flag validity
+preserve undefined-origin metadata
+```
+
+Examples:
+
+```text
+mov preserves all modeled flags and their validity metadata
+not preserves all modeled flags and their validity metadata
+rol preserves ZF/SF and their validity metadata
+ror preserves ZF/SF and their validity metadata
+```
+
+When an instruction makes a modeled flag architecturally undefined:
+
+```text
+preserve deterministic simulator flag value
+mark flag invalid
+store undefined-origin metadata
+```
+
+Examples:
+
+```text
+shl eax, 2:
+  OF invalid
+  CF/ZF/SF valid according to existing Phase 46 behavior
+
+shl al, 8:
+  CF invalid
+  OF invalid
+  ZF/SF valid according to existing Phase 46 behavior
+
+shr al, 8:
+  CF invalid
+  OF invalid
+  ZF/SF valid according to existing Phase 47 behavior
+
+sar al, 8:
+  CF invalid
+  OF invalid
+  ZF/SF valid according to existing Phase 48 behavior
+
+rol eax, 2:
+  OF invalid
+  CF valid
+  ZF/SF validity preserved
+
+ror eax, 2:
+  OF invalid
+  CF valid
+  ZF/SF validity preserved
+```
+
+### Default initialization
+
+On VM reset/load:
+
+```text
+CF/ZF/SF/OF values use the existing reset policy.
+CF/ZF/SF/OF validity is true.
+Undefined-origin metadata is empty.
+```
+
+If tests or APIs can explicitly set raw EFLAGS, they must also have a defined validity behavior:
+
+```text
+Raw EFLAGS write marks written modeled flags valid unless the API explicitly supplies validity metadata.
+```
+
+### Source-run JSON
+
+Expose flag validity metadata in source-run JSON only if the project can do so without destabilizing existing UI output. If exposed, use a structured shape such as:
+
+```json
+{
+  "flags": {
+    "CF": {"value": 0, "valid": true},
+    "ZF": {"value": 1, "valid": true},
+    "SF": {"value": 0, "valid": true},
+    "OF": {
+      "value": 0,
+      "valid": false,
+      "undefinedCode": "undefined-modeled-flag",
+      "producerMnemonic": "rol",
+      "producerLine": 4,
+      "producerColumn": 5
+    }
+  }
+}
+```
+
+If flag-validity metadata is not exposed in source-run JSON in this phase, that is acceptable. Native executor/helper tests must still prove the metadata exists and is updated correctly. UI, debugger, and final-output display of validity metadata are future work unless explicitly assigned here.
+
+### Diagnostics
+
+This phase should not add new default source-level diagnostics beyond preserving the existing Phase 46-50 producer warnings.
+
+It must not remove:
+
+```text
+undefined-shift-flag
+undefined-modeled-flag
+```
+
+from existing producer-warning paths.
+
+This phase must not introduce `undefined-flag-use` source-level diagnostics unless a real flag-consuming instruction already exists.
+
+### Required tests
+
+Native CPU/flag metadata tests:
+
+- VM reset marks `CF`, `ZF`, `SF`, and `OF` valid.
+- Defining `ZF` through an existing flag-setting instruction marks `ZF` valid.
+- Clearing `CF` through `clc` marks `CF` valid.
+- Preserving flags through `mov` preserves validity metadata.
+- Preserving flags through `not` preserves validity metadata.
+
+Executor tests:
+
+- `shl eax, 2` marks `OF` invalid and leaves `CF`, `ZF`, and `SF` valid.
+- `shl al, 8` marks `CF` and `OF` invalid and leaves `ZF` and `SF` valid.
+- `shr al, 8` marks `CF` and `OF` invalid and leaves `ZF` and `SF` valid.
+- `sar al, 8` marks `CF` and `OF` invalid and leaves `ZF` and `SF` valid.
+- `rol eax, 2` marks `OF` invalid, marks `CF` valid, and preserves `ZF`/`SF` validity.
+- `ror eax, 2` marks `OF` invalid, marks `CF` valid, and preserves `ZF`/`SF` validity.
+- `rol eax, 1` marks `OF` and `CF` valid.
+- `ror eax, 1` marks `OF` and `CF` valid.
+- `rol eax, 32` preserves all flag values and validity metadata because effective count is zero.
+- `ror eax, 32` preserves all flag values and validity metadata because effective count is zero.
+
+Rollback tests:
+
+- A memory-destination shift or rotate that fails validation must not change flag values or flag validity metadata.
+- A memory write failure after tentative computation must restore flag values and flag validity metadata.
+- Runtime `.CONST` permission failure must not change flag values or flag validity metadata.
+
+Source-run tests:
+
+If JSON exposes validity metadata:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    rol eax, 2
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+OF value preserved
+OF valid=false
+OF producerMnemonic=rol
+CF valid=true
+execution-complete present
+```
+
+If JSON does not expose validity metadata, equivalent native executor tests are required and the source-run output must remain backward-compatible.
+
+Rendered Simulator Messages tests:
+
+- Existing producer warning rendering for `rol eax, 2` remains unchanged from Phase 49.
+- Existing producer warning rendering for `ror eax, 2` remains unchanged from Phase 50.
+- Existing shift warning rendering remains unchanged.
+- No new `undefined-flag-use` rendered message appears in this phase unless a real flag consumer already exists.
+
+### Acceptance criteria
+
+- Every modeled flag has validity metadata.
+- Existing flag values and existing producer warnings remain stable.
+- Shift and rotate undefined flags are marked invalid.
+- Architecturally defined flag writes mark flags valid.
+- Architecturally preserved flags preserve validity metadata.
+- Failed instructions do not partially mutate flag values or validity metadata.
+- No new instructions are implemented.
+- No conditional jumps or flag consumers are implemented.
+- No browser settings UI is implemented.
+
+---
+
+## 54B. Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers
+
+### Goal
+
+Add a shared diagnostic mechanism for instructions that consume flags whose current values are marked architecturally undefined.
+
+This phase implements the smart educational model:
+
+```text
+The producer instruction executes.
+Undefined modeled flags are preserved deterministically and marked invalid.
+A warning or error occurs only when later code consumes an invalid flag.
+```
+
+This phase must not reject MASM-valid producer instructions merely because they create undefined flag results.
+
+### Behavior category
+
+Core diagnostic infrastructure and future flag-consumer contract.
+
+### Dependencies
+
+- Phase 50A - Undefined Modeled Flag Validity Metadata.
+- Existing diagnostic rendering harness.
+- Existing source-span metadata.
+- Existing source-run JSON path.
+- Existing branch/flag-consumer phases if they have already been implemented in the local repository state.
+
+### Scope
+
+This phase adds:
+
+- a shared helper for checking validity before a flag is consumed;
+- reporting-mode support for use-warning and use-error behavior;
+- structured diagnostics for invalid flag consumption;
+- tests for the helper;
+- integration into already-implemented flag consumers, if any exist when this phase is implemented;
+- explicit requirements for later conditional jump phases to use this helper.
+
+This phase must not implement labels, jumps, `cmp`, `loop`, `SETcc`, `CMOVcc`, or any other new flag-consuming instruction if those instructions are not already implemented.
+
+If no source-level flag-consuming instruction exists when Phase 50B is implemented, this phase is still valid as an infrastructure phase. In that case, it must include native/helper tests and must update later flag-consumer phase text so those consumers call the helper when implemented.
+
+### Reporting modes
+
+Define a setting or internal option equivalent to:
+
+```text
+undefined_flag_use_policy = off
+undefined_flag_use_policy = warn
+undefined_flag_use_policy = error
+```
+
+`undefined_flag_use_policy` controls only diagnostics emitted when a later instruction consumes an invalid flag. It does not control producer warnings such as `undefined-shift-flag` or `undefined-modeled-flag`. Producer-warning policy remains owned by the instruction phase that creates the undefined flag result, or by a later explicit diagnostics/settings phase.
+
+Required behavior:
+
+```text
+off:
+  Do not diagnose invalid flag consumption.
+  Consumers use the deterministic preserved flag value.
+
+warn:
+  Emit a runtime warning at the consumer instruction.
+  Continue execution using the deterministic preserved flag value.
+
+error:
+  Emit a runtime error at the consumer instruction.
+  Stop before the consumer makes a flag-dependent decision.
+```
+
+Default user-facing mode after this phase should remain compatible with earlier behavior unless the guide explicitly changes it:
+
+```text
+Default MASM32 Educational Mode:
+  Producer eager warnings may still exist for shift/rotate undefined flags.
+  Undefined flag use diagnostics are warning-capable but do not have to become default-on until a settings or diagnostics phase chooses that UI behavior.
+```
+
+Recommended future user settings:
+
+```text
+Undefined flag diagnostics:
+  - warn when produced
+  - warn when used
+  - error when used
+```
+
+Do not expose a browser UI setting in this phase unless a settings/UI phase explicitly owns it.
+
+### Diagnostic code
+
+Use this diagnostic code for consumer diagnostics:
+
+```text
+undefined-flag-use
+```
+
+Severity:
+
+```text
+warn mode:
+  runtime-warning or simulator-warning, matching existing warning categories
+
+error mode:
+  runtime-error
+```
+
+The diagnostic must preserve:
+
+- consumer line;
+- consumer column;
+- consumer byte offset;
+- consumer span length;
+- consumed flag name;
+- producer mnemonic when available;
+- producer line/column when available;
+- producer diagnostic code when available.
+
+Suggested warning wording:
+
+```text
+<CONSUMER> reads <FLAG>, but <FLAG> is architecturally undefined from <PRODUCER> at line <producer-line>. The simulator preserved <FLAG> deterministically; this flag-dependent behavior is not portable.
+```
+
+Suggested runtime-error wording:
+
+```text
+<CONSUMER> reads <FLAG>, but <FLAG> is architecturally undefined from <PRODUCER> at line <producer-line>. Execution stopped before using the undefined flag.
+```
+
+If producer metadata is unavailable, use:
+
+```text
+<CONSUMER> reads <FLAG>, but <FLAG> is currently marked architecturally undefined. Execution used or stopped before using the deterministic simulator fallback according to the active undefined-flag-use policy.
+```
+
+### Consumer helper contract
+
+Add a shared helper conceptually equivalent to:
+
+```text
+check_flag_consumption(required_flags, consumer_instruction, policy)
+```
+
+The helper must:
+
+1. inspect validity metadata for every required flag;
+2. collect every invalid required flag;
+3. return success if all required flags are valid;
+4. in `off` mode, return success even if some flags are invalid;
+5. in `warn` mode, emit one diagnostic per consumer instruction, listing all invalid consumed flags;
+6. in `error` mode, emit one diagnostic per consumer instruction, listing all invalid consumed flags, then stop before the consumer makes a branch/condition decision;
+7. preserve registers, memory, flags, console state, and memory-change rows on `error`;
+8. not clear validity metadata merely because a warning was emitted.
+
+A consumer that reads multiple flags must report all invalid flags in one diagnostic when practical.
+
+Example:
+
+```text
+JG reads ZF, SF, and OF.
+If SF and OF are invalid, emit one undefined-flag-use diagnostic naming SF and OF.
+```
+
+### Flag consumers
+
+Known current/future flag consumers include:
+
+```text
+jo / jno        read OF
+js / jns        read SF
+jz / je         read ZF
+jnz / jne       read ZF
+jc / jb / jnae  read CF
+jnc / jae / jnb read CF
+jl / jnge       read SF and OF
+jle / jng       read ZF, SF, and OF
+jg / jnle       read ZF, SF, and OF
+jge / jnl       read SF and OF
+ja / jnbe       read CF and ZF
+jbe / jna       read CF and ZF
+```
+
+Future PF consumers after PF exists:
+
+```text
+jp / jpe        read PF
+jnp / jpo       read PF
+```
+
+Do not implement any unimplemented jump mnemonic in this phase.
+
+### Later phase integration rule
+
+Every later phase that implements a flag-consuming instruction must call the Phase 50B helper before making the flag-dependent decision.
+
+If the helper reports `error`, the consumer instruction must not:
+
+- branch;
+- advance based on the branch result;
+- mutate registers;
+- mutate memory;
+- mutate flags;
+- write Program Console output;
+- create memory-change rows.
+
+If the helper reports `warn`, the consumer may continue using the deterministic preserved flag value.
+
+### Updates required in later conditional jump phases
+
+When editing or implementing later conditional jump phases, add this requirement to each phase:
+
+```text
+Before evaluating the branch condition, call the Phase 50B undefined-flag-use helper with the exact flags read by this condition. In warn mode, emit undefined-flag-use and continue using deterministic preserved flag values. In error mode, stop before making the branch decision.
+```
+
+Apply this requirement to:
+
+- Phase 64 - Equality Conditional Jumps;
+- Phase 65 - Signed Relational Conditional Jumps;
+- Phase 66 - Unsigned Relational Conditional Jumps;
+- any later loop or condition-code phase that reads flags.
+
+### Required tests
+
+Native/helper tests:
+
+- consuming a valid flag returns success;
+- consuming one invalid flag in `off` mode returns success and emits no diagnostic;
+- consuming one invalid flag in `warn` mode emits `undefined-flag-use` and returns success;
+- consuming one invalid flag in `error` mode emits `undefined-flag-use` and returns runtime-error status;
+- consuming multiple invalid flags emits one diagnostic listing all invalid consumed flags;
+- warning does not clear validity metadata;
+- error does not mutate flag values or validity metadata.
+
+Metadata tests:
+
+```text
+producer: rol eax, 2
+invalid flag: OF
+consumer request: OF
+warn mode: diagnostic points to consumer and mentions producer rol
+error mode: diagnostic points to consumer and stops before decision
+```
+
+If a real flag-consuming instruction exists in the repository when this phase is implemented, add source-run tests. Example with future `JO`:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    rol eax, 2
+    jo used_of
+    mov ebx, 0
+    jmp done
+used_of:
+    mov ebx, 1
+done:
+main ENDP
+END main
+```
+
+Expected in warn mode:
+
+```text
+ROL executes.
+OF is marked invalid.
+JO emits undefined-flag-use warning.
+JO then uses the deterministic preserved OF value.
+Execution completes.
+```
+
+Expected in error mode:
+
+```text
+ROL executes.
+OF is marked invalid.
+JO emits undefined-flag-use runtime error.
+Execution stops before deciding whether JO is taken.
+EBX is unchanged from before JO's successor path.
+No execution-complete message.
+```
+
+If no real flag-consuming instruction exists yet, source-run consumer tests are deferred. The phase must add helper tests and later-phase guide requirements instead.
+
+Rendered Simulator Messages tests:
+
+- `undefined-flag-use` warning rendering, using a native diagnostic fixture if no source-level consumer exists.
+- `undefined-flag-use` runtime-error rendering, using a native diagnostic fixture if no source-level consumer exists.
+- Diagnostic includes consumer source location.
+- Diagnostic includes producer information when available.
+
+Regression tests:
+
+- Producer instructions such as `rol eax, 2`, `ror eax, 2`, `shl eax, 2`, and `sar al, 8` still execute in default mode.
+- Existing producer warnings remain unchanged unless this phase explicitly changes the active reporting mode.
+- No producer instruction becomes a syntax error because of undefined flags.
+- Existing shift legacy strict API behavior remains stable unless a later corrective phase explicitly migrates it.
+
+### Acceptance criteria
+
+- A shared flag-consumption validity helper exists.
+- `undefined-flag-use` diagnostic exists and is rendered.
+- `warn` and `error` consumer policies are testable.
+- `undefined_flag_use_policy` affects only consumer diagnostics.
+- Existing producer warnings remain under their existing instruction-phase policy.
+- The browser default is not changed by this phase unless a settings/UI phase explicitly requests it.
+- Error mode stops at the consumer, not at the producer.
+- Warning mode continues using deterministic preserved flag values.
+- No new flag-consuming instruction is implemented merely to test this phase.
+- Later conditional jump phases have explicit instructions to use the helper.
+- Producer instructions remain MASM-compatible and executable.
 
 ---
 
@@ -5355,6 +6379,7 @@ je exit
 ### Runtime semantics
 
 - Count each conditional jump as one executed instruction.
+- Before evaluating `ZF`, call the Phase 50B undefined-flag-use helper for `ZF`. In warn mode, emit `undefined-flag-use` and continue using the deterministic preserved `ZF` value. In error mode, stop before deciding whether the jump is taken.
 - If condition is true, branch to target label instruction index.
 - If condition is false, continue to the next instruction.
 - Do not modify registers, memory, or flags.
@@ -5431,6 +6456,7 @@ jnl label   ; alias of JGE
 ### Runtime semantics
 
 - Read only `ZF`, `SF`, and `OF`.
+- Before evaluating the signed branch condition, call the Phase 50B undefined-flag-use helper for every flag read by that mnemonic: `ZF`, `SF`, and/or `OF`. In warn mode, emit `undefined-flag-use` and continue using deterministic preserved flag values. In error mode, stop before deciding whether the jump is taken.
 - Do not modify registers, memory, or flags.
 - Count each jump as one executed instruction.
 - Instruction-limit enforcement applies.
@@ -5502,6 +6528,7 @@ jna  label  ; alias of JBE
 ### Runtime semantics
 
 - Read only `CF` and `ZF`.
+- Before evaluating the unsigned branch condition, call the Phase 50B undefined-flag-use helper for every flag read by that mnemonic: `CF` and/or `ZF`. In warn mode, emit `undefined-flag-use` and continue using deterministic preserved flag values. In error mode, stop before deciding whether the jump is taken.
 - Do not modify registers, memory, or flags.
 - Count each jump as one executed instruction.
 - Instruction-limit enforcement applies.
@@ -6779,11 +7806,11 @@ mov eax, ADDR globalVar   ; reject unless general ADDR operands are explicitly s
 3. Preserve source span for ADDR and the operand.
 4. Reject unsupported ADDR targets with specific diagnostics.
 5. `ADDR localVar` requires local symbol operand resolution and frame-relative addressing from **Phase 80 - LOCAL Operand Resolution and Addressing**. Before Phase 80 exists, it must either be helper-tested without runtime execution or rejected with `addr-local-not-available`. Do not implement LOCAL operand resolution or LOCAL frame addressing in Phase 82.
-6. Add tests independent of full INVOKE lowering if necessary by testing argument-lowering helpers.
 
 Phase-boundary note:
 
 `ADDR globalVar` and `ADDR constSymbol` may use global symbol addresses already available through existing data/const metadata. `ADDR localVar` is different: it depends on an active stack frame and local-symbol addressing. A future assistant must not implement Phase 80 local addressing merely to make Phase 82 tests pass.
+6. Add tests independent of full INVOKE lowering if necessary by testing argument-lowering helpers.
 
 ### Diagnostics
 
@@ -7741,11 +8768,12 @@ Virtual Irvine32 routine runtime plus input protocol integration.
 
 - Phase 102 - Input Request Payload Normalization, for submitted input payload shape, newline handling, cancellation behavior, and deterministic source-run/worker continuation semantics.
 - Virtual Irvine32 routine registry.
-- Program Console input UI.
 
 Input-normalization ownership note:
 
 Read* routine phases must not each invent their own submitted-input payload format. They must consume the normalized input request/response shape from **Phase 102 - Input Request Payload Normalization**. Individual Read* phases own parsing and register/flag results for their routine only.
+
+- Program Console input UI.
 
 ### Accepted syntax
 

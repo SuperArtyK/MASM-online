@@ -1064,55 +1064,98 @@ Core expansion groups must remain distinct:
 - label metadata, instruction watchdogs, direct `jmp`, `cmp`, equality jumps, signed relational jumps, and unsigned relational jumps are separately staged;
 - string instruction families are split by data movement, accumulator behavior, comparison behavior, and REP/REPE/REPNE repetition semantics.
 
-#### 8.6.6 Shift Count and Undefined-Flag Compatibility Policy
+#### 8.6.6 Shift Count, Rotate Count, and Undefined-Flag Compatibility Policy
 
-Runtime shift instructions must prefer MASM/x86-compatible execution over rejecting MASM-valid source.
+Runtime shift and rotate instructions must prefer MASM/x86-compatible execution over rejecting MASM-valid source.
 
-This policy applies to `shl`/`sal` when Phase 46 implements them and should be reused by `shr` and `sar` when their later phases implement them. Rotate instructions have their own later flag rules, but they should follow the same principle: accept MASM-valid operand forms and use warnings or strict diagnostics for educational concerns rather than misclassifying valid assembly as syntax errors.
+This policy applies to:
 
-Shift count handling in MASM32 Educational Mode:
+```text
+shl
+sal
+shr
+sar
+rol
+ror
+```
 
-- Immediate shift counts are accepted when they fit the encoded immediate-count form selected by the instruction phase.
-- `CL` counts use the low 8 bits of `ECX` as the raw count.
-- For 8-bit, 16-bit, and 32-bit destinations, the effective count is `raw_count & 31`.
-- Effective count `0` is a no-op: the destination and all modeled flags remain unchanged.
-- Nonzero effective counts execute using the destination width.
+`SHL`/`SAL`, `SHR`, and `SAR` are shift instructions. `ROL` and `ROR` are rotate instructions. Shifts and rotates have different flag rules and must remain separate implementation milestones.
+
+#### Count handling
+
+In MASM32 Educational Mode:
+
+- immediate counts are accepted when they fit the encoded immediate-count form selected by the instruction phase;
+- `CL` counts use the low 8 bits of `ECX` as the raw count;
+- for 8-bit, 16-bit, and 32-bit destinations, the effective count is:
+
+  ```text
+  effective_count = raw_count & 31
+  ```
+
+- effective count `0` is a full no-op: destination and all currently modeled flags remain unchanged;
+- nonzero shift counts execute using the destination width;
+- nonzero rotate counts rotate by `effective_count % operand_width`;
 - MASM-valid counts must not be rejected solely because the effective count is greater than or equal to the destination width.
 
-Undefined modeled flag handling:
+#### Shift undefined-flag handling
 
-- The simulator currently models `CF`, `ZF`, `SF`, and `OF`.
-- When a shift result defines `ZF` and `SF`, update them from the deterministic result.
-- When an architectural rule defines `CF` or `OF`, update the modeled flag accordingly.
-- When an architectural rule leaves a modeled flag undefined, preserve that flag's previous simulator value as the deterministic fallback.
-- In default MASM32 Educational Mode, emit a structured warning for any successful shift that leaves one or more modeled flags architecturally undefined.
-- In a shift undefined-flag strict mode, the same condition becomes a runtime error and the instruction must stop before mutating registers, flags, memory, console state, or memory-change rows.
+For `SHL`/`SAL`, `SHR`, and `SAR`:
 
-Required diagnostic code:
+- when an architectural rule defines `CF`, `OF`, `ZF`, or `SF`, update the modeled flag according to that rule;
+- when an architectural rule leaves a modeled flag undefined, preserve that flag's previous simulator value as a deterministic fallback;
+- default mode may emit an eager producer warning for undefined modeled flags;
+- a future smart mode should warn or error only when a later instruction consumes an invalid flag;
+- `unsupported-shift-count` must not be used for MASM-valid shift counts.
+
+Legacy note:
+
+```text
+Phase 46 through Phase 48 may contain a test/API-only strict undefined-shift validation mode that stops before mutation at the producer instruction. This mode is historical compatibility for existing tests. It is not the preferred long-term educational strict mode.
+```
+
+#### Rotate undefined-flag handling
+
+For `ROL` and `ROR`:
+
+- effective count `0` preserves destination and all modeled flags;
+- nonzero effective counts update `CF` according to the rotate instruction;
+- one-bit rotates define `OF` according to the rotate instruction;
+- other nonzero rotate counts leave `OF` architecturally undefined;
+- when `OF` is architecturally undefined, preserve prior simulator `OF` as the deterministic fallback;
+- default Phase 49/50 behavior should use eager warnings for undefined `OF` unless the phase explicitly selects quiet validity tracking;
+- do not add strict-before-mutation producer errors for `ROL` or `ROR`;
+- future smart mode should warn or error when later code consumes invalid `OF`.
+
+For nonzero effective count where `rotate_count == 0`, do not treat the instruction as a full no-op. The destination bits are unchanged, but nonzero-count rotate flag behavior still applies: `CF` is updated according to the rotate result, `ZF` and `SF` are preserved, and `OF` is undefined unless the effective count is exactly `1`.
+
+#### Diagnostic codes
+
+Preferred general producer warning code:
+
+```text
+undefined-modeled-flag
+```
+
+Existing shift-specific code:
 
 ```text
 undefined-shift-flag
 ```
 
-Suggested default warning wording:
+Recommended rotate producer warning wording:
 
 ```text
-SHL/SAL with this effective count has architecturally undefined modeled flag result(s). The simulator executed the MASM-compatible shift and preserved deterministic values for undefined modeled flags.
+ROL/ROR with this effective count leaves OF architecturally undefined. The simulator executed the MASM-compatible rotate and preserved OF deterministically.
 ```
 
-Diagnostic classification rule:
+Recommended consumer warning/error code:
 
 ```text
-Do not use unsupported-shift-count for MASM-valid shift counts. Reserve unsupported diagnostics for genuinely unsupported operand forms, unsupported widths, or simulator-mode non-goals.
+undefined-flag-use
 ```
 
-Examples:
-
-```asm
-shl eax, 32  ; raw 32 -> effective 0, accepted no-op, no warning
-shl al, 8    ; raw 8 -> effective 8, accepted; result executes and undefined modeled flags warn by default
-shl eax, cl  ; raw count is CL, effective count is CL & 31
-```
+Consumer diagnostics should be introduced by the flag-validity and flag-consumer phases, not by the rotate instruction phases unless those phases explicitly include the smart-mode infrastructure.
 
 ### 8.7 Historical Initial Limitations and Current Unsupported Families
 
@@ -1396,29 +1439,173 @@ provided the helper is validated separately for addition, subtraction, compare, 
 
 `INC` and `DEC` must update `AF` from the increment/decrement operation while preserving `CF`, matching their existing `CF` contract.
 
-### 10.5 Undefined or Architecturally Unspecified Flag Results
+### 10.5 Undefined or Architecturally Unspecified Modeled Flag Results
 
-Some real x86 instructions leave specific flags undefined. The simulator must not expose nondeterministic or host-dependent flag values.
+Some real x86 instructions leave specific flag results architecturally undefined. The simulator must not expose nondeterministic, host-dependent, or accidental C implementation values for modeled flags.
 
-When a modeled flag is architecturally undefined, the implementation phase must choose one explicit simulator policy for that instruction family:
+The simulator must distinguish two events:
 
 ```text
-preserve:
-  Keep the previous simulator flag value.
+producer event:
+  An instruction executes and leaves one or more modeled flags architecturally undefined.
 
-clear:
-  Set the flag to 0 as a deterministic educational simplification.
-
-warn-or-strict:
-  In default mode, execute deterministically and emit a warning.
-  In strict mode, stop before mutation with a runtime diagnostic.
+consumer event:
+  A later instruction reads, branches on, displays as a dependency, or otherwise semantically consumes a modeled flag whose current value is marked architecturally undefined.
 ```
 
-A phase must not silently invent behavior for an undefined modeled flag without documenting the policy and adding tests.
+A MASM-valid producer instruction must not be treated as MASM-invalid syntax merely because it creates an undefined flag result.
 
-The preferred default for rare or suspicious undefined-flag cases is `warn-or-strict`.
+#### Stable deterministic value policy
 
-The preferred default for common textbook instructions where the undefined flag is rarely observed, such as `AF` after logical instructions, is a documented deterministic policy without warning. This avoids making ordinary code noisy.
+When an instruction makes a modeled flag architecturally undefined:
+
+- the instruction still executes in default MASM32 Educational Mode;
+- the destination/register/memory effects still commit if all ordinary validation succeeds;
+- the simulator preserves the previous deterministic value of each undefined modeled flag;
+- the simulator records metadata that the preserved flag value is architecturally undefined;
+- the simulator records the producer instruction source span, mnemonic, diagnostic code, and flag list where practical.
+
+The preserved value is a simulator fallback value only. It is not a portable real-x86 guarantee.
+
+#### Undefined-flag reporting modes
+
+The simulator supports these conceptual reporting modes. The implementation guide owns the exact phase that introduces each mode and any API/settings exposure.
+
+```text
+eager-warning:
+  Execute the producer instruction.
+  Preserve undefined modeled flag values deterministically.
+  Mark affected flags as invalid/undefined-origin if flag-validity metadata exists.
+  Emit a warning at the producer instruction.
+
+use-warning:
+  Execute the producer instruction.
+  Preserve undefined modeled flag values deterministically.
+  Mark affected flags as invalid/undefined-origin.
+  Do not warn at the producer instruction.
+  Emit a warning only if a later instruction consumes an invalid flag.
+
+use-error:
+  Execute the producer instruction.
+  Preserve undefined modeled flag values deterministically.
+  Mark affected flags as invalid/undefined-origin.
+  Stop with a runtime error only if a later instruction attempts to consume an invalid flag.
+```
+
+`use-error` is the preferred strict educational/grading model. It rejects dependence on an undefined flag, not the MASM-valid instruction that produced the undefined flag.
+
+Default behavior must not change merely because flag-validity metadata or consumer diagnostics are added. A metadata phase adds tracking. A consumer-diagnostic phase adds testable policy hooks. A later settings/diagnostics phase may choose a browser default.
+
+#### Legacy producer-error mode
+
+Earlier shift phases may expose a legacy test/API-only mode where a shift instruction with undefined modeled flags reports an error before mutation. This mode exists for regression stability around the Phase 46-48 shift implementation.
+
+Rules for legacy producer-error mode:
+
+- It must not be described as the preferred long-term strict educational model.
+- It must not be expanded to new instruction families unless a later phase explicitly chooses that behavior.
+- It must not be exposed as the main browser UI strict setting without a deliberate settings-phase decision.
+- New undefined-flag work should prefer `eager-warning`, `use-warning`, and `use-error`.
+
+#### Validity propagation policy
+
+Each modeled flag has both a value and a validity state once flag-validity metadata is implemented.
+
+```text
+flag value:
+  The deterministic simulator bit value currently stored for CF, ZF, SF, OF, and later PF/AF/DF where applicable.
+
+flag validity:
+  Whether that value is architecturally valid for the current program state.
+```
+
+When an instruction defines a flag architecturally:
+
+- set the flag value according to the instruction;
+- mark the flag valid;
+- clear any previous undefined-origin metadata for that flag.
+
+When an instruction clears or sets a flag by contract:
+
+- set the flag value;
+- mark the flag valid;
+- clear any previous undefined-origin metadata for that flag.
+
+When an instruction preserves a flag architecturally:
+
+- preserve the flag value;
+- preserve the flag validity metadata exactly.
+
+When an instruction makes a modeled flag architecturally undefined:
+
+- preserve the flag value as a deterministic fallback;
+- mark the flag invalid;
+- record undefined-origin metadata for that flag.
+
+#### Consumer diagnostics
+
+A flag-consuming instruction must check validity for every modeled flag it reads.
+
+Examples of flag consumers include:
+
+- conditional jumps;
+- future `SETcc`, `CMOVcc`, or equivalent flag-dependent instructions if implemented;
+- any future instruction or debugger operation that makes a semantic decision from a flag value.
+
+If a consumer reads an invalid flag:
+
+- `use-warning` emits a warning and then continues using the deterministic preserved flag value;
+- `use-error` emits a runtime error and stops before making the flag-dependent decision;
+- diagnostics should point primarily to the consumer instruction and mention the producer instruction location when available.
+
+Recommended diagnostic code:
+
+```text
+undefined-flag-use
+```
+
+Recommended warning wording:
+
+```text
+<CONSUMER> reads <FLAG>, but <FLAG> is architecturally undefined from <PRODUCER> at line <line>. The simulator preserved a deterministic fallback value; this flag-dependent behavior is not portable.
+```
+
+Recommended runtime-error wording:
+
+```text
+<CONSUMER> reads <FLAG>, but <FLAG> is architecturally undefined from <PRODUCER> at line <line>. Execution stopped before using the undefined flag.
+```
+
+#### Producer diagnostics
+
+When the reporting mode uses eager producer warnings, producer diagnostics should use a general code unless a legacy stable code already exists.
+
+Preferred general producer diagnostic code:
+
+```text
+undefined-modeled-flag
+```
+
+Legacy shift diagnostic code:
+
+```text
+undefined-shift-flag
+```
+
+`undefined-shift-flag` may remain for Phase 46-48 compatibility. New non-shift instruction families should prefer `undefined-modeled-flag` unless a phase intentionally defines a more specific code.
+
+#### Testing requirements
+
+Every phase that introduces undefined modeled flag behavior must include:
+
+- a successful default-mode execution test;
+- a rendered Simulator Messages test for eager-warning mode if that mode is active;
+- a validity-metadata test proving the affected flag is marked invalid;
+- a later consumer test if a real flag consumer exists at that point;
+- no-partial-mutation tests for runtime error paths;
+- regression tests proving MASM-valid source is not rejected as syntax solely because of undefined flags.
+
+If no flag-consuming instruction exists yet, a phase may add native/helper tests for the consumer-validation helper and defer source-level consumer tests until conditional jumps or another consumer family exists.
 
 ### 10.6 PF/AF Policy by Instruction Family
 
@@ -1488,8 +1675,11 @@ Rules:
 
 - If the effective count is zero, `PF` and `AF` are preserved because the instruction has no effect.
 - If the effective count is nonzero, `PF` is computed from the low byte of the shifted result.
-- `AF` is architecturally undefined for nonzero shift counts. The simulator must use the same deterministic undefined-flag policy family established for shift-count compatibility.
-- Adding `AF` to the modeled flag set must not expand `undefined-shift-flag` warnings by itself. The warning/strict trigger set remains the one defined by the shift-count compatibility phase.
+- `AF` is architecturally undefined for nonzero shift counts.
+- When `AF` becomes modeled, nonzero shifts must preserve the previous simulator `AF` value as the deterministic fallback and mark `AF` invalid if flag-validity metadata exists.
+- Adding `AF` to the modeled flag set must not expand eager undefined-flag warnings merely because `AF` is now modeled.
+- The eager warning trigger set remains the one selected by the shift-count compatibility phase unless a later phase explicitly revises it.
+- The smart `use-warning` / `use-error` mode may diagnose later use of invalid `AF` if a future instruction consumes `AF`.
 - The `PF`/`AF` integration phase must not reintroduce `unsupported-shift-count` for MASM-valid shift counts.
 - The `PF`/`AF` integration phase must not change already-defined `CF`, `OF`, `ZF`, or `SF` behavior for shifts except where a bug fix is explicitly documented.
 
@@ -1507,8 +1697,11 @@ Rules:
 - `PF` and `AF` are preserved for `ROL` and `ROR`.
 - `SF` and `ZF` are also preserved for `ROL` and `ROR`.
 - `CF` and `OF` follow the rotate phase contract.
-- If the effective count is zero, all modeled flags are preserved.
-- If a rotate phase implements undefined-`OF` warning/strict diagnostics for multi-bit rotates, the `PF`/`AF` phase must preserve that behavior and must not add new `PF`/`AF` mutation.
+- If the effective count is zero, all modeled flags are preserved and all flag-validity metadata is preserved.
+- If a nonzero multi-bit rotate makes `OF` architecturally undefined, the rotate phase must preserve previous simulator `OF` and mark `OF` invalid if flag-validity metadata exists.
+- Adding `PF` or `AF` must not create new rotate warnings by itself.
+- `ROL` and `ROR` must not compute `PF` from the rotate result.
+- Future `use-warning` / `use-error` mode may diagnose later use of invalid `OF`; the rotate producer instruction itself remains MASM-compatible and executable.
 
 #### Multiply and divide instructions
 

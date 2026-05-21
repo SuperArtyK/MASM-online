@@ -3071,6 +3071,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_SAR;
         return true;
     }
+    if (vm_parser_token_equals(token, "rol")) {
+        *out_opcode = VM_IR_OPCODE_ROL;
+        return true;
+    }
 
     return false;
 }
@@ -3137,12 +3141,16 @@ static bool vm_parser_opcode_is_logical_binary(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_XOR;
 }
 
-/// Returns whether an opcode uses shift operand validation rules.
+/// Returns whether an opcode uses shift/rotate count operand validation rules.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for SHL, SAL, SHR, and SAR.
+/// @return true for SHL, SAL, SHR, SAR, and ROL.
 static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_SHL || opcode == VM_IR_OPCODE_SAL || opcode == VM_IR_OPCODE_SHR || opcode == VM_IR_OPCODE_SAR;
+    return opcode == VM_IR_OPCODE_SHL ||
+           opcode == VM_IR_OPCODE_SAL ||
+           opcode == VM_IR_OPCODE_SHR ||
+           opcode == VM_IR_OPCODE_SAR ||
+           opcode == VM_IR_OPCODE_ROL;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5024,7 +5032,7 @@ static bool vm_parser_validate_logical_binary_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
-/// Returns the uppercase mnemonic for a shift instruction.
+/// Returns the uppercase mnemonic for a shift or rotate instruction.
 ///
 /// @param opcode Opcode to classify.
 /// @return Stable uppercase mnemonic, or "shift" for unsupported opcodes.
@@ -5041,12 +5049,15 @@ static const char *vm_parser_shift_mnemonic(VmIrOpcode opcode) {
     if (opcode == VM_IR_OPCODE_SAR) {
         return "SAR";
     }
+    if (opcode == VM_IR_OPCODE_ROL) {
+        return "ROL";
+    }
     return "shift";
 }
 
-/// Validates operands for shift instructions.
+/// Validates operands for shift and rotate instructions.
 ///
-/// Shift instructions accept register or known-width memory destinations
+/// Shift and rotate instructions accept register or known-width memory destinations
 /// and an immediate byte count or CL count source. The CL source supplies a
 /// count, not an operand width, so untyped memory destinations remain
 /// ambiguous and must use PTR or symbol metadata.
@@ -5493,6 +5504,11 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             return false;
         }
         return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
+    if (opcode == VM_IR_OPCODE_ROL && vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "ROL takes exactly two operands.");
+        return false;
     }
 
     if (!vm_parser_expect_comma(state)) {

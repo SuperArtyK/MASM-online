@@ -565,6 +565,54 @@ END main
 `,
     reason: "Phase 48 SAR strict undefined modeled flag diagnostic fixture."
   },
+
+  rolAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    rol [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 49 ROL ambiguous memory-width diagnostic fixture."
+  },
+  rolInvalidCountRegister: {
+    source: `.code
+main PROC
+    rol eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 49 ROL invalid count-register diagnostic fixture."
+  },
+  rolMissingCount: {
+    source: `.code
+main PROC
+    rol eax
+main ENDP
+END main
+`,
+    reason: "Phase 49 ROL missing count diagnostic fixture."
+  },
+  rolUndefinedWarning: {
+    source: `.code
+main PROC
+    mov al, 80h
+    rol al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 49 ROL undefined modeled flag warning fixture."
+  },
+  rolUndefinedStrictStillWarns: {
+    source: `.code
+main PROC
+    mov al, 80h
+    rol al, 8
+main ENDP
+END main
+`,
+    reason: "Phase 49 ROL remains warning-only under strict shift validation."
+  },
   notAmbiguousMemoryWidth: {
     source: `.code
 main PROC
@@ -572,7 +620,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT ambiguous memory-width diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT ambiguous memory-width diagnostic regression fixture under Phase 49."
   },
   notImmediateDestination: {
     source: `.code
@@ -581,7 +629,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT immediate-destination diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT immediate-destination diagnostic regression fixture under Phase 49."
   },
   notExtraOperand: {
     source: `.code
@@ -590,7 +638,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT extra-operand diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT extra-operand diagnostic regression fixture under Phase 49."
   },
   notConstDirectWrite: {
     source: `.CONST
@@ -601,7 +649,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT direct .CONST write diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT direct .CONST write diagnostic regression fixture under Phase 49."
   },
   notConstRuntimeWrite: {
     source: `.CONST
@@ -613,7 +661,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT computed .CONST write diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT computed .CONST write diagnostic regression fixture under Phase 49."
   },
   notInvalidAddress: {
     source: `.code
@@ -623,7 +671,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Milestone 45 NOT invalid destination-address runtime diagnostic regression fixture under Phase 48."
+    reason: "Milestone 45 NOT invalid destination-address runtime diagnostic regression fixture under Phase 49."
   },
   constRuntimeWrite: {
     source: `.CONST
@@ -1526,6 +1574,106 @@ test("renders SAR strict undefined modeled flag diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.");
+});
+
+
+test("renders ROL ambiguous memory-width diagnostic exactly", () => {
+  const name = "rolAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders ROL invalid count-register diagnostic exactly", () => {
+  const name = "rolInvalidCountRegister";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "ROL count must be an immediate byte count or CL.",
+    line: 3,
+    column: 14,
+    byteOffset: 29,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 14, byte offset 29, span length 3: ROL count must be an immediate byte count or CL.");
+});
+
+test("renders ROL missing count diagnostic exactly", () => {
+  const name = "rolMissingCount";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "ROL takes exactly two operands.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 9, byte offset 24, span length 3: ROL takes exactly two operands.");
+});
+
+
+test("renders ROL undefined modeled flag warning exactly", () => {
+  const name = "rolUndefinedWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-modeled-flag",
+      message: "ROL count 8 has effective count 8 for an 8-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+      line: 4,
+      column: 5,
+      byteOffset: 36,
+      spanLength: 9
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROL count 8 has effective count 8 for an 8-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders ROL warning under strict shift validation without runtime error", () => {
+  const name = "rolUndefinedStrictStillWarns";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SHIFT_VALIDATION: "strict"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.equal(json.simulatorMessages[0].code, "undefined-modeled-flag");
+  assert.equal(json.simulatorMessages[1].code, "execution-complete");
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROL count 8 has effective count 8 for an 8-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
 });
 
 test("renders NOT ambiguous memory-width diagnostic exactly", () => {

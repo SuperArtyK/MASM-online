@@ -74,6 +74,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_SHR,
     /// Shift a register or memory destination right, filling high bits with the original sign bit.
     VM_IR_OPCODE_SAR,
+    /// Rotate a register or memory destination left within its selected width.
+    VM_IR_OPCODE_ROL,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.
