@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Milestone 50B regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Milestone 51 smoke-harness coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -5586,6 +5586,295 @@ static int test_phase50b_undefined_flag_use_memory_destination_error_source_run(
     return failures;
 }
 
+
+/// Runs one named Phase 51 source-run success smoke fixture and reports it to stdout.
+///
+/// @param name Human-readable Phase 51 fixture name.
+/// @param source MASM-like source text to execute through the default source-run API.
+/// @param instruction_count_fragment Expected JSON instruction-count fragment.
+/// @param register_fragment Expected JSON register fragment proving the fixture result.
+/// @return Number of failures.
+static int run_phase51_source_run_success_smoke(
+    const char *name,
+    const char *source,
+    const char *instruction_count_fragment,
+    const char *register_fragment
+) {
+    const char *json = NULL;
+    int failures = 0;
+
+    printf("PHASE 51 source-run program exercised: %s\n", name != NULL ? name : "(unnamed)");
+    json = masm32_sim_wasm_run_source_json(source);
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 51 source-run smoke fixture should execute successfully");
+    failures += expect_json_contains(json, "\"status\":\"ok\"", "Phase 51 source-run smoke fixture should report ok status");
+    failures += expect_json_contains(json, instruction_count_fragment, "Phase 51 source-run smoke fixture should report the expected instruction count");
+    failures += expect_json_contains(json, register_fragment, "Phase 51 source-run smoke fixture should report the expected final register value");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 51 source-run smoke fixture should include execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 51 fixed and automatic layout smoke behavior without asserting absolute addresses.
+///
+/// @return Number of failures.
+static int test_phase51_fixed_and_automatic_layout_smoke_harness(void) {
+    const char *source =
+        ".DATA?\n"
+        "scratch DWORD ?\n"
+        ".data\n"
+        "value DWORD 3\n"
+        ".CONST\n"
+        "mask DWORD 0Fh\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, value\n"
+        "    inc eax\n"
+        "    and eax, mask\n"
+        "    shl eax, 1\n"
+        "    mov scratch, eax\n"
+        "    mov ebx, scratch\n"
+        "main ENDP\n"
+        "END main\n";
+    VmLayoutPolicy automatic_policy = vm_layout_default_policy();
+    const char *fixed_json = masm32_sim_wasm_run_source_json(source);
+    const char *automatic_json = NULL;
+    char fixed_copy[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(fixed_copy, sizeof(fixed_copy), fixed_json);
+    automatic_json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(source, &automatic_policy);
+
+    printf("PHASE 51 source-run program exercised: phase51-layout-fixed-automatic-equivalence\n");
+    failures += expect_json_contains(fixed_copy, "\"ok\":true", "Phase 51 fixed-layout smoke source should execute");
+    failures += expect_json_contains(automatic_json, "\"ok\":true", "Phase 51 automatic-layout smoke source should execute");
+    failures += expect_json_contains(fixed_copy, "\"instructionCount\":6", "Phase 51 fixed-layout smoke should execute six instructions");
+    failures += expect_json_contains(automatic_json, "\"instructionCount\":6", "Phase 51 automatic-layout smoke should execute six instructions");
+    failures += expect_json_contains(fixed_copy, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 fixed-layout smoke should leave EAX = 8");
+    failures += expect_json_contains(automatic_json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 automatic-layout smoke should leave EAX = 8");
+    failures += expect_json_contains(fixed_copy, "\"EBX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 fixed-layout smoke should leave EBX = 8");
+    failures += expect_json_contains(automatic_json, "\"EBX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 automatic-layout smoke should leave EBX = 8");
+    failures += expect_json_not_contains(fixed_copy, "resource-limit-exceeded", "Phase 51 fixed-layout smoke should not hit resource limits");
+    failures += expect_json_not_contains(automatic_json, "resource-limit-exceeded", "Phase 51 automatic-layout smoke should not hit resource limits");
+
+    return failures;
+}
+
+/// Verifies Phase 51 keeps lower-level .CONST write rejection ahead of object-bound diagnostics.
+///
+/// @return Number of failures.
+static int test_phase51_const_write_precedes_object_diagnostics(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    inc DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    printf("PHASE 51 source-run program exercised: phase51-const-permission-precedence\n");
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 51 .CONST precedence smoke should fail execution");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "Phase 51 .CONST precedence smoke should be an execution error");
+    failures += expect_json_contains(json, "\"code\":\"permission-denied\"", "Phase 51 .CONST precedence smoke should preserve permission-denied");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "Phase 51 .CONST precedence smoke should not be reclassified as object-bounds");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 51 .CONST precedence smoke should not commit memory changes");
+
+    return failures;
+}
+
+/// Verifies Phase 51 uninitialized-read warning mode catches a read-modify-write before write-back.
+///
+/// @return Number of failures.
+static int test_phase51_uninitialized_rmw_smoke_harness(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        ".data\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    add x, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
+    );
+    int failures = 0;
+
+    printf("PHASE 51 source-run program exercised: phase51-uninitialized-rmw-warning\n");
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 51 RMW warning smoke should continue");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "Phase 51 RMW warning smoke should diagnose the read before write-back");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "Phase 51 RMW warning smoke should mark bytes initialized after write-back");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 51 RMW warning smoke should complete after warning");
+
+    return failures;
+}
+
+/// Verifies Phase 51 Irvine32 exit case-insensitivity remains separate from user-symbol CASEMAP policy.
+///
+/// @return Number of failures.
+static int test_phase51_irvine_exit_and_casemap_smoke_harness(void) {
+    int failures = 0;
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-irvine-exit-lowercase",
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 11\n"
+        "    exit\n"
+        "    mov eax, 99\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"0000000Bh\",\"unsigned\":11}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-irvine-exit-uppercase",
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 12\n"
+        "    EXIT\n"
+        "    mov eax, 99\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-irvine-exit-mixed-case-with-casemap-none",
+        "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "Value DWORD 5\n"
+        "value DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, Value\n"
+        "    Exit\n"
+        "    mov eax, value\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}"
+    );
+
+    return failures;
+}
+
+/// Verifies Phase 51 source-run smoke coverage for post-30 instruction families.
+///
+/// @return Number of failures.
+static int test_phase51_instruction_family_source_run_smoke_harness(void) {
+    int failures = 0;
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-inc-dec-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    inc eax\n"
+        "    dec eax\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":3",
+        "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-and-or-xor-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0F0h\n"
+        "    and eax, 0Fh\n"
+        "    or eax, 10h\n"
+        "    xor eax, 1h\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":4",
+        "\"EAX\":{\"hex\":\"00000011h\",\"unsigned\":17}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-not-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 0F0h\n"
+        "    not al\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"0000000Fh\",\"unsigned\":15}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-shl-sal-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 1\n"
+        "    shl al, 1\n"
+        "    sal al, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":3",
+        "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-shr-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 80h\n"
+        "    shr al, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"00000040h\",\"unsigned\":64}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-sar-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 80h\n"
+        "    sar al, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"000000C0h\",\"unsigned\":192}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-rol-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 80h\n"
+        "    rol al, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}"
+    );
+
+    failures += run_phase51_source_run_success_smoke(
+        "phase51-ror-source-smoke",
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 1\n"
+        "    ror al, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        "\"instructionCount\":2",
+        "\"EAX\":{\"hex\":\"00000080h\",\"unsigned\":128}"
+    );
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -5741,6 +6030,11 @@ int main(void) {
     failures += test_phase50b_undefined_flag_use_default_off_source_run();
     failures += test_phase50b_undefined_flag_use_cmc_error_source_run();
     failures += test_phase50b_undefined_flag_use_memory_destination_error_source_run();
+    failures += test_phase51_fixed_and_automatic_layout_smoke_harness();
+    failures += test_phase51_const_write_precedes_object_diagnostics();
+    failures += test_phase51_uninitialized_rmw_smoke_harness();
+    failures += test_phase51_irvine_exit_and_casemap_smoke_harness();
+    failures += test_phase51_instruction_family_source_run_smoke_harness();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -5749,6 +6043,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 50B regression coverage passed.");
+    puts("Source execution tests through Phase 51 smoke-harness coverage passed.");
     return 0;
 }

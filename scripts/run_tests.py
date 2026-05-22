@@ -333,7 +333,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 50B")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 51")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -463,6 +463,12 @@ def run_structure_tests() -> None:
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy")
     assert_text_contains("tests/core/test_vm_exec.c", "test_phase50b_flag_use_helper_policies")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase50b_undefined_flag_use_warn_policy_source_run")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 51 smoke-harness coverage passed.")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 51 renders instruction-family diagnostic smoke lines exactly")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "runPhase51RenderedDiagnosticSmoke")
+    assert_text_contains("scripts/run_tests.py", "report_phase51_smoke_harness_status")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "renders undefined flag-use warning exactly")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "renders undefined flag-use runtime error exactly")
     assert_text_contains("tests/core/diagnostic_json_producer.c", "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE")
@@ -765,6 +771,58 @@ def run_js_tests() -> None:
     run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_env)
 
 
+
+def report_phase51_smoke_harness_status() -> None:
+    """Report Phase 51 smoke-harness fixture coverage and browser-smoke status."""
+
+    source_run_programs = [
+        "phase51-layout-fixed-automatic-equivalence",
+        "phase51-const-permission-precedence",
+        "phase51-uninitialized-rmw-warning",
+        "phase51-irvine-exit-lowercase",
+        "phase51-irvine-exit-uppercase",
+        "phase51-irvine-exit-mixed-case-with-casemap-none",
+        "phase51-inc-dec-source-smoke",
+        "phase51-and-or-xor-source-smoke",
+        "phase51-not-source-smoke",
+        "phase51-shl-sal-source-smoke",
+        "phase51-shr-source-smoke",
+        "phase51-sar-source-smoke",
+        "phase51-rol-source-smoke",
+        "phase51-ror-source-smoke",
+    ]
+    ambiguous_memory_width = "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR."
+    rendered_diagnostic_lines = [
+        ("automatic-layout instruction smoke", "[info] execution-complete: Execution completed successfully."),
+        ("CONST precedence", "[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const."),
+        ("uninitialized RMW warning", "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage."),
+        ("uninitialized RMW completion", "[info] execution-complete: Execution completed successfully."),
+        ("INC/DEC", ambiguous_memory_width),
+        ("AND/OR/XOR", ambiguous_memory_width),
+        ("NOT", ambiguous_memory_width),
+        ("SHL/SAL", ambiguous_memory_width),
+        ("SHR", ambiguous_memory_width),
+        ("SAR", ambiguous_memory_width),
+        ("ROL", ambiguous_memory_width),
+        ("ROR", ambiguous_memory_width),
+    ]
+
+    print("Phase 51 source-run smoke programs exercised:")
+    for program in source_run_programs:
+        print(f"- {program}")
+
+    print("Phase 51 expected rendered diagnostic lines:")
+    for label, line in rendered_diagnostic_lines:
+        print(f"- {label}: {line}")
+
+    browser_smoke_status = os.environ.get("MASM32_BROWSER_MANUAL_SMOKE_AFTER_WASM_REBUILD")
+    if browser_smoke_status:
+        print(f"Phase 51 browser manual smoke after rebuilding Wasm: {browser_smoke_status}")
+    elif shutil.which("emcc") is None:
+        print("Phase 51 browser manual smoke after rebuilding Wasm: not run; emcc is unavailable in this environment.")
+    else:
+        print("Phase 51 browser manual smoke after rebuilding Wasm: not run by the aggregate native/Node test command.")
+
 def main() -> int:
     """Run all implemented milestone tests.
 
@@ -777,6 +835,7 @@ def main() -> int:
         run_c_tests()
         build_diagnostic_json_producer()
         run_js_tests()
+        report_phase51_smoke_harness_status()
     except TestFailure as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

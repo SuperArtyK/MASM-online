@@ -243,6 +243,23 @@ function assertRunStatus(json, ok, status) {
   assert.equal(json.status, status);
 }
 
+
+/**
+ * Runs one Phase 51 rendered diagnostic smoke fixture and reports the expected line.
+ *
+ * @param {string} fixtureName Fixture key in the fixture table.
+ * @param {string} expectedRendered Exact expected rendered Simulator Messages text.
+ * @param {Record<string, string>} [extraEnv] Additional producer environment variables.
+ * @returns {void}
+ */
+function runPhase51RenderedDiagnosticSmoke(fixtureName, expectedRendered, extraEnv = {}) {
+  const source = fixtureSource(fixtureName);
+  const { json, rawJson, rendered } = runFixture(fixtureName, source, extraEnv);
+  console.log(`PHASE 51 expected rendered diagnostic line: ${expectedRendered}`);
+  assert.equal(json.simulatorMessages.length >= 1, true);
+  assertRenderedEquals(fixtureName, source, rawJson, rendered, expectedRendered);
+}
+
 /** @type {Record<string, DiagnosticFixture>} */
 const fixtures = {
   invalidHex: {
@@ -842,6 +859,121 @@ main ENDP
 END main
 `,
     reason: "Phase 42 invalid exit operand diagnostic fixture."
+  },
+  phase51LayoutAndInstructionSmoke: {
+    source: `.DATA?
+scratch DWORD ?
+.data
+value DWORD 3
+.CONST
+mask DWORD 0Fh
+.code
+main PROC
+    mov eax, value
+    inc eax
+    and eax, mask
+    shl eax, 1
+    mov scratch, eax
+    mov ebx, scratch
+main ENDP
+END main
+`,
+    reason: "Phase 51 native diagnostic JSON plus Node renderer smoke fixture for automatic layout and post-30 instructions."
+  },
+  phase51ConstPrecedence: {
+    source: `.CONST
+limit DWORD 10
+.code
+main PROC
+    mov eax, OFFSET limit
+    inc DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 51 .CONST permission precedence rendered diagnostic smoke fixture."
+  },
+  phase51UninitializedRmw: {
+    source: `.data
+x DWORD ?
+.code
+main PROC
+    add x, 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 read-modify-write uninitialized-read rendered diagnostic smoke fixture."
+  },
+  phase51IncDecDiagnosticSmoke: {
+    source: `.code
+main PROC
+    dec [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 51 INC/DEC rendered diagnostic smoke fixture."
+  },
+  phase51AndOrXorDiagnosticSmoke: {
+    source: `.code
+main PROC
+    xor [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 AND/OR/XOR rendered diagnostic smoke fixture."
+  },
+  phase51NotDiagnosticSmoke: {
+    source: `.code
+main PROC
+    not [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 51 NOT rendered diagnostic smoke fixture."
+  },
+  phase51ShlSalDiagnosticSmoke: {
+    source: `.code
+main PROC
+    sal [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 SHL/SAL rendered diagnostic smoke fixture."
+  },
+  phase51ShrDiagnosticSmoke: {
+    source: `.code
+main PROC
+    shr [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 SHR rendered diagnostic smoke fixture."
+  },
+  phase51SarDiagnosticSmoke: {
+    source: `.code
+main PROC
+    sar [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 SAR rendered diagnostic smoke fixture."
+  },
+  phase51RolDiagnosticSmoke: {
+    source: `.code
+main PROC
+    rol [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 ROL rendered diagnostic smoke fixture."
+  },
+  phase51RorDiagnosticSmoke: {
+    source: `.code
+main PROC
+    ror [eax], 1
+main ENDP
+END main
+`,
+    reason: "Phase 51 ROR rendered diagnostic smoke fixture."
   },
   success: {
     source: `.code
@@ -2084,6 +2216,61 @@ test("renders runtime CONST permission diagnostic exactly without memory change 
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] permission-denied line 7: Memory write at 00600000h for 4 bytes is not permitted in .const.");
+});
+
+
+test("Phase 51 renders automatic-layout instruction smoke success exactly", () => {
+  const name = "phase51LayoutAndInstructionSmoke";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_LAYOUT_MODE: "automatic"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 6);
+  assert.equal(json.registers.EAX.hex, "00000008h");
+  assert.equal(json.registers.EBX.hex, "00000008h");
+  console.log("PHASE 51 expected rendered diagnostic line: [info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 51 renders CONST precedence smoke diagnostic exactly", () => {
+  const name = "phase51ConstPrecedence";
+  const source = fixtureSource(name);
+  const expected = "[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const.";
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.simulatorMessages.some((message) => message.code === "object-bounds-violation"), false);
+  assert.deepEqual(json.memoryChanges, []);
+  console.log(`PHASE 51 expected rendered diagnostic line: ${expected}`);
+  assertRenderedEquals(name, source, rawJson, rendered, expected);
+});
+
+test("Phase 51 renders uninitialized RMW smoke diagnostic exactly", () => {
+  runPhase51RenderedDiagnosticSmoke(
+    "phase51UninitializedRmw",
+    "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.",
+    { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" }
+  );
+});
+
+test("Phase 51 renders instruction-family diagnostic smoke lines exactly", () => {
+  const ambiguousWidthLine = "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.";
+  const fixtureNames = [
+    "phase51IncDecDiagnosticSmoke",
+    "phase51AndOrXorDiagnosticSmoke",
+    "phase51NotDiagnosticSmoke",
+    "phase51ShlSalDiagnosticSmoke",
+    "phase51ShrDiagnosticSmoke",
+    "phase51SarDiagnosticSmoke",
+    "phase51RolDiagnosticSmoke",
+    "phase51RorDiagnosticSmoke"
+  ];
+
+  for (const fixtureName of fixtureNames) {
+    runPhase51RenderedDiagnosticSmoke(fixtureName, ambiguousWidthLine);
+  }
 });
 
 test("renders unaligned warning followed by successful execution exactly", () => {
