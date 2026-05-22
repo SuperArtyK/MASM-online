@@ -163,6 +163,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_OPTION_VALUE,
     /// A mnemonic is unknown in the current include/context.
     VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION,
+    /// An instruction effective-address expression was malformed or unsupported.
+    VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION,
     /// An instruction used operands outside the valid shape for that instruction.
     VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
     /// A recognized Irvine32 virtual symbol was used before its routine implementation exists.

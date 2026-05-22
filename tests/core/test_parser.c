@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 50.
+ * @brief Unit and integration tests for the parser through Milestone 52.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -3451,6 +3451,229 @@ static int test_phase50_ror_parse_error_paths(void) {
 }
 
 
+/// Verifies Phase 52 LEA accepted effective-address forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase52_lea_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "nums DWORD 10 DUP(0)\n"
+        "bytes BYTE 4 DUP(0)\n"
+        ".CONST\n"
+        "limit QWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, nums\n"
+        "    LeA ebx, nums[8]\n"
+        "    lea ecx, [nums + 8]\n"
+        "    lea edx, [esi]\n"
+        "    lea edi, [esi + 4]\n"
+        "    lea ebp, [esi - 4]\n"
+        "    lea esp, nums[esi]\n"
+        "    lea eax, [nums + esi]\n"
+        "    lea ebx, limit\n"
+        "    lea ecx, limit[esi]\n"
+        "    lea edx, [limit + esi]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 52 LEA accepted forms should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 52 LEA accepted forms should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 11U, "Phase 52 LEA accepted forms should emit eleven instructions");
+    if (result.instruction_count == 11U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_LEA, "lea nums should emit LEA opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_REGISTER, "LEA destination should be register");
+        failures += expect_u32(buffers.instructions[0].destination.reg, VM_REGISTER_EAX, "LEA destination should preserve EAX");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "LEA direct symbol source should be address operand");
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_LEA, "mixed-case LeA should emit LEA opcode");
+        failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "LEA symbol offset should carry displacement operand");
+        failures += expect_u32(buffers.instructions[1].source.reg, VM_REGISTER_COUNT, "LEA symbol offset should not require runtime register");
+        failures += expect_u32(buffers.instructions[1].source.immediate, 8U, "LEA nums[8] should preserve byte displacement");
+        failures += expect_u32(buffers.instructions[2].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "LEA [nums + 8] should carry displacement operand");
+        failures += expect_u32(buffers.instructions[2].source.immediate, 8U, "LEA [nums + 8] should preserve displacement");
+        failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "LEA [esi] should emit register-derived address");
+        failures += expect_u32(buffers.instructions[3].source.reg, VM_REGISTER_ESI, "LEA [esi] should use ESI base");
+        failures += expect_u32(buffers.instructions[4].source.immediate, 4U, "LEA [esi + 4] should use positive displacement");
+        failures += expect_u32(buffers.instructions[5].source.immediate, (uint32_t)-4, "LEA [esi - 4] should use negative displacement bits");
+        failures += expect_u32(buffers.instructions[6].source.reg, VM_REGISTER_ESI, "LEA nums[esi] should use ESI runtime offset");
+        failures += expect_u32(buffers.instructions[7].source.reg, VM_REGISTER_ESI, "LEA [nums + esi] should use ESI runtime offset");
+        failures += expect_u32(buffers.instructions[8].source.relocation, VM_IR_RELOCATION_CONST, "LEA const symbol should retain const relocation metadata");
+        failures += expect_u32(buffers.instructions[9].source.reg, VM_REGISTER_ESI, "LEA QWORD const symbol[esi] should use ESI runtime offset");
+        failures += expect_u32(buffers.instructions[9].source.relocation, VM_IR_RELOCATION_CONST, "LEA QWORD const symbol[esi] should retain const relocation metadata without executable-width checks");
+        failures += expect_u32(buffers.instructions[10].source.reg, VM_REGISTER_ESI, "LEA [QWORD const symbol + esi] should use ESI runtime offset");
+        failures += expect_u32(buffers.instructions[10].source.relocation, VM_IR_RELOCATION_CONST, "LEA [QWORD const symbol + esi] should retain const relocation metadata without executable-width checks");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 52 LEA parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase52_lea_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea nums, nums\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA memory destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "LEA memory destination should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "32-bit register destination", "LEA memory destination diagnostic should explain destination rule");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea ax, nums\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA 16-bit destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "LEA 16-bit destination should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea al, nums\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA 8-bit destination should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "LEA 8-bit destination should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA register source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, "LEA register source should report invalid effective-address expression");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, 123\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA immediate source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, "LEA immediate source should use invalid-effective-address-expression");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, OFFSET nums\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA OFFSET source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, "LEA OFFSET source should use invalid-effective-address-expression");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, [eax * 4]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA scaled-index register source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX, "LEA scaled-index source should use unsupported-scaled-index");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, [nums + esi * 4]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA scaled-index symbol source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX, "LEA symbol scaled-index source should use unsupported-scaled-index");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, [0]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA numeric memory expression should remain rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, "LEA numeric memory expression should use invalid-effective-address-expression");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, [nums + 2147483648]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA bracketed displacement overflow should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, "LEA bracketed displacement overflow should use invalid-effective-address-expression");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax, nums, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA extra operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "LEA extra operand should use invalid-instruction-operands");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "nums DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    lea eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LEA missing source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "LEA missing source currently uses expected-comma diagnostic");
+
+    return failures;
+}
+
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3468,6 +3691,9 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION), "unknown-instruction") != 0) {
         failures += record_failure("parser diagnostic helper should name unknown-instruction");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION), "invalid-effective-address-expression") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid effective-address diagnostics");
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS), "invalid-instruction-operands") != 0) {
         failures += record_failure("parser diagnostic helper should name invalid-instruction-operands");
@@ -3539,7 +3765,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 50.
+/// Runs all parser regression tests through Milestone 52.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -3604,6 +3830,8 @@ int main(void) {
     failures += test_phase49_rol_parse_error_paths();
     failures += test_phase50_ror_parse_to_ir();
     failures += test_phase50_ror_parse_error_paths();
+    failures += test_phase52_lea_parse_to_ir();
+    failures += test_phase52_lea_parse_error_paths();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

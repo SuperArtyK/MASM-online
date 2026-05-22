@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 50 source-run UI: source editing, Run button,
+  This page provides the Milestone 52 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates ROR behavior.
+  execution stay inside the worker/Wasm path; the default program demonstrates LEA behavior.
 -->
 <html lang="en">
   <head>
@@ -18,14 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 50: ROR.</p>
+        <p class="muted">Milestone 52: LEA.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.code
+        <textarea id="editor" spellcheck="false">.data
+nums DWORD 10 DUP(0)
+.code
 main PROC
-    mov al, 01h
-    ror al, 1
-    mov ecx, 2
-    ror eax, cl
+    mov ebx, OFFSET nums
+    lea eax, nums[8]
+    lea ecx, [ebx + 4]
 main ENDP
 END main</textarea>
         <div class="controls">

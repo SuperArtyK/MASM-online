@@ -18,7 +18,7 @@ A user should be able to:
 - Interact with console input routines such as `ReadString`, `ReadInt`, and `ReadChar`.
 - View program output separately from simulator diagnostics.
 - Debug step-by-step.
-- Inspect registers, flags, memory changes, stack usage, and last-step deltas.
+- Inspect registers, flags, memory changes, stack usage, and last-step deltas, including width-aware hexadecimal, unsigned decimal, and signed decimal interpretations for displayed integer register and memory values where the display width is known.
 - Share the project through an encoded URL.
 - Configure memory and execution limits safely.
 
@@ -2539,6 +2539,12 @@ The UI should always allow stopping, including while waiting for input.
 
 Worker protocol payloads must be structured-clone-safe and JSON-compatible unless a later phase explicitly introduces a binary transfer type. Functions, DOM nodes, cyclic objects, `Map`, `Set`, `BigInt`, `undefined` fields, and binary buffers are rejected or prevented at the protocol boundary in v1.
 
+Signed display fields are allowed only when they remain JSON-compatible and deterministic.
+
+For 8-bit, 16-bit, and 32-bit values, signed decimal display values may be represented as JSON numbers or formatted strings. Existing unsigned numeric fields must not be repurposed as signed fields.
+
+Phase 52A does not implement signed QWORD/SQWORD decimal display. Signed 64-bit display is deferred to a later lossless 64-bit display/protocol phase. Do not use JavaScript `Number` for signed 64-bit decimal conversion. Do not put JavaScript `BigInt` values directly into worker protocol payloads.
+
 Hard worker termination invalidates all sessions, command IDs, input request IDs, breakpoint bindings, run generations, pending VM references, and stale response routing. A fresh worker initialization is required before new Run or Debug commands are accepted.
 
 Debugger commands use a named state-transition matrix. Invalid transitions return stable debugger errors and rendered Simulator Messages when user-visible.
@@ -2848,12 +2854,128 @@ Last instruction:
   mov eax, 20
 
 Register changes:
-  EAX: 00000000h / 0 -> 00000014h / 20
-  AX:  0000h / 0     -> 0014h / 20
-  AL:  00h / 0       -> 14h / 20
+  EAX: 00000000h / u:0 / s:0 -> 00000014h / u:20 / s:20
+  AX:  0000h / u:0 / s:0     -> 0014h / u:20 / s:20
+  AL:  00h / u:0 / s:0       -> 14h / u:20 / s:20
 ```
 
 Unchanged aliases should be hidden by default.
+
+### 19.3.1 Integer Value Display Contract
+
+Integer value display must distinguish stored bits from human-readable interpretations.
+
+The VM stores integer register and memory values as fixed-width bit patterns. The browser UI may display those same bits in multiple textual forms. Adding a signed decimal display is presentation-only. It must not change:
+
+- parser behavior;
+- IR generation;
+- instruction execution;
+- register storage;
+- memory storage;
+- flag behavior;
+- sign-extension behavior;
+- diagnostic behavior;
+- Program Console output;
+- Simulator Messages output;
+- source-run success or failure;
+- runtime memory-change semantics.
+
+Unless a later phase explicitly changes the display policy, integer display rows should show these forms when the displayed width is known:
+
+```text
+<hex> / u:<unsigned decimal> / s:<signed decimal>
+```
+
+Definitions:
+
+- `hex` is the zero-padded hexadecimal representation for the displayed width.
+- `u` is the unsigned decimal interpretation of the same bits.
+- `s` is the signed two's-complement decimal interpretation of the same bits at the displayed width.
+
+The signed interpretation is width-aware:
+
+```text
+8-bit:   unsigned range 0..255,        signed range -128..127
+16-bit:  unsigned range 0..65535,      signed range -32768..32767
+32-bit:  unsigned range 0..4294967295, signed range -2147483648..2147483647
+```
+
+For register display:
+
+- canonical 32-bit general-purpose registers such as `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and `ESP` use 32-bit interpretation;
+- 16-bit aliases such as `AX`, `BX`, `CX`, `DX`, `SI`, `DI`, `BP`, and `SP` use 16-bit interpretation;
+- 8-bit aliases such as `AL`, `AH`, `BL`, `BH`, `CL`, `CH`, `DL`, and `DH` use 8-bit interpretation;
+- `EIP` may use 32-bit signed interpretation only if it is already displayed as a generic integer row;
+- `EFLAGS` is not required to show signed decimal. It may continue to show hexadecimal, unsigned decimal, and named modeled flag bits;
+- the signed value of an alias is computed from the alias value and alias width, not from the full parent register.
+
+Examples:
+
+```text
+EAX = FFFFFFFFh / u:4294967295 / s:-1
+AX  = FFFFh / u:65535 / s:-1
+AL  = FFh / u:255 / s:-1
+```
+
+```text
+EAX = 000000FFh / u:255 / s:255
+AL  = FFh / u:255 / s:-1
+```
+
+The second example is intentional. `EAX` and `AL` display the same low byte, but they have different displayed widths.
+
+For memory-change display:
+
+- the signed interpretation uses the memory row's displayed access width;
+- a `BYTE` or `SBYTE` row uses 8-bit interpretation;
+- a `WORD` or `SWORD` row uses 16-bit interpretation;
+- a `DWORD` or `SDWORD` row uses 32-bit interpretation;
+- signed display uses the displayed or access width only. It must not use the declaration's signedness to decide whether to show a signed value;
+- both `BYTE` and `SBYTE` rows show signed 8-bit interpretation;
+- both `DWORD` and `SDWORD` rows show signed 32-bit interpretation.
+
+Examples:
+
+```text
+value DWORD
+  FFFFFFFFh / u:4294967295 / s:-1
+```
+
+```text
+byteValue BYTE
+  FFh / u:255 / s:-1
+```
+
+This display contract must not imply implicit sign extension. Ordinary `mov` from signed memory still reads the resolved operand width and does not automatically sign-extend. Explicit sign-extension instructions such as `movsx`, `cbw`, `cwde`, `cwd`, and `cdq` own sign-extension behavior.
+
+Normal Simulator Messages diagnostic lines must remain unchanged. Do not add signed register or memory display text to assembly errors, runtime errors, simulator warnings, or execution-complete messages. This display contract changes only existing register and memory value display surfaces.
+
+Source-run JSON and worker protocol policy:
+
+- Existing numeric JSON fields must not be reinterpreted from unsigned to signed.
+- If display-ready signed values are added to source-run JSON, they must use explicit field names such as `signedDecimal` or `displaySigned`.
+- For 8-bit, 16-bit, and 32-bit values, signed decimal values may be represented as ordinary JSON numbers because they are exactly representable.
+- Existing unsigned values and hex strings must remain present unless a later protocol migration explicitly replaces them.
+- The worker protocol must remain structured-clone-safe and JSON-compatible.
+
+QWORD/SQWORD and future 64-bit policy:
+
+- Phase 52A does not implement signed QWORD/SQWORD decimal display.
+- Signed 64-bit display is deferred to a later lossless 64-bit display/protocol phase.
+- Do not use JavaScript `Number` for signed 64-bit decimal conversion.
+- Do not put JavaScript `BigInt` values directly into worker protocol payloads.
+
+The display format should be consistent across existing value-display surfaces, including:
+
+- final register state;
+- debugger current-state register rows, if implemented;
+- last-step register deltas, if implemented;
+- step-over aggregate register deltas, if implemented;
+- memory-change rows;
+- raw memory viewer rows, when implemented and when width is known;
+- any future watch-variable display that reuses register or memory value formatting.
+
+If a display context cannot determine the value width, it must not guess a signed interpretation. It should either omit the signed field or mark the width as unknown.
 
 ### 19.4 Step-Over Delta
 
@@ -2868,11 +2990,11 @@ Step-over result:
 Instructions executed inside call: 17
 
 Register changes:
-  EAX: 00000000h / 0 -> 0000002Ah / 42
-  ECX: 00000005h / 5 -> 00000000h / 0
+  EAX: 00000000h / u:0 / s:0 -> 0000002Ah / u:42 / s:42
+  ECX: 00000005h / u:5 / s:5 -> 00000000h / u:0 / s:0
 
 Memory changes:
-  result DWORD: 00000000h / 0 -> 0000002Ah / 42
+  result DWORD: 00000000h / u:0 / s:0 -> 0000002Ah / u:42 / s:42
 ```
 
 ### 19.5 Post-30 Debugger Protocol and UI Contract
@@ -2913,7 +3035,7 @@ Memory changes:
   var BYTE
     address: 00500000h
     byte offset: +0
-    00h / 0 -> 64h / 100
+    00h / u:0 / s:0 -> 64h / u:100 / s:100
 ```
 
 ### 20.2 Arrays and Byte Offsets
@@ -2937,7 +3059,7 @@ Memory changes:
     address: 00500008h
     byte offset: +8
     element index: 2
-    00000000h / 0 -> 00000064h / 100
+    00000000h / u:0 / s:0 -> 00000064h / u:100 / s:100
 ```
 
 If the address is unaligned inside an element:
@@ -2962,10 +3084,10 @@ new: 12345678h
 Expanded byte view:
 
 ```text
-arr + 1 BYTE: 02h / 2 -> 78h / 120
-arr + 2 BYTE: 03h / 3 -> 56h / 86
-arr + 3 BYTE: 04h / 4 -> 34h / 52
-arr + 4 BYTE: 05h / 5 -> 12h / 18
+arr + 1 BYTE: 02h / u:2 / s:2 -> 78h / u:120 / s:120
+arr + 2 BYTE: 03h / u:3 / s:3 -> 56h / u:86 / s:86
+arr + 3 BYTE: 04h / u:4 / s:4 -> 34h / u:52 / s:52
+arr + 4 BYTE: 05h / u:5 / s:5 -> 12h / u:18 / s:18
 ```
 
 ### 20.4 Strings

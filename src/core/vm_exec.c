@@ -302,13 +302,45 @@ static bool vm_exec_resolve_memory_address(const Vm *vm, const VmIrOperand *oper
         return false;
     }
 
-    address = operand->address + base_value;
-    if ((int32_t)operand->immediate < 0) {
-        uint32_t magnitude = (uint32_t)(-(int64_t)(int32_t)operand->immediate);
-        address -= magnitude;
-    } else {
-        address += (uint32_t)(int32_t)operand->immediate;
+    address = operand->address + base_value + operand->immediate;
+
+    *out_address = address;
+    return true;
+}
+
+/// Resolves an address expression without dereferencing memory.
+///
+/// LEA uses this helper so effective-address arithmetic can wrap modulo 2^32
+/// without invoking checked memory read/write helpers or producing memory
+/// diagnostics. VM_IR_OPERAND_MEMORY_REGISTER may omit a runtime register by
+/// using VM_REGISTER_COUNT; this represents a symbol-plus-displacement address.
+///
+/// @param vm VM whose CPU state supplies optional runtime register values.
+/// @param operand Address-expression operand to resolve.
+/// @param out_address Receives the computed 32-bit effective address.
+/// @return true when @p operand is a supported address expression.
+static bool vm_exec_resolve_effective_address(const Vm *vm, const VmIrOperand *operand, uint32_t *out_address) {
+    uint32_t base_value = 0U;
+    uint32_t address = 0U;
+
+    if (vm == NULL || operand == NULL || out_address == NULL) {
+        return false;
     }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+        *out_address = operand->address;
+        return true;
+    }
+
+    if (operand->kind != VM_IR_OPERAND_MEMORY_REGISTER) {
+        return false;
+    }
+
+    if (operand->reg != VM_REGISTER_COUNT && !vm_cpu_read_register(&vm->cpu, operand->reg, &base_value)) {
+        return false;
+    }
+
+    address = operand->address + base_value + operand->immediate;
 
     *out_address = address;
     return true;
@@ -2167,6 +2199,34 @@ static VmExecStatus vm_exec_execute_exit(Vm *vm, const VmIrInstruction *instruct
     return VM_EXEC_STATUS_OK;
 }
 
+/// Executes LEA effective-address computation.
+///
+/// LEA writes the computed 32-bit address into a 32-bit register destination.
+/// It does not read from memory, write to memory, validate the computed address
+/// against mapped regions, or mutate modeled flags.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction LEA instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_lea(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t address = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_REGISTER || vm_cpu_register_width_bits(instruction->destination.reg) != 32U) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_resolve_effective_address(vm, &instruction->source, &address)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_write_register(&vm->cpu, instruction->destination.reg, address)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Executes one already-fetched instruction.
 ///
 /// @param vm VM instance to mutate.
@@ -2270,6 +2330,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_STC:
         case VM_IR_OPCODE_CMC:
             return vm_exec_execute_carry_control(vm, instruction, instruction->opcode);
+        case VM_IR_OPCODE_LEA:
+            return vm_exec_execute_lea(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
         default:

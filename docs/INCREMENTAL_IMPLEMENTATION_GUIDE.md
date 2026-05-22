@@ -5596,6 +5596,405 @@ EAX = EBX + 8
 
 Concretely, if `EBX = 00500000h`, then `EAX = 00500008h`.
 
+### Display follow-up
+
+Phase 52 - LEA may produce addresses that appear in registers or memory-related display paths. It must not add signed register or memory display as part of `LEA`.
+
+Signed register and memory display is owned by Phase 52A - Signed Register and Memory Value Display. If Phase 52 updates examples or tests that assert final register display, those examples may continue using the pre-52A hex/unsigned display format until Phase 52A updates the shared formatter expectations.
+
+Do not mix `LEA` semantics with signed display formatting. `LEA` computes an effective address. Phase 52A changes only how already-existing integer values are presented to users.
+
+---
+
+## 56A. Phase 52A - Signed Register and Memory Value Display
+
+### Goal
+
+Add signed decimal interpretations to existing register and memory value displays.
+
+This is a UI/formatter and display-contract milestone. It must not add MASM syntax, new instructions, new parser behavior, new IR opcodes, new executor behavior, new memory semantics, new flag semantics, new diagnostics, new Program Console behavior, or new Simulator Messages behavior.
+
+The purpose is to make existing bit patterns easier to understand by showing both unsigned and signed interpretations where the display width is known.
+
+### Behavior category
+
+Display and formatter improvement.
+
+### Dependencies
+
+This phase assumes the repository already has existing display or formatter paths for at least some of these value categories:
+
+- final register state after Run;
+- register rows used by source-run output or protocol tests;
+- memory-change rows;
+- debugger current-state rows, if the debugger UI/backend display path already exists;
+- last-step delta rows, if the debugger delta path already exists.
+
+Only display paths that already exist in the repository are in scope. Do not implement a missing debugger, missing Step Into path, missing Step Over path, missing raw memory viewer, or missing watch window merely to satisfy this phase.
+
+Do not renumber Phase 53 or any later phase.
+
+### Required display format
+
+For each displayed integer value whose width is known, preserve the existing hexadecimal representation and unsigned decimal interpretation, and add a signed decimal interpretation.
+
+Use this display shape unless the current UI has a table layout where separate columns are clearer:
+
+```text
+<hex> / u:<unsigned decimal> / s:<signed decimal>
+```
+
+Examples:
+
+```text
+00h / u:0 / s:0
+7Fh / u:127 / s:127
+80h / u:128 / s:-128
+FFh / u:255 / s:-1
+```
+
+```text
+00000000h / u:0 / s:0
+7FFFFFFFh / u:2147483647 / s:2147483647
+80000000h / u:2147483648 / s:-2147483648
+FFFFFFFFh / u:4294967295 / s:-1
+```
+
+The exact label text may be `u:` and `s:` or table headings `Unsigned` and `Signed`, but the rendered UI and formatter tests must make it unambiguous which decimal value is unsigned and which decimal value is signed.
+
+Do not remove the existing hexadecimal display.
+
+Do not remove the existing unsigned decimal display unless a later explicit protocol/display migration replaces it and updates every affected test.
+
+### Width rules
+
+The signed value is computed from the displayed width, not from declaration signedness and not from the parent register width.
+
+Register display:
+
+- 8-bit aliases such as `AL`, `AH`, `BL`, `BH`, `CL`, `CH`, `DL`, and `DH` use 8-bit signed interpretation.
+- 16-bit aliases such as `AX`, `BX`, `CX`, `DX`, `SI`, `DI`, `BP`, and `SP` use 16-bit signed interpretation.
+- 32-bit general-purpose registers such as `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and `ESP` use 32-bit signed interpretation.
+- `EIP` may use 32-bit signed interpretation only if it is already displayed as a generic integer row.
+- `EFLAGS` is not required to show signed decimal. It may continue to show hexadecimal, unsigned decimal, and named modeled flag bits.
+- If a future mode displays 64-bit registers, this phase does not authorize lossy signed 64-bit display.
+
+Memory display:
+
+- `BYTE` and `SBYTE` rows use 8-bit signed interpretation.
+- `WORD` and `SWORD` rows use 16-bit signed interpretation.
+- `DWORD` and `SDWORD` rows use 32-bit signed interpretation.
+- For explicit `PTR` memory rows, use the `PTR` width.
+- For symbol-derived memory rows, use the resolved access width already used by the memory-change row.
+- For byte-expanded views, each byte row uses 8-bit signed interpretation.
+- For grouped logical writes, use the grouped access width.
+- Signed display uses the displayed or access width only. It must not use the declaration's signedness to decide whether to show a signed value. Both `BYTE` and `SBYTE` rows show signed 8-bit interpretation. Both `DWORD` and `SDWORD` rows show signed 32-bit interpretation.
+
+The following example must be treated as correct:
+
+```text
+EAX = 000000FFh / u:255 / s:255
+AL  = FFh / u:255 / s:-1
+```
+
+Reason: `EAX` is displayed as a 32-bit register, while `AL` is displayed as an 8-bit alias.
+
+### Signedness is display-only
+
+Signed display must not imply or introduce automatic sign extension.
+
+This phase must preserve the existing rule that ordinary `mov` from signed memory does not sign-extend. For example, reading an `SBYTE` with ordinary `mov` still reads the resolved operand width. Explicit sign-extension instructions own sign-extension behavior.
+
+This phase must not change the stored bytes for signed data declarations. `SBYTE -1`, `BYTE 0FFh`, and an instruction that writes `FFh` to a byte all display the same 8-bit signed interpretation when shown as a byte:
+
+```text
+FFh / u:255 / s:-1
+```
+
+### Simulator Messages and Program Console policy
+
+Normal Simulator Messages diagnostic lines must remain unchanged.
+
+Do not add signed register or memory display text to assembly errors, runtime errors, simulator warnings, or execution-complete messages.
+
+Program Console output must remain unchanged.
+
+This phase changes only existing register and memory value display surfaces.
+
+### Source-run JSON and protocol rules
+
+Prefer implementing signed display in the browser/Node formatter layer from existing numeric or hex fields.
+
+If adding new JSON fields is necessary, the fields must be additive and explicit. Acceptable field names include:
+
+```text
+signedDecimal
+unsignedDecimal
+displaySigned
+displayUnsigned
+```
+
+Do not reinterpret an existing unsigned JSON field as signed.
+
+Do not remove or rename existing fields in this phase unless the repository already has a dedicated protocol-migration mechanism and all protocol tests are updated.
+
+For 8-bit, 16-bit, and 32-bit values, signed decimal fields may be JSON numbers or deterministic decimal strings.
+
+Phase 52A does not implement signed QWORD/SQWORD decimal display. Signed 64-bit display is deferred to a later lossless 64-bit display/protocol phase. Do not use JavaScript `Number` for signed 64-bit decimal conversion. Do not put JavaScript `BigInt` values directly into worker protocol payloads.
+
+### Required implementation work
+
+1. Add or identify a shared display-format helper for integer values.
+
+   The helper must accept:
+   - raw value or already-formatted hex value;
+   - width in bits or bytes;
+   - enough information to preserve the current hex formatting width.
+
+   The helper must return or render:
+   - zero-padded hexadecimal;
+   - unsigned decimal;
+   - signed decimal.
+
+2. Use the helper for all existing register display paths in scope.
+
+3. Use the helper for all existing memory-change display paths in scope.
+
+4. Keep display formatting deterministic across native/Node formatter tests and browser UI.
+
+5. Keep Program Console and Simulator Messages separate. This phase must not add signed value text to Program Console or Simulator Messages.
+
+6. Update documentation and status text to say signed display is implemented as a display feature, not as an execution feature.
+
+7. Preserve C99 core boundaries. Browser-side formatting may remain JavaScript or TypeScript. If any C helper is added for source-run formatting, it must be C99 with file-level headers and Doxygen-style comments for public APIs.
+
+### Required tests
+
+Add formatter/unit tests for the signed conversion helper.
+
+8-bit required cases:
+
+```text
+00h -> u:0,   s:0
+01h -> u:1,   s:1
+7Fh -> u:127, s:127
+80h -> u:128, s:-128
+FFh -> u:255, s:-1
+```
+
+16-bit required cases:
+
+```text
+0000h -> u:0,     s:0
+0001h -> u:1,     s:1
+7FFFh -> u:32767, s:32767
+8000h -> u:32768, s:-32768
+FFFFh -> u:65535, s:-1
+```
+
+32-bit required cases:
+
+```text
+00000000h -> u:0,          s:0
+00000001h -> u:1,          s:1
+7FFFFFFFh -> u:2147483647, s:2147483647
+80000000h -> u:2147483648, s:-2147483648
+FFFFFFFFh -> u:4294967295, s:-1
+```
+
+Register display tests:
+
+```asm
+.code
+main PROC
+    mov eax, 0FFFFFFFFh
+main ENDP
+END main
+```
+
+Expected display includes:
+
+```text
+EAX = FFFFFFFFh / u:4294967295 / s:-1
+AX  = FFFFh / u:65535 / s:-1
+AL  = FFh / u:255 / s:-1
+```
+
+Register alias width test:
+
+```asm
+.code
+main PROC
+    mov eax, 000000FFh
+main ENDP
+END main
+```
+
+Expected display includes:
+
+```text
+EAX = 000000FFh / u:255 / s:255
+AL  = FFh / u:255 / s:-1
+```
+
+Memory-change display tests:
+
+```asm
+.data
+value DWORD 0
+.code
+main PROC
+    mov value, 0FFFFFFFFh
+main ENDP
+END main
+```
+
+Expected memory-change display includes:
+
+```text
+value DWORD
+  00000000h / u:0 / s:0 -> FFFFFFFFh / u:4294967295 / s:-1
+```
+
+```asm
+.data
+b BYTE 0
+.code
+main PROC
+    mov b, 0FFh
+main ENDP
+END main
+```
+
+Expected memory-change display includes:
+
+```text
+b BYTE
+  00h / u:0 / s:0 -> FFh / u:255 / s:-1
+```
+
+Signed declaration display test:
+
+```asm
+.data
+sb SBYTE -1
+sd SDWORD -1
+.code
+main PROC
+    mov al, sb
+    mov eax, sd
+main ENDP
+END main
+```
+
+Expected final display includes:
+
+```text
+AL  = FFh / u:255 / s:-1
+EAX = FFFFFFFFh / u:4294967295 / s:-1
+```
+
+Regression tests:
+
+- Existing hex output remains present.
+- Existing unsigned decimal output remains present.
+- Existing source-run success/failure status is unchanged.
+- Existing Program Console output is unchanged.
+- Existing Simulator Messages output is unchanged.
+- Existing VM register values are unchanged.
+- Existing VM memory bytes are unchanged.
+- Existing flag values are unchanged.
+- Existing diagnostics are unchanged.
+
+Protocol tests, only if new fields are added:
+
+- New fields are additive.
+- New fields are JSON-compatible.
+- Existing protocol consumers still receive the old fields.
+- No `BigInt`, `Map`, `Set`, functions, `undefined`, DOM nodes, cyclic objects, or binary transfer-only values are introduced.
+
+Manual browser tests:
+
+- Rebuild Wasm if the implementation touches Wasm-facing output, bundled JS, worker protocol, or files consumed by the browser.
+- Run the browser locally.
+- Verify final register display for `EAX = FFFFFFFFh`.
+- Verify memory-change display for a DWORD write to `FFFFFFFFh`.
+- Verify Program Console remains unchanged.
+- Verify Simulator Messages still show only the normal execution-complete line for successful programs.
+
+### Acceptance criteria
+
+The aggregate test runner passes.
+
+The signed conversion helper produces exact expected values for 8-bit, 16-bit, and 32-bit boundaries.
+
+A program that leaves `EAX = FFFFFFFFh` displays:
+
+```text
+EAX = FFFFFFFFh / u:4294967295 / s:-1
+```
+
+The same program displays alias rows using alias widths:
+
+```text
+AX = FFFFh / u:65535 / s:-1
+AL = FFh / u:255 / s:-1
+```
+
+A program that leaves `EAX = 000000FFh` displays:
+
+```text
+EAX = 000000FFh / u:255 / s:255
+AL = FFh / u:255 / s:-1
+```
+
+A DWORD memory write to `FFFFFFFFh` displays:
+
+```text
+FFFFFFFFh / u:4294967295 / s:-1
+```
+
+A BYTE memory write to `FFh` displays:
+
+```text
+FFh / u:255 / s:-1
+```
+
+No parser behavior changes.
+
+No IR behavior changes.
+
+No VM execution behavior changes.
+
+No instruction semantics change.
+
+No new MASM syntax is accepted.
+
+No existing supported MASM syntax is rejected.
+
+No Program Console output changes.
+
+No Simulator Messages text changes.
+
+No QWORD/SQWORD signed decimal display is added.
+
+### Rejected / out of scope
+
+- No new instructions.
+- No `LEA` changes.
+- No `CMP`, jumps, labels, stack, procedures, calls, returns, or Irvine32 routine bodies.
+- No sign-extension semantic changes.
+- No implicit sign extension for ordinary `mov`.
+- No signed arithmetic mode.
+- No new CPU flags.
+- No PF/AF display work.
+- No QWORD/SQWORD executable memory operations.
+- No QWORD/SQWORD signed decimal display.
+- No BigInt values in worker protocol payloads.
+- No source-run JSON field removal or renaming.
+- No browser settings UI.
+- No debugger feature implementation beyond updating already-existing display rows.
+
 ---
 
 ## 57. Phase 53 - Unsigned MUL

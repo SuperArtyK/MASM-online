@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 50B.
+ * @brief Unit tests for the VM executor through Milestone 52.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -2851,6 +2851,55 @@ static int test_phase50b_multiple_invalid_flags_one_diagnostic(void) {
 }
 
 
+
+/// Verifies Phase 52 LEA computes addresses without memory access or flag mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase52_lea_effective_address_execution(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ecx = 0U;
+    const VmExecDelta *delta = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for LEA test");
+    {
+        const VmIrInstruction lea_program[] = {
+            {VM_IR_OPCODE_LEA, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_REGISTER, 0U, 4U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "lea eax, [ebx + 4]", 0U},
+            {VM_IR_OPCODE_LEA, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_REGISTER, 0U, (uint32_t)-4, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "lea ecx, nums[-4]", 1U}
+        };
+        failures += expect_status(vm_load_program(&vm, lea_program, sizeof(lea_program) / sizeof(lea_program[0])), VM_EXEC_STATUS_OK, "LEA program load should succeed");
+    }
+
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0xFFFFFFFFU) ? 0 : record_failure("EBX setup should succeed"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "LEA register-derived address should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after LEA"));
+    failures += expect_u32(eax, 3U, "LEA should use modulo-32-bit arithmetic for EBX + 4");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "LEA should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "LEA should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "LEA should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "LEA should preserve OF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 1U, 0U, "LEA should not record memory accesses");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "LEA should not record memory changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "LEA should not record flag changes");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "LEA symbol displacement without runtime register should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &ecx) ? 0 : record_failure("ECX read should succeed after LEA"));
+    failures += expect_u32(ecx, VM_MEMORY_DEFAULT_DATA_BASE - 4U, "LEA symbol displacement should apply negative offset modulo 32-bit");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 1U, 0U, "symbol LEA should not record memory accesses");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "symbol LEA should not record memory changes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2896,6 +2945,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_ROR), "ror") != 0) {
         failures += record_failure("ROR opcode name should be ror");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_LEA), "lea") != 0) {
+        failures += record_failure("LEA opcode name should be lea");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -2918,7 +2970,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 50B.
+/// Runs all executor tests through Milestone 52.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -2975,6 +3027,7 @@ int main(void) {
     failures += test_phase50b_flag_use_helper_policies();
     failures += test_phase50b_multiple_invalid_flags_one_diagnostic();
     failures += test_exit_terminator_halts_without_mutation();
+    failures += test_phase52_lea_effective_address_execution();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -2982,6 +3035,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 50B passed.");
+    puts("Executor tests through Milestone 52 passed.");
     return 0;
 }

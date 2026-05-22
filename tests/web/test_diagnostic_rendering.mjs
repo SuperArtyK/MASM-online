@@ -698,6 +698,57 @@ END main
 `,
     reason: "Phase 50 ROR remains warning-only under strict shift validation."
   },
+  leaOffsetSource: {
+    source: `.data
+nums DWORD 0
+.code
+main PROC
+    lea eax, OFFSET nums
+main ENDP
+END main
+`,
+    reason: "Phase 52 LEA rejects OFFSET source operands."
+  },
+  leaNarrowDestination: {
+    source: `.data
+nums DWORD 0
+.code
+main PROC
+    lea ax, nums
+main ENDP
+END main
+`,
+    reason: "Phase 52 LEA requires a 32-bit register destination."
+  },
+  leaScaledIndex: {
+    source: `.code
+main PROC
+    lea eax, [eax * 4]
+main ENDP
+END main
+`,
+    reason: "Phase 52 LEA keeps scaled-index addressing unsupported."
+  },
+  leaRegisterSource: {
+    source: `.code
+main PROC
+    lea eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 52 LEA rejects register source operands."
+  },
+  leaDisplacementOverflow: {
+    source: `.data
+nums DWORD 1
+.code
+main PROC
+    lea eax, [nums + 2147483648]
+main ENDP
+END main
+`,
+    reason: "Phase 52 LEA reports static address displacement overflow as an invalid effective-address expression."
+  },
   undefinedFlagUseAdc: {
     source: `.code
 main PROC
@@ -2020,6 +2071,101 @@ test("renders ROR warning under strict shift validation without runtime error", 
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROR count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the most significant bit of the rotated result. ZF and SF were preserved because ROR does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
+});
+
+
+test("renders LEA OFFSET-source diagnostic exactly", () => {
+  const name = "leaOffsetSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-effective-address-expression",
+    message: "LEA source must be an effective-address expression, not OFFSET symbol.",
+    line: 5,
+    column: 14,
+    byteOffset: 48,
+    spanLength: 6
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-effective-address-expression line 5, column 14, byte offset 48, span length 6: LEA source must be an effective-address expression, not OFFSET symbol.");
+});
+
+
+test("renders LEA narrow-destination diagnostic exactly", () => {
+  const name = "leaNarrowDestination";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "LEA destination must be a 32-bit register.",
+    line: 5,
+    column: 9,
+    byteOffset: 43,
+    spanLength: 2
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 5, column 9, byte offset 43, span length 2: LEA destination must be a 32-bit register.");
+});
+
+
+test("renders LEA scaled-index diagnostic exactly", () => {
+  const name = "leaScaledIndex";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-scaled-index",
+    message: "Scaled-index memory operands are not supported yet.",
+    line: 3,
+    column: 19,
+    byteOffset: 34,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-scaled-index line 3, column 19, byte offset 34, span length 1: Scaled-index memory operands are not supported yet.");
+});
+
+
+test("renders LEA register-source diagnostic exactly", () => {
+  const name = "leaRegisterSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-effective-address-expression",
+    message: "LEA source must be a supported effective-address expression.",
+    line: 3,
+    column: 14,
+    byteOffset: 29,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-effective-address-expression line 3, column 14, byte offset 29, span length 3: LEA source must be a supported effective-address expression.");
+});
+
+
+test("renders LEA displacement-overflow diagnostic exactly", () => {
+  const name = "leaDisplacementOverflow";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-effective-address-expression",
+    message: "LEA address displacement is outside the supported signed 32-bit range.",
+    line: 5,
+    column: 20,
+    byteOffset: 54,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-effective-address-expression line 5, column 20, byte offset 54, span length 1: LEA address displacement is outside the supported signed 32-bit range.");
 });
 
 

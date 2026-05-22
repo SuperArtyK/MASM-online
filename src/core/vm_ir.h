@@ -78,6 +78,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ROL,
     /// Rotate a register or memory destination right within its selected width.
     VM_IR_OPCODE_ROR,
+    /// Compute an effective address into a 32-bit register without reading memory.
+    VM_IR_OPCODE_LEA,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.
@@ -174,9 +176,10 @@ VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits);
 /// Returns a runtime register-indirect memory operand.
 ///
 /// The effective address is computed during execution as static base address
-/// plus the current base register value plus signed byte displacement.
+/// plus the current base register value plus signed byte displacement. LEA may
+/// use VM_REGISTER_COUNT when no runtime register contributes to the address.
 ///
-/// @param base_register Register that contributes the runtime byte address or offset.
+/// @param base_register Register that contributes the runtime byte address or offset, or VM_REGISTER_COUNT for none.
 /// @param displacement Signed byte displacement added to the runtime address.
 /// @param static_address Static base address, normally zero or a data-symbol base.
 /// @param width_bits Operand width in bits, or zero when parser validation will infer it.

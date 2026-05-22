@@ -3079,6 +3079,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_ROR;
         return true;
     }
+    if (vm_parser_token_equals(token, "lea")) {
+        *out_opcode = VM_IR_OPCODE_LEA;
+        return true;
+    }
 
     return false;
 }
@@ -3156,6 +3160,14 @@ static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_SAR ||
            opcode == VM_IR_OPCODE_ROL ||
            opcode == VM_IR_OPCODE_ROR;
+}
+
+/// Returns whether an opcode uses LEA address-only operand validation rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for LEA.
+static bool vm_parser_opcode_is_lea(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_LEA;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -4129,6 +4141,397 @@ static bool vm_parser_parse_ptr_memory_operand(VmParserState *state, const VmPar
 
     vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "PTR width override requires a data symbol or supported symbol-offset memory operand.");
     return false;
+}
+
+/// Reports an invalid LEA effective-address expression diagnostic.
+///
+/// @param state Parser state to mutate.
+/// @param token Token most closely associated with the malformed expression.
+/// @param message User-facing diagnostic text.
+static void vm_parser_report_invalid_lea_address(VmParserState *state, const VmLexerToken *token, const char *message) {
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION, token, message);
+}
+
+/// Builds a LEA address operand from a symbol plus signed byte displacement.
+///
+/// LEA computes addresses only, so this helper deliberately does not validate
+/// symbol object bounds, access width, section containment, alignment, or memory
+/// permissions. The executor applies the displacement with modulo-32-bit
+/// arithmetic and never dereferences the operand for LEA.
+///
+/// @param state Parser state to inspect.
+/// @param symbol_token Data-symbol token that contributes the static base.
+/// @param offset Signed byte displacement to add at execution time.
+/// @param out_operand Receives a relocatable address operand.
+/// @return true when the symbol was resolved.
+static bool vm_parser_build_lea_symbol_address_operand(VmParserState *state, const VmLexerToken *symbol_token, int32_t offset, VmIrOperand *out_operand) {
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || symbol_token == NULL || out_operand == NULL) {
+        return false;
+    }
+
+    symbol = vm_parser_resolve_symbol(state, symbol_token);
+    if (symbol == NULL) {
+        return false;
+    }
+
+    if (offset == 0) {
+        *out_operand = vm_ir_operand_with_relocation(vm_ir_operand_memory(symbol->address, 0U), vm_parser_symbol_relocation_kind(symbol->section));
+    } else {
+        *out_operand = vm_ir_operand_with_relocation(
+            vm_ir_operand_memory_register(VM_REGISTER_COUNT, offset, symbol->address, 0U),
+            vm_parser_symbol_relocation_kind(symbol->section)
+        );
+    }
+    return true;
+}
+
+/// Parses an optional constant-expression offset after a bracketed LEA symbol.
+///
+/// This helper mirrors memory-operand symbol-offset parsing, but reports LEA's
+/// required `invalid-effective-address-expression` diagnostic for malformed or
+/// overflowing address expressions because LEA source operands are address-only.
+///
+/// @param state Parser state positioned after the symbol token.
+/// @param out_offset Receives the signed byte displacement.
+/// @return true when the suffix was parsed and the current token is `]`.
+static bool vm_parser_parse_lea_bracket_symbol_offset_suffix(VmParserState *state, int32_t *out_offset) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    VmParserConstantExpression expression;
+
+    if (state == NULL || out_offset == NULL) {
+        return false;
+    }
+
+    *out_offset = 0;
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        return true;
+    }
+
+    if (!vm_parser_token_starts_constant_expression(token)) {
+        vm_parser_report_invalid_lea_address(state, token, "Expected a constant byte displacement or ']' after LEA data symbol.");
+        return false;
+    }
+
+    memset(&expression, 0, sizeof(expression));
+    if (!vm_parser_parse_constant_expression(state, &expression)) {
+        return false;
+    }
+    if (!vm_parser_i64_to_i32_offset(expression.value, out_offset)) {
+        vm_parser_report_invalid_lea_address(state, expression.start_token, "LEA address displacement is outside the supported signed 32-bit range.");
+        return false;
+    }
+
+    return true;
+}
+
+/// Builds a LEA symbol-plus-register address operand without memory-width checks.
+///
+/// LEA does not dereference memory, so signedness, element width, executable
+/// QWORD/SQWORD restrictions, object bounds, and memory permissions do not
+/// affect whether a symbol-plus-register expression is a valid source.
+///
+/// @param state Parser state to inspect.
+/// @param symbol_token Data-symbol token that contributes the static base.
+/// @param base_token 32-bit base register token that contributes the runtime offset.
+/// @param out_operand Receives the address-only operand.
+/// @return true when both symbol and register were accepted.
+static bool vm_parser_build_lea_symbol_register_address_operand(
+    VmParserState *state,
+    const VmLexerToken *symbol_token,
+    const VmLexerToken *base_token,
+    VmIrOperand *out_operand
+) {
+    const VmSymbol *symbol = NULL;
+
+    if (state == NULL || symbol_token == NULL || base_token == NULL || out_operand == NULL) {
+        return false;
+    }
+    if (!vm_parser_token_is_register_indirect_base(base_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, base_token, "Unsupported register index. Use a 32-bit general-purpose register such as EAX, EBX, ECX, EDX, ESI, EDI, EBP, or ESP.");
+        return false;
+    }
+
+    symbol = vm_parser_resolve_symbol(state, symbol_token);
+    if (symbol == NULL) {
+        return false;
+    }
+
+    *out_operand = vm_ir_operand_with_relocation(
+        vm_ir_operand_memory_register(base_token->register_id, 0, symbol->address, 0U),
+        vm_parser_symbol_relocation_kind(symbol->section)
+    );
+    return true;
+}
+
+/// Parses `[symbol]`, `[symbol + constant]`, or `[symbol - constant]` for LEA.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param out_operand Receives the address-only source operand.
+/// @return true when a supported symbol-relative address expression was parsed.
+static bool vm_parser_parse_lea_bracketed_symbol_offset_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = NULL;
+    int32_t offset = 0;
+
+    if (state == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    symbol_token = vm_parser_current_token(state);
+    if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
+        vm_parser_report_invalid_lea_address(state, symbol_token != NULL ? symbol_token : left_token, "LEA requires a supported effective-address expression.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    if (!vm_parser_parse_lea_bracket_symbol_offset_suffix(state, &offset)) {
+        return false;
+    }
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_report_invalid_lea_address(state, vm_parser_current_token(state), "Expected ']' after LEA effective-address expression.");
+        return false;
+    }
+
+    if (!vm_parser_build_lea_symbol_address_operand(state, symbol_token, offset, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `symbol[reg32]` for LEA.
+///
+/// @param state Parser state positioned at the symbol token.
+/// @param out_operand Receives the address-only source operand.
+/// @return true when a supported symbol-plus-register expression was parsed.
+static bool vm_parser_parse_lea_symbol_register_index_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *symbol_token = vm_parser_current_token(state);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *base_token = NULL;
+
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    base_token = vm_parser_current_token(state);
+    if (base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+        vm_parser_report_invalid_lea_address(state, base_token != NULL ? base_token : left_token, "Expected a register inside LEA symbol brackets.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+        vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+        return false;
+    }
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_report_invalid_lea_address(state, vm_parser_current_token(state), "Expected ']' after LEA symbol-register expression.");
+        return false;
+    }
+
+    if (!vm_parser_build_lea_symbol_register_address_operand(state, symbol_token, base_token, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `[symbol + reg32]` for LEA.
+///
+/// @param state Parser state positioned at the left bracket.
+/// @param out_operand Receives the address-only source operand.
+/// @return true when a supported symbol-plus-register expression was parsed.
+static bool vm_parser_parse_lea_bracketed_symbol_register_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *left_token = vm_parser_current_token(state);
+    const VmLexerToken *symbol_token = NULL;
+    const VmLexerToken *plus_token = NULL;
+    const VmLexerToken *base_token = NULL;
+
+    if (state == NULL || out_operand == NULL || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    symbol_token = vm_parser_current_token(state);
+    plus_token = vm_parser_peek_token(state, 1U);
+    base_token = vm_parser_peek_token(state, 2U);
+    if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || plus_token == NULL || plus_token->kind != VM_LEXER_TOKEN_PLUS || base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
+        vm_parser_report_invalid_lea_address(state, symbol_token != NULL ? symbol_token : left_token, "Expected [symbol + register] LEA effective-address expression.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
+        vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));
+        return false;
+    }
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_report_invalid_lea_address(state, vm_parser_current_token(state), "Expected ']' after LEA symbol-register expression.");
+        return false;
+    }
+
+    if (!vm_parser_build_lea_symbol_register_address_operand(state, symbol_token, base_token, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses `symbol[constant]` for LEA.
+///
+/// @param state Parser state positioned at the symbol token.
+/// @param out_operand Receives the address-only source operand.
+/// @return true when a supported symbol-offset address expression was parsed.
+static bool vm_parser_parse_lea_symbol_index_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *symbol_token = vm_parser_current_token(state);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *offset_token = NULL;
+    VmParserConstantExpression expression;
+    int32_t offset = 0;
+
+    if (state == NULL || out_operand == NULL || symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token) || left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    vm_parser_advance(state);
+    offset_token = vm_parser_current_token(state);
+    if (!vm_parser_token_starts_constant_expression(offset_token)) {
+        vm_parser_report_invalid_lea_address(state, offset_token != NULL ? offset_token : left_token, "Expected a constant byte offset inside LEA symbol brackets.");
+        return false;
+    }
+    memset(&expression, 0, sizeof(expression));
+    if (!vm_parser_parse_constant_expression(state, &expression)) {
+        return false;
+    }
+    if (!vm_parser_i64_to_i32_offset(expression.value, &offset)) {
+        vm_parser_report_invalid_lea_address(state, expression.start_token, "LEA address displacement is outside the supported signed 32-bit range.");
+        return false;
+    }
+
+    if (vm_parser_current_token(state) == NULL || vm_parser_current_token(state)->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        vm_parser_report_invalid_lea_address(state, vm_parser_current_token(state), "Expected ']' after LEA symbol-offset expression.");
+        return false;
+    }
+
+    if (!vm_parser_build_lea_symbol_address_operand(state, symbol_token, offset, out_operand)) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    return true;
+}
+
+/// Parses an address-only source operand for LEA.
+///
+/// LEA accepts only the memory-expression shapes already supported by the
+/// addressing parser. It intentionally rejects immediates, registers, OFFSET,
+/// PTR-width memory operands, and malformed numeric memory expressions because
+/// the instruction computes addresses but does not read a memory value.
+///
+/// @param state Parser state to mutate.
+/// @param out_operand Receives the address-only operand.
+/// @return true when the LEA source expression was accepted.
+static bool vm_parser_parse_lea_source_operand(VmParserState *state, VmIrOperand *out_operand) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (state == NULL || out_operand == NULL) {
+        return false;
+    }
+    if (token == NULL) {
+        vm_parser_report_invalid_lea_address(state, token, "LEA requires a source effective-address expression.");
+        return false;
+    }
+
+    if (vm_parser_current_token_starts_ptr_width(state) || vm_parser_current_token_is_malformed_ptr_prefix(state)) {
+        vm_parser_report_invalid_lea_address(state, token, "LEA source does not use PTR width overrides; write a supported effective-address expression instead.");
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *third_token = vm_parser_peek_token(state, 3U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_bracketed_register_memory_operand(state, NULL, out_operand);
+        }
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_IDENTIFIER && third_token != NULL && third_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_lea_bracketed_symbol_register_operand(state, out_operand);
+        }
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_NUMBER) {
+            vm_parser_report_invalid_lea_address(state, inside_token, "LEA does not support numeric-only memory expressions such as [0].");
+            return false;
+        }
+        return vm_parser_parse_lea_bracketed_symbol_offset_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *inside_token = vm_parser_peek_token(state, 2U);
+        if (inside_token != NULL && inside_token->kind == VM_LEXER_TOKEN_REGISTER) {
+            return vm_parser_parse_lea_symbol_register_index_operand(state, out_operand);
+        }
+        return vm_parser_parse_lea_symbol_index_operand(state, out_operand);
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        if (vm_parser_token_equals(token, "OFFSET")) {
+            vm_parser_report_invalid_lea_address(state, token, "LEA source must be an effective-address expression, not OFFSET symbol.");
+            return false;
+        }
+        if (!vm_parser_build_lea_symbol_address_operand(state, token, 0, out_operand)) {
+            return false;
+        }
+        vm_parser_advance(state);
+        return true;
+    }
+
+    vm_parser_report_invalid_lea_address(state, token, "LEA source must be a supported effective-address expression.");
+    return false;
+}
+
+/// Validates LEA operand shapes.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination Destination operand parsed before validation.
+/// @param source Source address expression parsed before validation.
+/// @param destination_token Token associated with the destination operand.
+/// @param source_token Token associated with the source operand.
+/// @return true when LEA operands are supported.
+static bool vm_parser_validate_lea_operands(
+    VmParserState *state,
+    const VmIrOperand *destination,
+    const VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "LEA requires a 32-bit register destination.");
+        return false;
+    }
+    if (vm_cpu_register_width_bits(destination->reg) != 32U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "LEA destination must be a 32-bit register.");
+        return false;
+    }
+    if (source->kind != VM_IR_OPERAND_MEMORY_ADDRESS && source->kind != VM_IR_OPERAND_MEMORY_REGISTER) {
+        vm_parser_report_invalid_lea_address(state, source_token, "LEA source must be a supported effective-address expression.");
+        return false;
+    }
+
+    return true;
 }
 
 /// Parses a register or direct-symbol destination operand.
@@ -5450,7 +5853,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
-    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode)) &&
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode)) &&
         destination_token != NULL &&
         (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
          destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
@@ -5460,6 +5863,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         const char *message = opcode == VM_IR_OPCODE_INC ? "INC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_DEC ? "DEC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_NOT ? "NOT requires a register or memory destination." :
+                              vm_parser_opcode_is_lea(opcode) ? "LEA requires a 32-bit register destination." :
                               vm_parser_opcode_is_shift(opcode) ? "Shift instructions require a register or memory destination." :
                               "Logical instructions require a register or memory destination.";
         char logical_message[96];
@@ -5525,12 +5929,22 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return false;
     }
     source_token = vm_parser_current_token(state);
-    if (!vm_parser_parse_source_operand(state, &source)) {
-        return false;
+    if (vm_parser_opcode_is_lea(opcode)) {
+        if (!vm_parser_parse_lea_source_operand(state, &source)) {
+            return false;
+        }
+    } else {
+        if (!vm_parser_parse_source_operand(state, &source)) {
+            return false;
+        }
     }
 
     if (vm_parser_opcode_is_extension_move(opcode)) {
         if (!vm_parser_validate_extension_widths(state, &destination, &source, source_token)) {
+            return false;
+        }
+    } else if (vm_parser_opcode_is_lea(opcode)) {
+        if (!vm_parser_validate_lea_operands(state, &destination, &source, destination_token, source_token)) {
             return false;
         }
     } else if (vm_parser_opcode_is_exchange(opcode)) {
@@ -5571,10 +5985,12 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return false;
     }
 
-    if ((vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+    if ((vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         char message[96];
         if (vm_parser_opcode_is_logical_binary(opcode)) {
             (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_logical_binary_mnemonic(opcode));
+        } else if (vm_parser_opcode_is_lea(opcode)) {
+            (void)snprintf(message, sizeof(message), "LEA takes exactly two operands.");
         } else {
             (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_shift_mnemonic(opcode));
         }
@@ -6642,6 +7058,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-option-value";
         case VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION:
             return "unknown-instruction";
+        case VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION:
+            return "invalid-effective-address-expression";
         case VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS:
             return "invalid-instruction-operands";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE:
