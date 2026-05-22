@@ -11,24 +11,285 @@
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
-/** @typedef {{symbol?: string, dataType?: string, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
+/** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
-/** Canonical MASM32 register display order for the final-state panel. */
-const CANONICAL_REGISTER_DISPLAY_ORDER = ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"];
+/** Canonical MASM32 register display groups and aliases for the final-state panel. */
+const REGISTER_DISPLAY_ROWS = [
+  { name: "EAX", source: "EAX", widthBits: 32, group: "EAX", indentLevel: 0 },
+  { name: "AX", source: "EAX", widthBits: 16, group: "EAX", indentLevel: 1 },
+  { name: "AH", source: "EAX", widthBits: 8, shiftBits: 8, group: "EAX", indentLevel: 2 },
+  { name: "AL", source: "EAX", widthBits: 8, group: "EAX", indentLevel: 2 },
+  { name: "EBX", source: "EBX", widthBits: 32, group: "EBX", indentLevel: 0 },
+  { name: "BX", source: "EBX", widthBits: 16, group: "EBX", indentLevel: 1 },
+  { name: "BH", source: "EBX", widthBits: 8, shiftBits: 8, group: "EBX", indentLevel: 2 },
+  { name: "BL", source: "EBX", widthBits: 8, group: "EBX", indentLevel: 2 },
+  { name: "ECX", source: "ECX", widthBits: 32, group: "ECX", indentLevel: 0 },
+  { name: "CX", source: "ECX", widthBits: 16, group: "ECX", indentLevel: 1 },
+  { name: "CH", source: "ECX", widthBits: 8, shiftBits: 8, group: "ECX", indentLevel: 2 },
+  { name: "CL", source: "ECX", widthBits: 8, group: "ECX", indentLevel: 2 },
+  { name: "EDX", source: "EDX", widthBits: 32, group: "EDX", indentLevel: 0 },
+  { name: "DX", source: "EDX", widthBits: 16, group: "EDX", indentLevel: 1 },
+  { name: "DH", source: "EDX", widthBits: 8, shiftBits: 8, group: "EDX", indentLevel: 2 },
+  { name: "DL", source: "EDX", widthBits: 8, group: "EDX", indentLevel: 2 },
+  { name: "ESI", source: "ESI", widthBits: 32, group: "ESI", indentLevel: 0 },
+  { name: "SI", source: "ESI", widthBits: 16, group: "ESI", indentLevel: 1 },
+  { name: "EDI", source: "EDI", widthBits: 32, group: "EDI", indentLevel: 0 },
+  { name: "DI", source: "EDI", widthBits: 16, group: "EDI", indentLevel: 1 },
+  { name: "EBP", source: "EBP", widthBits: 32, group: "EBP", indentLevel: 0 },
+  { name: "BP", source: "EBP", widthBits: 16, group: "EBP", indentLevel: 1 },
+  { name: "ESP", source: "ESP", widthBits: 32, group: "ESP", indentLevel: 0 },
+  { name: "SP", source: "ESP", widthBits: 16, group: "ESP", indentLevel: 1 },
+  { name: "EIP", source: "EIP", widthBits: 32, group: "EIP", indentLevel: 0 },
+  { name: "EFLAGS", source: "EFLAGS", widthBits: 32, group: "EFLAGS", indentLevel: 0, signedDisplay: false }
+];
+
+/** Number of leading spaces added for one register composition level. */
+const REGISTER_ALIAS_INDENT_SPACES = 2;
+
+/** Width of the final-register name column, including composition indentation. */
+const REGISTER_NAME_COLUMN_WIDTH = 7;
+
+/** Width of the hexadecimal value column in aligned integer display rows. */
+const ALIGNED_HEX_COLUMN_WIDTH = 9;
+
+/** Width of the unsigned decimal column in aligned integer display rows. */
+const ALIGNED_UNSIGNED_COLUMN_WIDTH = 10;
+
+/** Width of the signed decimal column in aligned integer display rows. */
+const ALIGNED_SIGNED_COLUMN_WIDTH = 11;
+
+
+/** Valid display widths for Phase 52A signed integer formatting. */
+const SUPPORTED_SIGNED_DISPLAY_WIDTHS = new Set([8, 16, 32]);
+
+/**
+ * Returns a power-of-two modulus for one supported integer display width.
+ *
+ * @param {number} widthBits Display width in bits.
+ * @returns {number} Modulus for the selected width.
+ */
+function modulusForWidth(widthBits) {
+  return 2 ** widthBits;
+}
+
+/**
+ * Returns the number of hexadecimal digits used for one display width.
+ *
+ * @param {number} widthBits Display width in bits.
+ * @returns {number} Hexadecimal digit count.
+ */
+function hexDigitsForWidth(widthBits) {
+  return widthBits / 4;
+}
+
+/**
+ * Returns whether a width can use Phase 52A signed integer display.
+ *
+ * @param {number} widthBits Display width in bits.
+ * @returns {boolean} true when the width is supported.
+ */
+function isSupportedSignedDisplayWidth(widthBits) {
+  return Number.isInteger(widthBits) && SUPPORTED_SIGNED_DISPLAY_WIDTHS.has(widthBits);
+}
+
+/**
+ * Normalizes a numeric value to the selected unsigned display width.
+ *
+ * @param {number} value Unsigned integer value to normalize.
+ * @param {number} widthBits Display width in bits.
+ * @returns {number | null} Normalized unsigned value, or null when invalid.
+ */
+function normalizeUnsignedForWidth(value, widthBits) {
+  if (!isSupportedSignedDisplayWidth(widthBits) || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const modulus = modulusForWidth(widthBits);
+  const truncated = Math.trunc(value);
+  return ((truncated % modulus) + modulus) % modulus;
+}
+
+/**
+ * Parses a MASM-style hexadecimal display string such as `000000FFh`.
+ *
+ * @param {string | undefined} hex Hexadecimal display text.
+ * @returns {number | null} Parsed unsigned value, or null when invalid.
+ */
+function parseHexDisplay(hex) {
+  if (typeof hex !== "string") {
+    return null;
+  }
+
+  const match = /^([0-9A-Fa-f]+)h$/.exec(hex.trim());
+  if (!match) {
+    return null;
+  }
+
+  const value = Number.parseInt(match[1], 16);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Formats a normalized unsigned value as zero-padded MASM-style hexadecimal.
+ *
+ * @param {number} unsigned Normalized unsigned value.
+ * @param {number} widthBits Display width in bits.
+ * @returns {string} MASM-style hexadecimal display text.
+ */
+function formatHexForWidth(unsigned, widthBits) {
+  return `${unsigned.toString(16).toUpperCase().padStart(hexDigitsForWidth(widthBits), "0")}h`;
+}
+
+/**
+ * Converts a normalized unsigned integer to its signed interpretation.
+ *
+ * @param {number} unsigned Normalized unsigned value.
+ * @param {number} widthBits Display width in bits.
+ * @returns {number} Signed interpretation for the selected width.
+ */
+function signedValueForWidth(unsigned, widthBits) {
+  const signBoundary = 2 ** (widthBits - 1);
+  const modulus = modulusForWidth(widthBits);
+  return unsigned >= signBoundary ? unsigned - modulus : unsigned;
+}
+
+/**
+ * Formats one known-width integer value with hex, unsigned, and signed decimal.
+ *
+ * @param {{hex?: string, unsigned?: number}} value Integer value object.
+ * @param {number} widthBits Display width in bits.
+ * @returns {string | null} Formatted value, or null when width/value is unavailable.
+ */
+export function formatIntegerDisplay(value, widthBits) {
+  if (!isSupportedSignedDisplayWidth(widthBits) || value === undefined || value === null) {
+    return null;
+  }
+
+  const sourceUnsigned = Number.isFinite(value.unsigned) ? value.unsigned : parseHexDisplay(value.hex);
+  const unsigned = normalizeUnsignedForWidth(sourceUnsigned, widthBits);
+  if (unsigned === null) {
+    return null;
+  }
+
+  const hex = formatHexForWidth(unsigned, widthBits);
+  const signed = signedValueForWidth(unsigned, widthBits);
+  return `${hex} / u:${unsigned} / s:${signed}`;
+}
+
+/**
+ * Formats one known-width integer value for aligned UI display.
+ *
+ * @param {{hex?: string, unsigned?: number}} value Integer value object.
+ * @param {number} widthBits Display width in bits.
+ * @returns {string | null} Aligned integer value, or null when width/value is unavailable.
+ */
+function formatAlignedIntegerDisplay(value, widthBits) {
+  if (!isSupportedSignedDisplayWidth(widthBits) || value === undefined || value === null) {
+    return null;
+  }
+
+  const sourceUnsigned = Number.isFinite(value.unsigned) ? value.unsigned : parseHexDisplay(value.hex);
+  const unsigned = normalizeUnsignedForWidth(sourceUnsigned, widthBits);
+  if (unsigned === null) {
+    return null;
+  }
+
+  const hex = formatHexForWidth(unsigned, widthBits).padStart(ALIGNED_HEX_COLUMN_WIDTH, " ");
+  const signed = signedValueForWidth(unsigned, widthBits);
+  const unsignedColumn = `${unsigned}`.padEnd(ALIGNED_UNSIGNED_COLUMN_WIDTH, " ");
+  const signedColumn = `${signed < 0 ? signed : ` ${signed}`}`.padEnd(ALIGNED_SIGNED_COLUMN_WIDTH, " ");
+  return `${hex} / u: ${unsignedColumn} / s: ${signedColumn}`;
+}
+
+/**
+ * Formats one integer value using the legacy hex/unsigned display shape.
+ *
+ * @param {string | undefined} hex Hexadecimal display text.
+ * @param {number | undefined} unsigned Unsigned decimal value.
+ * @returns {string} Legacy value display text.
+ */
+function formatLegacyUnsignedDisplay(hex, unsigned) {
+  const safeHex = hex || "??h";
+  const safeUnsigned = Number.isFinite(unsigned) ? unsigned : "?";
+  return `${safeHex} / ${safeUnsigned}`;
+}
+
+/**
+ * Formats one value object using signed display when the width is known.
+ *
+ * @param {{hex?: string, unsigned?: number}} value Integer value object.
+ * @param {number | undefined} widthBits Display width in bits.
+ * @returns {string} Human-readable value display.
+ */
+function formatIntegerDisplayOrFallback(value, widthBits) {
+  const signedDisplay = formatIntegerDisplay(value, widthBits);
+  if (signedDisplay !== null) {
+    return signedDisplay;
+  }
+
+  return formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
+}
+
+/**
+ * Extracts a register-alias value from a canonical 32-bit register payload.
+ *
+ * @param {RegisterValue} sourceValue Canonical 32-bit register value.
+ * @param {number} widthBits Alias display width in bits.
+ * @param {number} [shiftBits] Right shift used for high-byte aliases.
+ * @returns {RegisterValue | null} Alias register value, or null when unavailable.
+ */
+function deriveRegisterAliasValue(sourceValue, widthBits, shiftBits = 0) {
+  const sourceUnsigned = Number.isFinite(sourceValue && sourceValue.unsigned)
+    ? sourceValue.unsigned
+    : parseHexDisplay(sourceValue && sourceValue.hex);
+  if (!Number.isFinite(sourceUnsigned)) {
+    return null;
+  }
+
+  const shifted = normalizeUnsignedForWidth(Math.floor(sourceUnsigned / (2 ** shiftBits)), 32);
+  if (shifted === null) {
+    return null;
+  }
+
+  const aliasUnsigned = normalizeUnsignedForWidth(shifted, widthBits);
+  if (aliasUnsigned === null) {
+    return null;
+  }
+
+  return {
+    hex: formatHexForWidth(aliasUnsigned, widthBits),
+    unsigned: aliasUnsigned
+  };
+}
 
 /**
  * Formats one register value for the final-register panel.
  *
  * @param {string} name Register display name.
  * @param {RegisterValue} value Register value object.
+ * @param {number} [widthBits] Optional display width in bits.
+ * @param {boolean} [signedDisplay] Whether signed decimal display is enabled.
  * @returns {string} Human-readable register row.
  */
-export function formatRegisterLine(name, value) {
-  return `${name.padEnd(6, " ")} ${value.hex} / ${value.unsigned}`;
+export function formatRegisterLine(name, value, widthBits, signedDisplay = true) {
+  const display = signedDisplay ? formatAlignedIntegerDisplay(value, widthBits) : null;
+  const fallback = formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
+  return `${name.padEnd(REGISTER_NAME_COLUMN_WIDTH, " ")}| ${display || fallback}`;
 }
 
 /**
- * Formats final canonical registers returned by the worker.
+ * Formats a register name with composition indentation for alias rows.
+ *
+ * @param {string} name Register display name.
+ * @param {number} [indentLevel] Register composition indentation level.
+ * @returns {string} Indented register name for the final-register panel.
+ */
+function formatRegisterDisplayName(name, indentLevel = 0) {
+  return `${" ".repeat(Math.max(0, indentLevel) * REGISTER_ALIAS_INDENT_SPACES)}${name}`;
+}
+
+/**
+ * Formats final registers returned by the worker, including supported aliases.
  *
  * @param {RegisterMap | undefined} registers Register map.
  * @returns {string} Human-readable register table.
@@ -38,10 +299,32 @@ export function formatRegisters(registers) {
     return "No register state available.";
   }
 
-  return CANONICAL_REGISTER_DISPLAY_ORDER
-    .filter((name) => Object.prototype.hasOwnProperty.call(registers, name))
-    .map((name) => formatRegisterLine(name, registers[name]))
-    .join("\n");
+  const lines = [];
+  let previousGroup = null;
+
+  REGISTER_DISPLAY_ROWS.forEach((row) => {
+      if (!Object.prototype.hasOwnProperty.call(registers, row.source)) {
+        return;
+      }
+
+      const sourceValue = registers[row.source];
+      const value = row.name === row.source
+        ? sourceValue
+        : deriveRegisterAliasValue(sourceValue, row.widthBits, row.shiftBits || 0);
+      if (value === null) {
+        return;
+      }
+
+      if (previousGroup !== null && previousGroup !== row.group) {
+        lines.push("");
+      }
+      previousGroup = row.group;
+
+      const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
+      lines.push(formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false));
+    });
+
+  return lines.join("\n");
 }
 
 /**
@@ -88,46 +371,80 @@ function formatMemoryChangeLabel(change) {
     return `${symbol} + ${change.byteOffset}${dataType}`;
   }
 
-  return symbol;
+  return `${symbol}${dataType}`;
 }
 
 /**
- * Formats old/new scalar values from one memory change.
+ * Formats one memory value for the aligned before/after memory-change rows.
+ *
+ * @param {{hex?: string, unsigned?: number}} value Integer value object.
+ * @param {number | undefined} widthBits Display width in bits.
+ * @returns {string} Human-readable value display.
+ */
+function formatAlignedMemoryValue(value, widthBits) {
+  const signedDisplay = formatAlignedIntegerDisplay(value, widthBits);
+  if (signedDisplay !== null) {
+    return signedDisplay;
+  }
+
+  return formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
+}
+
+/**
+ * Formats the old and new scalar value rows from one memory change.
  *
  * @param {MemoryChange} change Memory change object.
- * @returns {string} Value transition string.
+ * @returns {string[]} Human-readable old/new rows.
  */
-function formatMemoryChangeValueTransition(change) {
-  const oldHex = change && change.oldHex ? change.oldHex : "??h";
-  const oldUnsigned = change && Number.isFinite(change.oldUnsigned) ? change.oldUnsigned : "?";
-  const newHex = change && change.newHex ? change.newHex : "??h";
-  const newUnsigned = change && Number.isFinite(change.newUnsigned) ? change.newUnsigned : "?";
-  return `${oldHex} / ${oldUnsigned} -> ${newHex} / ${newUnsigned}`;
+function formatMemoryChangeValueRows(change) {
+  const oldValue = {
+    hex: change && change.oldHex,
+    unsigned: change && change.oldUnsigned
+  };
+  const newValue = {
+    hex: change && change.newHex,
+    unsigned: change && change.newUnsigned
+  };
+  const oldDisplay = formatAlignedMemoryValue(oldValue, change && change.widthBits);
+  const newDisplay = formatAlignedMemoryValue(newValue, change && change.widthBits);
+  return [`  old | ${oldDisplay}`, `  new | ${newDisplay}`];
+}
+
+/**
+ * Formats optional metadata for one memory-change block.
+ *
+ * @param {MemoryChange} change Memory change object.
+ * @returns {string | null} Metadata row, or null when there is no extra metadata.
+ */
+function formatMemoryChangeInfoRow(change) {
+  if (!hasSymbolOffset(change)) {
+    return null;
+  }
+
+  const parts = [`byte offset +${change.byteOffset}`];
+  if (Number.isInteger(change.elementIndex)) {
+    parts.push(`element index ${change.elementIndex}`);
+  }
+  return `  info| ${parts.join(", ")}`;
 }
 
 /**
  * Formats one symbol-aware memory change returned by the worker.
  *
- * Direct symbol writes keep the compact symbol row. Symbol-offset writes
- * use a small multi-line display that exposes MASM byte-offset semantics and
- * an aligned element index when the core reports one.
+ * Each memory change uses a compact block with aligned old/new value rows.
+ * Symbol-offset writes include an extra info row when the core reports byte
+ * offset or element-index metadata.
  *
  * @param {MemoryChange} change Memory change object.
- * @returns {string} Human-readable memory-change row.
+ * @returns {string} Human-readable memory-change block.
  */
 export function formatMemoryChangeLine(change) {
   const label = formatMemoryChangeLabel(change);
-  const transition = formatMemoryChangeValueTransition(change);
-
-  if (!hasSymbolOffset(change)) {
-    return `${label}: ${transition}`;
+  const lines = [label, ...formatMemoryChangeValueRows(change)];
+  const infoRow = formatMemoryChangeInfoRow(change);
+  if (infoRow !== null) {
+    lines.push(infoRow);
   }
-
-  const lines = [label, `  byte offset: +${change.byteOffset}`];
-  if (Number.isInteger(change.elementIndex)) {
-    lines.push(`  element index: ${change.elementIndex}`);
-  }
-  lines.push(`  ${transition}`);
   return lines.join("\n");
 }
 
@@ -142,5 +459,5 @@ export function formatMemoryChanges(changes) {
     return "No memory changes.";
   }
 
-  return changes.map((change) => formatMemoryChangeLine(change || {})).join("\n");
+  return changes.map((change) => formatMemoryChangeLine(change || {})).join("\n\n");
 }

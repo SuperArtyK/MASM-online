@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatSimulatorMessages } from "../../web/src/formatters.js";
+import { formatMemoryChanges, formatRegisters, formatSimulatorMessages } from "../../web/src/formatters.js";
 
 /** Default native producer path built by scripts/run_tests.py before this harness runs. */
 const DEFAULT_PRODUCER_PATH = "./build/tests/diagnostic_json_producer";
@@ -2768,4 +2768,79 @@ test("renders unsupported CASEMAP NOTPUBLIC diagnostic exactly", () => {
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-option line 1, column 16, byte offset 15, span length 9: OPTION CASEMAP:NOTPUBLIC is unsupported because public/external linkage semantics are not implemented.");
+});
+
+test("Phase 52A formats source-run register signed display from existing JSON", () => {
+  const source = `.code
+main PROC
+    mov eax, 0FFFFFFFFh
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase52a-register-signed-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  const registers = formatRegisters(json.registers);
+  assert.match(registers, /^EAX    \| FFFFFFFFh \/ u: 4294967295 \/ s: -1\s*$/m);
+  assert.match(registers, /^  AX   \|     FFFFh \/ u: 65535\s+\/ s: -1\s*$/m);
+  assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
+});
+
+test("Phase 52A formats register aliases using alias display width", () => {
+  const source = `.code
+main PROC
+    mov eax, 000000FFh
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase52a-register-alias-width-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  const registers = formatRegisters(json.registers);
+  assert.match(registers, /^EAX    \| 000000FFh \/ u: 255\s+\/ s:  255\s*$/m);
+  assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
+});
+
+test("Phase 52A formats source-run memory changes with signed display", () => {
+  const source = `.data
+value DWORD 0
+b BYTE 0
+.code
+main PROC
+    mov value, 0FFFFFFFFh
+    mov b, 0FFh
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase52a-memory-signed-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(formatMemoryChanges(json.memoryChanges), [
+    "value DWORD",
+    "  old | 00000000h / u: 0          / s:  0         ",
+    "  new | FFFFFFFFh / u: 4294967295 / s: -1         ",
+    "",
+    "b BYTE",
+    "  old |       00h / u: 0          / s:  0         ",
+    "  new |       FFh / u: 255        / s: -1         "
+  ].join("\n"));
+});
+
+test("Phase 52A preserves ordinary MOV signed-memory semantics", () => {
+  const source = `.data
+sd SDWORD -1
+sb SBYTE -1
+.code
+main PROC
+    mov al, sb
+    mov eax, sd
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase52a-signed-declaration-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  const registers = formatRegisters(json.registers);
+  assert.match(registers, /^EAX    \| FFFFFFFFh \/ u: 4294967295 \/ s: -1\s*$/m);
+  assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
 });
