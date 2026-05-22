@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 52A source-run UI display refresh: source editing, Run button,
+  This page provides the Milestone 53 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; the default program demonstrates LEA behavior.
+  execution stay inside the worker/Wasm path; the default program demonstrates unsigned MUL behavior.
 -->
 <html lang="en">
   <head>
@@ -18,15 +18,13 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 52A: signed register and memory display; runtime MASM behavior through Milestone 52 LEA.</p>
+        <p class="muted">Milestone 53: unsigned MUL; signed register and memory display remains active.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.data
-nums DWORD 10 DUP(0)
-.code
+        <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov ebx, OFFSET nums
-    lea eax, nums[8]
-    lea ecx, [ebx + 4]
+    mov eax, 10
+    mov ebx, 20
+    mul ebx
 main ENDP
 END main</textarea>
         <div class="controls">

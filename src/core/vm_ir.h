@@ -78,6 +78,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ROL,
     /// Rotate a register or memory destination right within its selected width.
     VM_IR_OPCODE_ROR,
+    /// Multiply the implicit unsigned accumulator by a register or memory source.
+    VM_IR_OPCODE_MUL,
     /// Compute an effective address into a 32-bit register without reading memory.
     VM_IR_OPCODE_LEA,
     /// Terminate execution successfully for Irvine32 `exit`.

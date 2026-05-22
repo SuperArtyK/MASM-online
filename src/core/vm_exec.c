@@ -4,7 +4,9 @@
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
- * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, and ror over the currently supported register and memory operand forms. It records last-step
+ * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
+ * lea, mul, and Irvine32 exit over the currently supported register and
+ * memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -2178,6 +2180,96 @@ static void vm_exec_capture_delta(Vm *vm, const VmIrInstruction *instruction, co
     vm->last_delta.instruction_count = vm->instruction_count;
 }
 
+/// Executes one unsigned MUL instruction with implicit accumulator operands.
+///
+/// MUL reads one register or memory source. The selected source width chooses
+/// the implicit accumulator and result registers: AL*r/m8 writes AX, AX*r/m16
+/// writes DX:AX, and EAX*r/m32 writes EDX:EAX. CF and OF are defined from the
+/// upper product half; ZF and SF are preserved as deterministic educational
+/// behavior for architecturally undefined flags.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction MUL instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_mul(Vm *vm, const VmIrInstruction *instruction) {
+    VmCpu before_cpu;
+    uint8_t width_bits = 0U;
+    uint32_t source_value = 0U;
+    uint32_t accumulator_value = 0U;
+    uint64_t product = 0U;
+    uint32_t low = 0U;
+    uint32_t high = 0U;
+    bool has_upper_half = false;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source))) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->source, &width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (width_bits == 8U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AL, &accumulator_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        product = (uint64_t)(accumulator_value & 0xFFU) * (uint64_t)(source_value & 0xFFU);
+        low = (uint32_t)(product & 0xFFFFU);
+        high = (uint32_t)((product >> 8U) & 0xFFU);
+        has_upper_half = high != 0U;
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_AX, low)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 16U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &accumulator_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        product = (uint64_t)(accumulator_value & 0xFFFFU) * (uint64_t)(source_value & 0xFFFFU);
+        low = (uint32_t)(product & 0xFFFFU);
+        high = (uint32_t)((product >> 16U) & 0xFFFFU);
+        has_upper_half = high != 0U;
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_AX, low) ||
+            !vm_cpu_write_register(&vm->cpu, VM_REGISTER_DX, high)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 32U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EAX, &accumulator_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        product = (uint64_t)accumulator_value * (uint64_t)source_value;
+        low = (uint32_t)(product & 0xFFFFFFFFULL);
+        high = (uint32_t)(product >> 32U);
+        has_upper_half = high != 0U;
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_EAX, low) ||
+            !vm_cpu_write_register(&vm->cpu, VM_REGISTER_EDX, high)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, has_upper_half) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, has_upper_half)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Executes the Irvine32 `exit` virtual terminator.
 ///
 /// The instruction marks the VM halted without mutating registers, flags,
@@ -2332,6 +2424,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_carry_control(vm, instruction, instruction->opcode);
         case VM_IR_OPCODE_LEA:
             return vm_exec_execute_lea(vm, instruction);
+        case VM_IR_OPCODE_MUL:
+            return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
         default:

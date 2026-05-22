@@ -749,6 +749,54 @@ END main
 `,
     reason: "Phase 52 LEA reports static address displacement overflow as an invalid effective-address expression."
   },
+  mulAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    mul [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 53 MUL ambiguous memory-width diagnostic fixture."
+  },
+  mulImmediateSource: {
+    source: `.code
+main PROC
+    mul 5
+main ENDP
+END main
+`,
+    reason: "Phase 53 MUL immediate-source diagnostic fixture."
+  },
+  mulExtraOperand: {
+    source: `.code
+main PROC
+    mul eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 53 MUL extra-operand diagnostic fixture."
+  },
+  mulRuntimeInvalidAddress: {
+    source: `.code
+main PROC
+    mov eax, 0
+    mul DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 53 MUL invalid memory source runtime diagnostic fixture."
+  },
+  mulQwordSource: {
+    source: `.data
+q QWORD 1
+.code
+main PROC
+    mul QWORD PTR q
+main ENDP
+END main
+`,
+    reason: "Phase 53 MUL executable QWORD source diagnostic fixture."
+  },
   undefinedFlagUseAdc: {
     source: `.code
 main PROC
@@ -2028,6 +2076,94 @@ test("renders ROR invalid destination-address diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
+
+test("renders MUL ambiguous memory-width diagnostic exactly", () => {
+  const name = "mulAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders MUL immediate-source diagnostic exactly", () => {
+  const name = "mulImmediateSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "MUL requires a register or memory source.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 9, byte offset 24, span length 1: MUL requires a register or memory source.");
+});
+
+test("renders MUL extra-operand diagnostic exactly", () => {
+  const name = "mulExtraOperand";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "MUL takes exactly one register or memory operand.",
+    line: 3,
+    column: 12,
+    byteOffset: 27,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 12, byte offset 27, span length 1: MUL takes exactly one register or memory operand.");
+});
+
+test("renders MUL invalid source-address diagnostic exactly", () => {
+  const name = "mulRuntimeInvalidAddress";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "invalid-address",
+    message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
+    line: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+test("renders MUL QWORD source diagnostic exactly", () => {
+  const name = "mulQwordSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-ptr-width",
+    message: "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.",
+    line: 5,
+    column: 9,
+    byteOffset: 40,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-ptr-width line 5, column 9, byte offset 40, span length 5: QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+});
 
 test("renders ROR undefined modeled flag warning exactly", () => {
   const name = "rorUndefinedWarning";

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 52.
+ * @brief Unit tests for the VM executor through Milestone 53.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -2852,6 +2852,152 @@ static int test_phase50b_multiple_invalid_flags_one_diagnostic(void) {
 
 
 
+/// Verifies Phase 53 unsigned MUL register semantics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase53_mul_register_semantics(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for MUL register test");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mul bl", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit MUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AL, 10U) ? 0 : record_failure("AL setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 20U) ? 0 : record_failure("BL setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit MUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_AX, &eax) ? 0 : record_failure("AX read should succeed after 8-bit MUL"));
+    failures += expect_u32(eax, 200U, "AL=10 times BL=20 should write AX=200");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "8-bit MUL fitting in AL should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "8-bit MUL fitting in AL should clear OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "MUL should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "MUL should preserve SF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 1U, 0U, "register MUL should not access memory");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mul bl", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit overflow MUL reload should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AL, 0xFFU) ? 0 : record_failure("AL overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 2U) ? 0 : record_failure("BL overflow setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit overflow MUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_AX, &eax) ? 0 : record_failure("AX read should succeed after 8-bit overflow MUL"));
+    failures += expect_u32(eax, 0x01FEU, "AL=FFh times BL=2 should write AX=01FEh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "8-bit MUL overflowing AL should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "8-bit MUL overflowing AL should set OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mul bx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit MUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xAAAA1234U) ? 0 : record_failure("EAX 16-bit setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0xBBBB0000U) ? 0 : record_failure("EDX 16-bit setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 0x0010U) ? 0 : record_failure("BX setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "16-bit MUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 16-bit MUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 16-bit MUL"));
+    failures += expect_u32(eax, 0xAAAA2340U, "AX=1234h times BX=10h should write low AX while preserving EAX high half");
+    failures += expect_u32(edx, 0xBBBB0001U, "AX=1234h times BX=10h should write high DX while preserving EDX high half");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "16-bit MUL with nonzero DX should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "16-bit MUL with nonzero DX should set OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mul ebx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit MUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xFFFFFFFFU) ? 0 : record_failure("EAX 32-bit setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 2U) ? 0 : record_failure("EBX setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit MUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 32-bit MUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 32-bit MUL"));
+    failures += expect_u32(eax, 0xFFFFFFFEU, "EAX=FFFFFFFFh times EBX=2 should write low EAX");
+    failures += expect_u32(edx, 0x00000001U, "EAX=FFFFFFFFh times EBX=2 should write high EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "32-bit MUL with nonzero EDX should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "32-bit MUL with nonzero EDX should set OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 53 unsigned MUL memory-source behavior and error paths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase53_mul_memory_sources_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for MUL memory test");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 20U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("MUL memory fixture write should succeed"));
+    vm_memory_clear_changes(&vm.memory);
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mul x", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "memory-source MUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 10U) ? 0 : record_failure("EAX setup should succeed for memory-source MUL"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory-source MUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after memory-source MUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after memory-source MUL"));
+    failures += expect_u32(eax, 200U, "memory-source MUL should write low product to EAX");
+    failures += expect_u32(edx, 0U, "memory-source MUL with fitting product should clear EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "memory-source MUL fitting product should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "memory-source MUL fitting product should clear OF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "MUL memory source should record one checked read access");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "MUL memory source should not create memory changes");
+    if (delta != NULL && delta->memory_access_count > 0U) {
+        failures += expect_u32(delta->memory_accesses[0].address, VM_MEMORY_DEFAULT_DATA_BASE, "MUL memory read should use the source address");
+        failures += expect_u32(delta->memory_accesses[0].width_bits, 32U, "MUL memory read should use source width");
+        if (delta->memory_accesses[0].kind != VM_EXEC_MEMORY_ACCESS_READ) {
+            failures += record_failure("MUL memory access should be a read");
+        }
+    }
+
+    {
+        const VmIrInstruction bad_program[] = {
+            {VM_IR_OPCODE_MUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mul DWORD PTR [eax]", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, bad_program, sizeof(bad_program) / sizeof(bad_program[0])), VM_EXEC_STATUS_OK, "invalid-address MUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("EAX invalid-address setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x12345678U) ? 0 : record_failure("EDX invalid-address setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF invalid-address setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "invalid-address MUL memory source should fail");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after invalid-address MUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after invalid-address MUL"));
+    failures += expect_u32(eax, 0U, "invalid-address MUL should not mutate EAX");
+    failures += expect_u32(edx, 0x12345678U, "invalid-address MUL should not mutate EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "invalid-address MUL should preserve flags");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_MEMORY_ERROR) {
+        failures += record_failure("invalid-address MUL should record memory diagnostic");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 52 LEA computes addresses without memory access or flag mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2948,6 +3094,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_LEA), "lea") != 0) {
         failures += record_failure("LEA opcode name should be lea");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_MUL), "mul") != 0) {
+        failures += record_failure("MUL opcode name should be mul");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -2970,7 +3119,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 52.
+/// Runs all executor tests through Milestone 53.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3028,6 +3177,8 @@ int main(void) {
     failures += test_phase50b_multiple_invalid_flags_one_diagnostic();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_phase52_lea_effective_address_execution();
+    failures += test_phase53_mul_register_semantics();
+    failures += test_phase53_mul_memory_sources_and_errors();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -3035,6 +3186,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 52 passed.");
+    puts("Executor tests through Milestone 53 passed.");
     return 0;
 }

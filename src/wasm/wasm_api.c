@@ -9,8 +9,9 @@
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
  * instructions, accumulator conversions, exchange/negation/no-op
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
- * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, the virtual Irvine32
- * `exit` terminator, and recovered unsupported-feature diagnostics, then
+ * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, unsigned
+ * MUL, the virtual Irvine32 `exit` terminator, and recovered
+ * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -1375,12 +1376,13 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             break;
         case VM_IR_OPCODE_MOVSX:
         case VM_IR_OPCODE_MOVZX:
+        case VM_IR_OPCODE_MUL:
             if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
             }
             break;
         default:
-            /* TODO: Add future memory read-modify-write opcodes here when those instruction milestones implement them. */
+            /* TODO(Phase-owned future instruction milestones): add each future memory-reading opcode here when that opcode is implemented. */
             break;
     }
 
@@ -3337,7 +3339,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":52,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":53,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -3418,7 +3420,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":52,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":53,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

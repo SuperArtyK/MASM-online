@@ -17,19 +17,19 @@
 const REGISTER_DISPLAY_ROWS = [
   { name: "EAX", source: "EAX", widthBits: 32, group: "EAX", indentLevel: 0 },
   { name: "AX", source: "EAX", widthBits: 16, group: "EAX", indentLevel: 1 },
-  { name: "AH", source: "EAX", widthBits: 8, shiftBits: 8, group: "EAX", indentLevel: 2 },
+  { name: "AH", source: "EAX", widthBits: 8, shiftBits: 8, group: "EAX", indentLevel: 1, hexPlacement: "high-byte" },
   { name: "AL", source: "EAX", widthBits: 8, group: "EAX", indentLevel: 2 },
   { name: "EBX", source: "EBX", widthBits: 32, group: "EBX", indentLevel: 0 },
   { name: "BX", source: "EBX", widthBits: 16, group: "EBX", indentLevel: 1 },
-  { name: "BH", source: "EBX", widthBits: 8, shiftBits: 8, group: "EBX", indentLevel: 2 },
+  { name: "BH", source: "EBX", widthBits: 8, shiftBits: 8, group: "EBX", indentLevel: 1, hexPlacement: "high-byte" },
   { name: "BL", source: "EBX", widthBits: 8, group: "EBX", indentLevel: 2 },
   { name: "ECX", source: "ECX", widthBits: 32, group: "ECX", indentLevel: 0 },
   { name: "CX", source: "ECX", widthBits: 16, group: "ECX", indentLevel: 1 },
-  { name: "CH", source: "ECX", widthBits: 8, shiftBits: 8, group: "ECX", indentLevel: 2 },
+  { name: "CH", source: "ECX", widthBits: 8, shiftBits: 8, group: "ECX", indentLevel: 1, hexPlacement: "high-byte" },
   { name: "CL", source: "ECX", widthBits: 8, group: "ECX", indentLevel: 2 },
   { name: "EDX", source: "EDX", widthBits: 32, group: "EDX", indentLevel: 0 },
   { name: "DX", source: "EDX", widthBits: 16, group: "EDX", indentLevel: 1 },
-  { name: "DH", source: "EDX", widthBits: 8, shiftBits: 8, group: "EDX", indentLevel: 2 },
+  { name: "DH", source: "EDX", widthBits: 8, shiftBits: 8, group: "EDX", indentLevel: 1, hexPlacement: "high-byte" },
   { name: "DL", source: "EDX", widthBits: 8, group: "EDX", indentLevel: 2 },
   { name: "ESI", source: "ESI", widthBits: 32, group: "ESI", indentLevel: 0 },
   { name: "SI", source: "ESI", widthBits: 16, group: "ESI", indentLevel: 1 },
@@ -51,6 +51,9 @@ const REGISTER_NAME_COLUMN_WIDTH = 7;
 
 /** Width of the hexadecimal value column in aligned integer display rows. */
 const ALIGNED_HEX_COLUMN_WIDTH = 9;
+
+/** Hexadecimal placement hint for AH/BH/CH/DH display rows. */
+const HEX_PLACEMENT_HIGH_BYTE = "high-byte";
 
 /** Width of the unsigned decimal column in aligned integer display rows. */
 const ALIGNED_UNSIGNED_COLUMN_WIDTH = 10;
@@ -177,13 +180,33 @@ export function formatIntegerDisplay(value, widthBits) {
 }
 
 /**
+ * Formats a MASM-style hexadecimal value inside the aligned hex column.
+ *
+ * @param {number} unsigned Normalized unsigned value.
+ * @param {number} widthBits Display width in bits.
+ * @param {string | undefined} [hexPlacement] Optional placement hint.
+ * @returns {string} Aligned hexadecimal display text.
+ */
+function formatAlignedHexDisplay(unsigned, widthBits, hexPlacement) {
+  const hex = formatHexForWidth(unsigned, widthBits);
+  if (hexPlacement === HEX_PLACEMENT_HIGH_BYTE && widthBits === 8) {
+    return hex
+      .padStart(ALIGNED_HEX_COLUMN_WIDTH - 2, " ")
+      .padEnd(ALIGNED_HEX_COLUMN_WIDTH, " ");
+  }
+
+  return hex.padStart(ALIGNED_HEX_COLUMN_WIDTH, " ");
+}
+
+/**
  * Formats one known-width integer value for aligned UI display.
  *
  * @param {{hex?: string, unsigned?: number}} value Integer value object.
  * @param {number} widthBits Display width in bits.
+ * @param {string | undefined} [hexPlacement] Optional placement hint.
  * @returns {string | null} Aligned integer value, or null when width/value is unavailable.
  */
-function formatAlignedIntegerDisplay(value, widthBits) {
+function formatAlignedIntegerDisplay(value, widthBits, hexPlacement) {
   if (!isSupportedSignedDisplayWidth(widthBits) || value === undefined || value === null) {
     return null;
   }
@@ -194,7 +217,7 @@ function formatAlignedIntegerDisplay(value, widthBits) {
     return null;
   }
 
-  const hex = formatHexForWidth(unsigned, widthBits).padStart(ALIGNED_HEX_COLUMN_WIDTH, " ");
+  const hex = formatAlignedHexDisplay(unsigned, widthBits, hexPlacement);
   const signed = signedValueForWidth(unsigned, widthBits);
   const unsignedColumn = `${unsigned}`.padEnd(ALIGNED_UNSIGNED_COLUMN_WIDTH, " ");
   const signedColumn = `${signed < 0 ? signed : ` ${signed}`}`.padEnd(ALIGNED_SIGNED_COLUMN_WIDTH, " ");
@@ -269,10 +292,11 @@ function deriveRegisterAliasValue(sourceValue, widthBits, shiftBits = 0) {
  * @param {RegisterValue} value Register value object.
  * @param {number} [widthBits] Optional display width in bits.
  * @param {boolean} [signedDisplay] Whether signed decimal display is enabled.
+ * @param {string | undefined} [hexPlacement] Optional hexadecimal placement hint.
  * @returns {string} Human-readable register row.
  */
-export function formatRegisterLine(name, value, widthBits, signedDisplay = true) {
-  const display = signedDisplay ? formatAlignedIntegerDisplay(value, widthBits) : null;
+export function formatRegisterLine(name, value, widthBits, signedDisplay = true, hexPlacement) {
+  const display = signedDisplay ? formatAlignedIntegerDisplay(value, widthBits, hexPlacement) : null;
   const fallback = formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
   return `${name.padEnd(REGISTER_NAME_COLUMN_WIDTH, " ")}| ${display || fallback}`;
 }
@@ -321,7 +345,7 @@ export function formatRegisters(registers) {
       previousGroup = row.group;
 
       const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
-      lines.push(formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false));
+      lines.push(formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement));
     });
 
   return lines.join("\n");

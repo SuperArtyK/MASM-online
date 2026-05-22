@@ -3083,6 +3083,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_LEA;
         return true;
     }
+    if (vm_parser_token_equals(token, "mul")) {
+        *out_opcode = VM_IR_OPCODE_MUL;
+        return true;
+    }
 
     return false;
 }
@@ -3168,6 +3172,14 @@ static bool vm_parser_opcode_is_shift(VmIrOpcode opcode) {
 /// @return true for LEA.
 static bool vm_parser_opcode_is_lea(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_LEA;
+}
+
+/// Returns whether an opcode uses one source operand with implicit accumulator result registers.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for MUL.
+static bool vm_parser_opcode_is_implicit_accumulator_source(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_MUL;
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5591,6 +5603,40 @@ static bool vm_parser_validate_single_destination_operand(
     return true;
 }
 
+/// Validates the source operand for one-operand unsigned MUL.
+///
+/// MUL accepts exactly one register or known-width memory source. The source
+/// width selects the implicit accumulator and result register pair, so untyped
+/// register-indirect memory remains ambiguous and immediates are rejected.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param source Source operand to validate.
+/// @param source_token Token associated with the source operand.
+/// @return true when the operand has a supported execution width.
+static bool vm_parser_validate_mul_source_operand(
+    VmParserState *state,
+    const VmIrOperand *source,
+    const VmLexerToken *source_token
+) {
+    uint8_t width_bits = 0U;
+
+    if (state == NULL || source == NULL) {
+        return false;
+    }
+
+    if (source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "MUL requires a register or memory source.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(source, &width_bits)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "MUL source requires a known 8-bit, 16-bit, or 32-bit width.");
+        return false;
+    }
+
+    return true;
+}
+
 /// Consumes an expected comma token.
 ///
 /// @param state Parser state to mutate.
@@ -5853,7 +5899,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     destination_token = vm_parser_current_token(state);
-    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode)) &&
+    if ((opcode == VM_IR_OPCODE_INC || opcode == VM_IR_OPCODE_DEC || opcode == VM_IR_OPCODE_NOT || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode) || vm_parser_opcode_is_implicit_accumulator_source(opcode)) &&
         destination_token != NULL &&
         (destination_token->kind == VM_LEXER_TOKEN_NUMBER ||
          destination_token->kind == VM_LEXER_TOKEN_CHARACTER ||
@@ -5864,6 +5910,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
                               opcode == VM_IR_OPCODE_DEC ? "DEC requires a register or memory destination." :
                               opcode == VM_IR_OPCODE_NOT ? "NOT requires a register or memory destination." :
                               vm_parser_opcode_is_lea(opcode) ? "LEA requires a 32-bit register destination." :
+                              vm_parser_opcode_is_implicit_accumulator_source(opcode) ? "MUL requires a register or memory source." :
                               vm_parser_opcode_is_shift(opcode) ? "Shift instructions require a register or memory destination." :
                               "Logical instructions require a register or memory destination.";
         char logical_message[96];
@@ -5882,6 +5929,27 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         );
         return false;
     }
+    if (vm_parser_opcode_is_implicit_accumulator_source(opcode)) {
+        source_token = destination_token;
+        if (!vm_parser_parse_source_operand(state, &source)) {
+            return false;
+        }
+        if (vm_parser_resolve_unary_memory_width(state, opcode, &source, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
+        if (!vm_parser_validate_mul_source_operand(state, &source, source_token)) {
+            return false;
+        }
+        if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "MUL takes exactly one register or memory operand.");
+            return false;
+        }
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
     if (!vm_parser_parse_destination_operand(state, &destination)) {
         return false;
     }
