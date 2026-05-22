@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 50 regression coverage.
+ * @brief Tests for the Wasm-facing source execution API through Milestone 50B regression coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -5396,6 +5396,196 @@ static int test_phase50_ror_source_run_error_paths(void) {
 }
 
 
+/// Verifies Phase 50B undefined-flag-use warning behavior for an existing CF consumer.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_warn_policy_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":50", "Phase 50B source-run response should preserve numeric milestone metadata");
+    failures += expect_json_contains(json, "\"ok\":true", "Undefined flag-use warn policy should allow execution to continue");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Warn policy should execute the existing ADC consumer");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Warn policy should use deterministic preserved CF for ADC");
+    failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "Producer warning should remain present");
+    failures += expect_json_contains(json, "\"code\":\"undefined-flag-use\"", "Warn policy should add undefined-flag-use diagnostic");
+    failures += expect_json_contains(json, "ADC reads CF, but CF is architecturally undefined from SHL at line 5", "Undefined flag-use message should name consumer, flag, producer, and producer line");
+    failures += expect_json_contains(json, "\"consumedFlags\":[\"CF\"]", "Undefined flag-use JSON should list consumed invalid flags");
+    failures += expect_json_contains(json, "\"producerMnemonic\":\"SHL\"", "Undefined flag-use JSON should include producer mnemonic");
+    failures += expect_json_contains(json, "\"producerCode\":\"undefined-shift-flag\"", "Undefined flag-use JSON should include producer diagnostic code");
+    failures += expect_json_contains(json, "\"producerLine\":5", "Undefined flag-use JSON should include producer line");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Warn policy should still report execution completion");
+
+    return failures;
+}
+
+/// Verifies Phase 50B undefined-flag-use error behavior stops before mutation.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_error_policy_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Undefined flag-use error policy should fail execution");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "Undefined flag-use error should be an execution error");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Error policy should stop before executing ADC");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Error policy should not mutate the ADC destination");
+    failures += expect_json_contains(json, "\"code\":\"undefined-flag-use\"", "Error policy should emit undefined-flag-use diagnostic");
+    failures += expect_json_contains(json, "Execution stopped before using the undefined flag", "Error diagnostic should explain that the consumer did not execute");
+    failures += expect_json_contains(json, "\"consumedFlags\":[\"CF\"]", "Error diagnostic should list consumed invalid flags");
+    failures += expect_json_not_contains(json, "execution-complete", "Undefined flag-use error should not report execution completion");
+
+    return failures;
+}
+
+
+/// Verifies Phase 50B integration with SBB as an existing CF consumer.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_sbb_warn_policy_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 10\n"
+        "    sbb ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "SBB undefined flag-use warn policy should allow execution to continue");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Warn policy should execute the existing SBB consumer");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Warn policy should use deterministic preserved CF for SBB");
+    failures += expect_json_contains(json, "\"code\":\"undefined-flag-use\"", "SBB warn policy should add undefined-flag-use diagnostic");
+    failures += expect_json_contains(json, "SBB reads CF, but CF is architecturally undefined from SHL at line 5", "SBB diagnostic should identify CF consumption");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "SBB warn policy should still report execution completion");
+
+    return failures;
+}
+
+/// Verifies Phase 50B default/off behavior preserves prior deterministic execution.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_default_off_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Default undefined flag-use policy should preserve prior execution behavior");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Default policy should execute the ADC consumer");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Default policy should continue using deterministic CF fallback");
+    failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "Default policy should preserve existing producer warning");
+    failures += expect_json_not_contains(json, "undefined-flag-use", "Default policy should not emit consumer diagnostics");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Default policy should still complete");
+
+    json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Explicit off policy should execute successfully");
+    failures += expect_json_not_contains(json, "undefined-flag-use", "Explicit off policy should suppress consumer diagnostics");
+
+    return failures;
+}
+
+/// Verifies Phase 50B integration with CMC as an existing CF consumer.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_cmc_error_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    cmc\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "CMC invalid flag use should fail in error policy");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "CMC error policy should stop before toggling CF");
+    failures += expect_json_contains(json, "CMC reads CF, but CF is architecturally undefined from SHL at line 5", "CMC diagnostic should identify CF consumption");
+    failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000041h\",\"unsigned\":65}", "CMC error should preserve pre-consumer EFLAGS bits");
+    failures += expect_json_not_contains(json, "execution-complete", "CMC undefined flag-use error should not complete");
+
+    return failures;
+}
+
+
+/// Verifies Phase 50B error policy stops before a memory-destination consumer mutates memory.
+///
+/// @return Number of failures.
+static int test_phase50b_undefined_flag_use_memory_destination_error_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+        ".data\n"
+        "value DWORD 5\n"
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    adc value, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Memory-destination ADC invalid flag use should fail in error policy");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Memory-destination ADC error should stop before executing the consumer");
+    failures += expect_json_contains(json, "ADC reads CF, but CF is architecturally undefined from SHL at line 7", "Memory-destination ADC diagnostic should identify the consumer and producer");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Undefined flag-use error should not create memory-change rows for the aborted memory destination");
+    failures += expect_json_not_contains(json, "execution-complete", "Memory-destination undefined flag-use error should not complete");
+
+    return failures;
+}
+
 /// @return Zero when all source-run API tests pass.
 int main(void) {
     int failures = 0;
@@ -5545,6 +5735,12 @@ int main(void) {
     failures += test_phase50_ror_source_run_program();
     failures += test_phase50_ror_memory_source_run_program();
     failures += test_phase50_ror_source_run_error_paths();
+    failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
+    failures += test_phase50b_undefined_flag_use_error_policy_source_run();
+    failures += test_phase50b_undefined_flag_use_sbb_warn_policy_source_run();
+    failures += test_phase50b_undefined_flag_use_default_off_source_run();
+    failures += test_phase50b_undefined_flag_use_cmc_error_source_run();
+    failures += test_phase50b_undefined_flag_use_memory_destination_error_source_run();
     failures += test_null_source_returns_invalid_argument_json();
     failures += test_empty_source_returns_parse_error_json();
     failures += test_subsequent_calls_return_latest_result();
@@ -5553,6 +5749,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 50 regression coverage passed.");
+    puts("Source execution tests through Phase 50B regression coverage passed.");
     return 0;
 }

@@ -34,6 +34,16 @@ typedef enum Masm32SimWasmShiftValidationMode {
     MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
 } Masm32SimWasmShiftValidationMode;
 
+/// Selects Phase 50B handling for consumers that read invalid modeled flags.
+typedef enum Masm32SimWasmUndefinedFlagUsePolicy {
+    /// Do not diagnose invalid flag consumption; use deterministic fallback bits.
+    MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF = 0,
+    /// Emit a non-fatal warning and continue using deterministic fallback bits.
+    MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN,
+    /// Stop before the consumer uses the invalid flag.
+    MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
+} Masm32SimWasmUndefinedFlagUsePolicy;
+
 /// Returns the Phase 0 sentinel through the WebAssembly export boundary.
 ///
 /// @return The deterministic value returned by the C core Phase 0 helper.
@@ -112,6 +122,20 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
     const char *source,
     Masm32SimWasmShiftValidationMode shift_mode
+);
+
+/// Parses and executes source with explicit undefined-flag-use diagnostics.
+///
+/// The normal browser export keeps Phase 50B diagnostics off. This
+/// test/configuration-facing helper allows native tests to verify warning and
+/// error consumer policies without adding a browser UI setting in this phase.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param policy Undefined-flag-use consumer policy.
+/// @return Pointer to the same static JSON buffer used by other source-run helpers.
+const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+    const char *source,
+    Masm32SimWasmUndefinedFlagUsePolicy policy
 );
 
 /// Parses and executes source with memory validation and test-only initialization metadata.

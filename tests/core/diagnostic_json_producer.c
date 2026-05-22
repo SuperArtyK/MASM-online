@@ -261,6 +261,37 @@ static int diagnostic_json_producer_get_shift_validation_mode(Masm32SimWasmShift
     return 0;
 }
 
+/// Returns the requested undefined flag-use policy from the diagnostic environment.
+///
+/// @param out_policy Receives the selected Phase 50B consumer policy.
+/// @return Nonzero when MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE selects a policy.
+static int diagnostic_json_producer_get_undefined_flag_use_policy(Masm32SimWasmUndefinedFlagUsePolicy *out_policy) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE");
+
+    if (out_policy == NULL) {
+        return 0;
+    }
+
+    *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "off") == 0) {
+        *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+        return 1;
+    }
+    if (strcmp(mode, "warn") == 0) {
+        *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+        return 1;
+    }
+    if (strcmp(mode, "error") == 0) {
+        *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -320,6 +351,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     VmLayoutPolicy policy;
     Masm32SimWasmMemoryValidationMode validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
     Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
+    Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -335,6 +367,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
         json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(source, &policy);
     } else if (diagnostic_json_producer_get_shift_validation_mode(&shift_mode)) {
         json = masm32_sim_wasm_run_source_json_with_shift_validation_mode(source, shift_mode);
+    } else if (diagnostic_json_producer_get_undefined_flag_use_policy(&flag_use_policy)) {
+        json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(source, flag_use_policy);
     } else {
         json = masm32_sim_wasm_run_source_json(source);
     }

@@ -4,7 +4,7 @@
  *
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
- * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, and Irvine32 exit forms
+ * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror, and Irvine32 exit forms
  * over the currently supported register and memory operand shapes. Control
  * flow, stack behavior, non-exit Irvine32 routines, and resource watchdogs
  * remain later milestones.
@@ -33,6 +33,9 @@
 /// Maximum checked memory accesses retained in one step delta.
 #define VM_EXEC_MAX_MEMORY_ACCESSES 4U
 
+/// Maximum modeled flags that can be consumed by one flag-consuming instruction.
+#define VM_EXEC_MAX_CONSUMED_FLAGS VM_FLAG_COUNT
+
 /// Describes the result of one executor operation.
 typedef enum VmExecStatus {
     /// Operation completed and, for step, one instruction was executed.
@@ -46,8 +49,36 @@ typedef enum VmExecStatus {
     /// Operation failed because the operand combination is not supported by the current execution subset.
     VM_EXEC_STATUS_UNSUPPORTED_OPERAND,
     /// Operation failed because a checked memory access failed.
-    VM_EXEC_STATUS_MEMORY_ERROR
+    VM_EXEC_STATUS_MEMORY_ERROR,
+    /// Operation stopped before consuming an architecturally undefined modeled flag.
+    VM_EXEC_STATUS_UNDEFINED_FLAG_USE
 } VmExecStatus;
+
+/// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.
+typedef enum VmUndefinedFlagUsePolicy {
+    /// Do not diagnose invalid flag consumption; use deterministic fallback bits.
+    VM_UNDEFINED_FLAG_USE_POLICY_OFF = 0,
+    /// Emit a non-fatal warning and continue using deterministic fallback bits.
+    VM_UNDEFINED_FLAG_USE_POLICY_WARN,
+    /// Emit a runtime error before the consumer uses the invalid flag.
+    VM_UNDEFINED_FLAG_USE_POLICY_ERROR
+} VmUndefinedFlagUsePolicy;
+
+/// Describes one Phase 50B invalid flag-consumption diagnostic.
+typedef struct VmFlagUseDiagnostic {
+    /// Status represented by this diagnostic.
+    VmExecStatus status;
+    /// Whether @ref consumer_instruction contains a copied instruction.
+    bool has_consumer_instruction;
+    /// Instruction that attempted to consume the invalid flag value.
+    VmIrInstruction consumer_instruction;
+    /// Invalid consumed flags, in the order requested by the consumer.
+    VmFlag invalid_flags[VM_EXEC_MAX_CONSUMED_FLAGS];
+    /// Undefined-origin metadata for each invalid consumed flag.
+    VmFlagValidityMetadata invalid_metadata[VM_EXEC_MAX_CONSUMED_FLAGS];
+    /// Number of invalid consumed flags recorded in this diagnostic.
+    size_t invalid_flag_count;
+} VmFlagUseDiagnostic;
 
 
 /// Identifies whether one checked memory access read or wrote memory.
@@ -214,6 +245,30 @@ const VmExecDiagnostic *vm_last_diagnostic(const Vm *vm);
 /// @param status Executor status to inspect.
 /// @return Static status name, or NULL for invalid status values.
 const char *vm_exec_status_name(VmExecStatus status);
+
+/// Checks whether a flag consumer is about to read architecturally undefined modeled flags.
+///
+/// In OFF mode, this helper returns success and emits no diagnostic even when
+/// requested flags are invalid. In WARN mode, it fills @p out_diagnostic when
+/// invalid flags are found but returns success. In ERROR mode, it fills
+/// @p out_diagnostic and returns VM_EXEC_STATUS_UNDEFINED_FLAG_USE before the
+/// caller makes a flag-dependent decision or mutation.
+///
+/// @param cpu CPU state whose flag-validity metadata should be inspected.
+/// @param consumer_instruction Instruction consuming the requested flags.
+/// @param required_flags Flags read by the consumer instruction.
+/// @param required_flag_count Number of entries in @p required_flags.
+/// @param policy Undefined-flag-use policy to apply.
+/// @param out_diagnostic Optional diagnostic populated for WARN or ERROR findings.
+/// @return VM_EXEC_STATUS_OK when execution may continue, VM_EXEC_STATUS_UNDEFINED_FLAG_USE for ERROR findings, or VM_EXEC_STATUS_INVALID_ARGUMENT for invalid inputs.
+VmExecStatus vm_check_flag_consumption(
+    const VmCpu *cpu,
+    const VmIrInstruction *consumer_instruction,
+    const VmFlag *required_flags,
+    size_t required_flag_count,
+    VmUndefinedFlagUsePolicy policy,
+    VmFlagUseDiagnostic *out_diagnostic
+);
 
 /// Runs the Milestone 4 hardcoded IR sample program.
 ///

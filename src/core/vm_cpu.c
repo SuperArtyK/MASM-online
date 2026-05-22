@@ -458,6 +458,16 @@ bool vm_cpu_read_flag(const VmCpu *cpu, VmFlag flag, bool *out_is_set) {
     return true;
 }
 
+const char *vm_cpu_flag_name(VmFlag flag) {
+    const VmCpuFlagMetadata *metadata = NULL;
+
+    if (!vm_cpu_get_flag_metadata(flag, &metadata)) {
+        return NULL;
+    }
+
+    return metadata->name;
+}
+
 bool vm_cpu_write_flag(VmCpu *cpu, VmFlag flag, bool is_set) {
     const VmCpuFlagMetadata *metadata = NULL;
 

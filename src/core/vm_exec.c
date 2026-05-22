@@ -59,6 +59,110 @@ static void vm_exec_clear_diagnostic(VmExecDiagnostic *diagnostic, VmExecStatus 
     diagnostic->memory_status = VM_MEMORY_STATUS_OK;
 }
 
+/// Clears one Phase 50B flag-use diagnostic to its empty state.
+///
+/// @param diagnostic Diagnostic structure to clear.
+/// @param status Status to store after clearing.
+static void vm_exec_clear_flag_use_diagnostic(VmFlagUseDiagnostic *diagnostic, VmExecStatus status) {
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->status = status;
+}
+
+/// Returns whether a policy value is a supported Phase 50B flag-use policy.
+///
+/// @param policy Policy value to inspect.
+/// @return true when @p policy is supported.
+static bool vm_exec_flag_use_policy_is_valid(VmUndefinedFlagUsePolicy policy) {
+    return policy == VM_UNDEFINED_FLAG_USE_POLICY_OFF ||
+           policy == VM_UNDEFINED_FLAG_USE_POLICY_WARN ||
+           policy == VM_UNDEFINED_FLAG_USE_POLICY_ERROR;
+}
+
+/// Returns whether a flag is already present in a flag-use diagnostic.
+///
+/// @param diagnostic Diagnostic to inspect.
+/// @param flag Flag to find.
+/// @return true when @p flag is already recorded.
+static bool vm_exec_flag_use_diagnostic_contains_flag(const VmFlagUseDiagnostic *diagnostic, VmFlag flag) {
+    size_t index = 0U;
+
+    if (diagnostic == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < diagnostic->invalid_flag_count; index += 1U) {
+        if (diagnostic->invalid_flags[index] == flag) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+VmExecStatus vm_check_flag_consumption(
+    const VmCpu *cpu,
+    const VmIrInstruction *consumer_instruction,
+    const VmFlag *required_flags,
+    size_t required_flag_count,
+    VmUndefinedFlagUsePolicy policy,
+    VmFlagUseDiagnostic *out_diagnostic
+) {
+    VmFlagUseDiagnostic local_diagnostic;
+    VmFlagUseDiagnostic *diagnostic = out_diagnostic != NULL ? out_diagnostic : &local_diagnostic;
+    size_t index = 0U;
+
+    vm_exec_clear_flag_use_diagnostic(diagnostic, VM_EXEC_STATUS_OK);
+
+    if (cpu == NULL || !vm_exec_flag_use_policy_is_valid(policy) ||
+        (required_flag_count > 0U && required_flags == NULL)) {
+        vm_exec_clear_flag_use_diagnostic(diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    if (policy == VM_UNDEFINED_FLAG_USE_POLICY_OFF || required_flag_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    if (consumer_instruction != NULL) {
+        diagnostic->has_consumer_instruction = true;
+        diagnostic->consumer_instruction = *consumer_instruction;
+    }
+
+    for (index = 0U; index < required_flag_count; index += 1U) {
+        VmFlag flag = required_flags[index];
+        VmFlagValidityMetadata metadata;
+
+        if (!vm_cpu_read_flag_validity(cpu, flag, &metadata)) {
+            vm_exec_clear_flag_use_diagnostic(diagnostic, VM_EXEC_STATUS_INVALID_ARGUMENT);
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (!metadata.is_valid &&
+            diagnostic->invalid_flag_count < (size_t)VM_EXEC_MAX_CONSUMED_FLAGS &&
+            !vm_exec_flag_use_diagnostic_contains_flag(diagnostic, flag)) {
+            diagnostic->invalid_flags[diagnostic->invalid_flag_count] = flag;
+            diagnostic->invalid_metadata[diagnostic->invalid_flag_count] = metadata;
+            diagnostic->invalid_flag_count += 1U;
+        }
+    }
+
+    if (diagnostic->invalid_flag_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    if (policy == VM_UNDEFINED_FLAG_USE_POLICY_ERROR) {
+        diagnostic->status = VM_EXEC_STATUS_UNDEFINED_FLAG_USE;
+        return VM_EXEC_STATUS_UNDEFINED_FLAG_USE;
+    }
+
+    diagnostic->status = VM_EXEC_STATUS_OK;
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Records an executor diagnostic for an instruction-scoped status.
 ///
 /// @param vm VM whose diagnostic should be updated.
@@ -2324,6 +2428,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "unsupported-operand";
         case VM_EXEC_STATUS_MEMORY_ERROR:
             return "memory-error";
+        case VM_EXEC_STATUS_UNDEFINED_FLAG_USE:
+            return "undefined-flag-use";
         default:
             return NULL;
     }

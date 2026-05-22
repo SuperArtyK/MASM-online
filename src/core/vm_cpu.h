@@ -184,6 +184,12 @@ const char *vm_cpu_register_name(VmRegister reg);
 /// @return true when the read succeeds; false for NULL pointers or invalid flags.
 bool vm_cpu_read_flag(const VmCpu *cpu, VmFlag flag, bool *out_is_set);
 
+/// Returns the uppercase display name for a supported named flag.
+///
+/// @param flag Named flag identifier.
+/// @return Static uppercase flag name, or NULL for invalid flags.
+const char *vm_cpu_flag_name(VmFlag flag);
+
 /// Writes one supported named flag in EFLAGS.
 ///
 /// Only the selected flag bit is changed. All other EFLAGS bits are preserved.

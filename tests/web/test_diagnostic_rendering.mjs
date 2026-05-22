@@ -60,7 +60,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
   "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
   "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT",
-  "MASM32_DIAGNOSTIC_SHIFT_VALIDATION"
+  "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
+  "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE"
 ];
 
 /**
@@ -679,6 +680,19 @@ main ENDP
 END main
 `,
     reason: "Phase 50 ROR remains warning-only under strict shift validation."
+  },
+  undefinedFlagUseAdc: {
+    source: `.code
+main PROC
+    stc
+    mov al, 1
+    shl al, 8
+    mov ebx, 0
+    adc ebx, 0
+main ENDP
+END main
+`,
+    reason: "Phase 50B undefined flag-use diagnostic fixture for ADC consuming CF."
   },
   notAmbiguousMemoryWidth: {
     source: `.code
@@ -1874,6 +1888,80 @@ test("renders ROR warning under strict shift validation without runtime error", 
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROR count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the most significant bit of the rotated result. ZF and SF were preserved because ROR does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
+});
+
+
+test("renders undefined flag-use warning exactly", () => {
+  const name = "undefinedFlagUseAdc";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 5);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+      line: 5,
+      column: 5,
+      byteOffset: 42,
+      spanLength: 9
+    },
+    {
+      kind: "simulator-warning",
+      code: "undefined-flag-use",
+      message: "ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+      line: 7,
+      column: 5,
+      byteOffset: 71,
+      spanLength: 10,
+      consumedFlags: ["CF"],
+      producerMnemonic: "SHL",
+      producerCode: "undefined-shift-flag",
+      producerLine: 5
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assert.equal(json.registers.EBX.hex, "00000001h");
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 42, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "[simulator-warning] undefined-flag-use line 7, column 5, byte offset 71, span length 10: ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders undefined flag-use runtime error exactly", () => {
+  const name = "undefinedFlagUseAdc";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 4);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "undefined-flag-use",
+      message: "ADC reads CF, but CF is architecturally undefined from SHL at line 5. Execution stopped before using the undefined flag.",
+      line: 7,
+      column: 5,
+      byteOffset: 71,
+      spanLength: 10,
+      consumedFlags: ["CF"],
+      producerMnemonic: "SHL",
+      producerCode: "undefined-shift-flag",
+      producerLine: 5
+    }
+  ]);
+  assert.equal(json.registers.EBX.hex, "00000000h");
+  assert.equal(json.registers.EFLAGS.hex, "00000041h");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-flag-use line 7, column 5, byte offset 71, span length 10: ADC reads CF, but CF is architecturally undefined from SHL at line 5. Execution stopped before using the undefined flag.");
 });
 
 

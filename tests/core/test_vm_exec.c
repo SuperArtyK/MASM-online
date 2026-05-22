@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 50A.
+ * @brief Unit tests for the VM executor through Milestone 50B.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -2738,6 +2738,119 @@ static int test_phase50a_flag_validity_rollback_and_preservation(void) {
     return failures;
 }
 
+/// Verifies the Phase 50B helper policies for invalid flag consumption.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50b_flag_use_helper_policies(void) {
+    int failures = 0;
+    VmCpu cpu;
+    VmFlag required_of[] = {VM_FLAG_OF};
+    VmFlag required_cf[] = {VM_FLAG_CF};
+    VmFlagUseDiagnostic diagnostic;
+    const VmIrInstruction consumer = {
+        VM_IR_OPCODE_ADC,
+        {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+        {VM_IR_OPERAND_IMMEDIATE, 32U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+        "main.asm",
+        7U,
+        "adc eax, 0",
+        2U
+    };
+
+    vm_cpu_init(&cpu);
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_of, 1U, VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic),
+        VM_EXEC_STATUS_OK,
+        "consuming a valid flag should succeed"
+    );
+    failures += expect_size(diagnostic.invalid_flag_count, 0U, "valid flag consumption should not emit a diagnostic");
+
+    failures += !vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_OF, "undefined-modeled-flag", "rol", "main.asm", 4U, 5U, 32U, 10U, "rol eax, 2", 1U)
+        ? record_failure("mark OF undefined should succeed") : 0;
+
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_of, 1U, VM_UNDEFINED_FLAG_USE_POLICY_OFF, &diagnostic),
+        VM_EXEC_STATUS_OK,
+        "off policy should allow invalid flag consumption"
+    );
+    failures += expect_size(diagnostic.invalid_flag_count, 0U, "off policy should not populate a diagnostic");
+
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_of, 1U, VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic),
+        VM_EXEC_STATUS_OK,
+        "warn policy should allow invalid flag consumption"
+    );
+    failures += expect_size(diagnostic.invalid_flag_count, 1U, "warn policy should report one invalid flag");
+    if (diagnostic.invalid_flag_count == 1U) {
+        failures += expect_u32((uint32_t)diagnostic.invalid_flags[0], (uint32_t)VM_FLAG_OF, "warn diagnostic should name OF");
+        if (diagnostic.invalid_metadata[0].producer_mnemonic == NULL || strcmp(diagnostic.invalid_metadata[0].producer_mnemonic, "rol") != 0) {
+            failures += record_failure("warn diagnostic should preserve producer mnemonic");
+        }
+        failures += expect_u32(diagnostic.invalid_metadata[0].producer_source_line, 4U, "warn diagnostic should preserve producer line");
+    }
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, false, "undefined-modeled-flag", "rol", 4U, "warning should not clear invalid OF metadata");
+
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_of, 1U, VM_UNDEFINED_FLAG_USE_POLICY_ERROR, &diagnostic),
+        VM_EXEC_STATUS_UNDEFINED_FLAG_USE,
+        "error policy should stop invalid flag consumption"
+    );
+    failures += expect_size(diagnostic.invalid_flag_count, 1U, "error policy should report one invalid flag");
+    failures += expect_flag_validity(&cpu, VM_FLAG_OF, false, "undefined-modeled-flag", "rol", 4U, "error should not mutate flag metadata");
+
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_cf, 1U, VM_UNDEFINED_FLAG_USE_POLICY_ERROR, &diagnostic),
+        VM_EXEC_STATUS_OK,
+        "error policy should allow valid CF consumption"
+    );
+    failures += expect_status(
+        vm_check_flag_consumption(NULL, &consumer, required_of, 1U, VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic),
+        VM_EXEC_STATUS_INVALID_ARGUMENT,
+        "helper should reject NULL CPU"
+    );
+
+    return failures;
+}
+
+/// Verifies Phase 50B collection of multiple invalid consumed flags.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase50b_multiple_invalid_flags_one_diagnostic(void) {
+    int failures = 0;
+    VmCpu cpu;
+    VmFlag required_flags[] = {VM_FLAG_ZF, VM_FLAG_SF, VM_FLAG_OF};
+    VmFlagUseDiagnostic diagnostic;
+    const VmIrInstruction consumer = {
+        VM_IR_OPCODE_TEST,
+        {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+        {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+        "main.asm",
+        9U,
+        "test eax, eax",
+        3U
+    };
+
+    vm_cpu_init(&cpu);
+    failures += !vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_SF, "undefined-shift-flag", "shl", "main.asm", 4U, 5U, 32U, 9U, "shl eax, 2", 1U)
+        ? record_failure("mark SF undefined should succeed") : 0;
+    failures += !vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_OF, "undefined-shift-flag", "shl", "main.asm", 4U, 5U, 32U, 9U, "shl eax, 2", 1U)
+        ? record_failure("mark OF undefined should succeed") : 0;
+
+    failures += expect_status(
+        vm_check_flag_consumption(&cpu, &consumer, required_flags, 3U, VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic),
+        VM_EXEC_STATUS_OK,
+        "warn policy should allow multiple invalid flags"
+    );
+    failures += expect_size(diagnostic.invalid_flag_count, 2U, "one diagnostic should list both invalid flags");
+    if (diagnostic.invalid_flag_count == 2U) {
+        failures += expect_u32((uint32_t)diagnostic.invalid_flags[0], (uint32_t)VM_FLAG_SF, "first invalid flag should be SF");
+        failures += expect_u32((uint32_t)diagnostic.invalid_flags[1], (uint32_t)VM_FLAG_OF, "second invalid flag should be OF");
+    }
+
+    return failures;
+}
+
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -2805,7 +2918,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 50A.
+/// Runs all executor tests through Milestone 50B.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -2859,6 +2972,8 @@ int main(void) {
     failures += test_phase50a_rotate_flag_validity_metadata();
     failures += test_phase50a_defined_and_preserved_flag_validity_metadata();
     failures += test_phase50a_flag_validity_rollback_and_preservation();
+    failures += test_phase50b_flag_use_helper_policies();
+    failures += test_phase50b_multiple_invalid_flags_one_diagnostic();
     failures += test_exit_terminator_halts_without_mutation();
     failures += test_metadata_helpers();
 
@@ -2867,6 +2982,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 50A passed.");
+    puts("Executor tests through Milestone 50B passed.");
     return 0;
 }

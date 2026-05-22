@@ -86,6 +86,9 @@
 /// Maximum undefined shift/rotate flag diagnostics retained for one source run.
 #define MASM32_SIM_WASM_MAX_SHIFT_WARNINGS 64U
 
+/// Maximum undefined flag-use diagnostics retained for one source run.
+#define MASM32_SIM_WASM_MAX_FLAG_USE_WARNINGS 64U
+
 /// Source-text storage bytes used by parser-emitted IR instruction metadata.
 #define MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES 8192U
 
@@ -310,6 +313,14 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmShiftDiagnostic shift_violation;
     /// Whether @ref shift_violation contains a fatal strict-mode diagnostic.
     bool has_shift_violation;
+    /// Undefined flag-use warnings collected before flag-consuming instructions.
+    VmFlagUseDiagnostic flag_use_warnings[MASM32_SIM_WASM_MAX_FLAG_USE_WARNINGS];
+    /// Number of valid entries in @ref flag_use_warnings.
+    size_t flag_use_warning_count;
+    /// Fatal undefined flag-use diagnostic captured before a consumer instruction.
+    VmFlagUseDiagnostic flag_use_violation;
+    /// Whether @ref flag_use_violation contains a fatal consumer diagnostic.
+    bool has_flag_use_violation;
     /// Original source text for calculating runtime diagnostic source spans.
     const char *source_text;
     /// Copied source text retained by IR instruction metadata.
@@ -1896,6 +1907,102 @@ static VmExecStatus masm32_sim_wasm_validate_shift_before_step(
     return VM_EXEC_STATUS_OK;
 }
 
+
+/// Converts the Wasm-facing Phase 50B policy to the core helper policy.
+///
+/// @param policy Wasm-facing undefined-flag-use policy.
+/// @param out_policy Receives the equivalent core policy.
+/// @return true when @p policy is valid.
+static bool masm32_sim_wasm_convert_flag_use_policy(
+    Masm32SimWasmUndefinedFlagUsePolicy policy,
+    VmUndefinedFlagUsePolicy *out_policy
+);
+
+
+/// Returns the modeled flags consumed by an already-implemented flag consumer.
+///
+/// @param instruction Instruction to inspect.
+/// @param out_flags Receives consumed flags when non-NULL.
+/// @param flag_capacity Number of entries available in @p out_flags.
+/// @return Number of consumed flags required by the instruction.
+static size_t masm32_sim_wasm_consumed_flags_for_instruction(
+    const VmIrInstruction *instruction,
+    VmFlag *out_flags,
+    size_t flag_capacity
+) {
+    if (instruction == NULL) {
+        return 0U;
+    }
+
+    switch (instruction->opcode) {
+        case VM_IR_OPCODE_ADC:
+        case VM_IR_OPCODE_SBB:
+        case VM_IR_OPCODE_CMC:
+            if (out_flags != NULL && flag_capacity > 0U) {
+                out_flags[0] = VM_FLAG_CF;
+            }
+            return 1U;
+        default:
+            return 0U;
+    }
+}
+
+/// Validates Phase 50B undefined-flag-use behavior before a consumer executes.
+///
+/// Warning mode records a non-fatal message and allows execution. Error mode
+/// records a runtime diagnostic and stops before the instruction consumes flags.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose next instruction should be inspected.
+/// @param policy Wasm-facing undefined-flag-use policy.
+/// @return OK when execution may continue, or UNDEFINED_FLAG_USE for error failures.
+static VmExecStatus masm32_sim_wasm_validate_flag_use_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmUndefinedFlagUsePolicy policy
+) {
+    VmUndefinedFlagUsePolicy core_policy = VM_UNDEFINED_FLAG_USE_POLICY_OFF;
+    VmFlag required_flags[VM_EXEC_MAX_CONSUMED_FLAGS];
+    size_t required_flag_count = 0U;
+    VmFlagUseDiagnostic diagnostic;
+    const VmIrInstruction *instruction = NULL;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (storage == NULL || vm == NULL || vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (!masm32_sim_wasm_convert_flag_use_policy(policy, &core_policy)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (core_policy == VM_UNDEFINED_FLAG_USE_POLICY_OFF) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    instruction = &vm->program[vm->instruction_pointer];
+    memset(required_flags, 0, sizeof(required_flags));
+    required_flag_count = masm32_sim_wasm_consumed_flags_for_instruction(instruction, required_flags, (size_t)VM_EXEC_MAX_CONSUMED_FLAGS);
+    if (required_flag_count == 0U) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    memset(&diagnostic, 0, sizeof(diagnostic));
+    status = vm_check_flag_consumption(&vm->cpu, instruction, required_flags, required_flag_count, core_policy, &diagnostic);
+    if (status == VM_EXEC_STATUS_UNDEFINED_FLAG_USE) {
+        storage->flag_use_violation = diagnostic;
+        storage->has_flag_use_violation = true;
+        return status;
+    }
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (diagnostic.invalid_flag_count > 0U && storage->flag_use_warning_count < (size_t)MASM32_SIM_WASM_MAX_FLAG_USE_WARNINGS) {
+        storage->flag_use_warnings[storage->flag_use_warning_count] = diagnostic;
+        storage->flag_use_warning_count += 1U;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Records one unaligned memory warning when capacity allows it.
 ///
 /// @param storage Source-run storage to mutate.
@@ -2484,6 +2591,345 @@ static bool masm32_sim_json_append_shift_violation(
     return masm32_sim_json_append_shift_message(writer, "runtime-error", diagnostic);
 }
 
+
+/// Converts the Wasm-facing Phase 50B policy to the core helper policy.
+///
+/// @param policy Wasm-facing undefined-flag-use policy.
+/// @param out_policy Receives the equivalent core policy.
+/// @return true when @p policy is valid.
+static bool masm32_sim_wasm_convert_flag_use_policy(
+    Masm32SimWasmUndefinedFlagUsePolicy policy,
+    VmUndefinedFlagUsePolicy *out_policy
+) {
+    if (out_policy == NULL) {
+        return false;
+    }
+
+    switch (policy) {
+        case MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF:
+            *out_policy = VM_UNDEFINED_FLAG_USE_POLICY_OFF;
+            return true;
+        case MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN:
+            *out_policy = VM_UNDEFINED_FLAG_USE_POLICY_WARN;
+            return true;
+        case MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR:
+            *out_policy = VM_UNDEFINED_FLAG_USE_POLICY_ERROR;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Returns an uppercase display mnemonic for diagnostics.
+///
+/// @param mnemonic Lowercase or mixed-case mnemonic from IR metadata.
+/// @return Static uppercase display mnemonic when known, otherwise @p mnemonic or "instruction".
+static const char *masm32_sim_wasm_display_mnemonic(const char *mnemonic) {
+    if (mnemonic == NULL) {
+        return "instruction";
+    }
+    if (strcmp(mnemonic, "adc") == 0) {
+        return "ADC";
+    }
+    if (strcmp(mnemonic, "sbb") == 0) {
+        return "SBB";
+    }
+    if (strcmp(mnemonic, "cmc") == 0) {
+        return "CMC";
+    }
+    if (strcmp(mnemonic, "shl") == 0) {
+        return "SHL";
+    }
+    if (strcmp(mnemonic, "sal") == 0) {
+        return "SAL";
+    }
+    if (strcmp(mnemonic, "shr") == 0) {
+        return "SHR";
+    }
+    if (strcmp(mnemonic, "sar") == 0) {
+        return "SAR";
+    }
+    if (strcmp(mnemonic, "rol") == 0) {
+        return "ROL";
+    }
+    if (strcmp(mnemonic, "ror") == 0) {
+        return "ROR";
+    }
+
+    return mnemonic;
+}
+
+/// Appends a comma-separated consumed flag list into a fixed string buffer.
+///
+/// @param diagnostic Flag-use diagnostic to inspect.
+/// @param buffer Destination buffer.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_flag_use_list(
+    const VmFlagUseDiagnostic *diagnostic,
+    char *buffer,
+    size_t buffer_size
+) {
+    size_t index = 0U;
+    size_t length = 0U;
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+    buffer[0] = '\0';
+
+    if (diagnostic == NULL || diagnostic->invalid_flag_count == 0U) {
+        (void)snprintf(buffer, buffer_size, "flag");
+        return;
+    }
+
+    for (index = 0U; index < diagnostic->invalid_flag_count; index += 1U) {
+        const char *name = vm_cpu_flag_name(diagnostic->invalid_flags[index]);
+        int written = 0;
+
+        if (name == NULL) {
+            name = "flag";
+        }
+        written = snprintf(
+            buffer + length,
+            length < buffer_size ? buffer_size - length : 0U,
+            "%s%s",
+            index == 0U ? "" : ", ",
+            name
+        );
+        if (written < 0) {
+            buffer[0] = '\0';
+            return;
+        }
+        length += (size_t)written;
+        if (length >= buffer_size) {
+            buffer[buffer_size - 1U] = '\0';
+            return;
+        }
+    }
+}
+
+/// Formats one undefined flag-use diagnostic message.
+///
+/// @param diagnostic Diagnostic to format.
+/// @param is_error Whether this is a runtime-error message.
+/// @param buffer Destination buffer.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_flag_use_diagnostic(
+    const VmFlagUseDiagnostic *diagnostic,
+    bool is_error,
+    char *buffer,
+    size_t buffer_size
+) {
+    char flag_list[64];
+    const char *consumer_mnemonic = "instruction";
+    const VmFlagValidityMetadata *metadata = NULL;
+    const char *producer_mnemonic = NULL;
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+
+    masm32_sim_wasm_format_flag_use_list(diagnostic, flag_list, sizeof(flag_list));
+    if (diagnostic != NULL && diagnostic->has_consumer_instruction) {
+        consumer_mnemonic = masm32_sim_wasm_display_mnemonic(vm_ir_opcode_name(diagnostic->consumer_instruction.opcode));
+    }
+
+    if (diagnostic != NULL && diagnostic->invalid_flag_count > 0U) {
+        metadata = &diagnostic->invalid_metadata[0];
+    }
+    producer_mnemonic = metadata != NULL ? masm32_sim_wasm_display_mnemonic(metadata->producer_mnemonic) : NULL;
+
+    if (metadata != NULL && producer_mnemonic != NULL && metadata->producer_source_line > 0U) {
+        (void)snprintf(
+            buffer,
+            buffer_size,
+            "%s reads %s, but %s %s architecturally undefined from %s at line %u. %s",
+            consumer_mnemonic,
+            flag_list,
+            flag_list,
+            diagnostic->invalid_flag_count == 1U ? "is" : "are",
+            producer_mnemonic,
+            (unsigned int)metadata->producer_source_line,
+            is_error ? "Execution stopped before using the undefined flag." : "The simulator preserved the flag deterministically; this flag-dependent behavior is not portable."
+        );
+        return;
+    }
+
+    (void)snprintf(
+        buffer,
+        buffer_size,
+        "%s reads %s, but %s %s currently marked architecturally undefined. %s",
+        consumer_mnemonic,
+        flag_list,
+        flag_list,
+        diagnostic != NULL && diagnostic->invalid_flag_count == 1U ? "is" : "are",
+        is_error ? "Execution stopped before using the deterministic simulator fallback." : "Execution continued using the deterministic simulator fallback."
+    );
+}
+
+/// Appends a JSON array of invalid consumed flag names.
+///
+/// @param writer Writer to mutate.
+/// @param diagnostic Diagnostic containing invalid flags.
+/// @return true when the array fit without overflowing the buffer.
+static bool masm32_sim_json_append_flag_use_flag_array(
+    Masm32SimJsonWriter *writer,
+    const VmFlagUseDiagnostic *diagnostic
+) {
+    size_t index = 0U;
+
+    if (writer == NULL || !masm32_sim_json_append(writer, "[")) {
+        return false;
+    }
+    if (diagnostic != NULL) {
+        for (index = 0U; index < diagnostic->invalid_flag_count; index += 1U) {
+            const char *name = vm_cpu_flag_name(diagnostic->invalid_flags[index]);
+            if (index > 0U && !masm32_sim_json_append(writer, ",")) {
+                return false;
+            }
+            if (!masm32_sim_json_append_string(writer, name != NULL ? name : "flag")) {
+                return false;
+            }
+        }
+    }
+
+    return masm32_sim_json_append(writer, "]");
+}
+
+/// Appends one undefined flag-use diagnostic as a structured Simulator Message.
+///
+/// @param writer Writer to mutate.
+/// @param kind Message category.
+/// @param diagnostic Diagnostic to append.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_flag_use_message(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const VmFlagUseDiagnostic *diagnostic
+) {
+    char message[512];
+    uint32_t column = 0U;
+    size_t byte_offset = 0U;
+    size_t span_length = 0U;
+    bool has_source_span = false;
+    const VmFlagValidityMetadata *metadata = NULL;
+
+    if (writer == NULL) {
+        return false;
+    }
+
+    masm32_sim_wasm_format_flag_use_diagnostic(diagnostic, kind != NULL && strcmp(kind, "runtime-error") == 0, message, sizeof(message));
+    if (diagnostic != NULL && diagnostic->has_consumer_instruction) {
+        masm32_sim_wasm_copy_instruction_source_span(
+            &diagnostic->consumer_instruction,
+            g_masm32_sim_wasm_run_storage.source_text,
+            &column,
+            &byte_offset,
+            &span_length,
+            &has_source_span
+        );
+    }
+    if (diagnostic != NULL && diagnostic->invalid_flag_count > 0U) {
+        metadata = &diagnostic->invalid_metadata[0];
+    }
+
+    if (!masm32_sim_json_append(writer, "{\"kind\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, kind)) {
+        return false;
+    }
+    if (!masm32_sim_json_append(writer, ",\"code\":\"undefined-flag-use\",\"message\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, message)) {
+        return false;
+    }
+    if (diagnostic != NULL && diagnostic->has_consumer_instruction && diagnostic->consumer_instruction.source_line > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"line\":%u", (unsigned int)diagnostic->consumer_instruction.source_line)) {
+            return false;
+        }
+    }
+    if (column > 0U && !masm32_sim_json_append(writer, ",\"column\":%u", (unsigned int)column)) {
+        return false;
+    }
+    if (has_source_span) {
+        if (!masm32_sim_json_append(writer, ",\"byteOffset\":%llu,\"spanLength\":%llu", (unsigned long long)byte_offset, (unsigned long long)span_length)) {
+            return false;
+        }
+    }
+    if (!masm32_sim_json_append(writer, ",\"consumedFlags\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_flag_use_flag_array(writer, diagnostic)) {
+        return false;
+    }
+    if (metadata != NULL) {
+        if (!masm32_sim_json_append(writer, ",\"producerMnemonic\":")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, metadata->producer_mnemonic != NULL ? masm32_sim_wasm_display_mnemonic(metadata->producer_mnemonic) : "instruction")) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"producerCode\":")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, metadata->undefined_code != NULL ? metadata->undefined_code : "undefined-modeled-flag")) {
+            return false;
+        }
+        if (metadata->producer_source_line > 0U && !masm32_sim_json_append(writer, ",\"producerLine\":%u", (unsigned int)metadata->producer_source_line)) {
+            return false;
+        }
+        if (metadata->producer_source_column > 0U && !masm32_sim_json_append(writer, ",\"producerColumn\":%u", (unsigned int)metadata->producer_source_column)) {
+            return false;
+        }
+    }
+
+    return masm32_sim_json_append(writer, "}");
+}
+
+/// Appends collected undefined flag-use warnings to Simulator Messages.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing warnings.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @return true when warnings fit without overflowing the buffer.
+static bool masm32_sim_json_append_flag_use_warnings(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    bool *inout_has_message
+) {
+    size_t index = 0U;
+
+    if (storage == NULL || inout_has_message == NULL) {
+        return true;
+    }
+
+    for (index = 0U; index < storage->flag_use_warning_count; index += 1U) {
+        if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_flag_use_message(writer, "simulator-warning", &storage->flag_use_warnings[index])) {
+            return false;
+        }
+        *inout_has_message = true;
+    }
+
+    return true;
+}
+
+/// Appends one undefined flag-use runtime error.
+///
+/// @param writer Writer to mutate.
+/// @param diagnostic Diagnostic to append.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_flag_use_violation(
+    Masm32SimJsonWriter *writer,
+    const VmFlagUseDiagnostic *diagnostic
+) {
+    return masm32_sim_json_append_flag_use_message(writer, "runtime-error", diagnostic);
+}
+
 /// Appends one uninitialized-read strict runtime diagnostic.
 ///
 /// @param writer Writer to mutate.
@@ -2924,6 +3370,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_shift_warnings(&writer, storage, &has_message);
+        (void)masm32_sim_json_append_flag_use_warnings(&writer, storage, &has_message);
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
@@ -2943,6 +3390,8 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_uninitialized_read_violation(&writer, &storage->uninitialized_read_violation);
         } else if (storage != NULL && storage->has_shift_violation) {
             (void)masm32_sim_json_append_shift_violation(&writer, &storage->shift_violation);
+        } else if (storage != NULL && storage->has_flag_use_violation) {
+            (void)masm32_sim_json_append_flag_use_violation(&writer, &storage->flag_use_violation);
         } else {
             (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
         }
@@ -3447,6 +3896,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     const VmLayoutPolicy *base_policy,
     Masm32SimWasmMemoryValidationMode validation_mode,
     Masm32SimWasmShiftValidationMode shift_mode,
+    Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy,
     bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
@@ -3595,6 +4045,11 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             break;
         }
 
+        exec_status = masm32_sim_wasm_validate_flag_use_before_step(&g_masm32_sim_wasm_run_storage, &vm, flag_use_policy);
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
@@ -3628,15 +4083,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
@@ -3651,7 +4106,7 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
@@ -3663,7 +4118,28 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, shift_mode, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, shift_mode, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+}
+
+const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
+    const char *source,
+    Masm32SimWasmUndefinedFlagUsePolicy policy
+) {
+    if (policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF &&
+        policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN &&
+        policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(
+        source,
+        VM_LAYOUT_MODE_FIXED,
+        NULL,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        policy,
+        false
+    );
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
@@ -3678,11 +4154,11 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {
