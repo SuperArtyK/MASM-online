@@ -81,6 +81,9 @@
 /// Maximum allocated-object warnings retained for one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_WARNINGS 64U
 
+/// Maximum section-boundary validation warnings retained for one source run.
+#define MASM32_SIM_WASM_MAX_SECTION_WARNINGS 64U
+
 /// Maximum uninitialized-read diagnostics retained for one source run.
 #define MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS 64U
 
@@ -179,6 +182,48 @@ typedef struct Masm32SimWasmObjectBoundsDiagnostic {
     /// Whether byte-offset and span-length fields identify a real source span.
     bool has_source_span;
 } Masm32SimWasmObjectBoundsDiagnostic;
+
+/// Identifies the Phase 53B section-boundary level that produced a diagnostic.
+typedef enum Masm32SimWasmSectionBoundaryLevel {
+    /// Level 2 section-capacity validation.
+    MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY = 0,
+    /// Level 3 section-image validation.
+    MASM32_SIM_WASM_SECTION_BOUNDARY_IMAGE
+} Masm32SimWasmSectionBoundaryLevel;
+
+/// Describes one Phase 53B section-boundary validation diagnostic.
+typedef struct Masm32SimWasmSectionBoundaryDiagnostic {
+    /// Validation level that produced this diagnostic.
+    Masm32SimWasmSectionBoundaryLevel level;
+    /// Whether the access read or wrote memory.
+    VmExecMemoryAccessKind access_kind;
+    /// First simulated address in the validated memory access range.
+    uint32_t start_address;
+    /// Inclusive final simulated address in the validated memory access range.
+    uint32_t end_address;
+    /// Number of bytes requested by the access.
+    uint32_t size_bytes;
+    /// Stable owning section name when the start address maps to one.
+    char owner_name[16];
+    /// Whether @ref owner_name identifies a known owner.
+    bool has_owner;
+    /// First byte of the relevant section capacity or image range.
+    uint32_t boundary_start;
+    /// Inclusive final byte of the relevant section capacity or image range.
+    uint32_t boundary_end;
+    /// Whether boundary range fields are meaningful.
+    bool has_boundary;
+    /// Source line associated with the memory operand, or zero when unknown.
+    uint32_t source_line;
+    /// Source column associated with the memory operand, or zero when unknown.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the memory operand.
+    size_t source_byte_offset;
+    /// Source span length of the memory operand in bytes.
+    size_t source_span_length;
+    /// Whether byte-offset and span-length fields identify a real source span.
+    bool has_source_span;
+} Masm32SimWasmSectionBoundaryDiagnostic;
 
 /// Describes one uninitialized-origin read diagnostic returned to the UI.
 typedef struct Masm32SimWasmUninitializedReadDiagnostic {
@@ -308,6 +353,18 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmObjectBoundsDiagnostic object_violation;
     /// Whether @ref object_violation contains a fatal strict-mode diagnostic.
     bool has_object_violation;
+    /// Section-boundary validation warnings collected during execution.
+    Masm32SimWasmSectionBoundaryDiagnostic section_warnings[MASM32_SIM_WASM_MAX_SECTION_WARNINGS];
+    /// Number of valid entries in @ref section_warnings.
+    size_t section_warning_count;
+    /// Fatal section-boundary strict diagnostic captured before execution.
+    Masm32SimWasmSectionBoundaryDiagnostic section_violation;
+    /// Whether @ref section_violation contains a fatal strict-mode diagnostic.
+    bool has_section_violation;
+    /// Number of bytes in the selected `.data`/`.DATA?` section image.
+    uint32_t data_section_image_size;
+    /// Number of bytes in the selected `.CONST` section image.
+    uint32_t const_section_image_size;
     /// Uninitialized-read warnings collected during execution.
     Masm32SimWasmUninitializedReadDiagnostic uninitialized_read_warnings[MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS];
     /// Number of valid entries in @ref uninitialized_read_warnings.
@@ -1086,6 +1143,425 @@ static bool masm32_sim_wasm_validate_object_access(
     return true;
 }
 
+/// Returns whether a section-validation policy performs any checking.
+///
+/// @param policy Section-validation policy to inspect.
+/// @return true when the policy is warning or strict.
+static bool masm32_sim_wasm_section_policy_enabled(Masm32SimWasmSectionValidationPolicy policy) {
+    return policy == MASM32_SIM_WASM_SECTION_VALIDATION_WARN || policy == MASM32_SIM_WASM_SECTION_VALIDATION_STRICT;
+}
+
+/// Returns whether a section-validation policy stops before mutation.
+///
+/// @param policy Section-validation policy to inspect.
+/// @return true when the policy is strict.
+static bool masm32_sim_wasm_section_policy_is_strict(Masm32SimWasmSectionValidationPolicy policy) {
+    return policy == MASM32_SIM_WASM_SECTION_VALIDATION_STRICT;
+}
+
+/// Returns the diagnostic code for one section-boundary level.
+///
+/// @param level Section-boundary validation level.
+/// @return Stable diagnostic code.
+static const char *masm32_sim_wasm_section_boundary_code(Masm32SimWasmSectionBoundaryLevel level) {
+    return level == MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY
+        ? "section-capacity-violation"
+        : "section-image-violation";
+}
+
+/// Returns the user-facing name for one section-boundary level.
+///
+/// @param level Section-boundary validation level.
+/// @return Static lowercase level name.
+static const char *masm32_sim_wasm_section_boundary_level_name(Masm32SimWasmSectionBoundaryLevel level) {
+    return level == MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY ? "section capacity" : "section image";
+}
+
+/// Copies a stable section owner name into a fixed diagnostic buffer.
+///
+/// @param destination Destination character buffer.
+/// @param destination_size Destination buffer size in bytes.
+/// @param name Static name to copy.
+static void masm32_sim_wasm_copy_section_owner_name(char *destination, size_t destination_size, const char *name) {
+    if (destination == NULL || destination_size == 0U) {
+        return;
+    }
+    (void)snprintf(destination, destination_size, "%s", name != NULL ? name : "unknown");
+}
+
+/// Safely calculates an exclusive limit from a base and size.
+///
+/// @param base First address in the range.
+/// @param size Number of bytes in the range.
+/// @param out_limit Receives the exclusive limit on success.
+/// @return true when the range is representable.
+static bool masm32_sim_wasm_exclusive_limit(uint32_t base, uint32_t size, uint32_t *out_limit) {
+    if (out_limit == NULL || size == 0U || base > UINT32_MAX - size) {
+        return false;
+    }
+    *out_limit = base + size;
+    return true;
+}
+
+/// Copies source span metadata into a section-boundary diagnostic.
+///
+/// @param diagnostic Section-boundary diagnostic to mutate.
+/// @param instruction Instruction associated with the access.
+/// @param source Original source text for byte-offset reconstruction.
+static void masm32_sim_wasm_copy_section_diagnostic_source_span(
+    Masm32SimWasmSectionBoundaryDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    const char *source
+) {
+    const char *line_text = instruction != NULL ? instruction->source_text : NULL;
+    const char *span_start = NULL;
+    const char *span_end = NULL;
+    size_t line_start_offset = 0U;
+
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    diagnostic->source_line = instruction != NULL ? instruction->source_line : 0U;
+    diagnostic->source_column = 0U;
+    diagnostic->source_byte_offset = 0U;
+    diagnostic->source_span_length = 0U;
+    diagnostic->has_source_span = false;
+
+    if (line_text == NULL || diagnostic->source_line == 0U ||
+        !masm32_sim_wasm_find_line_start_offset(source, diagnostic->source_line, &line_start_offset)) {
+        return;
+    }
+
+    span_start = strchr(line_text, '[');
+    if (span_start == NULL) {
+        span_start = line_text;
+        span_end = line_text + strlen(line_text);
+    } else {
+        span_end = strchr(span_start, ']');
+        if (span_end == NULL || span_end < span_start) {
+            span_end = span_start + strlen(span_start);
+        } else {
+            span_end += 1;
+        }
+    }
+
+    {
+        const char *source_line = source + line_start_offset;
+        const char *source_line_end = strchr(source_line, '\n');
+        const char *line_text_start = NULL;
+        size_t line_text_offset = 0U;
+
+        if (source_line_end == NULL) {
+            source_line_end = source_line + strlen(source_line);
+        }
+        line_text_start = strstr(source_line, line_text);
+        if (line_text_start != NULL && line_text_start <= source_line_end) {
+            line_text_offset = (size_t)(line_text_start - source_line);
+        }
+
+        diagnostic->source_column = (uint32_t)(line_text_offset + (size_t)(span_start - line_text) + 1U);
+        diagnostic->source_byte_offset = line_start_offset + (size_t)(diagnostic->source_column - 1U);
+    }
+    diagnostic->source_span_length = (size_t)(span_end - span_start);
+    diagnostic->has_source_span = diagnostic->source_span_length > 0U;
+}
+
+/// Returns selected data and const image sizes from source-run storage.
+///
+/// @param storage Source-run storage to inspect.
+/// @param region Region whose section image size should be returned.
+/// @return Declared image size in bytes, or zero when no image exists.
+static uint32_t masm32_sim_wasm_section_image_size(const Masm32SimWasmRunStorage *storage, VmLayoutRegionKind region) {
+    if (storage == NULL) {
+        return 0U;
+    }
+    if (region == VM_LAYOUT_REGION_DATA) {
+        return storage->data_section_image_size;
+    }
+    if (region == VM_LAYOUT_REGION_CONST) {
+        return storage->const_section_image_size;
+    }
+    return 0U;
+}
+
+/// Returns parser image-buffer capacity for one section-backed region.
+///
+/// @param region Region whose parser image capacity should be returned.
+/// @return Parser image capacity in bytes, or zero when the region is not section-backed.
+static uint32_t masm32_sim_wasm_section_capacity_size(VmLayoutRegionKind region) {
+    if (region == VM_LAYOUT_REGION_DATA) {
+        return (uint32_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
+    }
+    if (region == VM_LAYOUT_REGION_CONST) {
+        return (uint32_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES;
+    }
+    return 0U;
+}
+
+/// Finds the selected layout region containing an access start address.
+///
+/// @param layout_policy Selected layout policy, or NULL for fixed default.
+/// @param address Address to classify.
+/// @param out_region Receives the containing region kind on success.
+/// @param out_base Receives the containing region base on success.
+/// @param out_limit Receives the containing region exclusive limit on success.
+/// @return true when @p address starts inside a selected region.
+static bool masm32_sim_wasm_find_start_region(
+    const VmLayoutPolicy *layout_policy,
+    uint32_t address,
+    VmLayoutRegionKind *out_region,
+    uint32_t *out_base,
+    uint32_t *out_limit
+) {
+    VmLayoutPolicy default_policy;
+    const VmLayoutPolicy *effective_policy = layout_policy;
+    size_t index = 0U;
+
+    if (out_region == NULL || out_base == NULL || out_limit == NULL) {
+        return false;
+    }
+    if (effective_policy == NULL) {
+        default_policy = vm_layout_default_policy();
+        effective_policy = &default_policy;
+    }
+
+    for (index = 0U; index < (size_t)VM_LAYOUT_REGION_COUNT; index += 1U) {
+        const VmLayoutRegionPolicy *region = &effective_policy->regions[index];
+        if (address >= region->base && address < region->limit) {
+            *out_region = (VmLayoutRegionKind)index;
+            *out_base = region->base;
+            *out_limit = region->limit;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Returns a stable source-level section name for one region.
+///
+/// @param region Layout region to name.
+/// @return Section or section-like name.
+static const char *masm32_sim_wasm_section_owner_name(VmLayoutRegionKind region) {
+    switch (region) {
+        case VM_LAYOUT_REGION_DATA:
+            return ".data/.DATA?";
+        case VM_LAYOUT_REGION_CONST:
+            return ".CONST";
+        case VM_LAYOUT_REGION_CODE:
+            return ".code";
+        case VM_LAYOUT_REGION_HEAP:
+            return "heap";
+        case VM_LAYOUT_REGION_STACK:
+            return "stack";
+        default:
+            return "unknown";
+    }
+}
+
+/// Determines whether an access violates one Phase 53B section-boundary level.
+///
+/// @param storage Source-run storage with image sizes.
+/// @param layout_policy Selected layout policy, or NULL for fixed default.
+/// @param level Section-boundary level to check.
+/// @param address First byte of the access.
+/// @param size_bytes Access size in bytes.
+/// @param out_owner Receives the owning region when known.
+/// @param out_boundary_start Receives the relevant boundary start when known.
+/// @param out_boundary_end Receives the relevant inclusive boundary end when known.
+/// @param out_has_boundary Receives whether boundary fields are meaningful.
+/// @return true when the access violates the selected section-boundary level.
+static bool masm32_sim_wasm_section_access_violates(
+    const Masm32SimWasmRunStorage *storage,
+    const VmLayoutPolicy *layout_policy,
+    Masm32SimWasmSectionBoundaryLevel level,
+    uint32_t address,
+    uint32_t size_bytes,
+    VmLayoutRegionKind *out_owner,
+    uint32_t *out_boundary_start,
+    uint32_t *out_boundary_end,
+    bool *out_has_boundary
+) {
+    VmLayoutRegionKind region = VM_LAYOUT_REGION_COUNT;
+    uint32_t region_base = 0U;
+    uint32_t region_limit = 0U;
+    uint32_t boundary_size = 0U;
+    uint32_t boundary_limit = 0U;
+    uint32_t access_end = 0U;
+
+    if (out_has_boundary != NULL) {
+        *out_has_boundary = false;
+    }
+    if (out_owner != NULL) {
+        *out_owner = VM_LAYOUT_REGION_COUNT;
+    }
+    if (size_bytes == 0U || !vm_object_map_inclusive_end(address, size_bytes, &access_end)) {
+        return false;
+    }
+    if (!masm32_sim_wasm_find_start_region(layout_policy, address, &region, &region_base, &region_limit)) {
+        return true;
+    }
+    if (out_owner != NULL) {
+        *out_owner = region;
+    }
+
+    if (level == MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY) {
+        boundary_size = masm32_sim_wasm_section_capacity_size(region);
+    } else {
+        boundary_size = masm32_sim_wasm_section_image_size(storage, region);
+    }
+
+    if (boundary_size == 0U || !masm32_sim_wasm_exclusive_limit(region_base, boundary_size, &boundary_limit)) {
+        return true;
+    }
+    if (boundary_limit > region_limit) {
+        boundary_limit = region_limit;
+    }
+    if (boundary_limit == 0U || boundary_limit <= region_base) {
+        return true;
+    }
+
+    if (out_boundary_start != NULL) {
+        *out_boundary_start = region_base;
+    }
+    if (out_boundary_end != NULL) {
+        *out_boundary_end = boundary_limit - 1U;
+    }
+    if (out_has_boundary != NULL) {
+        *out_has_boundary = true;
+    }
+
+    return address < region_base || access_end >= boundary_limit;
+}
+
+/// Populates one section-boundary diagnostic.
+///
+/// @param diagnostic Diagnostic to fill.
+/// @param instruction Instruction associated with the access.
+/// @param access Checked or planned memory access being diagnosed.
+/// @param level Section-boundary level that failed.
+/// @param size_bytes Access size in bytes.
+/// @param owner Owning region when known.
+/// @param boundary_start Relevant boundary start when available.
+/// @param boundary_end Relevant inclusive boundary end when available.
+/// @param has_boundary Whether boundary fields are meaningful.
+/// @param source Original source text for byte-offset reconstruction.
+static void masm32_sim_wasm_fill_section_boundary_diagnostic(
+    Masm32SimWasmSectionBoundaryDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    const VmExecMemoryAccess *access,
+    Masm32SimWasmSectionBoundaryLevel level,
+    uint32_t size_bytes,
+    VmLayoutRegionKind owner,
+    uint32_t boundary_start,
+    uint32_t boundary_end,
+    bool has_boundary,
+    const char *source
+) {
+    if (diagnostic == NULL || access == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->level = level;
+    diagnostic->access_kind = access->kind;
+    diagnostic->start_address = access->address;
+    diagnostic->size_bytes = size_bytes;
+    (void)vm_object_map_inclusive_end(access->address, size_bytes, &diagnostic->end_address);
+    if (owner != VM_LAYOUT_REGION_COUNT) {
+        masm32_sim_wasm_copy_section_owner_name(diagnostic->owner_name, sizeof(diagnostic->owner_name), masm32_sim_wasm_section_owner_name(owner));
+        diagnostic->has_owner = true;
+    }
+    diagnostic->boundary_start = boundary_start;
+    diagnostic->boundary_end = boundary_end;
+    diagnostic->has_boundary = has_boundary;
+    masm32_sim_wasm_copy_section_diagnostic_source_span(diagnostic, instruction, source);
+}
+
+/// Validates one access against one Phase 53B section-boundary policy.
+///
+/// @param storage Source-run storage to mutate.
+/// @param instruction Instruction associated with the access.
+/// @param access Memory access to classify.
+/// @param policy Selected warning/strict/off policy.
+/// @param level Section-boundary level being checked.
+/// @param layout_policy Selected layout policy, or NULL for fixed default.
+/// @return true when execution may continue, false for strict violations.
+static bool masm32_sim_wasm_validate_section_access(
+    Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    const VmExecMemoryAccess *access,
+    Masm32SimWasmSectionValidationPolicy policy,
+    Masm32SimWasmSectionBoundaryLevel level,
+    const VmLayoutPolicy *layout_policy
+) {
+    VmLayoutRegionKind owner = VM_LAYOUT_REGION_COUNT;
+    uint32_t boundary_start = 0U;
+    uint32_t boundary_end = 0U;
+    uint32_t size_bytes = 0U;
+    bool has_boundary = false;
+    bool violates = false;
+
+    if (storage == NULL || instruction == NULL || access == NULL || !masm32_sim_wasm_section_policy_enabled(policy)) {
+        return true;
+    }
+    if (!masm32_sim_wasm_access_succeeded(access) || access->width_bits == 0U || (access->width_bits % 8U) != 0U) {
+        return true;
+    }
+
+    size_bytes = (uint32_t)(access->width_bits / 8U);
+    violates = masm32_sim_wasm_section_access_violates(
+        storage,
+        layout_policy,
+        level,
+        access->address,
+        size_bytes,
+        &owner,
+        &boundary_start,
+        &boundary_end,
+        &has_boundary
+    );
+    if (!violates) {
+        return true;
+    }
+
+    if (masm32_sim_wasm_section_policy_is_strict(policy)) {
+        masm32_sim_wasm_fill_section_boundary_diagnostic(
+            &storage->section_violation,
+            instruction,
+            access,
+            level,
+            size_bytes,
+            owner,
+            boundary_start,
+            boundary_end,
+            has_boundary,
+            storage->source_text
+        );
+        storage->has_section_violation = true;
+        return false;
+    }
+
+    if (storage->section_warning_count < (size_t)MASM32_SIM_WASM_MAX_SECTION_WARNINGS) {
+        masm32_sim_wasm_fill_section_boundary_diagnostic(
+            &storage->section_warnings[storage->section_warning_count],
+            instruction,
+            access,
+            level,
+            size_bytes,
+            owner,
+            boundary_start,
+            boundary_end,
+            has_boundary,
+            storage->source_text
+        );
+        storage->section_warning_count += 1U;
+    }
+
+    return true;
+}
+
 
 /// Marks one successful write access as initialized in the Phase 39 data mask.
 ///
@@ -1179,6 +1655,46 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses(
 
     for (index = 0U; index < delta->memory_access_count; index += 1U) {
         if (!masm32_sim_wasm_validate_object_access(storage, &delta->instruction, &delta->memory_accesses[index], validation_mode, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Applies section-boundary warning validation to the last instruction accesses.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose last delta should be inspected.
+/// @param capacity_policy Level 2 section-capacity validation behavior.
+/// @param image_policy Level 3 section-image validation behavior.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return OK when execution may continue, or MEMORY_ERROR when a strict policy fails.
+static VmExecStatus masm32_sim_wasm_validate_section_accesses(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy,
+    const VmLayoutPolicy *layout_policy
+) {
+    const VmExecDelta *delta = NULL;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL ||
+        (!masm32_sim_wasm_section_policy_enabled(capacity_policy) && !masm32_sim_wasm_section_policy_enabled(image_policy))) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    delta = vm_last_delta(vm);
+    if (delta == NULL || !delta->has_instruction) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        if (!masm32_sim_wasm_validate_section_access(storage, &delta->instruction, &delta->memory_accesses[index], capacity_policy, MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+        if (!masm32_sim_wasm_validate_section_access(storage, &delta->instruction, &delta->memory_accesses[index], image_policy, MASM32_SIM_WASM_SECTION_BOUNDARY_IMAGE, layout_policy)) {
             return VM_EXEC_STATUS_MEMORY_ERROR;
         }
     }
@@ -1615,6 +2131,69 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses_before_step(
     return VM_EXEC_STATUS_OK;
 }
 
+/// Validates strict section-boundary policies before stepping an instruction.
+///
+/// Planned accesses that would already fail mandatory Level 1 region or
+/// permission checks are ignored here so lower-level runtime memory diagnostics
+/// keep precedence. Level 2 section-capacity strict validation is checked before
+/// Level 3 section-image strict validation.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose next instruction should be inspected.
+/// @param capacity_policy Level 2 section-capacity validation behavior.
+/// @param image_policy Level 3 section-image validation behavior.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return OK when execution may continue, or MEMORY_ERROR for strict violations.
+static VmExecStatus masm32_sim_wasm_validate_section_accesses_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy,
+    const VmLayoutPolicy *layout_policy
+) {
+    Masm32SimWasmPlannedMemoryAccess accesses[VM_EXEC_MAX_MEMORY_ACCESSES];
+    const VmIrInstruction *instruction = NULL;
+    size_t access_count = 0U;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL || vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL ||
+        (!masm32_sim_wasm_section_policy_is_strict(capacity_policy) && !masm32_sim_wasm_section_policy_is_strict(image_policy))) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    memset(accesses, 0, sizeof(accesses));
+    instruction = &vm->program[vm->instruction_pointer];
+    access_count = masm32_sim_wasm_collect_planned_object_accesses(instruction, accesses, sizeof(accesses) / sizeof(accesses[0]));
+    for (index = 0U; index < access_count; index += 1U) {
+        uint32_t address = 0U;
+        uint32_t size_bytes = 0U;
+        VmExecMemoryAccess access;
+
+        if (accesses[index].width_bits == 0U || (accesses[index].width_bits % 8U) != 0U ||
+            !masm32_sim_wasm_resolve_memory_operand_address(vm, &accesses[index].operand, &address)) {
+            continue;
+        }
+        size_bytes = (uint32_t)(accesses[index].width_bits / 8U);
+        if (!masm32_sim_wasm_planned_access_passes_level1(vm, address, size_bytes, accesses[index].kind)) {
+            continue;
+        }
+
+        memset(&access, 0, sizeof(access));
+        access.kind = accesses[index].kind;
+        access.address = address;
+        access.width_bits = accesses[index].width_bits;
+        access.status = VM_MEMORY_STATUS_OK;
+        if (!masm32_sim_wasm_validate_section_access(storage, instruction, &access, capacity_policy, MASM32_SIM_WASM_SECTION_BOUNDARY_CAPACITY, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+        if (!masm32_sim_wasm_validate_section_access(storage, instruction, &access, image_policy, MASM32_SIM_WASM_SECTION_BOUNDARY_IMAGE, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Copies best-effort bracketed memory operand source-span metadata.
 ///
 /// @param instruction Instruction associated with the memory operand.
@@ -1920,14 +2499,19 @@ static uint32_t masm32_sim_wasm_count_uninitialized_read_bytes(
         return 0U;
     }
     offset = address - data_region->base;
-    if ((uint64_t)offset + (uint64_t)size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+    if (offset >= storage->data_initialized_mask_size) {
         return 0U;
     }
 
     {
         uint32_t uninitialized_count = 0U;
+        uint32_t tracked_size_bytes = size_bytes;
 
-        for (index = 0U; index < size_bytes; index += 1U) {
+        if ((uint64_t)offset + (uint64_t)tracked_size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+            tracked_size_bytes = storage->data_initialized_mask_size - offset;
+        }
+
+        for (index = 0U; index < tracked_size_bytes; index += 1U) {
             if (storage->data_initialized_mask[(size_t)offset + (size_t)index] == MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
                 uninitialized_count += 1U;
             }
@@ -2401,6 +2985,187 @@ static void masm32_sim_wasm_format_object_bounds_message(
             );
             return;
     }
+}
+
+/// Builds user-facing text for one section-boundary diagnostic.
+///
+/// @param diagnostic Section-boundary diagnostic to describe.
+/// @param buffer Destination buffer for the formatted message.
+/// @param buffer_size Destination buffer size in bytes.
+static void masm32_sim_wasm_format_section_boundary_message(
+    const Masm32SimWasmSectionBoundaryDiagnostic *diagnostic,
+    char *buffer,
+    size_t buffer_size
+) {
+    const char *access_name = diagnostic != NULL ? masm32_sim_wasm_exec_memory_access_kind_name(diagnostic->access_kind) : "access";
+    const char *level_name = diagnostic != NULL ? masm32_sim_wasm_section_boundary_level_name(diagnostic->level) : "section boundary";
+    const char *owner_name = diagnostic != NULL && diagnostic->has_owner ? diagnostic->owner_name : "unknown section";
+
+    if (buffer == NULL || buffer_size == 0U) {
+        return;
+    }
+    if (diagnostic == NULL) {
+        (void)snprintf(buffer, buffer_size, "Memory access violates a section boundary.");
+        return;
+    }
+
+    if (diagnostic->has_boundary) {
+        (void)snprintf(
+            buffer,
+            buffer_size,
+            "Memory %s at %08Xh for %u byte%s covers range %08Xh..%08Xh and leaves the %s range for %s (%08Xh..%08Xh).",
+            access_name,
+            (unsigned int)diagnostic->start_address,
+            (unsigned int)diagnostic->size_bytes,
+            diagnostic->size_bytes == 1U ? "" : "s",
+            (unsigned int)diagnostic->start_address,
+            (unsigned int)diagnostic->end_address,
+            level_name,
+            owner_name,
+            (unsigned int)diagnostic->boundary_start,
+            (unsigned int)diagnostic->boundary_end
+        );
+        return;
+    }
+
+    (void)snprintf(
+        buffer,
+        buffer_size,
+        "Memory %s at %08Xh for %u byte%s covers range %08Xh..%08Xh but does not start inside a known %s range for %s.",
+        access_name,
+        (unsigned int)diagnostic->start_address,
+        (unsigned int)diagnostic->size_bytes,
+        diagnostic->size_bytes == 1U ? "" : "s",
+        (unsigned int)diagnostic->start_address,
+        (unsigned int)diagnostic->end_address,
+        level_name,
+        owner_name
+    );
+}
+
+/// Appends one section-boundary message object with diagnostic metadata.
+///
+/// @param writer Writer to mutate.
+/// @param kind Simulator-message kind to emit.
+/// @param diagnostic Diagnostic to render.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_section_boundary_message(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const Masm32SimWasmSectionBoundaryDiagnostic *diagnostic
+) {
+    char message[384];
+
+    if (writer == NULL) {
+        return false;
+    }
+
+    masm32_sim_wasm_format_section_boundary_message(diagnostic, message, sizeof(message));
+    if (!masm32_sim_json_append(writer, "{\"kind\":")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, kind)) {
+        return false;
+    }
+    if (!masm32_sim_json_append(writer, ",\"code\":\"%s\",\"message\":", diagnostic != NULL ? masm32_sim_wasm_section_boundary_code(diagnostic->level) : "section-boundary-violation")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_string(writer, message)) {
+        return false;
+    }
+    if (diagnostic != NULL && diagnostic->source_line > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"line\":%u", (unsigned int)diagnostic->source_line)) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL && diagnostic->source_column > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"column\":%u", (unsigned int)diagnostic->source_column)) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL && diagnostic->has_source_span) {
+        if (!masm32_sim_json_append(writer, ",\"byteOffset\":%llu", (unsigned long long)diagnostic->source_byte_offset)) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ",\"spanLength\":%llu", (unsigned long long)diagnostic->source_span_length)) {
+            return false;
+        }
+    }
+    if (diagnostic != NULL) {
+        if (!masm32_sim_json_append(
+                writer,
+                ",\"accessKind\":\"%s\",\"accessStartAddress\":\"%08Xh\",\"accessEndAddress\":\"%08Xh\",\"accessSizeBytes\":%u,\"ownerSection\":",
+                masm32_sim_wasm_exec_memory_access_kind_name(diagnostic->access_kind),
+                (unsigned int)diagnostic->start_address,
+                (unsigned int)diagnostic->end_address,
+                (unsigned int)diagnostic->size_bytes
+            )) {
+            return false;
+        }
+        if (diagnostic->has_owner) {
+            if (!masm32_sim_json_append_string(writer, diagnostic->owner_name)) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, "null")) {
+            return false;
+        }
+        if (diagnostic->has_boundary) {
+            if (!masm32_sim_json_append(
+                    writer,
+                    ",\"boundaryStartAddress\":\"%08Xh\",\"boundaryEndAddress\":\"%08Xh\"",
+                    (unsigned int)diagnostic->boundary_start,
+                    (unsigned int)diagnostic->boundary_end
+                )) {
+                return false;
+            }
+        } else if (!masm32_sim_json_append(writer, ",\"boundaryStartAddress\":null,\"boundaryEndAddress\":null")) {
+            return false;
+        }
+    }
+
+    return masm32_sim_json_append(writer, "}");
+}
+
+/// Appends collected section-boundary warnings to the simulatorMessages array.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing section warnings.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @return true when warnings fit without overflowing the buffer.
+static bool masm32_sim_json_append_section_warnings(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    bool *inout_has_message
+) {
+    size_t index = 0U;
+
+    if (storage == NULL || inout_has_message == NULL) {
+        return true;
+    }
+
+    for (index = 0U; index < storage->section_warning_count; index += 1U) {
+        if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_section_boundary_message(writer, "simulator-warning", &storage->section_warnings[index])) {
+            return false;
+        }
+        *inout_has_message = true;
+    }
+
+    return true;
+}
+
+/// Appends one strict section-boundary runtime diagnostic.
+///
+/// @param writer Writer to mutate.
+/// @param diagnostic Strict section-boundary diagnostic to render.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_section_violation(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmSectionBoundaryDiagnostic *diagnostic
+) {
+    return masm32_sim_json_append_section_boundary_message(writer, "runtime-error", diagnostic);
 }
 
 /// Appends collected allocated-object warnings to the simulatorMessages array.
@@ -3594,6 +4359,7 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_parser_messages(&writer, parser_diagnostics, parser_result->diagnostic_count);
             has_message = true;
         }
+        (void)masm32_sim_json_append_section_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
@@ -3612,7 +4378,9 @@ static const char *masm32_sim_wasm_build_run_json(
             parser_result != NULL ? parser_result->diagnostic_count : 0U
         );
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR) {
-        if (storage != NULL && storage->has_object_violation) {
+        if (storage != NULL && storage->has_section_violation) {
+            (void)masm32_sim_json_append_section_violation(&writer, &storage->section_violation);
+        } else if (storage != NULL && storage->has_object_violation) {
             (void)masm32_sim_json_append_object_violation(&writer, &storage->object_violation);
         } else if (storage != NULL && storage->has_uninitialized_read_violation) {
             (void)masm32_sim_json_append_uninitialized_read_violation(&writer, &storage->uninitialized_read_violation);
@@ -4117,12 +4885,19 @@ static bool masm32_sim_wasm_build_declared_object_map(
 /// @param requested_layout_mode Fixed, automatic, seeded-randomized, or fresh-randomized layout mode.
 /// @param base_policy Optional base policy for non-fixed layout modes.
 /// @param validation_mode Optional memory validation behavior for runtime accesses.
+/// @param capacity_policy Optional Level 2 section-capacity validation behavior.
+/// @param image_policy Optional Level 3 section-image validation behavior.
+/// @param shift_mode Shift undefined modeled-flag validation behavior.
+/// @param flag_use_policy Undefined flag-use consumer policy.
+/// @param include_uninitialized_metadata Whether to include test-only initialization metadata.
 /// @return Pointer to the static JSON result buffer.
 static const char *masm32_sim_wasm_run_source_json_internal(
     const char *source,
     VmLayoutMode requested_layout_mode,
     const VmLayoutPolicy *base_policy,
     Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy,
     Masm32SimWasmShiftValidationMode shift_mode,
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy,
     bool include_uninitialized_metadata
@@ -4179,6 +4954,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 
     parser_status = vm_parser_parse_program(&config, &parser_result);
     g_masm32_sim_wasm_run_storage.data_initialized_mask_size = parser_result.data_size;
+    g_masm32_sim_wasm_run_storage.data_section_image_size = (uint32_t)parser_result.data_size;
+    g_masm32_sim_wasm_run_storage.const_section_image_size = (uint32_t)parser_result.const_size;
     if ((parser_status != VM_PARSER_STATUS_OK && parser_status != VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS) ||
         masm32_sim_wasm_parser_diagnostics_have_errors(g_masm32_sim_wasm_run_storage.parser_diagnostics, parser_result.diagnostic_count)) {
         return masm32_sim_wasm_build_run_json(
@@ -4258,6 +5035,17 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+        exec_status = masm32_sim_wasm_validate_section_accesses_before_step(
+            &g_masm32_sim_wasm_run_storage,
+            &vm,
+            capacity_policy,
+            image_policy,
+            runtime_policy
+        );
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = masm32_sim_wasm_validate_object_accesses_before_step(
             &g_masm32_sim_wasm_run_storage,
             &vm,
@@ -4291,7 +5079,10 @@ static const char *masm32_sim_wasm_run_source_json_internal(
         exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
-            exec_status = masm32_sim_wasm_validate_object_accesses(&g_masm32_sim_wasm_run_storage, &vm, validation_mode, runtime_policy);
+            exec_status = masm32_sim_wasm_validate_section_accesses(&g_masm32_sim_wasm_run_storage, &vm, capacity_policy, image_policy, runtime_policy);
+            if (exec_status == VM_EXEC_STATUS_OK) {
+                exec_status = masm32_sim_wasm_validate_object_accesses(&g_masm32_sim_wasm_run_storage, &vm, validation_mode, runtime_policy);
+            }
             if (exec_status == VM_EXEC_STATUS_OK) {
                 masm32_sim_wasm_mark_initialized_writes(&g_masm32_sim_wasm_run_storage, &vm, runtime_policy);
                 masm32_sim_wasm_collect_memory_change(&g_masm32_sim_wasm_run_storage, &vm, &parser_result);
@@ -4321,15 +5112,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
@@ -4344,7 +5135,7 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
@@ -4356,7 +5147,7 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, shift_mode, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
@@ -4373,9 +5164,84 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
         source,
         VM_LAYOUT_MODE_FIXED,
         NULL,
-        MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS,
+        MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
+        MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
         MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
         policy,
+        false
+    );
+}
+
+/// Returns whether a memory-validation mode enum value is accepted.
+///
+/// @param validation_mode Existing memory-validation mode to inspect.
+/// @return true when the mode is valid.
+static bool masm32_sim_wasm_memory_validation_mode_is_valid(Masm32SimWasmMemoryValidationMode validation_mode) {
+    return validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+}
+
+/// Returns whether a section-validation policy enum value is accepted.
+///
+/// @param policy Section-validation policy to inspect.
+/// @return true when the policy is valid.
+static bool masm32_sim_wasm_section_validation_policy_is_valid(Masm32SimWasmSectionValidationPolicy policy) {
+    return policy == MASM32_SIM_WASM_SECTION_VALIDATION_OFF ||
+        policy == MASM32_SIM_WASM_SECTION_VALIDATION_WARN ||
+        policy == MASM32_SIM_WASM_SECTION_VALIDATION_STRICT;
+}
+
+const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy
+) {
+    if (!masm32_sim_wasm_memory_validation_mode_is_valid(validation_mode) ||
+        !masm32_sim_wasm_section_validation_policy_is_valid(capacity_policy) ||
+        !masm32_sim_wasm_section_validation_policy_is_valid(image_policy)) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(
+        source,
+        VM_LAYOUT_MODE_FIXED,
+        NULL,
+        validation_mode,
+        capacity_policy,
+        image_policy,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN,
+        false
+    );
+}
+
+const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_validation(
+    const char *source,
+    const VmLayoutPolicy *base_policy,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy
+) {
+    if (!masm32_sim_wasm_memory_validation_mode_is_valid(validation_mode) ||
+        !masm32_sim_wasm_section_validation_policy_is_valid(capacity_policy) ||
+        !masm32_sim_wasm_section_validation_policy_is_valid(image_policy)) {
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(
+        source,
+        VM_LAYOUT_MODE_AUTOMATIC,
+        base_policy,
+        validation_mode,
+        capacity_policy,
+        image_policy,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN,
         false
     );
 }
@@ -4392,11 +5258,11 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

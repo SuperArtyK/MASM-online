@@ -12,9 +12,9 @@
 
 #include "../core/vm_layout.h"
 
-/// Selects optional memory validation behavior for source-run helpers.
+/// Selects explicit memory validation behavior for source-run helpers.
 typedef enum Masm32SimWasmMemoryValidationMode {
-    /// Validate memory using the default region and permission checks only.
+    /// Validate memory using region and permission checks only; this is the explicit opt-out for uninitialized-read diagnostics.
     MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY = 0,
     /// Emit non-fatal warnings for accesses that escape declared data objects.
     MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS,
@@ -25,6 +25,16 @@ typedef enum Masm32SimWasmMemoryValidationMode {
     /// Stop execution before reads that would use uninitialized-origin bytes.
     MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
 } Masm32SimWasmMemoryValidationMode;
+
+/// Selects optional section-boundary validation behavior for source-run helpers.
+typedef enum Masm32SimWasmSectionValidationPolicy {
+    /// Do not diagnose section-boundary escapes.
+    MASM32_SIM_WASM_SECTION_VALIDATION_OFF = 0,
+    /// Emit non-fatal section-boundary warnings and continue execution.
+    MASM32_SIM_WASM_SECTION_VALIDATION_WARN,
+    /// Stop before mutating state when a section-boundary access would occur.
+    MASM32_SIM_WASM_SECTION_VALIDATION_STRICT
+} Masm32SimWasmSectionValidationPolicy;
 
 /// Selects handling for shift counts whose modeled flags are architecturally undefined.
 typedef enum Masm32SimWasmShiftValidationMode {
@@ -55,6 +65,11 @@ int masm32_sim_wasm_test_value(void);
 int masm32_sim_wasm_milestone4_hardcoded_result(void);
 
 /// Parses and executes a MASM-like source string and returns JSON.
+///
+/// The browser-facing default uses teaching warning policies for
+/// uninitialized reads and undefined modeled-flag consumption. Explicit helper
+/// APIs can still select the region-only or undefined-flag-use off policies
+/// when tests need old silent behavior.
 ///
 /// The returned pointer refers to an internal static buffer that is overwritten
 /// by each subsequent call. This is intended for single-request Web Worker use
@@ -95,10 +110,10 @@ const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const 
 
 /// Parses and executes source with an explicit memory validation mode.
 ///
-/// This test/configuration-facing helper keeps the browser default in
-/// region-only validation while allowing native tests to enable allocated-object
-/// warnings from Phase 37, allocated-object strict validation from Phase 38,
-/// or uninitialized-read warning/strict validation from Phase 40.
+/// This test/configuration-facing helper allows native tests to select
+/// allocated-object warnings from Phase 37, allocated-object strict validation
+/// from Phase 38, uninitialized-read warning/strict validation from Phase 40,
+/// or the explicit region-only opt-out for Phase 53C default teaching warnings.
 /// The returned pointer refers to the same internal static buffer as
 /// @ref masm32_sim_wasm_run_source_json.
 ///
@@ -108,6 +123,45 @@ const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const 
 const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
     const char *source,
     Masm32SimWasmMemoryValidationMode validation_mode
+);
+
+/// Parses and executes source with explicit section-boundary validation policies.
+///
+/// The normal browser export keeps Phase 53B section-capacity and section-image
+/// validation off. This test/configuration-facing helper allows native tests to
+/// select each policy independently without adding browser UI controls.
+/// Existing memory-validation modes are still supplied through @p validation_mode.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param validation_mode Existing Level 4 object or uninitialized-read validation behavior.
+/// @param capacity_policy Section-capacity validation behavior.
+/// @param image_policy Section-image validation behavior.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
+    const char *source,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy
+);
+
+/// Parses and executes source with automatic layout and explicit section validation.
+///
+/// This test/configuration-facing helper exists for Phase 53B capacity tests
+/// that need a selected VM region larger than the parser image capacity.
+/// Passing NULL for @p base_policy uses @ref vm_layout_default_policy.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param base_policy Optional policy supplying automatic layout limits/defaults.
+/// @param validation_mode Existing Level 4 object or uninitialized-read validation behavior.
+/// @param capacity_policy Section-capacity validation behavior.
+/// @param image_policy Section-image validation behavior.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_validation(
+    const char *source,
+    const VmLayoutPolicy *base_policy,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    Masm32SimWasmSectionValidationPolicy capacity_policy,
+    Masm32SimWasmSectionValidationPolicy image_policy
 );
 
 /// Parses and executes source with explicit shift-undefined-flag validation.
@@ -126,9 +180,9 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
 
 /// Parses and executes source with explicit undefined-flag-use diagnostics.
 ///
-/// The normal browser export keeps Phase 50B diagnostics off. This
-/// test/configuration-facing helper allows native tests to verify warning and
-/// error consumer policies without adding a browser UI setting in this phase.
+/// The normal browser export uses Phase 53C warning defaults. This
+/// test/configuration-facing helper allows native tests to verify off, warning,
+/// and error consumer policies without adding a browser UI setting in this phase.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @param policy Undefined-flag-use consumer policy.
@@ -142,7 +196,8 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
 ///
 /// This helper is for native tests that need to verify how warning or strict
 /// validation interacts with Phase 39 write tracking. The normal browser export
-/// intentionally omits the metadata and keeps region-only validation.
+/// intentionally omits this test-only metadata while using Phase 53C teaching
+/// warning defaults.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @param validation_mode Memory validation behavior to apply during execution.

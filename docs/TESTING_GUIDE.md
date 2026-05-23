@@ -337,7 +337,21 @@ The diagnostic producer supports environment variables for internal/test-only mo
 
 ### Memory validation mode
 
-Default behavior is region-only memory validation.
+After Phase 53C, omitted/default source-run behavior emits teaching warnings
+for uninitialized-origin reads. To preserve the older silent region-only
+behavior in local diagnostic-producer tests, explicitly select `off` or
+`region-only`.
+
+Explicit memory-validation values include:
+
+```text
+off
+region-only
+allocated-object-warnings
+allocated-object-strict
+uninitialized-read-warnings
+uninitialized-read-strict
+```
 
 Milestone 37 added allocated-object warning mode:
 
@@ -369,7 +383,7 @@ For one command only on Linux:
 MASM32_DIAGNOSTIC_MEMORY_VALIDATION=allocated-object-warnings ./build/tests/diagnostic_json_producer program.asm
 ```
 
-Reset to default:
+Reset to Phase 53C teaching defaults:
 
 CMD:
 
@@ -387,6 +401,20 @@ Linux shell:
 
 ```sh
 unset MASM32_DIAGNOSTIC_MEMORY_VALIDATION
+```
+
+Explicit opt-out example on Linux:
+
+```sh
+MASM32_DIAGNOSTIC_MEMORY_VALIDATION=off ./build/tests/diagnostic_json_producer program.asm
+```
+
+Undefined modeled-flag consumer diagnostics also default to warnings after
+Phase 53C. To preserve the older silent consumer behavior in a local diagnostic
+producer run, set:
+
+```text
+MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE=off
 ```
 
 ### Layout mode
@@ -840,3 +868,14 @@ bash scripts/build_wasm.sh
    - commands run;
    - pass/fail result;
    - limitations such as missing `emcc` or browser-invisible backend modes.
+
+### Phase 53B section-boundary validation controls
+
+The native diagnostic JSON producer also accepts these local test-only environment variables:
+
+```text
+MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION=off|warn|strict
+MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION=off|warn|strict
+```
+
+`warn` emits `section-capacity-violation` or `section-image-violation` as a simulator warning and continues when Level 1 memory validation succeeds. `strict` emits the same code as a runtime error before mutation. These controls are test/source-run plumbing only; Milestone 53B does not add browser UI settings, and Phase 53C still leaves section-capacity and section-image validation off by default.

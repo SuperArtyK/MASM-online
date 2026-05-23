@@ -60,6 +60,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
   "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
   "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT",
+  "MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION",
+  "MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION",
   "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
   "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE"
 ];
@@ -947,6 +949,52 @@ END main
 `,
     reason: "Phase 53A uninitialized-read symbol-offset memory read fixture."
   },
+  phase53bSectionImageWarning: {
+    source: `.data
+x DWORD 1
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 53B section-image warning fixture for fixed-layout data slack."
+  },
+  phase53bSectionImageStrict: {
+    source: `.data
+x DWORD 1
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov DWORD PTR [eax], 123
+main ENDP
+END main
+`,
+    reason: "Phase 53B section-image strict fixture for rejected data slack write."
+  },
+  phase53bSectionCapacityWarning: {
+    source: `.code
+main PROC
+    mov eax, 00700000h
+    mov DWORD PTR [eax], 123
+main ENDP
+END main
+`,
+    reason: "Phase 53B section-capacity warning fixture for valid non-section heap storage."
+  },
+  phase53bSectionCapacityStrict: {
+    source: `.code
+main PROC
+    mov eax, 00700000h
+    mov DWORD PTR [eax], 123
+main ENDP
+END main
+`,
+    reason: "Phase 53B section-capacity strict fixture for valid non-section heap storage."
+  },
   uninitializedRead: {
     source: `.data
 x DWORD ?
@@ -969,6 +1017,18 @@ main ENDP
 END main
 `,
     reason: "Bracketed uninitialized-read strict source-span fixture."
+  },
+  uninitializedReadIndirectOverlap: {
+    source: `.DATA?
+x DWORD ?
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, DWORD PTR [eax+1]
+main ENDP
+END main
+`,
+    reason: "Indirect uninitialized-read fixture whose final range overlaps tracked .DATA? bytes and fixed-layout slack."
   },
   irvine32UnsupportedRoutine: {
     source: `INCLUDE Irvine32.inc
@@ -2390,6 +2450,49 @@ test("renders undefined flag-use warning exactly", () => {
   ].join("\n"));
 });
 
+test("Phase 53C renders default undefined flag-use warning exactly", () => {
+  const name = "undefinedFlagUseAdc";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 5);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+      line: 5,
+      column: 5,
+      byteOffset: 42,
+      spanLength: 9
+    },
+    {
+      kind: "simulator-warning",
+      code: "undefined-flag-use",
+      message: "ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+      line: 7,
+      column: 5,
+      byteOffset: 71,
+      spanLength: 10,
+      consumedFlags: ["CF"],
+      producerMnemonic: "SHL",
+      producerCode: "undefined-shift-flag",
+      producerLine: 5
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assert.equal(json.registers.EBX.hex, "00000001h");
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 42, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "[simulator-warning] undefined-flag-use line 7, column 5, byte offset 71, span length 10: ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
 test("renders undefined flag-use runtime error exactly", () => {
   const name = "undefinedFlagUseAdc";
   const source = fixtureSource(name);
@@ -2788,6 +2891,121 @@ test("Phase 53A renders uninitialized-read before unaligned warning for symbol-o
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7, column 24, byte offset 67, span length 5: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
 });
 
+
+test("Phase 53B renders section-image warning exactly", () => {
+  const name = "phase53bSectionImageWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 3);
+  assert.deepEqual(json.simulatorMessages[0], {
+    kind: "simulator-warning",
+    code: "section-image-violation",
+    message: "Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).",
+    line: 7,
+    column: 24,
+    byteOffset: 92,
+    spanLength: 5,
+    accessKind: "read",
+    accessStartAddress: "00500004h",
+    accessEndAddress: "00500007h",
+    accessSizeBytes: 4,
+    ownerSection: ".data/.DATA?",
+    boundaryStartAddress: "00500000h",
+    boundaryEndAddress: "00500003h"
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-image-violation line 7, column 24, byte offset 92, span length 5: Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53B renders section-image strict violation exactly", () => {
+  const name = "phase53bSectionImageStrict";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.memoryChanges, []);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "section-image-violation",
+      message: "Memory write at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).",
+      line: 7,
+      column: 19,
+      byteOffset: 87,
+      spanLength: 5,
+      accessKind: "write",
+      accessStartAddress: "00500004h",
+      accessEndAddress: "00500007h",
+      accessSizeBytes: 4,
+      ownerSection: ".data/.DATA?",
+      boundaryStartAddress: "00500000h",
+      boundaryEndAddress: "00500003h"
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] section-image-violation line 7, column 19, byte offset 87, span length 5: Memory write at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).");
+});
+
+test("Phase 53B renders section-capacity warning exactly", () => {
+  const name = "phase53bSectionCapacityWarning";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages[0], {
+    kind: "simulator-warning",
+    code: "section-capacity-violation",
+    message: "Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.",
+    line: 4,
+    column: 19,
+    byteOffset: 57,
+    spanLength: 5,
+    accessKind: "write",
+    accessStartAddress: "00700000h",
+    accessEndAddress: "00700003h",
+    accessSizeBytes: 4,
+    ownerSection: "heap",
+    boundaryStartAddress: null,
+    boundaryEndAddress: null
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-capacity-violation line 4, column 19, byte offset 57, span length 5: Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53B renders section-capacity strict violation exactly", () => {
+  const name = "phase53bSectionCapacityStrict";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION: "strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.memoryChanges, []);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "section-capacity-violation",
+      message: "Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.",
+      line: 4,
+      column: 19,
+      byteOffset: 57,
+      spanLength: 5,
+      accessKind: "write",
+      accessStartAddress: "00700000h",
+      accessEndAddress: "00700003h",
+      accessSizeBytes: 4,
+      ownerSection: "heap",
+      boundaryStartAddress: null,
+      boundaryEndAddress: null
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] section-capacity-violation line 4, column 19, byte offset 57, span length 5: Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.");
+});
+
 test("Phase 53A renders strict uninitialized-read before mutation", () => {
   const name = "phase53aUninitializedObjectSpan";
   const source = fixtureSource(name);
@@ -2858,6 +3076,122 @@ test("renders uninitialized-read warning followed by successful execution exactl
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53C renders default uninitialized-read warning exactly", () => {
+  const name = "uninitializedRead";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      sourceLocation: {
+        line: 5,
+        column: null,
+        byteOffset: null,
+        spanLength: null
+      },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53C keeps default uninitialized-read warnings when only section validation is explicit", () => {
+  const name = "uninitializedRead";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      sourceLocation: {
+        line: 5,
+        column: null,
+        byteOffset: null,
+        spanLength: null
+      },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53C renders indirect overlapping uninitialized-read warning exactly", () => {
+  const name = "uninitializedReadIndirectOverlap";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 3 of those bytes still originated from uninitialized storage.",
+      line: 6,
+      column: 24,
+      byteOffset: 78,
+      spanLength: 7,
+      sourceLocation: {
+        line: 6,
+        column: 24,
+        byteOffset: 78,
+        spanLength: 7
+      },
+      symbolName: "x",
+      accessStartAddress: "00500001h",
+      accessEndAddress: "00500004h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 3,
+      initializedByteCount: 1,
+      accessByteOffset: 1
+    },
+    {
+      kind: "simulator-warning",
+      code: "unaligned-memory-access",
+      message: "Unaligned DWORD memory access at 00500001h.",
+      line: 6
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 24, byte offset 78, span length 7: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 3 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders uninitialized-read strict violation with source span exactly", () => {

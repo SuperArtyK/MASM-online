@@ -604,7 +604,7 @@ neg DWORD -1
 
 Notes:
 
-- `?` reserves storage. Runtime bytes are deterministic zero-filled at program load while retaining metadata that the declaration was originally uninitialized until overwritten by the simulated program. Default MASM32 Educational Mode does not warn on these reads unless an explicit uninitialized-read warning or strict mode is enabled.
+- `?` reserves storage. Runtime bytes are deterministic zero-filled at program load while retaining metadata that the declaration was originally uninitialized until overwritten by the simulated program. After Phase 53C - Default Teaching Diagnostics for Existing Warning Modes, omitted/default user-facing source-run behavior warns on these reads; explicit `off` preserves the older silent deterministic-zero behavior, and explicit `strict` stops before consuming uninitialized-origin bytes.
 - `SBYTE`, `SWORD`, `SDWORD`, and `SQWORD` are signed integer data declarations. They use the same byte sizes as `BYTE`, `WORD`, `DWORD`, and `QWORD`, but their initializers are validated against signed ranges.
 - `QWORD` and `SQWORD` data declarations, layout, and metadata are supported in MASM32 Educational Mode. Executable 64-bit memory operations and 64-bit registers remain deferred to Extended 32-bit Mode unless a later phase explicitly enables selected behavior.
 - Flat `DUP`, nested `DUP`, `.DATA?`, `.CONST`, numeric equates, constant expressions, and expression-backed initializer values are part of the staged v1 roadmap and must be documented according to their current implemented phase status. They must not be described as permanently unsupported or future-only after their implementation phases are complete.
@@ -2278,9 +2278,9 @@ Required model:
 - Bytes emitted from `?` or `DUP(?)` start uninitialized-origin and runtime-zero-filled.
 - Every successful program write marks the written bytes initialized.
 - Multi-byte writes initialize every byte in the written range.
-- Multi-byte reads in strict/debug mode must check every byte read.
-- Default educational mode allows reads from uninitialized-origin bytes without warning.
-- Strict/debug modes may warn or error on reads from any uninitialized-origin byte that has not yet been written by the simulated program.
+- Multi-byte reads must check every byte read when the active uninitialized-read policy is `warn` or `strict`.
+- Default user-facing educational source-run mode warns on reads from uninitialized-origin bytes after the default teaching-diagnostics phase.
+- Explicit `off` mode preserves the older silent deterministic-zero behavior, and `strict` mode may stop execution before consuming any uninitialized-origin byte that has not yet been written by the simulated program.
 
 This feature must not change the default runtime value of `?` storage. The default value remains deterministic zero.
 
@@ -2335,12 +2335,11 @@ The simulator should use beginner-friendly teaching diagnostics by default while
 
 Default teaching diagnostics are warning or notice diagnostics. They must not change the deterministic VM value read, the instruction result, the Program Console output, or the hard runtime safety rules unless their policy explicitly says `strict` or `error`.
 
-The default policy after the teaching-diagnostics default phase is:
+The default policy after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes is:
 
 ```text
 uninitialized-read policy: warn
 undefined-flag-use policy: warn
-meaningful compatibility no-op notices: on
 ```
 
 The following policies remain available for tests and later settings:
@@ -2355,10 +2354,6 @@ undefined-flag-use policy:
   off
   warn
   error
-
-compatibility no-op notices:
-  off
-  on
 ```
 
 The default `warn` policy for uninitialized reads means:
@@ -2377,22 +2372,7 @@ The default `warn` policy for undefined flag use means:
 - the consumer continues using the simulator's deterministic preserved flag value;
 - execution stops only if the user selected error mode.
 
-Meaningful compatibility no-op notices are informational diagnostics for MASM constructs that are accepted for paste compatibility but do not perform their real MASM behavior in the simulator. These notices must be non-fatal and must not block execution.
-
-Examples include:
-
-```text
-.386 / .486 / .586 / .686
-.model flat, stdcall
-.stack size, when it records metadata but does not itself execute stack behavior
-INCLUDE Macros.inc, while macro expansion remains unsupported
-TITLE / SUBTITLE / PAGE
-```
-
-Do not emit compatibility no-op notices for constructs whose simulator behavior is already meaningful and user-visible unless there is a specific limitation to explain. For example:
-
-- `INCLUDE Irvine32.inc` should not receive a generic no-op notice merely because it is virtual; it enables the Irvine32 virtual symbol/routine registry.
-- `OPTION CASEMAP:ALL` and `OPTION CASEMAP:NONE` should not receive generic no-op notices because they change user-symbol lookup behavior.
+Meaningful compatibility no-op notices are a separate future notice category owned by Phase 53D - Compatibility No-Op and Limited-Behavior Notices. Phase 53C must not emit these notices by default and must not add the notice policy before that phase is implemented.
 
 Default teaching diagnostics must remain separate from hard errors.
 
@@ -2421,12 +2401,11 @@ These remain opt-in unless a later reviewed phase deliberately changes them:
 - strict undefined-shift validation;
 - broad static-analysis warnings such as dead stores, register-alias hints, or signedness hints.
 
-Default user-facing source-run and browser behavior must use:
+Default user-facing source-run and browser behavior after Phase 53C must use:
 
 ```text
 uninitialized_read_policy = warn
 undefined_flag_use_policy = warn
-compatibility_notices = on
 ```
 
 Low-level unit tests may still construct explicit policies directly. Any user-facing run path that omits a policy must use the teaching defaults.

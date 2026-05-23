@@ -3438,7 +3438,7 @@ Default region-only behavior must remain unchanged when allocated-object warning
 
 When warning mode is on, warnings are emitted only after ordinary region and permission checks pass. `.CONST` write failures remain permission/runtime failures and take precedence over object warnings.
 
-If a later phase introduces section-capacity or section-image validation, that phase must not rewrite Phase 37 history. It should add a new policy layer and tests.
+Phase 53B - Section-Capacity and Section-Image Validation Modes adds separate Level 2 and Level 3 policy layers and tests without rewriting Phase 37 history.
 
 ### Required Tests
 
@@ -3533,7 +3533,7 @@ Phase 38 strict mode must not be implemented as parser rejection. It is runtime 
 
 Do not reject valid MASM-style memory operands at assembly time merely because they would fail Level 4 declared-object strict validation at runtime.
 
-A later phase may add section-capacity and section-image strict modes. Those modes are separate policy layers and must have separate diagnostic codes or clearly distinguishable diagnostic fields.
+Phase 53B - Section-Capacity and Section-Image Validation Modes adds separate section-capacity and section-image strict modes with distinct diagnostic codes.
 
 ### Required Tests
 
@@ -6282,11 +6282,11 @@ Level 1 - Region-only validation:
   Address overflow, outside-region access, and permission failure are runtime errors.
 
 Level 2 - Section-capacity validation:
-  Future warning/strict policy owned by Phase 53B - Section-Capacity and Section-Image Validation Modes.
+  Warning/strict policy implemented by Phase 53B - Section-Capacity and Section-Image Validation Modes.
   The full final byte range must stay inside the allocated capacity of the owning section.
 
 Level 3 - Section-image validation:
-  Future warning/strict policy owned by Phase 53B - Section-Capacity and Section-Image Validation Modes.
+  Warning/strict policy implemented by Phase 53B - Section-Capacity and Section-Image Validation Modes.
   The full final byte range must stay inside the declared section image.
 
 Level 4 - Declared-object validation:

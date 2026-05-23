@@ -201,7 +201,7 @@ static int diagnostic_json_producer_use_automatic_layout(void) {
 /// Returns the requested memory validation mode from the diagnostic environment.
 ///
 /// @param out_mode Receives the selected memory validation mode.
-/// @return Nonzero when MASM32_DIAGNOSTIC_MEMORY_VALIDATION selects a non-default mode.
+/// @return Nonzero when MASM32_DIAGNOSTIC_MEMORY_VALIDATION selects an explicit mode.
 static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemoryValidationMode *out_mode) {
     const char *mode = getenv("MASM32_DIAGNOSTIC_MEMORY_VALIDATION");
 
@@ -209,9 +209,14 @@ static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemo
         return 0;
     }
 
-    *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
     if (mode == NULL) {
         return 0;
+    }
+
+    *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    if (strcmp(mode, "off") == 0 || strcmp(mode, "region-only") == 0) {
+        *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+        return 1;
     }
     if (strcmp(mode, "allocated-object-warnings") == 0) {
         *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS;
@@ -227,6 +232,39 @@ static int diagnostic_json_producer_get_memory_validation_mode(Masm32SimWasmMemo
     }
     if (strcmp(mode, "uninitialized-read-strict") == 0) {
         *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Parses one Phase 53B section-validation policy environment value.
+///
+/// @param name Environment variable name to read.
+/// @param out_policy Receives the selected policy.
+/// @return Nonzero when the environment variable selects a non-default policy.
+static int diagnostic_json_producer_get_section_validation_policy(
+    const char *name,
+    Masm32SimWasmSectionValidationPolicy *out_policy
+) {
+    const char *mode = name != NULL ? getenv(name) : NULL;
+
+    if (out_policy == NULL) {
+        return 0;
+    }
+    *out_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "off") == 0) {
+        return 0;
+    }
+    if (strcmp(mode, "warn") == 0 || strcmp(mode, "warnings") == 0) {
+        *out_policy = MASM32_SIM_WASM_SECTION_VALIDATION_WARN;
+        return 1;
+    }
+    if (strcmp(mode, "strict") == 0 || strcmp(mode, "error") == 0) {
+        *out_policy = MASM32_SIM_WASM_SECTION_VALIDATION_STRICT;
         return 1;
     }
 
@@ -349,15 +387,26 @@ static int diagnostic_json_producer_apply_layout_env(VmLayoutPolicy *policy) {
 static int diagnostic_json_producer_emit_json(const char *source) {
     const char *json = NULL;
     VmLayoutPolicy policy;
-    Masm32SimWasmMemoryValidationMode validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    Masm32SimWasmMemoryValidationMode validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+    Masm32SimWasmSectionValidationPolicy capacity_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
     Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+    int has_memory_validation = 0;
+    int has_section_capacity_validation = 0;
+    int has_section_image_validation = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
     }
 
-    if (diagnostic_json_producer_get_memory_validation_mode(&validation_mode)) {
+    has_memory_validation = diagnostic_json_producer_get_memory_validation_mode(&validation_mode);
+    has_section_capacity_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION", &capacity_policy);
+    has_section_image_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION", &image_policy);
+
+    if (has_section_capacity_validation || has_section_image_validation) {
+        json = masm32_sim_wasm_run_source_json_with_section_validation_modes(source, validation_mode, capacity_policy, image_policy);
+    } else if (has_memory_validation) {
         json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, validation_mode);
     } else if (diagnostic_json_producer_use_automatic_layout()) {
         policy = vm_layout_default_policy();
