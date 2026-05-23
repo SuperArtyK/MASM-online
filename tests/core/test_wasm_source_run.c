@@ -713,10 +713,10 @@ static int test_offset_zero_bracketed_symbol_operands_execute(void) {
     return failures;
 }
 
-/// Verifies out-of-bounds constant symbol offsets return structured parse errors.
+/// Verifies symbol offsets that cross the declared section image are runtime-controlled.
 ///
 /// @return Number of failures.
-static int test_constant_symbol_offset_out_of_bounds_returns_parse_error(void) {
+static int test_constant_symbol_offset_crossing_section_image_is_not_parse_error(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".data\n"
         "nums DWORD 10 DUP(0)\n"
@@ -728,10 +728,11 @@ static int test_constant_symbol_offset_out_of_bounds_returns_parse_error(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"ok\":false", "out-of-bounds symbol offset should fail");
-    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "out-of-bounds symbol offset should be a parse error");
-    failures += expect_json_contains(json, "symbol-offset-out-of-range", "out-of-bounds symbol offset should expose stable diagnostic code");
-    failures += expect_json_contains(json, "\"line\":5", "out-of-bounds diagnostic should preserve source line");
+    failures += expect_json_contains(json, "\"ok\":true", "symbol offset crossing section image should be runtime-controlled in default mode");
+    failures += expect_json_contains(json, "\"status\":\"ok\"", "symbol offset crossing section image should not be a parse error");
+    failures += expect_json_not_contains(json, "symbol-offset-out-of-range", "section-image crossing must not emit symbol-offset-out-of-range");
+    failures += expect_json_contains(json, "unaligned-memory-access", "unaligned warning behavior should remain intact");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "region-valid section-image crossing should complete in default mode");
 
     return failures;
 }
@@ -5674,6 +5675,200 @@ static int test_phase53_mul_uninitialized_memory_source_warning(void) {
     return failures;
 }
 
+/// Verifies Phase 53A does not reject a symbol-offset MUL source at assembly time.
+///
+/// @return Number of failures.
+static int test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 10\n"
+        "    mul [x+1]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 53A MUL symbol-offset fixture should execute in default mode");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 53A MUL symbol-offset fixture should execute both instructions");
+    failures += expect_json_not_contains(json, "symbol-offset-out-of-range", "Phase 53A must not reject cross-object symbol offset during parsing");
+    failures += expect_json_not_contains(json, "object-bounds", "default region-only mode should not emit object-bound diagnostics");
+    failures += expect_json_not_contains(json, "uninitialized-read", "default mode should not emit uninitialized-read diagnostics");
+    failures += expect_json_contains(json, "unaligned-memory-access", "MUL [x+1] should preserve existing unaligned warning behavior");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "MUL [x+1] should read deterministic zero-filled bytes");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 53A MUL symbol-offset fixture should complete");
+
+    return failures;
+}
+
+/// Verifies Phase 53A default mode remains region-only for object-spanning reads.
+///
+/// @return Number of failures.
+static int test_phase53a_default_object_spanning_read_has_no_object_diagnostic(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD 0\n"
+        "y DWORD 0\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, DWORD PTR [x+1]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "default region-only object-spanning read should execute");
+    failures += expect_json_contains(json, "\"instructionCount\":1", "default object-spanning read should execute one instruction");
+    failures += expect_json_not_contains(json, "object-bounds-warning", "default mode should not emit object-bound warning");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "default mode should not emit object-bound violation");
+    failures += expect_json_contains(json, "unaligned-memory-access", "default object-spanning read should preserve unaligned warning");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "default object-spanning read should complete");
+
+    return failures;
+}
+
+/// Verifies Phase 53A allocated-object warning mode remains Level 4 and continues.
+///
+/// @return Number of failures.
+static int test_phase53a_object_spanning_read_warning_mode_continues(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "x DWORD 0\n"
+        "y DWORD 0\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, DWORD PTR [x+1]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "allocated-object warning mode should continue object-spanning read");
+    failures += expect_json_contains(json, "\"code\":\"object-bounds-warning\"", "allocated-object warning mode should emit object warning");
+    failures += expect_json_contains(json, "spans multiple declared data objects", "object warning should describe adjacent-object span");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "allocated-object warning mode should complete");
+
+    return failures;
+}
+
+/// Verifies Phase 53A allocated-object strict mode stops before instruction mutation.
+///
+/// @return Number of failures.
+static int test_phase53a_object_spanning_read_strict_mode_stops_before_mutation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "x DWORD 01020304h\n"
+        "y DWORD 05060708h\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 777\n"
+        "    mov eax, DWORD PTR [x+1]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "allocated-object strict mode should reject object-spanning read");
+    failures += expect_json_contains(json, "\"instructionCount\":1", "strict object validation should stop before the second instruction mutates state");
+    failures += expect_json_contains(json, "\"code\":\"object-bounds-violation\"", "strict object validation should emit object-bounds-violation");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000309h\",\"unsigned\":777}", "strict object validation should preserve pre-instruction EAX");
+    failures += expect_json_not_contains(json, "08010203h", "strict object validation should not expose the value that the rejected load would have produced");
+    failures += expect_json_not_contains(json, "execution-complete", "strict object validation should not complete execution");
+
+    return failures;
+}
+
+/// Verifies Phase 53A lower-level runtime memory errors still precede object validation.
+///
+/// @return Number of failures.
+static int test_phase53a_invalid_region_still_precedes_object_validation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "invalid region should remain fatal in strict object mode");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "invalid region should preserve lower-level invalid-address diagnostic");
+    failures += expect_json_not_contains(json, "object-bounds-violation", "invalid address should not be reclassified as object-bounds violation");
+
+    return failures;
+}
+
+/// Verifies Phase 53A .CONST permission diagnostics keep precedence over object validation.
+///
+/// @return Number of failures.
+static int test_phase53a_const_write_precedes_object_validation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".CONST\n"
+        "c DWORD 123\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET c\n"
+        "    mov DWORD PTR [eax], 456\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", ".CONST write should remain fatal in strict object mode");
+    failures += expect_json_contains(json, "\"code\":\"permission-denied\"", ".CONST write should preserve permission diagnostic");
+    failures += expect_json_not_contains(json, "object-bounds-violation", ".CONST permission diagnostic should precede object validation");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", ".CONST write failure should not commit memory changes");
+
+    return failures;
+}
+
+/// Verifies Phase 53A uninitialized-read modes remain orthogonal to object policy.
+///
+/// @return Number of failures.
+static int test_phase53a_uninitialized_read_modes_on_symbol_offset(void) {
+    const char *source =
+        ".DATA?\n"
+        "x DWORD ?\n"
+        "y DWORD ?\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, DWORD PTR [x+1]\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *json = masm32_sim_wasm_run_source_json(source);
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "default mode should execute uninitialized-origin object-spanning read");
+    failures += expect_json_not_contains(json, "uninitialized-read", "default mode should not emit uninitialized-read diagnostic");
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS);
+    failures += expect_json_contains(json, "\"ok\":true", "uninitialized-read warning mode should continue object-spanning read");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "uninitialized-read warning mode should emit diagnostic");
+    failures += expect_json_contains(json, "reads 4 bytes from x + 1", "uninitialized-read warning should describe symbol-offset range");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "uninitialized-read warning mode should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT);
+    failures += expect_json_contains(json, "\"ok\":false", "uninitialized-read strict mode should stop object-spanning read");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "uninitialized-read strict mode should stop before the read executes");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "uninitialized-read strict mode should emit diagnostic");
+    failures += expect_json_not_contains(json, "execution-complete", "uninitialized-read strict mode should not complete");
+
+    return failures;
+}
+
 /// Verifies Phase 53 MUL source-run diagnostic paths.
 ///
 /// @return Number of failures.
@@ -6254,7 +6449,7 @@ int main(void) {
     failures += test_unaligned_constant_symbol_offset_reports_warning();
     failures += test_negative_symbol_offset_inside_data_image_succeeds();
     failures += test_offset_zero_bracketed_symbol_operands_execute();
-    failures += test_constant_symbol_offset_out_of_bounds_returns_parse_error();
+    failures += test_constant_symbol_offset_crossing_section_image_is_not_parse_error();
     failures += test_textbook_unsupported_features_return_unsupported_feature_messages();
     failures += test_multi_diagnostic_unsupported_feature_source_run_reports_all();
     failures += test_signed_integer_source_run_acceptance_program();
@@ -6378,6 +6573,13 @@ int main(void) {
     failures += test_phase53_mul_memory_source_run_program();
     failures += test_phase53_mul_uninitialized_memory_source_warning();
     failures += test_phase53_mul_source_run_error_paths();
+    failures += test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled();
+    failures += test_phase53a_default_object_spanning_read_has_no_object_diagnostic();
+    failures += test_phase53a_object_spanning_read_warning_mode_continues();
+    failures += test_phase53a_object_spanning_read_strict_mode_stops_before_mutation();
+    failures += test_phase53a_invalid_region_still_precedes_object_validation();
+    failures += test_phase53a_const_write_precedes_object_validation();
+    failures += test_phase53a_uninitialized_read_modes_on_symbol_offset();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();
     failures += test_phase50b_undefined_flag_use_sbb_warn_policy_source_run();
@@ -6397,6 +6599,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 53 MUL coverage passed.");
+    puts("Source execution tests through Phase 53A memory-validation coverage passed.");
     return 0;
 }

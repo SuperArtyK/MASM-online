@@ -907,6 +907,46 @@ END main
 `,
     reason: "Allocated-object warning mode diagnostic fixture."
   },
+  phase53aObjectSpan: {
+    source: `.data
+x DWORD 0
+y DWORD 0
+
+.code
+main PROC
+    mov eax, DWORD PTR [x+1]
+main ENDP
+END main
+`,
+    reason: "Phase 53A object-spanning symbol-offset memory read fixture."
+  },
+  phase53aObjectSpanStrictMutation: {
+    source: `.data
+x DWORD 01020304h
+y DWORD 05060708h
+
+.code
+main PROC
+    mov eax, 777
+    mov eax, DWORD PTR [x+1]
+main ENDP
+END main
+`,
+    reason: "Phase 53A strict object validation no-partial-mutation fixture."
+  },
+  phase53aUninitializedObjectSpan: {
+    source: `.DATA?
+x DWORD ?
+y DWORD ?
+
+.code
+main PROC
+    mov eax, DWORD PTR [x+1]
+main ENDP
+END main
+`,
+    reason: "Phase 53A uninitialized-read symbol-offset memory read fixture."
+  },
   uninitializedRead: {
     source: `.data
 x DWORD ?
@@ -2610,7 +2650,7 @@ test("renders allocated-object strict violation exactly", () => {
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 1);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "runtime-error",
@@ -2623,6 +2663,164 @@ test("renders allocated-object strict violation exactly", () => {
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] object-bounds-violation line 6, column 10, byte offset 73, span length 9: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.");
+});
+
+test("Phase 53A renders default region-only object-spanning read without object diagnostic", () => {
+  const name = "phase53aObjectSpan";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.simulatorMessages.some((message) => message.code === "object-bounds-warning"), false);
+  assert.equal(json.simulatorMessages.some((message) => message.code === "object-bounds-violation"), false);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "unaligned-memory-access",
+      message: "Unaligned DWORD memory access at 00500001h.",
+      line: 7
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53A renders object-spanning warning before unaligned warning", () => {
+  const name = "phase53aObjectSpan";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "object-bounds-warning",
+      message: "Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).",
+      line: 7
+    },
+    {
+      kind: "simulator-warning",
+      code: "unaligned-memory-access",
+      message: "Unaligned DWORD memory access at 00500001h.",
+      line: 7
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 7: Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53A renders strict object violation before rejected instruction mutation", () => {
+  const name = "phase53aObjectSpanStrictMutation";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.registers.EAX.hex, "00000309h");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "object-bounds-violation",
+      message: "Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).",
+      line: 8,
+      column: 24,
+      byteOffset: 99,
+      spanLength: 5
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] object-bounds-violation line 8, column 24, byte offset 99, span length 5: Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).");
+});
+
+test("Phase 53A renders uninitialized-read before unaligned warning for symbol-offset read", () => {
+  const name = "phase53aUninitializedObjectSpan";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.",
+      line: 7,
+      column: 24,
+      byteOffset: 67,
+      spanLength: 5,
+      sourceLocation: {
+        line: 7,
+        column: 24,
+        byteOffset: 67,
+        spanLength: 5
+      },
+      symbolName: "x",
+      accessStartAddress: "00500001h",
+      accessEndAddress: "00500004h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 1
+    },
+    {
+      kind: "simulator-warning",
+      code: "unaligned-memory-access",
+      message: "Unaligned DWORD memory access at 00500001h.",
+      line: 7
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7, column 24, byte offset 67, span length 5: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53A renders strict uninitialized-read before mutation", () => {
+  const name = "phase53aUninitializedObjectSpan";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 0);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "uninitialized-read",
+      message: "Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.",
+      line: 7,
+      column: 24,
+      byteOffset: 67,
+      spanLength: 5,
+      sourceLocation: {
+        line: 7,
+        column: 24,
+        byteOffset: 67,
+        spanLength: 5
+      },
+      symbolName: "x",
+      accessStartAddress: "00500001h",
+      accessEndAddress: "00500004h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 1
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] uninitialized-read line 7, column 24, byte offset 67, span length 5: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.");
 });
 
 test("renders uninitialized-read warning followed by successful execution exactly", () => {

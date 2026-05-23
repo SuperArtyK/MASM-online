@@ -3731,6 +3731,38 @@ static int test_phase53_mul_parse_to_ir(void) {
     return failures;
 }
 
+/// Verifies Phase 53A keeps symbol-offset memory operands out of parser object-bound policy.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase53a_symbol_offset_cross_object_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".DATA?\n"
+        "x DWORD ?\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 10\n"
+        "    mul [x+1]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 53A symbol-offset crossing should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 53A symbol-offset crossing should not produce parser diagnostics");
+    failures += expect_size(result.instruction_count, 2U, "Phase 53A fixture should emit two instructions");
+    if (result.instruction_count == 2U) {
+        failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_MUL, "Phase 53A fixture should keep MUL opcode");
+        failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "mul [x+1] should lower to absolute memory source");
+        failures += expect_u32(buffers.instructions[1].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 1U, "mul [x+1] should preserve byte-offset address");
+        failures += expect_u32(buffers.instructions[1].source.width_bits, 32U, "mul [x+1] should infer DWORD width from x");
+    }
+
+    return failures;
+}
+
 /// Verifies Phase 53 MUL parser diagnostics.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3987,6 +4019,7 @@ int main(void) {
     failures += test_phase52_lea_parse_error_paths();
     failures += test_phase53_mul_parse_to_ir();
     failures += test_phase53_mul_parse_error_paths();
+    failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 
     if (failures != 0) {

@@ -235,6 +235,27 @@ Each feature should be documented as one of:
 - **explicitly unsupported in v1**: recognized and diagnosed clearly, but not planned for the first complete educational version.
 - **non-goal**: intentionally outside the simulator, for example real Windows API execution, PE loading, object linking, and host filesystem access.
 
+
+Accepted no-op, metadata-only, and limited virtual compatibility constructs should produce default informational notices when the construct has meaningful real MASM behavior that the simulator intentionally does not perform.
+
+The notice must explain the simulator behavior in concrete terms.
+
+Examples:
+
+```text
+`.686` is accepted for MASM compatibility but does not change the simulator CPU mode.
+`.model flat, stdcall` is accepted for MASM32 textbook compatibility but does not enable real linker, object-file, or Windows calling-convention behavior.
+`.stack 4096` records stack-size metadata where implemented, but it does not by itself execute stack instructions or create procedure frames.
+`INCLUDE Macros.inc` is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.
+`TITLE`, `SUBTITLE`, and `PAGE` are accepted as listing/documentation directives and do not affect VM execution.
+```
+
+These notices must be emitted through Simulator Messages, not Program Console.
+
+They must not be assembly errors.
+
+They must not be used for constructs with active simulator semantics unless the notice describes a real limitation. For example, `OPTION CASEMAP:NONE` has semantic behavior and should not be described as a no-op.
+
 Diagnostics should distinguish:
 
 - MASM-invalid syntax, such as ambiguous memory width where real MASM also requires a `PTR` override.
@@ -356,7 +377,11 @@ main ENDP
 END main
 ```
 
-Uninitialized-origin diagnostics are not required in default mode. They are specified separately as a strict/debug memory-diagnostics feature.
+Uninitialized-origin tracking is mandatory for storage created by `?`, `DUP(?)`, and `.DATA?`.
+
+After the default teaching-diagnostics phase, uninitialized reads warn by default while still returning deterministic zero-filled bytes. Users may opt out of the warning through an explicit `off` policy, and strict/debug mode may stop execution before consuming uninitialized-origin bytes.
+
+This warning policy does not make uninitialized storage random or nondeterministic. It reports that the bytes still carry uninitialized-origin metadata because the simulated program has not successfully written them yet.
 
 #### 8.1.3 Accepted MASM32 Header / Compatibility Directives
 
@@ -920,6 +945,57 @@ END main
 
 This is syntactically valid because `EAX` supplies DWORD width. It should parse, then fail at runtime because address `00000000h` is outside the simulated memory regions.
 
+#### Parser Versus Runtime Boundary for Symbol-Relative Memory Operands
+
+Symbol-relative memory operands use byte offsets. Examples:
+
+```asm
+mov eax, nums[8]
+mov eax, [nums + 8]
+mov eax, DWORD PTR [nums + 1]
+```
+
+The parser must validate memory operand syntax, symbol identity, constant-expression evaluation, and memory width. It must not reject a valid symbol-relative memory operand solely because the inferred access range crosses a declared-object boundary, section-image boundary, section-capacity boundary, or fixed-layout slack boundary.
+
+The final byte range is checked at runtime by checked VM memory helpers and by the selected memory-validation policy.
+
+This distinction is mandatory:
+
+```text
+Assembly-time invalid:
+  The operand cannot be parsed, has ambiguous width, uses an unsupported addressing mode, refers to an unknown symbol, uses an unsupported executable width, has a constant-expression failure, or cannot be represented in the simulator address model.
+
+Runtime invalid or warning:
+  The operand is syntactically valid, but the final byte range is outside a VM region, violates permissions, overlaps `.CONST` on write, crosses a section boundary under an enabled section validation policy, crosses an object boundary under an enabled object validation policy, reads uninitialized-origin bytes under an enabled uninitialized-read policy, or is unaligned.
+```
+
+A diagnostic named `symbol-offset-out-of-range` may be retained only for cases where the symbol-relative constant expression cannot be represented in the simulator address model or cannot be lowered to a valid effective address. It must not mean "the access crosses the source symbol's declared-object bounds" or "the access crosses the source symbol's section-image bounds."
+
+Examples of valid memory syntax that must not be rejected merely by parser-time object or image bounds:
+
+```asm
+.data
+x DWORD ?
+.code
+main PROC
+    mov eax, DWORD PTR [x + 1]
+main ENDP
+END main
+```
+
+```asm
+.DATA?
+x DWORD ?
+.code
+main PROC
+    mov eax, 10
+    mul [x+1]
+main ENDP
+END main
+```
+
+These examples have valid memory operand syntax and inferable width. They may warn or stop at runtime only according to the selected memory-validation policy and final VM memory range.
+
 ### 8.6 Instructions
 
 The simulator should implement instructions in staged, testable groups. The goal is educational MASM32/Irvine32 compatibility, not full x86 coverage.
@@ -963,6 +1039,34 @@ Baseline arithmetic, data movement, control flow, stack, and address computation
 - `div`
 - `idiv`
 - `lea`
+
+#### 8.6.1.1 Direct Branch Target Classification
+
+Direct branch instructions must distinguish executable code targets from other known symbols.
+
+A symbol being known is not sufficient to make it a valid direct branch target. The parser must classify branch target operands by symbol kind and source context before lowering them to IR.
+
+For direct branch forms such as `jmp label` and later direct conditional branches, accepted targets are:
+
+- executable code labels declared with `name:` when the label resolves to an executable target instruction;
+- procedure-entry labels declared with `name PROC`, but only as a direct branch to the procedure entry instruction and without implying `CALL`, `RET`, stack-frame behavior, argument passing, or calling-convention semantics.
+
+Rejected direct branch targets include:
+
+- data symbols;
+- numeric equates;
+- Irvine32 virtual routine names such as `exit`;
+- external or non-goal symbols;
+- unknown symbols;
+- empty target operands;
+- labels that do not resolve to an executable target instruction;
+- unsupported indirect, register, memory, `SHORT`, `NEAR PTR`, or `FAR PTR` branch forms until a later phase explicitly implements them.
+
+Diagnostics for rejected branch targets must point at the target operand, not merely at the branch mnemonic. When the target resolves to a known non-code symbol, structured diagnostics should include the resolved symbol kind so the rendered Simulator Messages can explain why the symbol is not a valid branch target.
+
+Direct branch target classification must not be confused with procedure call target classification. A `PROC` name may be a valid direct branch target for `jmp`, but that does not implement or imply procedure-call semantics.
+
+This classification applies only to direct source-level branch operands. It does not define indirect branch target validation.
 
 #### 8.6.2 Additional Textbook v1 Instructions
 
@@ -1930,6 +2034,19 @@ Randomized layout exists to discourage hardcoded simulator addresses such as `00
 
 Randomization must never change MASM semantics. It changes simulated placement only. It must not change instruction results except when a program incorrectly depends on fixed implementation addresses.
 
+Memory layout capacity and memory validation are related but distinct.
+
+Fixed educational layout may allocate section or region capacity larger than the declared section image. Automatic deterministic layout may also round capacity upward because of minimum sizes, alignment, or guard policy.
+
+Memory validation levels interpret those ranges as follows:
+
+- Region-only validation uses allocated VM memory regions.
+- Section-capacity validation uses allocated section capacity.
+- Section-image validation uses bytes produced by declarations, excluding extra capacity.
+- Declared-object validation uses individual data declaration object ranges.
+
+Changing layout mode must not silently change the meaning of a validation level. If automatic sizing makes section capacity equal to section image for a given program, that is a consequence of the selected layout, not a redefinition of the levels.
+
 ### 11.8 Declared Object Allocation Map
 
 The parser/data-layout layer must be able to produce a declared-object allocation map for `.data`, `.DATA?`, and `.CONST` storage.
@@ -1949,66 +2066,207 @@ Each declared object entry should include:
 
 This object map is required for strict object-bounds diagnostics, provenance diagnostics, memory visualization, and uninitialized-origin read diagnostics. It must not replace the lower-level region permission checks.
 
-### 11.9 Memory Validation Modes
+### 11.9 Memory Access Validation Levels
 
-The simulator must support multiple validation modes. These modes are educational diagnostics layered on top of MASM-compatible address execution.
+The simulator must distinguish MASM-style syntax validity from runtime memory validation.
+
+A memory operand can be valid MASM-style syntax even if the final byte range would be suspicious, unsafe, outside a declared object, outside a section image, or outside a VM region at runtime. The parser must not reject valid memory syntax merely because a later runtime validation level would warn or stop.
+
+Memory validation is evaluated on the final byte range:
 
 ```text
-Region-only mode:
-  Baseline execution mode.
-  A memory access is valid if the full byte range is inside a valid region and permissions allow the requested access.
-  This is closest to normal flat-address MASM/x86 behavior.
-
-Allocated-object warning mode:
-  Accesses into padding, guard bytes, or unallocated gaps inside a region emit simulator warnings but do not stop execution.
-  Accesses into another declared object remain valid.
-
-Allocated-object strict mode:
-  Accesses into padding, guard bytes, or unallocated gaps inside a region stop execution with a runtime diagnostic.
-  Accesses into another declared object remain valid because real MASM/x86 addresses memory, not source variables.
-
-Provenance warning mode:
-  Registers loaded from `OFFSET symbol` may carry optional symbolic provenance.
-  If an access derived from that register leaves the original symbol allocation, emit a warning.
-  If the final address lands inside another declared object, the access remains valid unless another rule rejects it.
-
-Provenance strict mode:
-  The same provenance escape becomes a runtime error.
-  This mode intentionally goes beyond normal MASM/x86 behavior and is for teaching pointer and array correctness.
+[address, address + access_width - 1]
 ```
 
-Example for allocated-object strict mode:
+The range calculation must use overflow checks before classification.
+
+The simulator uses these validation concepts:
+
+```text
+VM memory region:
+  A concrete allocated memory region in the VM memory system, with base address, size, and permissions.
+  Examples may include code, data, const, heap, and stack regions depending on the selected layout implementation.
+
+Section capacity:
+  The allocated capacity reserved for one MASM data section or section-like storage area, such as `.data`, `.DATA?`, or `.CONST`.
+  Section capacity may be larger than the declared bytes in that section because of fixed educational layout, minimum region sizes, alignment, guard policy, or deterministic automatic sizing.
+
+Section image:
+  The bytes actually produced by declarations in one MASM data section after initializer expansion, `DUP` expansion, and layout.
+  Section image excludes extra fixed-layout slack, minimum-size tail capacity, guard gaps, and other reserved-but-not-declared bytes.
+  If a future explicit alignment feature emits padding as part of a section image, that feature must document whether the padding is section-image-owned.
+
+Declared object:
+  One declared data object created by one data declaration after expansion.
+  Adjacent declarations remain separate declared objects even if their byte ranges are contiguous.
+```
+
+The validation levels are:
+
+```text
+Level 1 - Region-only validation:
+  Default behavior. Closest to native MASM execution.
+  A read succeeds if the final byte range is wholly inside one readable VM memory region.
+  A write succeeds if the final byte range is wholly inside one writable VM memory region and does not overlap read-only `.CONST` storage.
+  Invalid address ranges, address overflow, accesses outside allocated VM regions, and permission failures are runtime errors.
+
+Level 2 - Section-capacity validation:
+  Optional educational warning/strict mode.
+  The final byte range must remain inside the allocated capacity of the owning section or section-like storage area.
+  This level may allow access to reserved section slack that is inside the allocated capacity but beyond the declared section image.
+  Default mode does not enable this validation.
+
+Level 3 - Section-image validation:
+  Optional educational warning/strict mode.
+  The final byte range must remain inside the declared section image.
+  This level rejects or warns on accesses that remain inside allocated section capacity but go beyond bytes produced by declarations.
+  In automatic deterministic layout this may often match section capacity, but it is still a separate rule because automatic layout may round capacity upward for alignment, minimum size, or guard policy.
+  Default mode does not enable this validation.
+
+Level 4 - Declared-object validation:
+  Optional educational warning/strict mode.
+  The final byte range must be wholly inside one declared object.
+  Accesses outside every declared object, partially overlapping an object boundary, or spanning adjacent declared objects warn or stop depending on policy.
+  Access wholly inside another declared object is not an object-bound violation by itself.
+  This is the layer implemented by the allocated-object warning/strict modes.
+  Default mode does not enable this validation.
+```
+
+For Level 2 and Level 3, the owning section is determined by the starting address of the access. If the starting address is not inside any known section capacity or section image, the access violates the relevant enabled section validation level after Level 1 region validation passes.
+
+Declared-object validation checks only whether the final byte range is wholly contained in one declared object. It does not check whether the expression's base symbol, if any, intended that object. A future provenance/intent validation mode may warn when an expression based on one symbol lands wholly inside a different symbol, but that is not Level 4.
+
+For Levels 2, 3, and 4, the policy may be one of:
+
+```text
+off:
+  Do not emit diagnostics for that level.
+
+warn:
+  Emit a non-fatal simulator warning and continue if the level's condition is violated.
+
+strict:
+  Emit a runtime error and stop before mutation if the level's condition is violated.
+```
+
+Level 1 is not optional. It is always enforced by checked VM memory helpers.
+
+Recommended diagnostic codes:
+
+```text
+section-capacity-violation
+section-image-violation
+object-bounds-violation
+```
+
+Do not use `symbol-offset-out-of-range` for runtime section or object validation. A `symbol-offset-out-of-range` diagnostic may be retained only for expression/address representability failures, not for crossing symbol/object bounds.
+
+### 11.9.1 Cross-Region, Cross-Section, and `.CONST` Rules
+
+A single memory access must not be stitched across two independent VM memory regions.
+
+If the final byte range is not wholly contained in one suitable VM memory region, execution must stop with the ordinary runtime memory diagnostic. This is true even in default mode. It is not a warning-only educational diagnostic.
+
+If `.data`, `.DATA?`, and `.CONST` are represented as subranges inside one shared allocated VM memory region, crossing from one section subrange into another is not automatically a low-level region error. It is classified by the enabled section-capacity or section-image validation level.
+
+Default behavior:
+
+```text
+- Crossing section boundaries may execute if the final byte range is inside one readable/writable allocated VM region.
+- Crossing declared-object boundaries may execute if the final byte range is inside one readable/writable allocated VM region.
+- `.CONST` write overlap still fails.
+```
+
+Warning behavior:
+
+```text
+- Section-capacity warning mode warns when an access leaves the owning section capacity but remains otherwise valid.
+- Section-image warning mode warns when an access leaves the declared section image but remains otherwise valid.
+- Declared-object warning mode warns when an access leaves declared-object bounds but remains otherwise valid.
+```
+
+Strict behavior:
+
+```text
+- Section-capacity strict mode stops before mutation on section-capacity violation.
+- Section-image strict mode stops before mutation on section-image violation.
+- Declared-object strict mode stops before mutation on declared-object violation.
+```
+
+`.CONST` write protection is mandatory and is not a warning-only teaching diagnostic.
+
+Any write whose final byte range overlaps read-only `.CONST` storage must fail as a runtime permission/read-only diagnostic before section-capacity, section-image, declared-object, uninitialized-read, or unaligned-access diagnostics.
+
+Reads from `.CONST` are allowed if the full range is otherwise valid. Reads crossing `.CONST` are not permission failures merely because `.CONST` is read-only. They fail only if they cross independent VM regions or violate an enabled section/object strict policy.
+
+### 11.9.2 Diagnostic Precedence for Memory Accesses
+
+Memory diagnostics must be ordered so lower-level safety failures are not hidden by educational warnings.
+
+Recommended precedence:
+
+```text
+1. Address arithmetic overflow while computing [address, address + width - 1].
+2. Final range not wholly contained in one allocated VM memory region.
+3. Permission failure, including `.CONST` write overlap.
+4. Section-capacity violation, if section-capacity validation is enabled.
+5. Section-image violation, if section-image validation is enabled.
+6. Declared-object violation, if declared-object validation is enabled.
+7. Uninitialized-read warning or strict error, if uninitialized-read validation is enabled.
+8. Non-fatal unaligned-access warning.
+```
+
+A strict diagnostic stops execution before mutation. If execution stops at an earlier strict or fatal diagnostic, later warning-only diagnostics for the same access do not need to be emitted.
+
+Default rule: emit at most one diagnostic per enabled validation level for one memory access, in precedence order. Do not combine separate validation-level diagnostics unless the relevant phase explicitly defines a combined diagnostic shape and tests it.
+
+### 11.9.3 Parser Versus Runtime Boundary for Memory Operands
+
+The parser owns syntax, operand shape, width inference, constant-expression evaluation, symbol lookup, and diagnostics for malformed or ambiguous operands.
+
+The runtime memory helpers own final byte-range validation.
+
+The parser must not emit an assembly error merely because a valid MASM-style memory operand may cross a declared-object boundary, section-image boundary, section-capacity boundary, or fixed-layout slack boundary at runtime.
+
+Examples of valid memory syntax that must not be rejected merely by parser-time object or image bounds:
 
 ```asm
 .data
-var1 DWORD 12345
-
+x DWORD ?
 .code
 main PROC
-    mov eax, OFFSET var1
-    test [eax+40h], eax
+    mov eax, DWORD PTR [x + 1]
 main ENDP
 END main
 ```
 
-This must diagnose an invalid allocated-object access because the final address is inside the `.data` region but outside any declared object.
-
-This must remain valid in allocated-object mode because the target address lands inside a declared object:
-
 ```asm
-.data
-var1 DWORD 12345
-arr1 DWORD 20 DUP(0ABCDEF12h)
-
+.DATA?
+x DWORD ?
 .code
 main PROC
-    mov eax, OFFSET var1
-    test [eax+40h], eax
+    mov eax, 10
+    mul [x+1]
 main ENDP
 END main
 ```
 
-A provenance mode may additionally warn that the address was derived from `var1` and escaped `var1`, but allocated-object mode alone must not reject a valid access into `arr1`.
+These examples have valid memory operand syntax and inferable width. They may warn or stop at runtime only according to the selected memory-validation policy and final VM memory range.
+
+Parser/static diagnostics remain appropriate for:
+
+```text
+- malformed address syntax;
+- unknown symbols;
+- ambiguous memory width;
+- unsupported addressing modes such as scaled-index forms before they are implemented;
+- unsupported executable memory widths such as QWORD/SQWORD in MASM32 Educational Mode;
+- constant-expression failures;
+- address-expression values that cannot be represented in the simulator's address model;
+- obviously illegal `.CONST` direct writes where the instruction form statically names a read-only destination, while preserving mandatory runtime `.CONST` protection for computed writes.
+```
+
+Static `.CONST` direct-write diagnostics are an optimization and user-experience improvement. They do not replace runtime `.CONST` permission checks.
 
 ### 11.10 Uninitialized-Origin Byte Tracking and Read Diagnostics
 
@@ -2069,6 +2327,136 @@ Diagnostic precedence for memory failures is:
 5. uninitialized-read strict failure;
 6. unaligned access warning;
 7. object-bound or uninitialized-read warnings in warning modes.
+
+
+### 11.10 Default Teaching Diagnostics Policy
+
+The simulator should use beginner-friendly teaching diagnostics by default while preserving MASM-compatible execution where safe.
+
+Default teaching diagnostics are warning or notice diagnostics. They must not change the deterministic VM value read, the instruction result, the Program Console output, or the hard runtime safety rules unless their policy explicitly says `strict` or `error`.
+
+The default policy after the teaching-diagnostics default phase is:
+
+```text
+uninitialized-read policy: warn
+undefined-flag-use policy: warn
+meaningful compatibility no-op notices: on
+```
+
+The following policies remain available for tests and later settings:
+
+```text
+uninitialized-read policy:
+  off
+  warn
+  strict
+
+undefined-flag-use policy:
+  off
+  warn
+  error
+
+compatibility no-op notices:
+  off
+  on
+```
+
+The default `warn` policy for uninitialized reads means:
+
+- bytes from `?`, `DUP(?)`, and `.DATA?` remain deterministic zero-filled at program load;
+- reading those bytes before a successful simulated program write emits `uninitialized-read`;
+- the read still returns the deterministic zero-filled bytes;
+- execution continues unless the user selected strict mode;
+- a later successful write initializes the written bytes and suppresses future uninitialized-read diagnostics for those bytes.
+
+The default `warn` policy for undefined flag use means:
+
+- producer instructions still execute under their existing producer-warning policy;
+- flag-validity metadata still records which modeled flag values are architecturally invalid;
+- a later flag-consuming instruction emits `undefined-flag-use` if it reads an invalid modeled flag;
+- the consumer continues using the simulator's deterministic preserved flag value;
+- execution stops only if the user selected error mode.
+
+Meaningful compatibility no-op notices are informational diagnostics for MASM constructs that are accepted for paste compatibility but do not perform their real MASM behavior in the simulator. These notices must be non-fatal and must not block execution.
+
+Examples include:
+
+```text
+.386 / .486 / .586 / .686
+.model flat, stdcall
+.stack size, when it records metadata but does not itself execute stack behavior
+INCLUDE Macros.inc, while macro expansion remains unsupported
+TITLE / SUBTITLE / PAGE
+```
+
+Do not emit compatibility no-op notices for constructs whose simulator behavior is already meaningful and user-visible unless there is a specific limitation to explain. For example:
+
+- `INCLUDE Irvine32.inc` should not receive a generic no-op notice merely because it is virtual; it enables the Irvine32 virtual symbol/routine registry.
+- `OPTION CASEMAP:ALL` and `OPTION CASEMAP:NONE` should not receive generic no-op notices because they change user-symbol lookup behavior.
+
+Default teaching diagnostics must remain separate from hard errors.
+
+These remain hard errors regardless of diagnostic profile:
+
+- lexer errors;
+- parser errors;
+- malformed instruction operands;
+- ambiguous memory width;
+- unsupported instruction forms;
+- unsupported executable QWORD/SQWORD memory operations in MASM32 Educational Mode;
+- address arithmetic overflow;
+- access outside allocated VM memory regions;
+- missing memory permission;
+- `.CONST` write overlap;
+- runtime resource-limit failures.
+
+These remain opt-in unless a later reviewed phase deliberately changes them:
+
+- allocated-object warning/strict validation;
+- section-capacity warning/strict validation;
+- section-image warning/strict validation;
+- provenance or source-intent diagnostics;
+- strict uninitialized-read mode;
+- undefined-flag-use error mode;
+- strict undefined-shift validation;
+- broad static-analysis warnings such as dead stores, register-alias hints, or signedness hints.
+
+Default user-facing source-run and browser behavior must use:
+
+```text
+uninitialized_read_policy = warn
+undefined_flag_use_policy = warn
+compatibility_notices = on
+```
+
+Low-level unit tests may still construct explicit policies directly. Any user-facing run path that omits a policy must use the teaching defaults.
+
+The opt-out behavior must require an explicit policy value of `off`; missing or omitted policy fields must not silently mean `off` after the default teaching-diagnostics phase.
+
+Tests that need old silent behavior must pass explicit `uninitialized_read_policy = off` or `undefined_flag_use_policy = off`.
+
+This policy does not change default producer warnings for `undefined-shift-flag` or `undefined-modeled-flag`; those remain as already implemented.
+
+### 11.11 Future Diagnostics Audit Checkpoint
+
+The project should not finalize broad diagnostic presets before the implemented MASM subset is mature enough to evaluate warning noise and educational value.
+
+A dedicated diagnostics audit should occur after the major instruction, control-flow, stack/procedure, and Irvine32 routine milestones are substantially implemented, and before a polished diagnostic-settings or warning-preset UI is finalized.
+
+That audit should review:
+
+- default-on teaching diagnostics;
+- opt-in warnings;
+- strict-stop diagnostics;
+- notices;
+- diagnostic tags;
+- warning noise;
+- beginner usefulness;
+- MASM compatibility expectations;
+- rendered Simulator Messages wording;
+- UI grouping.
+
+Until that audit is performed, do not add a broad GCC/Clang-style warning preset taxonomy beyond the narrow default-policy changes explicitly assigned to current phases.
 
 ## 12. Stack Model
 

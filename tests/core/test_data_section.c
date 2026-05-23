@@ -442,7 +442,7 @@ static int test_constant_symbol_offsets_execute_acceptance_program(void) {
     return failures;
 }
 
-/// Verifies parser diagnostics for invalid constant symbol offsets.
+/// Verifies parser diagnostics for malformed symbol offsets and Phase 53A runtime-owned ranges.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_constant_symbol_offset_error_paths(void) {
@@ -453,14 +453,16 @@ static int test_constant_symbol_offset_error_paths(void) {
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [missing + 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unknown bracketed symbol should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "unknown bracketed symbol diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [nums - 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "negative offset before the data image should fail");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, "negative offset diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [nums - 4]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "negative offset before the data image should parse for runtime validation");
+    failures += expect_u32(buffers.instructions[0].source.address, VM_MEMORY_DEFAULT_DATA_BASE - 4U, "negative offset should preserve the represented 32-bit address");
+    failures += expect_u32(buffers.instructions[0].source.width_bits, 32U, "negative offset should infer DWORD width from the symbol");
 
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [missing]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unknown offset-zero bracketed symbol should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "unknown offset-zero bracketed symbol diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, nums[37]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "offset crossing the data image should fail");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, "crossing offset diagnostic should match");
+    failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, nums[37]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK, "offset crossing the data image should parse for runtime validation");
+    failures += expect_u32(buffers.instructions[0].source.address, VM_MEMORY_DEFAULT_DATA_BASE + 37U, "crossing offset should preserve the final address");
+    failures += expect_u32(buffers.instructions[0].source.width_bits, 32U, "crossing offset should infer DWORD width from the symbol");
 
     failures += expect_parser_status(parse_for_test(".data\nnums DWORD 10 DUP(0)\n.code\nmain PROC\nmov eax, [nums +]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "malformed bracketed offset should fail");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CONSTANT_EXPRESSION, "malformed bracketed offset diagnostic should match");

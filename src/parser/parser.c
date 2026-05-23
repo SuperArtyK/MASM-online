@@ -1115,7 +1115,7 @@ static bool vm_parser_tokens_are_contiguous(const VmLexerToken *left, const VmLe
            right->location.offset == left->location.offset + left->lexeme_length;
 }
 
-/// Returns whether a token pair spells the deferred `.DATA?` directive.
+/// Returns whether a token pair spells the supported `.DATA?` directive.
 ///
 /// The lexer intentionally keeps `.data` and `?` as separate tokens because `?`
 /// is already used by data initializers. This helper recognizes only the
@@ -3336,8 +3336,11 @@ static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *s
 
 /// Creates a memory operand for a symbol plus constant byte offset.
 ///
-/// The offset is validated against the current .data image byte span. Bracketed
-/// offsets use MASM byte-offset semantics; they are not element indexes.
+/// The offset is validated only for representability in the simulator address
+/// model. Parser lowering must not reject valid MASM-style memory operands
+/// solely because the final access crosses declared-object, section-image,
+/// section-capacity, or fixed-layout slack boundaries; checked runtime memory
+/// helpers and optional validation modes own those byte-range policies.
 ///
 /// @param state Parser state to inspect.
 /// @param symbol_token Symbol token used for diagnostics.
@@ -3359,12 +3362,8 @@ static bool vm_parser_build_symbol_offset_memory_operand(
     const VmSymbol *symbol = NULL;
     uint8_t width_bits = 0U;
     uint32_t width_bytes = 0U;
-    uint32_t section_relative_offset = 0U;
-    uint32_t section_base = 0U;
     uint32_t final_address = 0U;
     int64_t final_address_signed = 0;
-    uint64_t access_end = 0U;
-    uint64_t section_end = 0U;
 
     if (state == NULL || symbol_token == NULL || out_operand == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         return false;
@@ -3391,21 +3390,13 @@ static bool vm_parser_build_symbol_offset_memory_operand(
         return false;
     }
 
-    section_base = vm_parser_symbol_section_base(symbol->section);
     final_address_signed = (int64_t)(uint64_t)symbol->address + (int64_t)offset;
-    if (final_address_signed < (int64_t)(uint64_t)section_base || final_address_signed > (int64_t)UINT32_MAX) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset resolves outside the current data section image.");
+    if (final_address_signed < 0 || final_address_signed > (int64_t)UINT32_MAX) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset is outside the supported 32-bit address range.");
         return false;
     }
 
     final_address = (uint32_t)final_address_signed;
-    section_relative_offset = final_address - section_base;
-    access_end = (uint64_t)section_relative_offset + (uint64_t)width_bytes;
-    section_end = (uint64_t)vm_parser_symbol_section_size(state, symbol->section);
-    if (access_end > section_end) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, offset_token != NULL ? offset_token : symbol_token, "Symbol offset access extends beyond the current data section image.");
-        return false;
-    }
 
     width_bits = explicit_width_bits != 0U ? explicit_width_bits : (uint8_t)(symbol->element_size_bytes * 8U);
     if (!vm_ir_width_is_supported(width_bits)) {

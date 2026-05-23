@@ -240,6 +240,16 @@ typedef struct Masm32SimWasmPlannedMemoryRead {
     uint8_t width_bits;
 } Masm32SimWasmPlannedMemoryRead;
 
+/// Describes one planned memory access before an instruction is stepped.
+typedef struct Masm32SimWasmPlannedMemoryAccess {
+    /// Memory operand that will be accessed if execution proceeds.
+    VmIrOperand operand;
+    /// Whether the planned access reads or writes memory.
+    VmExecMemoryAccessKind kind;
+    /// Width of the planned access in bits.
+    uint8_t width_bits;
+} Masm32SimWasmPlannedMemoryAccess;
+
 /// Describes one source-mapped layout failure message.
 typedef struct Masm32SimWasmLayoutMessage {
     /// Stable diagnostic code used by Simulator Messages.
@@ -1231,11 +1241,11 @@ static bool masm32_sim_wasm_operand_width(const VmIrOperand *operand, uint8_t *o
     return true;
 }
 
-/// Resolves the effective address for a planned memory read.
+/// Resolves the effective address for a planned memory access.
 ///
 /// This mirrors the executor's current register-indirect address arithmetic so
-/// pre-step strict diagnostics can stop read-modify-write instructions before
-/// write-back without broadening VM execution semantics.
+/// pre-step diagnostics can inspect the same final address that VM execution
+/// would use without broadening VM execution semantics.
 ///
 /// @param vm VM whose register values should be inspected.
 /// @param operand Memory operand to resolve.
@@ -1387,6 +1397,222 @@ static size_t masm32_sim_wasm_collect_planned_reads(
     }
 
     return read_count;
+}
+
+/// Adds one planned object-validation access when the operand touches memory.
+///
+/// @param accesses Output planned-access array.
+/// @param access_capacity Number of entries available in @p accesses.
+/// @param inout_access_count Current count to update.
+/// @param operand Operand that may access memory.
+/// @param kind Read/write kind for the planned access.
+/// @param width_bits Access width in bits.
+static void masm32_sim_wasm_add_planned_object_access(
+    Masm32SimWasmPlannedMemoryAccess *accesses,
+    size_t access_capacity,
+    size_t *inout_access_count,
+    const VmIrOperand *operand,
+    VmExecMemoryAccessKind kind,
+    uint8_t width_bits
+) {
+    if (accesses == NULL || inout_access_count == NULL || operand == NULL || !masm32_sim_wasm_operand_is_memory(operand) ||
+        !vm_ir_width_is_supported(width_bits) || *inout_access_count >= access_capacity) {
+        return;
+    }
+
+    accesses[*inout_access_count].operand = *operand;
+    accesses[*inout_access_count].kind = kind;
+    accesses[*inout_access_count].width_bits = width_bits;
+    *inout_access_count += 1U;
+}
+
+/// Collects memory accesses that strict object validation should check before stepping.
+///
+/// The collector mirrors the currently implemented instruction families closely
+/// enough to stop strict declared-object violations before register, flag, memory,
+/// or console mutation. It is intentionally scoped to existing opcodes; future
+/// memory-capable opcodes must extend this collector in their owning phase.
+///
+/// @param instruction Instruction to inspect.
+/// @param accesses Output planned-access array.
+/// @param access_capacity Number of entries available in @p accesses.
+/// @return Number of planned accesses collected.
+static size_t masm32_sim_wasm_collect_planned_object_accesses(
+    const VmIrInstruction *instruction,
+    Masm32SimWasmPlannedMemoryAccess *accesses,
+    size_t access_capacity
+) {
+    size_t access_count = 0U;
+    uint8_t width_bits = 0U;
+
+    if (instruction == NULL || accesses == NULL || access_capacity == 0U) {
+        return 0U;
+    }
+
+    switch (instruction->opcode) {
+        case VM_IR_OPCODE_MOV:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_ADD:
+        case VM_IR_OPCODE_SUB:
+        case VM_IR_OPCODE_ADC:
+        case VM_IR_OPCODE_SBB:
+        case VM_IR_OPCODE_AND:
+        case VM_IR_OPCODE_OR:
+        case VM_IR_OPCODE_XOR:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_TEST:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_NEG:
+        case VM_IR_OPCODE_NOT:
+        case VM_IR_OPCODE_INC:
+        case VM_IR_OPCODE_DEC:
+        case VM_IR_OPCODE_SHL:
+        case VM_IR_OPCODE_SAL:
+        case VM_IR_OPCODE_SHR:
+        case VM_IR_OPCODE_SAR:
+        case VM_IR_OPCODE_ROL:
+        case VM_IR_OPCODE_ROR:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_XCHG:
+            if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_MOVSX:
+        case VM_IR_OPCODE_MOVZX:
+        case VM_IR_OPCODE_MUL:
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+            }
+            break;
+        default:
+            break;
+    }
+
+    return access_count;
+}
+
+/// Returns whether a planned access passes mandatory Level 1 region/permission checks.
+///
+/// @param vm VM whose initialized memory regions should be inspected.
+/// @param address First byte of the planned access.
+/// @param size_bytes Number of bytes in the planned access.
+/// @param kind Read/write kind for the planned access.
+/// @return true when the access is wholly inside one suitable VM region.
+static bool masm32_sim_wasm_planned_access_passes_level1(
+    const Vm *vm,
+    uint32_t address,
+    uint32_t size_bytes,
+    VmExecMemoryAccessKind kind
+) {
+    VmMemoryPermission permission = VM_MEMORY_PERMISSION_READ;
+    size_t index = 0U;
+    uint64_t end = 0U;
+
+    if (vm == NULL || size_bytes == 0U || (uint64_t)address + (uint64_t)size_bytes > (uint64_t)UINT32_MAX + 1ULL) {
+        return false;
+    }
+
+    if (kind == VM_EXEC_MEMORY_ACCESS_WRITE) {
+        permission = VM_MEMORY_PERMISSION_WRITE;
+    }
+    end = (uint64_t)address + (uint64_t)size_bytes;
+
+    for (index = 0U; index < (size_t)VM_MEMORY_REGION_COUNT; index += 1U) {
+        const VmMemoryRegion *region = vm_memory_get_region(&vm->memory, (VmMemoryRegionKind)index);
+        uint64_t region_end = 0U;
+
+        if (region == NULL || region->size == 0U || (uint64_t)region->base + (uint64_t)region->size > (uint64_t)UINT32_MAX + 1ULL) {
+            continue;
+        }
+        region_end = (uint64_t)region->base + (uint64_t)region->size;
+        if ((uint64_t)address >= (uint64_t)region->base && end <= region_end) {
+            return vm_memory_region_has_permission(region, permission);
+        }
+    }
+
+    return false;
+}
+
+/// Validates strict declared-object access policy before stepping an instruction.
+///
+/// Planned accesses that would already fail mandatory Level 1 region or
+/// permission checks are ignored here so lower-level runtime memory diagnostics
+/// keep precedence. When Level 1 succeeds, strict Level 4 object validation can
+/// stop before the instruction mutates registers, flags, memory, or console
+/// state.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose next instruction should be inspected.
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
+/// @return OK when execution may continue, or MEMORY_ERROR for strict violations.
+static VmExecStatus masm32_sim_wasm_validate_object_accesses_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const VmLayoutPolicy *layout_policy
+) {
+    Masm32SimWasmPlannedMemoryAccess accesses[VM_EXEC_MAX_MEMORY_ACCESSES];
+    const VmIrInstruction *instruction = NULL;
+    size_t access_count = 0U;
+    size_t index = 0U;
+
+    if (storage == NULL || vm == NULL || validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT ||
+        vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    memset(accesses, 0, sizeof(accesses));
+    instruction = &vm->program[vm->instruction_pointer];
+    access_count = masm32_sim_wasm_collect_planned_object_accesses(instruction, accesses, sizeof(accesses) / sizeof(accesses[0]));
+    for (index = 0U; index < access_count; index += 1U) {
+        uint32_t address = 0U;
+        uint32_t size_bytes = 0U;
+        VmExecMemoryAccess access;
+
+        if (accesses[index].width_bits == 0U || (accesses[index].width_bits % 8U) != 0U ||
+            !masm32_sim_wasm_resolve_memory_operand_address(vm, &accesses[index].operand, &address)) {
+            continue;
+        }
+        size_bytes = (uint32_t)(accesses[index].width_bits / 8U);
+        if (!masm32_sim_wasm_planned_access_passes_level1(vm, address, size_bytes, accesses[index].kind)) {
+            continue;
+        }
+
+        memset(&access, 0, sizeof(access));
+        access.kind = accesses[index].kind;
+        access.address = address;
+        access.width_bits = accesses[index].width_bits;
+        access.status = VM_MEMORY_STATUS_OK;
+        if (!masm32_sim_wasm_validate_object_access(storage, instruction, &access, validation_mode, layout_policy)) {
+            return VM_EXEC_STATUS_MEMORY_ERROR;
+        }
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 /// Copies best-effort bracketed memory operand source-span metadata.
@@ -3368,9 +3594,9 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_parser_messages(&writer, parser_diagnostics, parser_result->diagnostic_count);
             has_message = true;
         }
-        (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
+        (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_shift_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_flag_use_warnings(&writer, storage, &has_message);
         if (has_message) {
@@ -4032,6 +4258,16 @@ static const char *masm32_sim_wasm_run_source_json_internal(
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+        exec_status = masm32_sim_wasm_validate_object_accesses_before_step(
+            &g_masm32_sim_wasm_run_storage,
+            &vm,
+            validation_mode,
+            runtime_policy
+        );
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = masm32_sim_wasm_validate_uninitialized_reads_before_step(
             &g_masm32_sim_wasm_run_storage,
             &vm,
