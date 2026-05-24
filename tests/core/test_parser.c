@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 53.
+ * @brief Unit and integration tests for the parser through Milestone 54.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -371,7 +371,7 @@ static int test_error_path_diagnostics(void) {
     failures += expect_parser_status(parse_for_test("main PROC\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing .code should produce diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_CODE_DIRECTIVE, "missing .code diagnostic should match");
 
-    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nimul eax\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported instruction should produce diagnostic");
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nfoo eax\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported instruction should produce diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "unsupported instruction diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(".code\nmain PROC\nmov eax 20\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "missing comma should produce diagnostic");
@@ -846,7 +846,7 @@ static int test_capacity_and_invalid_arguments(void) {
 
     memset(&buffers, 0, sizeof(buffers));
     memset(&config, 0, sizeof(config));
-    config.source = ".code\nmain PROC\nimul eax\nmain ENDP\nEND main\n";
+    config.source = ".code\nmain PROC\nfoo eax\nmain ENDP\nEND main\n";
     config.tokens = buffers.tokens;
     config.token_capacity = TEST_TOKEN_CAPACITY;
     config.lexer_diagnostics = buffers.lexer_diagnostics;
@@ -3979,6 +3979,157 @@ static int test_phase53_mul_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 54 one-operand signed IMUL parser support.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase54_imul_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value SDWORD -3\n"
+        "arr DWORD 4 DUP(0)\n"
+        ".CONST\n"
+        "factor DWORD 20\n"
+        ".code\n"
+        "main PROC\n"
+        "    imul al\n"
+        "    imul ax\n"
+        "    imul eax\n"
+        "    imul BYTE PTR [esi]\n"
+        "    imul WORD PTR [esi]\n"
+        "    imul DWORD PTR [esi]\n"
+        "    imul SBYTE PTR [esi]\n"
+        "    imul SWORD PTR [esi]\n"
+        "    imul SDWORD PTR [esi]\n"
+        "    imul value\n"
+        "    imul arr[8]\n"
+        "    imul factor\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 54 IMUL program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 54 IMUL program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 12U, "Phase 54 IMUL program should emit twelve instructions");
+    if (result.instruction_count == 12U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_IMUL, "imul al should emit IMUL opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_NONE, "IMUL should emit no explicit destination operand");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_REGISTER, "imul al source should be register");
+        failures += expect_u32(buffers.instructions[0].source.reg, VM_REGISTER_AL, "imul al source should be AL");
+        failures += expect_u32(buffers.instructions[1].source.reg, VM_REGISTER_AX, "imul ax source should be AX");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_EAX, "imul eax source should be EAX");
+        failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "imul BYTE PTR [esi] should emit memory source");
+        failures += expect_u32(buffers.instructions[3].source.width_bits, 8U, "imul BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[4].source.width_bits, 16U, "imul WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[5].source.width_bits, 32U, "imul DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[6].source.width_bits, 8U, "imul SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[7].source.width_bits, 16U, "imul SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[8].source.width_bits, 32U, "imul SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[9].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "imul value should emit direct memory source");
+        failures += expect_u32(buffers.instructions[9].source.width_bits, 32U, "imul value should infer SDWORD width");
+        failures += expect_u32(buffers.instructions[10].source.width_bits, 32U, "imul arr[8] should infer DWORD width");
+        failures += expect_u32(buffers.instructions[11].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "imul factor should accept readable .CONST source");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 54 one-operand signed IMUL parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase54_imul_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    imul 5\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL immediate source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "IMUL immediate source should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory source", "IMUL immediate diagnostic should explain source requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    imul eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL two-operand form should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "IMUL two-operand form should use unsupported-instruction-form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 55", "IMUL two-operand diagnostic should name Phase 55 deferral");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    imul eax, ebx, 5\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL three-operand form should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "IMUL three-operand form should use unsupported-instruction-form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    imul [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL ambiguous memory source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "IMUL ambiguous memory diagnostic should be ambiguous-memory-width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    imul\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL missing operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "IMUL missing operand should use expected-operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    imul QWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL QWORD source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "IMUL QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    imul SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL SQWORD source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "IMUL SQWORD PTR should remain unsupported executable width");
+
+    return failures;
+}
+
 
 /// Verifies metadata helper behavior.
 ///
@@ -3991,6 +4142,9 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION), "unsupported-instruction") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported-instruction");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM), "unsupported-instruction-form") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported-instruction-form");
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE), "unsupported-feature") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported-feature");
@@ -4083,7 +4237,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 53.
+/// Runs all parser regression tests through Milestone 54.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -4154,6 +4308,8 @@ int main(void) {
     failures += test_phase52_lea_parse_error_paths();
     failures += test_phase53_mul_parse_to_ir();
     failures += test_phase53_mul_parse_error_paths();
+    failures += test_phase54_imul_parse_to_ir();
+    failures += test_phase54_imul_parse_error_paths();
     failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 

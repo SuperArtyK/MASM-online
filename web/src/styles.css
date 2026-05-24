@@ -52,8 +52,27 @@ textarea {
   padding: 0.75rem;
 }
 
+.settings-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: flex;
+  font: inherit;
+  font-weight: 700;
+  justify-content: space-between;
+  padding: 0;
+  width: 100%;
+}
+
+.settings-toggle-state {
+  color: #57657a;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .settings-intro {
-  margin-top: 0;
+  margin-top: 0.75rem;
   font-size: 0.92rem;
 }
 

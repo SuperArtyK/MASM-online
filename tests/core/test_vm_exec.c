@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 53.
+ * @brief Unit tests for the VM executor through Milestone 54.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -2998,6 +2998,186 @@ static int test_phase53_mul_memory_sources_and_errors(void) {
     return failures;
 }
 
+/// Verifies Phase 54 signed IMUL register semantics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase54_imul_register_semantics(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for IMUL register test");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul bl", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit IMUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AL, 0xFEU) ? 0 : record_failure("AL signed setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 3U) ? 0 : record_failure("BL signed setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup should succeed for IMUL"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup should succeed for IMUL"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit fitting IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_AX, &eax) ? 0 : record_failure("AX read should succeed after 8-bit IMUL"));
+    failures += expect_u32(eax, 0xFFFAU, "AL=-2 times BL=3 should write AX=FFFAh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "8-bit fitting IMUL should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "8-bit fitting IMUL should clear OF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "IMUL should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "IMUL should preserve SF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 1U, 0U, "register IMUL should not access memory");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul bl", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit significant-truncation IMUL reload should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AL, 0x7FU) ? 0 : record_failure("AL overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 2U) ? 0 : record_failure("BL overflow setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit significant-truncation IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_AX, &eax) ? 0 : record_failure("AX read should succeed after 8-bit overflow IMUL"));
+    failures += expect_u32(eax, 0x00FEU, "AL=7Fh times BL=2 should write AX=00FEh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "8-bit significant-truncation IMUL should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "8-bit significant-truncation IMUL should set OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul bx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit IMUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xAAAAFFFEU) ? 0 : record_failure("EAX 16-bit IMUL setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0xBBBB0000U) ? 0 : record_failure("EDX 16-bit IMUL setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 3U) ? 0 : record_failure("BX signed setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "16-bit fitting IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 16-bit IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 16-bit IMUL"));
+    failures += expect_u32(eax, 0xAAAAFFFAU, "AX=-2 times BX=3 should write AX=FFFAh and preserve EAX high half");
+    failures += expect_u32(edx, 0xBBBBFFFFU, "AX=-2 times BX=3 should write DX=FFFFh and preserve EDX high half");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "16-bit fitting IMUL should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "16-bit fitting IMUL should clear OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_BX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul bx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit edge IMUL reload should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x00008000U) ? 0 : record_failure("AX min setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX min setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 0xFFFFU) ? 0 : record_failure("BX -1 setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "16-bit min times -1 IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 16-bit edge IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 16-bit edge IMUL"));
+    failures += expect_u32(eax, 0x00008000U, "AX=-32768 times -1 should leave low AX=8000h");
+    failures += expect_u32(edx, 0x00000000U, "AX=-32768 times -1 should write high DX=0000h");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "16-bit min times -1 should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "16-bit min times -1 should set OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul ebx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit IMUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xFFFFFFFEU) ? 0 : record_failure("EAX signed setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x12345678U) ? 0 : record_failure("EDX signed setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 3U) ? 0 : record_failure("EBX signed setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit fitting IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 32-bit IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 32-bit IMUL"));
+    failures += expect_u32(eax, 0xFFFFFFFAU, "EAX=-2 times EBX=3 should write EAX=FFFFFFFAh");
+    failures += expect_u32(edx, 0xFFFFFFFFU, "EAX=-2 times EBX=3 should write EDX=FFFFFFFFh");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "32-bit fitting IMUL should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "32-bit fitting IMUL should clear OF");
+
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "imul ebx", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit overflow IMUL reload should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x7FFFFFFFU) ? 0 : record_failure("EAX overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 2U) ? 0 : record_failure("EBX overflow setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit significant-truncation IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after 32-bit overflow IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after 32-bit overflow IMUL"));
+    failures += expect_u32(eax, 0xFFFFFFFEU, "EAX=7FFFFFFFh times 2 should write low EAX=FFFFFFFEh");
+    failures += expect_u32(edx, 0x00000000U, "EAX=7FFFFFFFh times 2 should write high EDX=00000000h");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "32-bit significant-truncation IMUL should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "32-bit significant-truncation IMUL should set OF");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 54 signed IMUL memory-source behavior and error paths.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase54_imul_memory_sources_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for IMUL memory test");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0xFFFFFFFDU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("IMUL memory fixture write should succeed"));
+    vm_memory_clear_changes(&vm.memory);
+    {
+        const VmIrInstruction program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "imul x", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "memory-source IMUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 2U) ? 0 : record_failure("EAX setup should succeed for memory-source IMUL"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory-source IMUL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after memory-source IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after memory-source IMUL"));
+    failures += expect_u32(eax, 0xFFFFFFFAU, "memory-source IMUL should write low signed product to EAX");
+    failures += expect_u32(edx, 0xFFFFFFFFU, "memory-source IMUL fitting product should sign-extend EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "memory-source IMUL fitting product should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "memory-source IMUL fitting product should clear OF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "IMUL memory source should record one checked read access");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "IMUL memory source should not create memory changes");
+    if (delta != NULL && delta->memory_access_count > 0U) {
+        failures += expect_u32(delta->memory_accesses[0].address, VM_MEMORY_DEFAULT_DATA_BASE, "IMUL memory read should use the source address");
+        failures += expect_u32(delta->memory_accesses[0].width_bits, 32U, "IMUL memory read should use source width");
+        if (delta->memory_accesses[0].kind != VM_EXEC_MEMORY_ACCESS_READ) {
+            failures += record_failure("IMUL memory access should be a read");
+        }
+    }
+
+    {
+        const VmIrInstruction bad_program[] = {
+            {VM_IR_OPCODE_IMUL, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "imul DWORD PTR [eax]", 0U}
+        };
+        failures += expect_status(vm_load_program(&vm, bad_program, sizeof(bad_program) / sizeof(bad_program[0])), VM_EXEC_STATUS_OK, "invalid-address IMUL program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("EAX invalid-address setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x12345678U) ? 0 : record_failure("EDX invalid-address setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF invalid-address setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "invalid-address IMUL memory source should fail");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after invalid-address IMUL"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after invalid-address IMUL"));
+    failures += expect_u32(eax, 0U, "invalid-address IMUL should not mutate EAX");
+    failures += expect_u32(edx, 0x12345678U, "invalid-address IMUL should not mutate EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "invalid-address IMUL should preserve flags");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_MEMORY_ERROR) {
+        failures += record_failure("invalid-address IMUL should record memory diagnostic");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 52 LEA computes addresses without memory access or flag mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3097,6 +3277,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_MUL), "mul") != 0) {
         failures += record_failure("MUL opcode name should be mul");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IMUL), "imul") != 0) {
+        failures += record_failure("IMUL opcode name should be imul");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -3119,7 +3302,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 53.
+/// Runs all executor tests through Milestone 54.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3179,6 +3362,8 @@ int main(void) {
     failures += test_phase52_lea_effective_address_execution();
     failures += test_phase53_mul_register_semantics();
     failures += test_phase53_mul_memory_sources_and_errors();
+    failures += test_phase54_imul_register_semantics();
+    failures += test_phase54_imul_memory_sources_and_errors();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -3186,6 +3371,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 53 passed.");
+    puts("Executor tests through Milestone 54 passed.");
     return 0;
 }

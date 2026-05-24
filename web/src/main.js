@@ -7,12 +7,13 @@
  * and displays structured simulator messages returned by the worker.
  */
 
+import { initializeCollapsiblePanel } from "./collapsible.js";
 import { formatMemoryChanges, formatRegisters, formatSimulatorMessages } from "./formatters.js";
 import {
   COMPATIBILITY_NOTICES_ON,
   MEMORY_RANGE_REGION_ONLY,
   TEACHING_DIAGNOSTIC_WARN,
-  defaultDiagnosticSettings
+  readDiagnosticSettingsFromControls
 } from "./settings.js";
 
 /**
@@ -72,13 +73,12 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
  * @returns {import("./settings.js").DiagnosticSettings} Settings payload for RUN_SOURCE.
  */
 function readDiagnosticSettings() {
-  const defaults = defaultDiagnosticSettings();
-  return {
-    memoryRange: memoryRangeSetting.value || defaults.memoryRange,
-    uninitializedReads: uninitializedReadsSetting.value || defaults.uninitializedReads,
-    undefinedFlagUse: undefinedFlagUseSetting.value || defaults.undefinedFlagUse,
-    compatibilityNotices: compatibilityNoticesSetting.value || defaults.compatibilityNotices
-  };
+  return readDiagnosticSettingsFromControls(
+    memoryRangeSetting,
+    uninitializedReadsSetting,
+    undefinedFlagUseSetting,
+    compatibilityNoticesSetting
+  );
 }
 
 const simulatorMessages = document.getElementById("simulator-messages");
@@ -88,13 +88,15 @@ const memoryChanges = document.getElementById("memory-changes");
 const editor = document.getElementById("editor");
 const pingButton = document.getElementById("ping-button");
 const runButton = document.getElementById("run-button");
+const diagnosticSettingsToggle = document.getElementById("diagnostic-settings-toggle");
+const diagnosticSettingsBody = document.getElementById("diagnostic-settings-body");
 const memoryRangeSetting = document.getElementById("memory-range-setting");
 const uninitializedReadsSetting = document.getElementById("uninitialized-reads-setting");
 const undefinedFlagUseSetting = document.getElementById("undefined-flag-use-setting");
 const compatibilityNoticesSetting = document.getElementById("compatibility-notices-setting");
 
 if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton ||
-    !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting) {
+    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting) {
   throw new Error("Required simulator UI elements are missing.");
 }
 
@@ -102,6 +104,7 @@ memoryRangeSetting.value = MEMORY_RANGE_REGION_ONLY;
 uninitializedReadsSetting.value = TEACHING_DIAGNOSTIC_WARN;
 undefinedFlagUseSetting.value = TEACHING_DIAGNOSTIC_WARN;
 compatibilityNoticesSetting.value = COMPATIBILITY_NOTICES_ON;
+initializeCollapsiblePanel(diagnosticSettingsToggle, diagnosticSettingsBody, false);
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
 

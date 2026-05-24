@@ -77,6 +77,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION,
     /// The parser found an instruction mnemonic outside the implemented milestone scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION,
+    /// The parser found a recognized instruction using a deferred operand form.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM,
     /// The parser expected an instruction operand.
     VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
     /// The parser expected a comma between operands.

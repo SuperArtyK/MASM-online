@@ -152,6 +152,7 @@ def run_structure_tests() -> None:
         "tests/core/test_object_map.c",
         "tests/web/test_protocol.mjs",
         "tests/web/test_settings.mjs",
+        "tests/web/test_collapsible_settings.mjs",
         "tests/web/test_formatters.mjs",
         "tests/web/test_diagnostic_rendering.mjs",
         "tests/core/diagnostic_json_producer.c",
@@ -340,7 +341,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 53")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 54")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -482,7 +483,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 53E diagnostic setting coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 54 IMUL coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -796,6 +797,7 @@ def run_js_tests() -> None:
         raise TestFailure("node is required for JavaScript and diagnostic rendering tests")
     run_command(["node", "tests/web/test_protocol.mjs"])
     run_command(["node", "tests/web/test_settings.mjs"])
+    run_command(["node", "tests/web/test_collapsible_settings.mjs"])
     run_command(["node", "tests/web/test_formatters.mjs"])
 
     diagnostic_env = os.environ.copy()

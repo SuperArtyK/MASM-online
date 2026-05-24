@@ -3180,6 +3180,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
     }
+    if (vm_parser_token_equals(token, "imul")) {
+        *out_opcode = VM_IR_OPCODE_IMUL;
+        return true;
+    }
 
     return false;
 }
@@ -3270,9 +3274,20 @@ static bool vm_parser_opcode_is_lea(VmIrOpcode opcode) {
 /// Returns whether an opcode uses one source operand with implicit accumulator result registers.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for MUL.
+/// @return true for one-operand MUL and IMUL.
 static bool vm_parser_opcode_is_implicit_accumulator_source(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_MUL;
+    return opcode == VM_IR_OPCODE_MUL || opcode == VM_IR_OPCODE_IMUL;
+}
+
+/// Returns the source-mnemonic spelling for implicit-accumulator instructions.
+///
+/// @param opcode Opcode to inspect.
+/// @return Static uppercase mnemonic text for diagnostics.
+static const char *vm_parser_implicit_accumulator_mnemonic(VmIrOpcode opcode) {
+    if (opcode == VM_IR_OPCODE_IMUL) {
+        return "IMUL";
+    }
+    return "MUL";
 }
 
 /// Converts a numeric token into a signed byte offset.
@@ -5687,34 +5702,42 @@ static bool vm_parser_validate_single_destination_operand(
     return true;
 }
 
-/// Validates the source operand for one-operand unsigned MUL.
+/// Validates the source operand for one-operand implicit-accumulator multiply.
 ///
-/// MUL accepts exactly one register or known-width memory source. The source
-/// width selects the implicit accumulator and result register pair, so untyped
-/// register-indirect memory remains ambiguous and immediates are rejected.
+/// MUL and one-operand IMUL accept exactly one register or known-width memory
+/// source. The source width selects the implicit accumulator and result
+/// register pair, so untyped register-indirect memory remains ambiguous and
+/// immediates are rejected.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
+/// @param opcode Instruction opcode used for diagnostic wording.
 /// @param source Source operand to validate.
 /// @param source_token Token associated with the source operand.
 /// @return true when the operand has a supported execution width.
-static bool vm_parser_validate_mul_source_operand(
+static bool vm_parser_validate_implicit_accumulator_source_operand(
     VmParserState *state,
+    VmIrOpcode opcode,
     const VmIrOperand *source,
     const VmLexerToken *source_token
 ) {
     uint8_t width_bits = 0U;
+    const char *mnemonic = vm_parser_implicit_accumulator_mnemonic(opcode);
 
     if (state == NULL || source == NULL) {
         return false;
     }
 
     if (source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "MUL requires a register or memory source.");
+        char message[96];
+        (void)snprintf(message, sizeof(message), "%s requires a register or memory source.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, message);
         return false;
     }
 
     if (!vm_parser_resolve_operand_width(source, &width_bits)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "MUL source requires a known 8-bit, 16-bit, or 32-bit width.");
+        char message[128];
+        (void)snprintf(message, sizeof(message), "%s source requires a known 8-bit, 16-bit, or 32-bit width.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, message);
         return false;
     }
 
@@ -6004,6 +6027,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         } else if (vm_parser_opcode_is_shift(opcode)) {
             (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory destination.", vm_parser_shift_mnemonic(opcode));
             message = logical_message;
+        } else if (vm_parser_opcode_is_implicit_accumulator_source(opcode)) {
+            (void)snprintf(logical_message, sizeof(logical_message), "%s requires a register or memory source.", vm_parser_implicit_accumulator_mnemonic(opcode));
+            message = logical_message;
         }
         vm_parser_add_diagnostic(
             state,
@@ -6021,11 +6047,21 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (vm_parser_resolve_unary_memory_width(state, opcode, &source, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
             return false;
         }
-        if (!vm_parser_validate_mul_source_operand(state, &source, source_token)) {
+        if (!vm_parser_validate_implicit_accumulator_source_operand(state, opcode, &source, source_token)) {
             return false;
         }
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "MUL takes exactly one register or memory operand.");
+            const VmLexerToken *extra_token = vm_parser_current_token(state);
+            char message[160];
+            VmParserDiagnosticCode diagnostic_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
+
+            if (opcode == VM_IR_OPCODE_IMUL && extra_token != NULL && extra_token->kind == VM_LEXER_TOKEN_COMMA) {
+                diagnostic_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM;
+                (void)snprintf(message, sizeof(message), "Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.");
+            } else {
+                (void)snprintf(message, sizeof(message), "%s takes exactly one register or memory operand.", vm_parser_implicit_accumulator_mnemonic(opcode));
+            }
+            vm_parser_add_diagnostic(state, diagnostic_code, extra_token, message);
             return false;
         }
         if (!vm_parser_expect_line_end(state)) {
@@ -7181,6 +7217,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-section";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION:
             return "unsupported-instruction";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM:
+            return "unsupported-instruction-form";
         case VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND:
             return "expected-operand";
         case VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA:

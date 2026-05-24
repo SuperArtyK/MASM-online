@@ -799,6 +799,66 @@ END main
 `,
     reason: "Phase 53 MUL executable QWORD source diagnostic fixture."
   },
+  imulAmbiguousMemoryWidth: {
+    source: `.code
+main PROC
+    imul [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL ambiguous memory-width diagnostic fixture."
+  },
+  imulImmediateSource: {
+    source: `.code
+main PROC
+    imul 5
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL immediate-source diagnostic fixture."
+  },
+  imulTwoOperand: {
+    source: `.code
+main PROC
+    imul eax, ebx
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL two-operand deferral diagnostic fixture."
+  },
+  imulRuntimeInvalidAddress: {
+    source: `.code
+main PROC
+    mov eax, 0
+    imul DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL invalid memory source runtime diagnostic fixture."
+  },
+  imulQwordSource: {
+    source: `.data
+q QWORD 1
+.code
+main PROC
+    imul QWORD PTR q
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL executable QWORD source diagnostic fixture."
+  },
+  imulUninitializedRead: {
+    source: `.DATA?
+x DWORD ?
+.code
+main PROC
+    mov eax, 3
+    imul x
+main ENDP
+END main
+`,
+    reason: "Phase 54 IMUL default uninitialized-read warning fixture."
+  },
   undefinedFlagUseAdc: {
     source: `.code
 main PROC
@@ -2263,6 +2323,124 @@ test("renders MUL QWORD source diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-ptr-width line 5, column 9, byte offset 40, span length 5: QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+});
+
+test("renders IMUL ambiguous memory-width diagnostic exactly", () => {
+  const name = "imulAmbiguousMemoryWidth";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "ambiguous-memory-width",
+    message: "Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] ambiguous-memory-width line 3, column 10, byte offset 25, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+});
+
+test("renders IMUL immediate-source diagnostic exactly", () => {
+  const name = "imulImmediateSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-instruction-operands",
+    message: "IMUL requires a register or memory source.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 10, byte offset 25, span length 1: IMUL requires a register or memory source.");
+});
+
+test("renders IMUL two-operand deferral diagnostic exactly", () => {
+  const name = "imulTwoOperand";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-instruction-form",
+    message: "Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.",
+    line: 3,
+    column: 13,
+    byteOffset: 28,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction-form line 3, column 13, byte offset 28, span length 1: Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.");
+});
+
+test("renders IMUL invalid source-address diagnostic exactly", () => {
+  const name = "imulRuntimeInvalidAddress";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "invalid-address",
+    message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
+    line: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+test("renders IMUL QWORD source diagnostic exactly", () => {
+  const name = "imulQwordSource";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-ptr-width",
+    message: "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.",
+    line: 5,
+    column: 10,
+    byteOffset: 41,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-ptr-width line 5, column 10, byte offset 41, span length 5: QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+});
+
+test("renders IMUL default uninitialized-read warning exactly", () => {
+  const name = "imulUninitializedRead";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 2);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 6,
+      sourceLocation: { line: 6, column: null, byteOffset: null, spanLength: null },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders ROR undefined modeled flag warning exactly", () => {

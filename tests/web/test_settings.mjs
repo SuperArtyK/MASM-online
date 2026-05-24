@@ -22,7 +22,8 @@ import {
   TEACHING_DIAGNOSTIC_WARN,
   defaultDiagnosticSettings,
   diagnosticSettingsToBackendArguments,
-  normalizeDiagnosticSettings
+  normalizeDiagnosticSettings,
+  readDiagnosticSettingsFromControls
 } from "../../web/src/settings.js";
 
 /**
@@ -139,4 +140,34 @@ test("non-object settings payload returns ui-error diagnostic", () => {
   assert.equal(normalized.ok, false);
   assert.equal(normalized.diagnostic.kind, "ui-error");
   assert.equal(normalized.diagnostic.setting, "diagnosticSettings");
+});
+
+
+test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings", () => {
+  const hiddenBody = { hidden: true };
+  const memoryRangeControl = { value: MEMORY_RANGE_DECLARED_OBJECT_WARN };
+  const uninitializedReadsControl = { value: TEACHING_DIAGNOSTIC_STRICT };
+  const undefinedFlagUseControl = { value: TEACHING_DIAGNOSTIC_OFF };
+  const compatibilityNoticesControl = { value: COMPATIBILITY_NOTICES_OFF };
+
+  const settings = readDiagnosticSettingsFromControls(
+    memoryRangeControl,
+    uninitializedReadsControl,
+    undefinedFlagUseControl,
+    compatibilityNoticesControl
+  );
+
+  assert.equal(hiddenBody.hidden, true);
+  assert.deepEqual(settings, {
+    memoryRange: MEMORY_RANGE_DECLARED_OBJECT_WARN,
+    uninitializedReads: TEACHING_DIAGNOSTIC_STRICT,
+    undefinedFlagUse: TEACHING_DIAGNOSTIC_OFF,
+    compatibilityNotices: COMPATIBILITY_NOTICES_OFF
+  });
+  assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
+    memoryRange: 5,
+    uninitializedReads: 2,
+    undefinedFlagUse: 0,
+    compatibilityNotices: 0
+  });
 });

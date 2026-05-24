@@ -802,6 +802,20 @@ Stop the Python server with `Ctrl+C` in the terminal where it is running.
 
 After serving, open the local URL printed by the script or server and run manual browser programs in the editor.
 
+For Milestone 54 signed `imul` verification, run:
+
+```asm
+.code
+main PROC
+    mov eax, -2
+    mov ebx, 3
+    imul ebx
+main ENDP
+END main
+```
+
+Expected final state includes `EDX = FFFFFFFFh`, `EAX = FFFFFFFAh`, `CF = 0`, `OF = 0`, no memory-change rows, and an `execution-complete` Simulator Messages entry.
+
 Milestone 37 note: allocated-object warning/strict validation began as a test/configuration-facing mode. After Phase 53E, the browser diagnostic settings panel exposes the same existing declared-object bounds warning and strict-stop policies as optional Memory range validation choices. Default browser execution remains region-only.
 
 ## 9. Troubleshooting

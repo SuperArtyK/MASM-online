@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 53E source-run UI: source editing, Run button,
+  This page provides the Milestone 54 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
   execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, and compatibility notice policies.
 -->
@@ -18,77 +18,90 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 53E: browser settings now expose existing memory validation, teaching diagnostics, and compatibility notices without changing VM semantics.</p>
+        <p class="muted">Milestone 54: one-operand signed IMUL now runs alongside the existing diagnostic settings.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, 10
-    mov ebx, 20
-    mul ebx
+    mov eax, -2
+    mov ebx, 3
+    imul ebx
 main ENDP
 END main</textarea>
-        <fieldset class="settings-panel">
-          <legend>Diagnostic settings</legend>
-          <p class="muted settings-intro">Choose how much educational diagnostic help the simulator should show while running your program.</p>
-          <div class="settings-list">
-            <div class="setting-control">
-              <label for="memory-range-setting">Memory range validation</label>
-              <select id="memory-range-setting" aria-describedby="memory-range-setting-help">
-                <option value="region-only" selected>Region-only (default)</option>
-                <option value="section-capacity-warn">Section capacity: warn</option>
-                <option value="section-capacity-strict">Section capacity: strict stop</option>
-                <option value="section-image-warn">Section image: warn</option>
-                <option value="section-image-strict">Section image: strict stop</option>
-                <option value="declared-object-warn">Declared object bounds: warn</option>
-                <option value="declared-object-strict">Declared object bounds: strict stop</option>
-              </select>
-              <ul id="memory-range-setting-help" class="setting-help muted">
-                <li><strong>Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
-                <li><strong>Section capacity:</strong> report accesses that pass VM checks but fall outside the simulator's known section capacity range.</li>
-                <li><strong>Section image:</strong> report accesses that stay in section capacity but leave the declared or initialized section image.</li>
-                <li><strong>Declared object bounds:</strong> report accesses that leave or cross a declared data object, useful for catching accidental overrun/underrun bugs.</li>
-                <li>Warning modes continue execution; strict modes stop before mutation.</li>
-              </ul>
-            </div>
-            <div class="setting-control">
-              <label for="uninitialized-reads-setting">Uninitialized reads</label>
-              <select id="uninitialized-reads-setting" aria-describedby="uninitialized-reads-setting-help">
-                <option value="warn" selected>Warn (default)</option>
-                <option value="off">Off / I know what I’m doing</option>
-                <option value="strict">Strict stop</option>
-              </select>
-              <ul id="uninitialized-reads-setting-help" class="setting-help muted">
-                <li>Warn reports reads from <code>.DATA?</code> or <code>?</code> storage that has not been written yet.</li>
-                <li>Off keeps deterministic zero-filled behavior without the teaching warning.</li>
-                <li>Strict stops before consuming uninitialized-origin bytes.</li>
-              </ul>
-            </div>
-            <div class="setting-control">
-              <label for="undefined-flag-use-setting">Undefined flag use</label>
-              <select id="undefined-flag-use-setting" aria-describedby="undefined-flag-use-setting-help">
-                <option value="warn" selected>Warn (default)</option>
-                <option value="off">Off / I know what I’m doing</option>
-                <option value="strict">Strict stop</option>
-              </select>
-              <ul id="undefined-flag-use-setting-help" class="setting-help muted">
-                <li>Warn reports non-portable use of flags made undefined by earlier instructions.</li>
-                <li>Off uses the simulator’s deterministic preserved flag value silently.</li>
-                <li>Strict stops before the flag-consuming instruction mutates state.</li>
-              </ul>
-            </div>
-            <div class="setting-control">
-              <label for="compatibility-notices-setting">Compatibility notices</label>
-              <select id="compatibility-notices-setting" aria-describedby="compatibility-notices-setting-help">
-                <option value="on" selected>On (default)</option>
-                <option value="off">Off</option>
-              </select>
-              <ul id="compatibility-notices-setting-help" class="setting-help muted">
-                <li>Notices explain accepted MASM compatibility directives that are no-ops, metadata-only, or limited.</li>
-                <li>Off hides these notices without changing execution behavior.</li>
-              </ul>
+        <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
+          <button
+            id="diagnostic-settings-toggle"
+            class="settings-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="diagnostic-settings-body"
+            data-state-label-id="diagnostic-settings-toggle-state"
+            data-expanded-label="Hide"
+            data-collapsed-label="Show">
+            <span id="diagnostic-settings-title">Diagnostic settings</span>
+            <span id="diagnostic-settings-toggle-state" class="settings-toggle-state">Show</span>
+          </button>
+          <div id="diagnostic-settings-body" hidden>
+            <p class="muted settings-intro">Choose how much educational diagnostic help the simulator should show while running your program.</p>
+            <div class="settings-list">
+              <div class="setting-control">
+                <label for="memory-range-setting">Memory range validation</label>
+                <select id="memory-range-setting" aria-describedby="memory-range-setting-help">
+                  <option value="region-only" selected>Region-only (default)</option>
+                  <option value="section-capacity-warn">Section capacity: warn</option>
+                  <option value="section-capacity-strict">Section capacity: strict stop</option>
+                  <option value="section-image-warn">Section image: warn</option>
+                  <option value="section-image-strict">Section image: strict stop</option>
+                  <option value="declared-object-warn">Declared object bounds: warn</option>
+                  <option value="declared-object-strict">Declared object bounds: strict stop</option>
+                </select>
+                <ul id="memory-range-setting-help" class="setting-help muted">
+                  <li><strong>Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
+                  <li><strong>Section capacity:</strong> report accesses that pass VM checks but fall outside the simulator's known section capacity range.</li>
+                  <li><strong>Section image:</strong> report accesses that stay in section capacity but leave the declared or initialized section image.</li>
+                  <li><strong>Declared object bounds:</strong> report accesses that leave or cross a declared data object, useful for catching accidental overrun/underrun bugs.</li>
+                  <li>Warning modes continue execution; strict modes stop before mutation.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="uninitialized-reads-setting">Uninitialized reads</label>
+                <select id="uninitialized-reads-setting" aria-describedby="uninitialized-reads-setting-help">
+                  <option value="warn" selected>Warn (default)</option>
+                  <option value="off">Off / I know what I’m doing</option>
+                  <option value="strict">Strict stop</option>
+                </select>
+                <ul id="uninitialized-reads-setting-help" class="setting-help muted">
+                  <li>Warn reports reads from <code>.DATA?</code> or <code>?</code> storage that has not been written yet.</li>
+                  <li>Off keeps deterministic zero-filled behavior without the teaching warning.</li>
+                  <li>Strict stops before consuming uninitialized-origin bytes.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="undefined-flag-use-setting">Undefined flag use</label>
+                <select id="undefined-flag-use-setting" aria-describedby="undefined-flag-use-setting-help">
+                  <option value="warn" selected>Warn (default)</option>
+                  <option value="off">Off / I know what I’m doing</option>
+                  <option value="strict">Strict stop</option>
+                </select>
+                <ul id="undefined-flag-use-setting-help" class="setting-help muted">
+                  <li>Warn reports non-portable use of flags made undefined by earlier instructions.</li>
+                  <li>Off uses the simulator’s deterministic preserved flag value silently.</li>
+                  <li>Strict stops before the flag-consuming instruction mutates state.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="compatibility-notices-setting">Compatibility notices</label>
+                <select id="compatibility-notices-setting" aria-describedby="compatibility-notices-setting-help">
+                  <option value="on" selected>On (default)</option>
+                  <option value="off">Off</option>
+                </select>
+                <ul id="compatibility-notices-setting-help" class="setting-help muted">
+                  <li>Notices explain accepted MASM compatibility directives that are no-ops, metadata-only, or limited.</li>
+                  <li>Off hides these notices without changing execution behavior.</li>
+                </ul>
+              </div>
             </div>
           </div>
-        </fieldset>
+        </section>
         <div class="controls">
           <button id="run-button" type="button">Run</button>
           <button id="ping-button" type="button">Ping worker</button>

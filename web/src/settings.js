@@ -144,6 +144,33 @@ function normalizeField(source, field, defaultValue, acceptedValues) {
 }
 
 /**
+ * Reads diagnostic settings from browser select controls.
+ *
+ * Collapsed panels keep their controls in the DOM, so hidden presentation state
+ * must not affect the settings payload sent with RUN_SOURCE messages.
+ *
+ * @param {{value?: string}} memoryRangeControl Memory range select control.
+ * @param {{value?: string}} uninitializedReadsControl Uninitialized-read select control.
+ * @param {{value?: string}} undefinedFlagUseControl Undefined-flag-use select control.
+ * @param {{value?: string}} compatibilityNoticesControl Compatibility-notices select control.
+ * @returns {DiagnosticSettings} Settings payload for RUN_SOURCE.
+ */
+export function readDiagnosticSettingsFromControls(
+  memoryRangeControl,
+  uninitializedReadsControl,
+  undefinedFlagUseControl,
+  compatibilityNoticesControl
+) {
+  const defaults = defaultDiagnosticSettings();
+  return {
+    memoryRange: memoryRangeControl.value || defaults.memoryRange,
+    uninitializedReads: uninitializedReadsControl.value || defaults.uninitializedReads,
+    undefinedFlagUse: undefinedFlagUseControl.value || defaults.undefinedFlagUse,
+    compatibilityNotices: compatibilityNoticesControl.value || defaults.compatibilityNotices
+  };
+}
+
+/**
  * Normalizes optional browser diagnostic settings.
  *
  * Missing settings use Phase 53E defaults. Invalid values produce a structured
