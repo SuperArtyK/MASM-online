@@ -802,7 +802,7 @@ Stop the Python server with `Ctrl+C` in the terminal where it is running.
 
 After serving, open the local URL printed by the script or server and run manual browser programs in the editor.
 
-For Milestone 54 signed `imul` verification, run:
+For Milestone 55 signed `imul` verification, run:
 
 ```asm
 .code

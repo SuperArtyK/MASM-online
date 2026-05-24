@@ -817,14 +817,23 @@ END main
 `,
     reason: "Phase 54 IMUL immediate-source diagnostic fixture."
   },
-  imulTwoOperand: {
+  imulRegImmediate: {
     source: `.code
 main PROC
-    imul eax, ebx
+    imul eax, 5
 main ENDP
 END main
 `,
-    reason: "Phase 54 IMUL two-operand deferral diagnostic fixture."
+    reason: "Phase 55 IMUL rejected reg, imm diagnostic fixture."
+  },
+  imulImmediateOutOfRange: {
+    source: `.code
+main PROC
+    imul eax, ebx, 2147483648
+main ENDP
+END main
+`,
+    reason: "Phase 55 IMUL immediate range diagnostic fixture."
   },
   imulRuntimeInvalidAddress: {
     source: `.code
@@ -2361,22 +2370,40 @@ test("renders IMUL immediate-source diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 10, byte offset 25, span length 1: IMUL requires a register or memory source.");
 });
 
-test("renders IMUL two-operand deferral diagnostic exactly", () => {
-  const name = "imulTwoOperand";
+test("renders IMUL reg-immediate rejection diagnostic exactly", () => {
+  const name = "imulRegImmediate";
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
-    code: "unsupported-instruction-form",
-    message: "Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.",
+    code: "invalid-instruction-operands",
+    message: "IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.",
     line: 3,
-    column: 13,
-    byteOffset: 28,
+    column: 15,
+    byteOffset: 30,
     spanLength: 1
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction-form line 3, column 13, byte offset 28, span length 1: Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 15, byte offset 30, span length 1: IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.");
+});
+
+test("renders IMUL immediate range diagnostic exactly", () => {
+  const name = "imulImmediateOutOfRange";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "immediate-out-of-range",
+    message: "IMUL immediate value does not fit the signed destination operand width.",
+    line: 3,
+    column: 20,
+    byteOffset: 35,
+    spanLength: 10
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] immediate-out-of-range line 3, column 20, byte offset 35, span length 10: IMUL immediate value does not fit the signed destination operand width.");
 });
 
 test("renders IMUL invalid source-address diagnostic exactly", () => {

@@ -16,7 +16,7 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest user-visible MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 53;
+export const IMPLEMENTED_PHASE = 55;
 
 /**
  * Creates the initial worker readiness response.

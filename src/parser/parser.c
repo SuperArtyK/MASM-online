@@ -233,6 +233,18 @@ static bool vm_parser_add_lexer_status_diagnostic(
 
 static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserConstantExpression *out_expression);
 
+static bool vm_parser_expect_comma(VmParserState *state);
+
+static bool vm_parser_expect_line_end(VmParserState *state);
+
+static bool vm_parser_emit_instruction(
+    VmParserState *state,
+    VmIrOpcode opcode,
+    VmIrOperand destination,
+    VmIrOperand source,
+    const VmLexerToken *mnemonic_token
+);
+
 static bool vm_parser_parse_data_initializer(
     VmParserState *state,
     VmSymbolDataType data_type,
@@ -5744,6 +5756,232 @@ static bool vm_parser_validate_implicit_accumulator_source_operand(
     return true;
 }
 
+/// Returns the smallest signed immediate accepted for an IMUL operand width.
+///
+/// @param width_bits Destination width in bits.
+/// @param out_min_value Receives the minimum signed immediate value.
+/// @return true when @p width_bits is supported by Phase 55 IMUL forms.
+static bool vm_parser_imul_signed_min_for_width(uint8_t width_bits, int64_t *out_min_value) {
+    if (out_min_value == NULL) {
+        return false;
+    }
+    if (width_bits == 16U) {
+        *out_min_value = -32768;
+        return true;
+    }
+    if (width_bits == 32U) {
+        *out_min_value = -2147483648LL;
+        return true;
+    }
+    *out_min_value = 0;
+    return false;
+}
+
+/// Returns the largest signed immediate accepted for an IMUL operand width.
+///
+/// @param width_bits Destination width in bits.
+/// @param out_max_value Receives the maximum signed immediate value.
+/// @return true when @p width_bits is supported by Phase 55 IMUL forms.
+static bool vm_parser_imul_signed_max_for_width(uint8_t width_bits, int64_t *out_max_value) {
+    if (out_max_value == NULL) {
+        return false;
+    }
+    if (width_bits == 16U) {
+        *out_max_value = 32767;
+        return true;
+    }
+    if (width_bits == 32U) {
+        *out_max_value = 2147483647LL;
+        return true;
+    }
+    *out_max_value = 0;
+    return false;
+}
+
+/// Parses and validates a signed IMUL immediate constant expression.
+///
+/// Phase 55 intentionally validates the immediate against the signed operation
+/// width instead of exposing machine-code imm8 versus imm16/imm32 encoding
+/// choices. The returned value is the operand-width two's-complement encoding.
+///
+/// @param state Parser state to mutate.
+/// @param width_bits IMUL operation width in bits.
+/// @param immediate_token Token that starts the immediate expression.
+/// @param out_value Receives the encoded immediate bits.
+/// @return true when the immediate was parsed and fits the signed width.
+static bool vm_parser_parse_imul_signed_immediate(
+    VmParserState *state,
+    uint8_t width_bits,
+    const VmLexerToken *immediate_token,
+    uint32_t *out_value
+) {
+    VmParserConstantExpression expression;
+    int64_t min_value = 0;
+    int64_t max_value = 0;
+
+    if (state == NULL || out_value == NULL) {
+        return false;
+    }
+    if (immediate_token == NULL || !vm_parser_token_starts_constant_expression(immediate_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, immediate_token, "IMUL three-operand form requires a signed immediate constant expression as its third operand.");
+        return false;
+    }
+    if (!vm_parser_imul_signed_min_for_width(width_bits, &min_value) ||
+        !vm_parser_imul_signed_max_for_width(width_bits, &max_value)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, immediate_token, "IMUL immediate is supported only for 16-bit and 32-bit destinations.");
+        return false;
+    }
+
+    memset(&expression, 0, sizeof(expression));
+    if (!vm_parser_parse_constant_expression(state, &expression)) {
+        return false;
+    }
+    if (expression.value < min_value || expression.value > max_value) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, expression.start_token, "IMUL immediate value does not fit the signed destination operand width.");
+        return false;
+    }
+
+    if (width_bits == 16U) {
+        *out_value = ((uint32_t)expression.value) & 0xFFFFU;
+    } else {
+        *out_value = (uint32_t)expression.value;
+    }
+    return true;
+}
+
+/// Validates Phase 55 explicit-destination IMUL operands.
+///
+/// The supported explicit IMUL forms require a 16-bit or 32-bit register
+/// destination and a same-width register or memory source. One-operand IMUL is
+/// validated separately by the Phase 54 implicit-accumulator path.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination Destination operand.
+/// @param source Source operand.
+/// @param destination_token Token associated with the destination.
+/// @param source_token Token associated with the source.
+/// @param has_immediate Whether the instruction has the Phase 55 third immediate operand.
+/// @return true when the operands are accepted by Phase 55.
+static bool vm_parser_validate_explicit_imul_operands(
+    VmParserState *state,
+    const VmIrOperand *destination,
+    const VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token,
+    bool has_immediate
+) {
+    uint8_t destination_width = 0U;
+    uint8_t source_width = 0U;
+
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+    if (destination->kind != VM_IR_OPERAND_REGISTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "IMUL two- and three-operand forms require a 16-bit or 32-bit register destination.");
+        return false;
+    }
+    if (!vm_parser_resolve_operand_width(destination, &destination_width) || (destination_width != 16U && destination_width != 32U)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "IMUL two- and three-operand destinations must be 16-bit or 32-bit registers.");
+        return false;
+    }
+    if (source->kind == VM_IR_OPERAND_IMMEDIATE) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, has_immediate ? "IMUL three-operand form requires a register or memory second operand." : "IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.");
+        return false;
+    }
+    if (source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "IMUL source must be a register or memory operand.");
+        return false;
+    }
+    if (!vm_parser_resolve_operand_width(source, &source_width) || source_width != destination_width) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, source_token, "IMUL source operand width must match the destination register width.");
+        return false;
+    }
+
+    return true;
+}
+
+/// Parses one IMUL instruction, including Phase 54 and Phase 55 forms.
+///
+/// One-operand IMUL keeps the implicit-accumulator behavior implemented in
+/// Phase 54. Phase 55 adds explicit 16/32-bit register-destination forms with
+/// register or memory sources and optional signed immediate third operands.
+///
+/// @param state Parser state to mutate.
+/// @param mnemonic_token Source mnemonic token used for emitted metadata.
+/// @return true when the instruction was parsed and emitted.
+static bool vm_parser_parse_imul_instruction(VmParserState *state, const VmLexerToken *mnemonic_token) {
+    VmIrOperand first = vm_ir_operand_none();
+    VmIrOperand source = vm_ir_operand_none();
+    const VmLexerToken *first_token = vm_parser_current_token(state);
+    const VmLexerToken *source_token = NULL;
+    const VmLexerToken *immediate_token = NULL;
+    uint8_t destination_width = 0U;
+    uint32_t immediate_value = 0U;
+    bool has_immediate = false;
+    VmIrOpcode emitted_opcode = VM_IR_OPCODE_IMUL;
+
+    if (!vm_parser_parse_source_operand(state, &first)) {
+        return false;
+    }
+
+    if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        if (vm_parser_resolve_unary_memory_width(state, VM_IR_OPCODE_IMUL, &first, first_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
+        if (!vm_parser_validate_implicit_accumulator_source_operand(state, VM_IR_OPCODE_IMUL, &first, first_token)) {
+            return false;
+        }
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, VM_IR_OPCODE_IMUL, vm_ir_operand_none(), first, mnemonic_token);
+    }
+
+    if (!vm_parser_expect_comma(state)) {
+        return false;
+    }
+    source_token = vm_parser_current_token(state);
+    if (!vm_parser_parse_source_operand(state, &source)) {
+        return false;
+    }
+
+    if (vm_parser_resolve_binary_memory_widths(state, VM_IR_OPCODE_IMUL, &first, &source, first_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+        return false;
+    }
+
+    if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_COMMA) {
+        has_immediate = true;
+        vm_parser_advance(state);
+        immediate_token = vm_parser_current_token(state);
+    }
+
+    if (!vm_parser_validate_explicit_imul_operands(state, &first, &source, first_token, source_token, has_immediate)) {
+        return false;
+    }
+
+    if (has_immediate) {
+        if (!vm_parser_resolve_operand_width(&first, &destination_width)) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, first_token, "IMUL immediate width could not be resolved from the destination register.");
+            return false;
+        }
+        if (!vm_parser_parse_imul_signed_immediate(state, destination_width, immediate_token, &immediate_value)) {
+            return false;
+        }
+        first.immediate = immediate_value;
+        emitted_opcode = VM_IR_OPCODE_IMUL_IMMEDIATE;
+    }
+
+    if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), has_immediate ? "IMUL three-operand form takes exactly three operands." : "IMUL two-operand form takes exactly two operands.");
+        return false;
+    }
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    return vm_parser_emit_instruction(state, emitted_opcode, first, source, mnemonic_token);
+}
+
 /// Consumes an expected comma token.
 ///
 /// @param state Parser state to mutate.
@@ -6039,6 +6277,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         );
         return false;
     }
+    if (opcode == VM_IR_OPCODE_IMUL) {
+        return vm_parser_parse_imul_instruction(state, mnemonic_token);
+    }
+
     if (vm_parser_opcode_is_implicit_accumulator_source(opcode)) {
         source_token = destination_token;
         if (!vm_parser_parse_source_operand(state, &source)) {
@@ -6053,15 +6295,8 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             const VmLexerToken *extra_token = vm_parser_current_token(state);
             char message[160];
-            VmParserDiagnosticCode diagnostic_code = VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS;
-
-            if (opcode == VM_IR_OPCODE_IMUL && extra_token != NULL && extra_token->kind == VM_LEXER_TOKEN_COMMA) {
-                diagnostic_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM;
-                (void)snprintf(message, sizeof(message), "Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL.");
-            } else {
-                (void)snprintf(message, sizeof(message), "%s takes exactly one register or memory operand.", vm_parser_implicit_accumulator_mnemonic(opcode));
-            }
-            vm_parser_add_diagnostic(state, diagnostic_code, extra_token, message);
+            (void)snprintf(message, sizeof(message), "%s takes exactly one register or memory operand.", vm_parser_implicit_accumulator_mnemonic(opcode));
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, extra_token, message);
             return false;
         }
         if (!vm_parser_expect_line_end(state)) {

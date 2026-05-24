@@ -164,6 +164,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "mul";
         case VM_IR_OPCODE_IMUL:
             return "imul";
+        case VM_IR_OPCODE_IMUL_IMMEDIATE:
+            return "imul";
         case VM_IR_OPCODE_LEA:
             return "lea";
         case VM_IR_OPCODE_EXIT:

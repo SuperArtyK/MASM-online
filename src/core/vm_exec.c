@@ -2270,14 +2270,115 @@ static VmExecStatus vm_exec_execute_mul(Vm *vm, const VmIrInstruction *instructi
     return VM_EXEC_STATUS_OK;
 }
 
-/// Executes one signed IMUL instruction with implicit accumulator operands.
+/// Executes the common explicit-destination signed IMUL writeback path.
 ///
-/// IMUL reads one register or memory source. The selected source width chooses
-/// the implicit signed accumulator and double-width result registers: AL*r/m8
-/// writes AX, AX*r/m16 writes DX:AX, and EAX*r/m32 writes EDX:EAX. CF and OF
-/// are clear only when the signed product is exactly the sign extension of the
-/// lower result half; ZF and SF are preserved as deterministic educational
-/// behavior for architecturally undefined flags.
+/// The helper multiplies two signed operand-width values, writes the low
+/// operand-width result to the register destination, sets CF/OF when signed
+/// truncation loses significant bits, and preserves all other modeled flags.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction IMUL instruction descriptor used for write diagnostics.
+/// @param destination Register destination to receive the low result.
+/// @param left_value First signed input value before width interpretation.
+/// @param right_value Second signed input value before width interpretation.
+/// @param width_bits Operand width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_finish_explicit_imul(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *destination,
+    uint32_t left_value,
+    uint32_t right_value,
+    uint8_t width_bits
+) {
+    VmCpu before_cpu;
+    int64_t left_signed = 0;
+    int64_t right_signed = 0;
+    int64_t product = 0;
+    int64_t signed_min = 0;
+    int64_t signed_max = 0;
+    uint64_t product_bits = 0ULL;
+    uint32_t result = 0U;
+    bool significant_truncation = false;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || destination == NULL || destination->kind != VM_IR_OPERAND_REGISTER ||
+        !vm_exec_signed_min_for_width(width_bits, &signed_min) ||
+        !vm_exec_signed_max_for_width(width_bits, &signed_max)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    left_signed = vm_exec_signed_value_for_width(left_value, width_bits);
+    right_signed = vm_exec_signed_value_for_width(right_value, width_bits);
+    product = left_signed * right_signed;
+    product_bits = (uint64_t)product;
+    significant_truncation = product < signed_min || product > signed_max;
+    if (width_bits == 16U) {
+        result = (uint32_t)(product_bits & 0xFFFFULL);
+    } else if (width_bits == 32U) {
+        result = (uint32_t)(product_bits & 0xFFFFFFFFULL);
+    } else {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_write_operand(vm, instruction, destination, width_bits, result);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm->cpu = before_cpu;
+        return status;
+    }
+    if (!vm_cpu_write_flag(&vm->cpu, VM_FLAG_CF, significant_truncation) ||
+        !vm_cpu_write_flag(&vm->cpu, VM_FLAG_OF, significant_truncation)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Executes one explicit two-operand signed IMUL instruction.
+///
+/// This Phase 55 form multiplies a 16-bit or 32-bit register destination by a
+/// same-width register or memory source, stores only the low destination-width
+/// result back into the destination register, sets CF/OF on signed truncation,
+/// and preserves ZF/SF.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction IMUL instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_explicit_imul(Vm *vm, const VmIrInstruction *instruction) {
+    uint8_t width_bits = 0U;
+    uint32_t destination_value = 0U;
+    uint32_t source_value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_REGISTER ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source)) ||
+        !vm_exec_operand_width(&instruction->destination, &width_bits) ||
+        (width_bits != 16U && width_bits != 32U)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &destination_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    return vm_exec_finish_explicit_imul(vm, instruction, &instruction->destination, destination_value, source_value, width_bits);
+}
+
+/// Executes one signed IMUL instruction.
+///
+/// With no explicit destination this preserves the Phase 54 implicit-accumulator
+/// form. With a register destination this executes the Phase 55 two-operand
+/// form. Three-operand immediate forms use @ref vm_exec_execute_imul_immediate.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction IMUL instruction descriptor.
@@ -2301,8 +2402,10 @@ static VmExecStatus vm_exec_execute_imul(Vm *vm, const VmIrInstruction *instruct
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-    if (instruction->destination.kind != VM_IR_OPERAND_NONE ||
-        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source))) {
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE) {
+        return vm_exec_execute_explicit_imul(vm, instruction);
+    }
+    if (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source)) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
     if (!vm_exec_operand_width(&instruction->source, &width_bits) ||
@@ -2370,6 +2473,41 @@ static VmExecStatus vm_exec_execute_imul(Vm *vm, const VmIrInstruction *instruct
     }
 
     return VM_EXEC_STATUS_OK;
+}
+
+/// Executes one three-operand signed IMUL instruction with an immediate factor.
+///
+/// The parser stores the signed immediate's operand-width two's-complement bits
+/// in the destination operand's immediate field. The executor multiplies the
+/// register or memory source by that immediate and writes the low result to the
+/// 16-bit or 32-bit register destination.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction IMUL immediate instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_imul_immediate(Vm *vm, const VmIrInstruction *instruction) {
+    uint8_t width_bits = 0U;
+    uint32_t source_value = 0U;
+    uint32_t immediate_value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_REGISTER ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source)) ||
+        !vm_exec_operand_width(&instruction->destination, &width_bits) ||
+        (width_bits != 16U && width_bits != 32U)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &source_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    immediate_value = instruction->destination.immediate;
+
+    return vm_exec_finish_explicit_imul(vm, instruction, &instruction->destination, source_value, immediate_value, width_bits);
 }
 
 /// Executes the Irvine32 `exit` virtual terminator.
@@ -2530,6 +2668,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:
             return vm_exec_execute_imul(vm, instruction);
+        case VM_IR_OPCODE_IMUL_IMMEDIATE:
+            return vm_exec_execute_imul_immediate(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
         default:

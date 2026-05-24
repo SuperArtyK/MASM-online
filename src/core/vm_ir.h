@@ -80,8 +80,10 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ROR,
     /// Multiply the implicit unsigned accumulator by a register or memory source.
     VM_IR_OPCODE_MUL,
-    /// Multiply the implicit signed accumulator by a register or memory source.
+    /// Multiply the implicit signed accumulator, or multiply an explicit 16/32-bit register destination by a register or memory source.
     VM_IR_OPCODE_IMUL,
+    /// Multiply an explicit 16/32-bit register destination by a register or memory source and signed immediate.
+    VM_IR_OPCODE_IMUL_IMMEDIATE,
     /// Compute an effective address into a 32-bit register without reading memory.
     VM_IR_OPCODE_LEA,
     /// Terminate execution successfully for Irvine32 `exit`.

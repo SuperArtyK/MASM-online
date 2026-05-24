@@ -7344,8 +7344,8 @@ imul symbol[offset]
 
 ```asm
 imul 5
-imul eax, ebx       ; deferred to Phase 55 - Two- and Three-Operand IMUL
-imul eax, ebx, 5    ; deferred to Phase 55 - Two- and Three-Operand IMUL
+imul eax, ebx       ; implemented by Phase 55 - Two- and Three-Operand IMUL
+imul eax, ebx, 5    ; implemented by Phase 55 - Two- and Three-Operand IMUL
 imul [eax]          ; ambiguous width
 imul QWORD PTR q    ; executable QWORD/SQWORD memory operation remains deferred
 ```
@@ -7376,7 +7376,7 @@ IMUL r/m32:  EDX:EAX = signed(EAX) * signed(r/m32)
 - Explicit `PTR [reg32]` memory source.
 - Readable `.CONST` memory source.
 - Invalid-address runtime diagnostic for register-indirect source.
-- Two-/three-operand forms produce `unsupported-instruction-form` until **Phase 55 - Two- and Three-Operand IMUL**.
+- Two-/three-operand forms are implemented and tested by **Phase 55 - Two- and Three-Operand IMUL**.
 - No memory-change rows are produced by memory-source reads.
 
 ### Acceptance program
