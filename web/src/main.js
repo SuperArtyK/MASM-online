@@ -1,13 +1,19 @@
 /*
  * @file main.js
- * @brief Browser UI wiring for Milestone 17 source execution.
+ * @brief Browser UI wiring for source execution and diagnostic settings.
  *
  * This module keeps parsing and VM work in the Web Worker. The main thread only
- * sends editor source, renders final register state, and displays structured
- * simulator messages returned by the worker.
+ * sends editor source and diagnostic settings, renders final register state,
+ * and displays structured simulator messages returned by the worker.
  */
 
 import { formatMemoryChanges, formatRegisters, formatSimulatorMessages } from "./formatters.js";
+import {
+  COMPATIBILITY_NOTICES_ON,
+  MEMORY_RANGE_REGION_ONLY,
+  TEACHING_DIAGNOSTIC_WARN,
+  defaultDiagnosticSettings
+} from "./settings.js";
 
 /**
  * Appends a line to a preformatted UI panel.
@@ -60,6 +66,21 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
   setPanelText(memoryChanges, formatMemoryChanges(changes));
 }
 
+/**
+ * Reads the selected Phase 53E diagnostic settings from the browser controls.
+ *
+ * @returns {import("./settings.js").DiagnosticSettings} Settings payload for RUN_SOURCE.
+ */
+function readDiagnosticSettings() {
+  const defaults = defaultDiagnosticSettings();
+  return {
+    memoryRange: memoryRangeSetting.value || defaults.memoryRange,
+    uninitializedReads: uninitializedReadsSetting.value || defaults.uninitializedReads,
+    undefinedFlagUse: undefinedFlagUseSetting.value || defaults.undefinedFlagUse,
+    compatibilityNotices: compatibilityNoticesSetting.value || defaults.compatibilityNotices
+  };
+}
+
 const simulatorMessages = document.getElementById("simulator-messages");
 const programConsole = document.getElementById("program-console");
 const finalRegisters = document.getElementById("final-registers");
@@ -67,10 +88,20 @@ const memoryChanges = document.getElementById("memory-changes");
 const editor = document.getElementById("editor");
 const pingButton = document.getElementById("ping-button");
 const runButton = document.getElementById("run-button");
+const memoryRangeSetting = document.getElementById("memory-range-setting");
+const uninitializedReadsSetting = document.getElementById("uninitialized-reads-setting");
+const undefinedFlagUseSetting = document.getElementById("undefined-flag-use-setting");
+const compatibilityNoticesSetting = document.getElementById("compatibility-notices-setting");
 
-if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton) {
-  throw new Error("Milestone 17 UI elements are missing.");
+if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton ||
+    !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting) {
+  throw new Error("Required simulator UI elements are missing.");
 }
+
+memoryRangeSetting.value = MEMORY_RANGE_REGION_ONLY;
+uninitializedReadsSetting.value = TEACHING_DIAGNOSTIC_WARN;
+undefinedFlagUseSetting.value = TEACHING_DIAGNOSTIC_WARN;
+compatibilityNoticesSetting.value = COMPATIBILITY_NOTICES_ON;
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
 
@@ -110,7 +141,8 @@ runButton.addEventListener("click", () => {
   worker.postMessage({
     type: "RUN_SOURCE",
     payload: {
-      source: editor.value
+      source: editor.value,
+      diagnosticSettings: readDiagnosticSettings()
     }
   });
 });

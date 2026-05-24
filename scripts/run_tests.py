@@ -131,6 +131,7 @@ def run_structure_tests() -> None:
         "web/src/main.js",
         "web/src/worker.js",
         "web/src/protocol.js",
+        "web/src/settings.js",
         "scripts/build_wasm.sh",
         "scripts/windows/build_wasm.cmd",
         "scripts/windows/clean_wasm.cmd",
@@ -150,6 +151,7 @@ def run_structure_tests() -> None:
         "tests/core/test_data_section.c",
         "tests/core/test_object_map.c",
         "tests/web/test_protocol.mjs",
+        "tests/web/test_settings.mjs",
         "tests/web/test_formatters.mjs",
         "tests/web/test_diagnostic_rendering.mjs",
         "tests/core/diagnostic_json_producer.c",
@@ -172,6 +174,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "src/parser")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json")
+    assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_settings")
     assert_text_contains("scripts/windows/build_wasm.cmd", "EMSDK_ROOT")
     assert_text_contains("scripts/windows/build_wasm.cmd", "emsdk_env.bat")
     assert_text_contains("scripts/windows/build_wasm.cmd", "-std=c99")
@@ -191,6 +194,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "src\\parser")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_settings")
     assert_text_contains("scripts/windows/clean_wasm.cmd", "masm32_sim_core.wasm")
     assert_text_contains("scripts/windows/serve_web.cmd", "serve_web.ps1")
     assert_text_contains("scripts/windows/serve_web.ps1", "http.server")
@@ -215,6 +219,8 @@ def run_structure_tests() -> None:
     assert_text_contains("web/src/worker.js", "_masm32_sim_wasm_run_source_json")
     assert_text_contains("web/src/protocol.js", "RUN_SOURCE")
     assert_text_contains("web/src/protocol.js", "RUN_RESULT")
+    assert_text_contains("web/src/settings.js", "DEFAULT_DIAGNOSTIC_SETTINGS")
+    assert_text_contains("web/src/settings.js", "normalizeDiagnosticSettings")
     assert_text_contains("web/src/formatters.js", "formatRegisters")
     assert_text_contains("web/src/formatters.js", "formatSimulatorMessages")
     assert_text_contains("web/src/formatters.js", "formatMemoryChanges")
@@ -308,6 +314,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_exec.c", "vm_exec_execute_not")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json")
+    assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_ui_settings")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmMemoryValidationMode")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_memory_validation_mode")
     assert_text_contains("src/wasm/wasm_api.c", "/// Appends compact JSON")
@@ -475,7 +482,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 53C default teaching diagnostics coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 53E diagnostic setting coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -492,6 +499,10 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53c_default_undefined_flag_use_warns_and_continues")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 53C renders default uninitialized-read warning exactly")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 53C renders default undefined flag-use warning exactly")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53d_default_compatibility_notices_continue_execution")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53d_notice_plus_error_still_blocks_execution")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53e_ui_settings_route_to_existing_policies")
+    assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 53D renders compatibility notices exactly")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "Phase 51 renders instruction-family diagnostic smoke lines exactly")
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "runPhase51RenderedDiagnosticSmoke")
     assert_text_contains("scripts/run_tests.py", "report_phase51_smoke_harness_status")
@@ -784,6 +795,7 @@ def run_js_tests() -> None:
     if shutil.which("node") is None:
         raise TestFailure("node is required for JavaScript and diagnostic rendering tests")
     run_command(["node", "tests/web/test_protocol.mjs"])
+    run_command(["node", "tests/web/test_settings.mjs"])
     run_command(["node", "tests/web/test_formatters.mjs"])
 
     diagnostic_env = os.environ.copy()

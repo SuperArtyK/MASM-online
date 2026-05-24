@@ -169,6 +169,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
     /// A recognized Irvine32 virtual symbol was used before its routine implementation exists.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE,
+    /// An accepted compatibility construct has no runtime effect in the simulator.
+    VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP,
+    /// An accepted compatibility construct records metadata without full runtime behavior.
+    VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
+    /// An accepted compatibility construct provides limited virtual behavior only.
+    VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -190,8 +196,10 @@ typedef enum VmIrvine32SymbolClass {
 
 /// Identifies whether a parser diagnostic blocks execution.
 typedef enum VmParserDiagnosticSeverity {
+    /// Informational notice diagnostic; execution may continue if no errors exist.
+    VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE = 0,
     /// Warning diagnostic; execution may continue if no errors exist.
-    VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING = 0,
+    VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING,
     /// Error diagnostic; execution must not start.
     VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR
 } VmParserDiagnosticSeverity;
@@ -264,6 +272,8 @@ typedef struct VmParserConfig {
     VmParserDiagnostic *diagnostics;
     /// Number of entries available in @ref diagnostics; this also bounds recovery diagnostics.
     size_t diagnostic_capacity;
+    /// Suppresses accepted compatibility no-op, metadata-only, and limited-behavior notices.
+    bool suppress_compatibility_notices;
 } VmParserConfig;
 
 /// Summarizes one parse attempt.

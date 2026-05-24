@@ -1390,6 +1390,30 @@ static bool vm_parser_add_diagnostic_with_severity(
     return true;
 }
 
+/// Returns whether one diagnostic code is a suppressible compatibility notice.
+///
+/// @param code Diagnostic code to inspect.
+/// @return true for Phase 53D compatibility notice codes.
+static bool vm_parser_diagnostic_code_is_compatibility_notice(VmParserDiagnosticCode code) {
+    return code == VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP ||
+        code == VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY ||
+        code == VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED;
+}
+
+/// Returns whether a compatibility notice should be omitted for this parse.
+///
+/// @param state Parser state whose configuration should be inspected.
+/// @param code Diagnostic code about to be recorded.
+/// @return true when the notice is compatibility-only and the caller opted out.
+static bool vm_parser_should_suppress_compatibility_notice(
+    const VmParserState *state,
+    VmParserDiagnosticCode code
+) {
+    return state != NULL && state->config != NULL &&
+        state->config->suppress_compatibility_notices &&
+        vm_parser_diagnostic_code_is_compatibility_notice(code);
+}
+
 /// @param state Parser state whose diagnostic buffer should receive the entry.
 /// @param code Diagnostic code.
 /// @param token Optional token associated with the diagnostic.
@@ -1418,6 +1442,26 @@ static bool vm_parser_add_warning(
     const char *message
 ) {
     return vm_parser_add_diagnostic_with_severity(state, code, VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING, token, message);
+}
+
+/// Records one non-fatal parser notice.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Optional token associated with the notice.
+/// @param message Static notice message.
+/// @return true when the notice was recorded.
+static bool vm_parser_add_notice(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+) {
+    if (vm_parser_should_suppress_compatibility_notice(state, code)) {
+        return true;
+    }
+
+    return vm_parser_add_diagnostic_with_severity(state, code, VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE, token, message);
 }
 
 /// Records one parser diagnostic whose message includes parse-specific values.
@@ -1450,6 +1494,55 @@ static bool vm_parser_add_formatted_diagnostic(
     memset(diagnostic, 0, sizeof(*diagnostic));
     diagnostic->code = code;
     diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+
+    va_start(args, format);
+    (void)vsnprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), format, args);
+    va_end(args);
+    diagnostic->message = diagnostic->message_storage;
+
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Records one parser notice whose message includes parse-specific values.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Optional token associated with the notice.
+/// @param format printf-style message format.
+/// @return true when the notice was recorded.
+static bool vm_parser_add_formatted_notice(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *format,
+    ...
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+    va_list args;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || format == NULL) {
+        return false;
+    }
+
+    if (vm_parser_should_suppress_compatibility_notice(state, code)) {
+        return true;
+    }
+
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE;
     if (token != NULL) {
         diagnostic->location = token->location;
         diagnostic->lexeme = token->lexeme;
@@ -6337,6 +6430,16 @@ static void vm_parser_advance_many(VmParserState *state, size_t count) {
 /// @param state Parser state to mutate.
 /// @return true when the line was accepted.
 static bool vm_parser_parse_processor_directive(VmParserState *state) {
+    const VmLexerToken *processor_token = vm_parser_current_token(state);
+
+    (void)vm_parser_add_formatted_notice(
+        state,
+        VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP,
+        processor_token,
+        "%.*s is accepted for MASM compatibility but does not change the simulator CPU mode.",
+        (int)(processor_token != NULL ? processor_token->lexeme_length : 0U),
+        processor_token != NULL && processor_token->lexeme != NULL ? processor_token->lexeme : ""
+    );
     vm_parser_advance(state);
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);
@@ -6359,6 +6462,12 @@ static bool vm_parser_parse_model_directive(VmParserState *state) {
 
     if (vm_parser_header_token_equals(flat_token, "flat") && comma_token != NULL && comma_token->kind == VM_LEXER_TOKEN_COMMA &&
         vm_parser_header_token_equals(stdcall_token, "stdcall") && vm_parser_is_line_end_token(tail_token)) {
+        (void)vm_parser_add_notice(
+            state,
+            VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED,
+            model_token,
+            ".model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior."
+        );
         vm_parser_advance_many(state, 4U);
         (void)vm_parser_expect_line_end(state);
         return true;
@@ -6385,6 +6494,12 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
 
     vm_parser_advance(state);
     if (vm_parser_is_line_end_token(size_token)) {
+        (void)vm_parser_add_notice(
+            state,
+            VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
+            stack_token,
+            ".stack is accepted as stack metadata, but it does not by itself execute stack instructions or create procedure frames."
+        );
         return vm_parser_expect_line_end(state);
     }
 
@@ -6407,6 +6522,12 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
         state->result->has_requested_stack_size = true;
         state->result->requested_stack_size = (uint32_t)expression.value;
     }
+    (void)vm_parser_add_notice(
+        state,
+        VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
+        stack_token,
+        ".stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred."
+    );
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);
     }
@@ -6451,6 +6572,14 @@ static bool vm_parser_parse_include_directive(VmParserState *state) {
         if (is_irvine32_include && state != NULL && state->result != NULL) {
             state->result->has_irvine32_virtual_include = true;
             state->result->irvine32_virtual_symbol_count = vm_parser_irvine32_registry_symbol_count();
+        }
+        if (!is_irvine32_include) {
+            (void)vm_parser_add_notice(
+                state,
+                VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED,
+                include_token,
+                "INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase."
+            );
         }
         if (extension_token != NULL && extension_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
             vm_parser_advance_many(state, 3U);
@@ -6536,6 +6665,16 @@ static bool vm_parser_parse_option_directive(VmParserState *state) {
 /// @param state Parser state to mutate.
 /// @return true after the directive line is consumed.
 static bool vm_parser_parse_listing_noop_directive(VmParserState *state) {
+    const VmLexerToken *listing_token = vm_parser_current_token(state);
+
+    (void)vm_parser_add_formatted_notice(
+        state,
+        VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP,
+        listing_token,
+        "%.*s is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+        (int)(listing_token != NULL ? listing_token->lexeme_length : 0U),
+        listing_token != NULL && listing_token->lexeme != NULL ? listing_token->lexeme : ""
+    );
     vm_parser_recover_skip_line(state);
     return true;
 }
@@ -6656,6 +6795,17 @@ static bool vm_parser_parse_header_line_if_recognized(VmParserState *state) {
         if (processor_token != NULL && processor_token->kind == VM_LEXER_TOKEN_NUMBER && !processor_token->number_is_negative &&
             (processor_token->number_value == 386U || processor_token->number_value == 486U ||
              processor_token->number_value == 586U || processor_token->number_value == 686U)) {
+            if (vm_parser_add_formatted_notice(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP,
+                    token,
+                    ".%llu is accepted for MASM compatibility but does not change the simulator CPU mode.",
+                    (unsigned long long)processor_token->number_value
+                ) && state != NULL && state->config != NULL && state->result != NULL &&
+                state->result->diagnostic_count > 0U && state->config->diagnostics != NULL) {
+                VmParserDiagnostic *notice = &state->config->diagnostics[state->result->diagnostic_count - 1U];
+                notice->lexeme_length = (processor_token->location.offset + processor_token->lexeme_length) - token->location.offset;
+            }
             vm_parser_advance_many(state, 2U);
             if (!vm_parser_expect_line_end(state)) {
                 vm_parser_recover_skip_line(state);
@@ -7123,6 +7273,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-instruction-operands";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE:
             return "unsupported-irvine32-routine";
+        case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP:
+            return "compatibility-no-op";
+        case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY:
+            return "compatibility-metadata-only";
+        case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED:
+            return "compatibility-limited";
         default:
             return NULL;
     }
@@ -7130,6 +7286,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
 
 const char *vm_parser_diagnostic_severity_name(VmParserDiagnosticSeverity severity) {
     switch (severity) {
+        case VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE:
+            return "notice";
         case VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING:
             return "warning";
         case VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR:

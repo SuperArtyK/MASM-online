@@ -383,7 +383,7 @@ For one command only on Linux:
 MASM32_DIAGNOSTIC_MEMORY_VALIDATION=allocated-object-warnings ./build/tests/diagnostic_json_producer program.asm
 ```
 
-Reset to Phase 53C teaching defaults:
+Reset to Phase 53C/53D/53E default teaching diagnostics and compatibility notices:
 
 CMD:
 
@@ -410,12 +410,19 @@ MASM32_DIAGNOSTIC_MEMORY_VALIDATION=off ./build/tests/diagnostic_json_producer p
 ```
 
 Undefined modeled-flag consumer diagnostics also default to warnings after
-Phase 53C. To preserve the older silent consumer behavior in a local diagnostic
+Phase 53C. Phase 53D also emits default `simulator-notice` compatibility messages for accepted no-op, metadata-only, and limited-behavior MASM constructs. Phase 53E exposes these policies in the browser UI as local page-session settings while preserving the same backend defaults. To preserve the older silent consumer behavior in a local diagnostic
 producer run, set:
 
 ```text
 MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE=off
 ```
+
+
+### Compatibility notices
+
+After Phase 53D, accepted MASM compatibility constructs such as `.686`, `.model flat, stdcall`, `.stack 4096`, `INCLUDE Macros.inc`, `TITLE`, `SUBTITLE`, and `PAGE` emit non-fatal `simulator-notice` messages by default. These notices are informational, do not write Program Console output, and do not change VM execution. Active semantic constructs such as `INCLUDE Irvine32.inc`, `OPTION CASEMAP`, `.DATA?`, and `.CONST` are not reported as generic no-ops.
+
+After Phase 53E, browser users can turn compatibility notices off and can select the existing memory range validation, uninitialized-read, and undefined-flag-use policies from the page. These browser settings are local preferences for the page session; share URLs are not implemented yet and do not currently encode diagnostic settings. The default browser profile remains region-only memory validation, uninitialized-read warn, undefined-flag-use warn, and compatibility notices on.
 
 ### Layout mode
 
@@ -795,7 +802,7 @@ Stop the Python server with `Ctrl+C` in the terminal where it is running.
 
 After serving, open the local URL printed by the script or server and run manual browser programs in the editor.
 
-Milestone 37 note: the browser currently uses default region-only memory validation and does not expose the allocated-object warning mode. Use the native diagnostic producer for Milestone 37 manual checks until a future UI/settings milestone adds a toggle.
+Milestone 37 note: allocated-object warning/strict validation began as a test/configuration-facing mode. After Phase 53E, the browser diagnostic settings panel exposes the same existing declared-object bounds warning and strict-stop policies as optional Memory range validation choices. Default browser execution remains region-only.
 
 ## 9. Troubleshooting
 
@@ -878,4 +885,4 @@ MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION=off|warn|strict
 MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION=off|warn|strict
 ```
 
-`warn` emits `section-capacity-violation` or `section-image-violation` as a simulator warning and continues when Level 1 memory validation succeeds. `strict` emits the same code as a runtime error before mutation. These controls are test/source-run plumbing only; Milestone 53B does not add browser UI settings, and Phase 53C still leaves section-capacity and section-image validation off by default.
+`warn` emits `section-capacity-violation` or `section-image-violation` as a simulator warning and continues when Level 1 memory validation succeeds. `strict` emits the same code as a runtime error before mutation. Milestone 53B added these controls to the test/source-run path. Phase 53E exposes the same existing section-capacity and section-image policies in the browser Memory range validation setting. Defaults still leave section-capacity and section-image validation off unless the user selects one of those modes.

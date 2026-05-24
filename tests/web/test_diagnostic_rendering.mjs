@@ -3438,6 +3438,155 @@ test("renders unsupported CASEMAP NOTPUBLIC diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-option line 1, column 16, byte offset 15, span length 9: OPTION CASEMAP:NOTPUBLIC is unsupported because public/external linkage semantics are not implemented.");
 });
 
+
+test("Phase 53D renders compatibility notices exactly", () => {
+  const source = `.686
+.model flat, stdcall
+.stack 4096
+INCLUDE Macros.inc
+TITLE Notice Sample
+PAGE 60, 132
+.code
+main PROC
+    mov eax, 42
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase53d-compatibility-notices", source);
+  assertRunStatus(json, true, "ok");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "compatibility-no-op",
+      message: ".686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
+      line: 1,
+      column: 1,
+      byteOffset: 0,
+      spanLength: 4
+    },
+    {
+      kind: "simulator-notice",
+      code: "compatibility-limited",
+      message: ".model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
+      line: 2,
+      column: 1,
+      byteOffset: 5,
+      spanLength: 6
+    },
+    {
+      kind: "simulator-notice",
+      code: "compatibility-metadata-only",
+      message: ".stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred.",
+      line: 3,
+      column: 1,
+      byteOffset: 26,
+      spanLength: 6
+    },
+    {
+      kind: "simulator-notice",
+      code: "compatibility-limited",
+      message: "INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
+      line: 4,
+      column: 1,
+      byteOffset: 38,
+      spanLength: 7
+    },
+    {
+      kind: "simulator-notice",
+      code: "compatibility-no-op",
+      message: "TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+      line: 5,
+      column: 1,
+      byteOffset: 57,
+      spanLength: 5
+    },
+    {
+      kind: "simulator-notice",
+      code: "compatibility-no-op",
+      message: "PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+      line: 6,
+      column: 1,
+      byteOffset: 77,
+      spanLength: 4
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals("phase53d-compatibility-notices", source, rawJson, rendered, [
+    "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
+    "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred.",
+    "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
+    "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+    "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("Phase 53D active semantic constructs do not render compatibility notices", () => {
+  const source = `INCLUDE Irvine32.inc
+OPTION CASEMAP:ALL
+.DATA?
+buf DWORD ?
+.CONST
+limit DWORD 1
+.code
+main PROC
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase53d-active-semantics-no-notices", source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.virtualIncludes.irvine32, true, rawJson);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals("phase53d-active-semantics-no-notices", source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 53D renders compatibility notice before blocking assembly error", () => {
+  const source = `.686
+.model small, c
+.code
+main PROC
+    mov eax, 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase53d-notice-plus-error", source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "compatibility-no-op",
+      message: ".686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
+      line: 1,
+      column: 1,
+      byteOffset: 0,
+      spanLength: 4
+    },
+    {
+      kind: "assembly-error",
+      code: "unsupported-model",
+      message: ".model form is unsupported. Use `.model flat, stdcall` in MASM32 Educational Mode.",
+      line: 2,
+      column: 1,
+      byteOffset: 5,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase53d-notice-plus-error", source, rawJson, rendered, "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.\n[assembly-error] unsupported-model line 2, column 1, byte offset 5, span length 6: .model form is unsupported. Use `.model flat, stdcall` in MASM32 Educational Mode.");
+});
+
 test("Phase 52A formats source-run register signed display from existing JSON", () => {
   const source = `.code
 main PROC

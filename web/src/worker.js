@@ -7,11 +7,12 @@
  */
 
 import { createReadyMessage, handleWorkerRequest } from "./protocol.js";
+import { defaultDiagnosticSettings, diagnosticSettingsToBackendArguments } from "./settings.js";
 
 /** Path to the Emscripten-generated ES module, relative to this worker module. */
 const WASM_MODULE_PATH = "../dist/masm32_sim_core.js";
 
-/** @type {{runSource?: (source: string) => unknown}} */
+/** @type {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} */
 const workerRuntime = {};
 
 /**
@@ -32,15 +33,56 @@ function createNotBuiltWasmInfo() {
  * Creates a JavaScript source-runner around the C source-run export.
  *
  * @param {object} moduleInstance Initialized Emscripten module instance.
- * @returns {(source: string) => unknown} Function that runs source and returns parsed JSON.
+ * @returns {(source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown} Function that runs source and returns parsed JSON.
  */
 function createRunSourceFunction(moduleInstance) {
-  return (source) => {
+  const defaultBackendSettings = diagnosticSettingsToBackendArguments(defaultDiagnosticSettings());
+  return (source, backendSettings) => {
+    const settings = {
+      ...defaultBackendSettings,
+      ...(backendSettings || {})
+    };
+    const hasUiSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_settings === "function";
+    const usesNonDefaultSettings = settings.memoryRange !== defaultBackendSettings.memoryRange ||
+      settings.uninitializedReads !== defaultBackendSettings.uninitializedReads ||
+      settings.undefinedFlagUse !== defaultBackendSettings.undefinedFlagUse ||
+      settings.compatibilityNotices !== defaultBackendSettings.compatibilityNotices;
+    if (!hasUiSettingsExport && usesNonDefaultSettings) {
+      return {
+        ok: false,
+        status: "ui-error",
+        simulatorMessages: [
+          {
+            kind: "ui-error",
+            code: "stale-wasm-artifact",
+            message: "The loaded Wasm artifact does not expose Phase 53E diagnostic settings. Rebuild web/dist with the Emscripten build script."
+          }
+        ],
+        registers: {},
+        memoryChanges: []
+      };
+    }
+
+    const exportName = hasUiSettingsExport
+      ? "masm32_sim_wasm_run_source_json_with_ui_settings"
+      : "masm32_sim_wasm_run_source_json";
+    const argTypes = exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
+      ? ["string", "number", "number", "number", "number"]
+      : ["string"];
+    const args = exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
+      ? [
+          source,
+          settings.memoryRange,
+          settings.uninitializedReads,
+          settings.undefinedFlagUse,
+          settings.compatibilityNotices
+        ]
+      : [source];
     const json = moduleInstance.ccall(
-      "masm32_sim_wasm_run_source_json",
+      exportName,
       "string",
-      ["string"],
-      [source]
+      argTypes,
+      args
     );
     return JSON.parse(json);
   };

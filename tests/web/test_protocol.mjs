@@ -8,6 +8,12 @@
 
 import assert from "node:assert/strict";
 import { IMPLEMENTED_PHASE, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
+import {
+  COMPATIBILITY_NOTICES_OFF,
+  MEMORY_RANGE_DECLARED_OBJECT_WARN,
+  TEACHING_DIAGNOSTIC_OFF,
+  TEACHING_DIAGNOSTIC_STRICT
+} from "../../web/src/settings.js";
 
 /**
  * Runs one named protocol test.
@@ -71,12 +77,18 @@ test("PING without payload returns null receivedPayload", () => {
   });
 });
 
-test("RUN_SOURCE dispatches to runtime and returns RUN_RESULT", () => {
+test("RUN_SOURCE dispatches to runtime with default diagnostic settings and returns RUN_RESULT", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
-      runSource(source) {
+      runSource(source, backendSettings) {
         assert.equal(source.includes(".code"), true);
+        assert.deepEqual(backendSettings, {
+          memoryRange: 0,
+          uninitializedReads: 1,
+          undefinedFlagUse: 1,
+          compatibilityNotices: 1
+        });
         return {
           ok: true,
           registers: {
@@ -98,6 +110,64 @@ test("RUN_SOURCE dispatches to runtime and returns RUN_RESULT", () => {
       simulatorMessages: []
     }
   });
+});
+
+test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".code\nmain PROC\nEND main\n",
+        diagnosticSettings: {
+          memoryRange: MEMORY_RANGE_DECLARED_OBJECT_WARN,
+          uninitializedReads: TEACHING_DIAGNOSTIC_OFF,
+          undefinedFlagUse: TEACHING_DIAGNOSTIC_STRICT,
+          compatibilityNotices: COMPATIBILITY_NOTICES_OFF
+        }
+      }
+    },
+    {
+      runSource(source, backendSettings) {
+        assert.equal(source.includes("END main"), true);
+        assert.deepEqual(backendSettings, {
+          memoryRange: 5,
+          uninitializedReads: 0,
+          undefinedFlagUse: 2,
+          compatibilityNotices: 0
+        });
+        return { ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, true);
+});
+
+test("RUN_SOURCE invalid diagnostic setting returns renderable ui-error", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".code\nmain PROC\nEND main\n",
+        diagnosticSettings: {
+          undefinedFlagUse: "loud"
+        }
+      }
+    },
+    {
+      runSource() {
+        throw new Error("runtime should not be called for invalid settings");
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, false);
+  assert.equal(response.payload.status, "ui-error");
+  assert.equal(response.payload.simulatorMessages[0].kind, "ui-error");
+  assert.equal(response.payload.simulatorMessages[0].code, "invalid-diagnostic-setting");
+  assert.equal(response.payload.simulatorMessages[0].setting, "undefinedFlagUse");
 });
 
 test("RUN_SOURCE marks stale Wasm artifacts", () => {

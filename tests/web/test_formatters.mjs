@@ -190,6 +190,16 @@ test("formats simulator messages with byte offset and span length", () => {
   ]), "[assembly-error] invalid-hex-literal line 3, column 14, byte offset 29, span length 2: Invalid hexadecimal literal.");
 });
 
+test("formats Phase 53E UI setting errors through Simulator Messages", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "ui-error",
+      code: "invalid-diagnostic-setting",
+      message: "Invalid diagnostic setting 'memoryRange'. Accepted values: region-only."
+    }
+  ]), "[ui-error] invalid-diagnostic-setting: Invalid diagnostic setting 'memoryRange'. Accepted values: region-only.");
+});
+
 test("formats empty simulator messages", () => {
   assert.equal(formatSimulatorMessages([]), "No simulator messages.");
 });

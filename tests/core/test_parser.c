@@ -143,6 +143,27 @@ static int expect_parser_diagnostic_code(VmParserDiagnosticCode actual, VmParser
     return 0;
 }
 
+/// Verifies that two parser diagnostic severities are equal.
+///
+/// @param actual Actual diagnostic severity.
+/// @param expected Expected diagnostic severity.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_parser_diagnostic_severity(VmParserDiagnosticSeverity actual, VmParserDiagnosticSeverity expected, const char *message) {
+    if (actual != expected) {
+        fprintf(
+            stderr,
+            "FAIL: %s (actual=%s expected=%s)\n",
+            message,
+            vm_parser_diagnostic_severity_name(actual),
+            vm_parser_diagnostic_severity_name(expected)
+        );
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Verifies that a C string equals an expected value.
 ///
 /// @param actual Actual string pointer.
@@ -1546,8 +1567,13 @@ static int test_phase26_header_directives_parse_before_sections(void) {
         "END main\n";
     VmParserStatus status = parse_for_test(source, &buffers, &result);
 
-    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 26 headers should parse before .data/.code");
-    failures += expect_size(result.diagnostic_count, 0U, "Phase 26 accepted headers should not produce diagnostics");
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 26 headers should parse before .data/.code with Phase 53D notices");
+    failures += expect_size(result.diagnostic_count, 10U, "Phase 53D notice-producing accepted headers should emit ten notices");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, "Processor directive notice should use compatibility-no-op");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[4].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, ".model notice should use compatibility-limited");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[5].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY, ".stack notice should use compatibility-metadata-only");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[6].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, "Macros.inc notice should use compatibility-limited");
+    failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE, "Compatibility diagnostics should be notices");
     failures += expect_size(result.instruction_count, 1U, "Phase 26 header sample should emit one instruction");
     failures += expect_size(result.symbol_count, 1U, "Phase 26 header sample should retain data symbols");
     if (!result.has_requested_stack_size) {
@@ -1577,8 +1603,11 @@ static int test_phase26_header_directive_edge_cases(void) {
         "END main\n";
     VmParserStatus status = parse_for_test(source, &buffers, &result);
 
-    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Mixed-case Phase 26 headers should parse");
-    failures += expect_size(result.diagnostic_count, 0U, "Mixed-case Phase 26 headers should not produce diagnostics");
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Mixed-case Phase 26 headers should parse with Phase 53D notices");
+    failures += expect_size(result.diagnostic_count, 3U, "Mixed-case notice-producing headers should produce three notices");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, "Mixed-case processor directive notice should use compatibility-no-op");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, "Mixed-case .model notice should use compatibility-limited");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY, "Mixed-case .stack notice should use compatibility-metadata-only");
     if (result.has_requested_stack_size) {
         failures += record_failure(".stack without size should not request a runtime stack size yet");
     }
@@ -1617,6 +1646,93 @@ static int test_phase26_header_directive_error_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "ASSUME should remain an unsupported-feature diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".STARTUP should remain an unsupported-feature diagnostic");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".LIST should remain an unsupported-feature diagnostic");
+
+    return failures;
+}
+
+
+/// Verifies Phase 53D compatibility notice diagnostics for accepted header constructs.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase53d_compatibility_notice_parser_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        ".686\n"
+        ".model flat, stdcall\n"
+        ".stack 4096\n"
+        "INCLUDE Macros.inc\n"
+        "TITLE Notice Sample\n"
+        "SUBTITLE Notice Details\n"
+        "PAGE 60, 132\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 53D accepted compatibility constructs should parse with notices");
+    failures += expect_size(result.diagnostic_count, 7U, "Phase 53D sample should emit one notice per notice-producing construct");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, ".686 should emit compatibility-no-op");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, ".model should emit compatibility-limited");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY, ".stack size should emit compatibility-metadata-only");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[3].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, "Macros.inc should emit compatibility-limited");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[4].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, "TITLE should emit compatibility-no-op");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[5].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, "SUBTITLE should emit compatibility-no-op");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[6].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP, "PAGE should emit compatibility-no-op");
+    failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE, "Compatibility diagnostics should be informational notices");
+    failures += expect_size(buffers.diagnostics[0].location.line, 1U, ".686 notice should preserve line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, ".686 notice should preserve column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 0U, ".686 notice should preserve byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, ".686 notice should preserve source span length");
+    failures += expect_string_contains(buffers.diagnostics[0].message, ".686 is accepted", "Processor notice should name the accepted directive");
+    failures += expect_string_contains(buffers.diagnostics[4].message, "TITLE is accepted", "Listing notice should name TITLE");
+    failures += expect_string_contains(buffers.diagnostics[5].message, "SUBTITLE is accepted", "Listing notice should name SUBTITLE");
+    failures += expect_string_contains(buffers.diagnostics[6].message, "PAGE is accepted", "Listing notice should name PAGE");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "runtime stack instructions", ".stack notice should describe deferred runtime stack behavior");
+    failures += expect_string_contains(buffers.diagnostics[3].message, "macro expansion", "Macros.inc notice should describe macro expansion limitation");
+
+    return failures;
+}
+
+/// Verifies active semantic constructs do not receive generic Phase 53D no-op notices.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase53d_active_semantics_do_not_emit_noop_notices(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *irvine_source =
+        "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:ALL\n"
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        ".CONST\n"
+        "limit DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *casemap_none_source =
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "Value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, Value\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(irvine_source, &buffers, &result), VM_PARSER_STATUS_OK, "Active semantic constructs should parse without generic compatibility notices");
+    failures += expect_size(result.diagnostic_count, 0U, "Irvine32 include, CASEMAP:ALL, .DATA?, .CONST, .code, PROC, ENDP, and END should not emit generic notices");
+    if (!result.has_irvine32_virtual_include) {
+        failures += record_failure("Irvine32 include should still populate virtual include metadata");
+    }
+
+    failures += expect_parser_status(parse_for_test(casemap_none_source, &buffers, &result), VM_PARSER_STATUS_OK, "CASEMAP:NONE active semantics should parse without generic compatibility notices");
+    failures += expect_size(result.diagnostic_count, 0U, "OPTION CASEMAP:NONE should not emit a generic compatibility notice");
 
     return failures;
 }
@@ -1856,7 +1972,10 @@ static int test_phase41_virtual_irvine32_include_records_registry(void) {
         &buffers,
         &result
     );
-    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Macros.inc virtual no-op should still parse");
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Macros.inc virtual include should still parse with a Phase 53D notice");
+    failures += expect_size(result.diagnostic_count, 1U, "Macros.inc should emit one compatibility notice");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, "Macros.inc notice should use compatibility-limited");
+    failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE, "Macros.inc diagnostic should be informational");
     if (result.has_irvine32_virtual_include) {
         failures += record_failure("Macros.inc should not populate Irvine32 registry metadata");
     }
@@ -3035,7 +3154,9 @@ static int test_phase42_irvine32_exit_terminator_parser_paths(void) {
     failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "exit operand diagnostic should explain zero-operand form");
 
     failures += expect_parser_status(parse_for_test(macros_only_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Macros.inc alone should not enable exit");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION, "Macros.inc alone should leave exit unknown");
+    failures += expect_size(result.diagnostic_count, 2U, "Macros.inc plus exit should emit one notice and one assembly diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED, "Macros.inc alone should emit its compatibility notice");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_INSTRUCTION, "Macros.inc alone should leave exit unknown");
 
     return failures;
 }
@@ -3916,6 +4037,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE), "unsupported-irvine32-routine") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported Irvine32 routine diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP), "compatibility-no-op") != 0) {
+        failures += record_failure("parser diagnostic helper should name compatibility no-op notices");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY), "compatibility-metadata-only") != 0) {
+        failures += record_failure("parser diagnostic helper should name compatibility metadata-only notices");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED), "compatibility-limited") != 0) {
+        failures += record_failure("parser diagnostic helper should name compatibility limited-behavior notices");
+    }
     if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC), "supported-virtual-intrinsic") != 0) {
         failures += record_failure("Irvine32 symbol-class helper should name supported virtual intrinsics");
     }
@@ -3933,6 +4063,9 @@ static int test_metadata_helpers(void) {
     }
     if (vm_parser_irvine32_symbol_class_name((VmIrvine32SymbolClass)999) != NULL) {
         failures += record_failure("invalid Irvine32 symbol class name should be NULL");
+    }
+    if (strcmp(vm_parser_diagnostic_severity_name(VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE), "notice") != 0) {
+        failures += record_failure("parser diagnostic helper should name notice severity");
     }
     if (strcmp(vm_parser_diagnostic_severity_name(VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING), "warning") != 0) {
         failures += record_failure("parser diagnostic helper should name warning severity");
@@ -3995,6 +4128,8 @@ int main(void) {
     failures += test_phase26_header_directive_edge_cases();
     failures += test_phase26_header_directive_error_paths();
     failures += test_phase26_broader_directive_backlog_diagnostics();
+    failures += test_phase53d_compatibility_notice_parser_paths();
+    failures += test_phase53d_active_semantics_do_not_emit_noop_notices();
     failures += test_phase35a_casemap_parser_policy();
     failures += test_phase41_virtual_irvine32_include_records_registry();
     failures += test_phase41_irvine32_routine_diagnostics();

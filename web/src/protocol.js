@@ -7,11 +7,13 @@
  * only validates request shape and formats structured worker responses.
  */
 
+import { normalizeDiagnosticSettings } from "./settings.js";
+
 /** @typedef {{type: string, payload?: unknown}} WorkerRequest */
 /** @typedef {{type: string, payload?: unknown}} WorkerResponse */
 /** @typedef {{status: string, testValue: number | null, message?: string, sourceExecution?: string}} WasmLoadInfo */
-/** @typedef {{source: string}} RunSourcePayload */
-/** @typedef {{runSource?: (source: string) => unknown}} WorkerRuntime */
+/** @typedef {{source: string, diagnosticSettings?: unknown}} RunSourcePayload */
+/** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest user-visible MASM source-run phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE = 53;
@@ -81,6 +83,25 @@ function createRunSourceUnavailableError() {
 }
 
 /**
+ * Creates a source-run-style result for a UI settings validation failure.
+ *
+ * @param {unknown} diagnostic Structured UI diagnostic to render.
+ * @returns {WorkerResponse} RUN_RESULT response with Simulator Messages payload.
+ */
+function createInvalidDiagnosticSettingsRunResult(diagnostic) {
+  return {
+    type: "RUN_RESULT",
+    payload: {
+      ok: false,
+      status: "ui-error",
+      simulatorMessages: [diagnostic],
+      registers: {},
+      memoryChanges: []
+    }
+  };
+}
+
+/**
  * Adds a diagnostic when a stale generated Wasm artifact runs newer UI source.
  *
  * @param {unknown} runResult Parsed source-run result from the Wasm export.
@@ -117,9 +138,16 @@ function addStaleWasmDiagnosticIfNeeded(runResult) {
  */
 function handleRunSourceRequest(request, runtime) {
   const payload = request.payload;
+  const normalizedSettings = payload && typeof payload === "object"
+    ? normalizeDiagnosticSettings(payload.diagnosticSettings)
+    : normalizeDiagnosticSettings(undefined);
 
   if (!payload || typeof payload !== "object" || typeof payload.source !== "string") {
     return createInvalidRunSourceError();
+  }
+
+  if (!normalizedSettings.ok) {
+    return createInvalidDiagnosticSettingsRunResult(normalizedSettings.diagnostic);
   }
 
   if (!runtime || typeof runtime.runSource !== "function") {
@@ -129,7 +157,7 @@ function handleRunSourceRequest(request, runtime) {
   try {
     return {
       type: "RUN_RESULT",
-      payload: addStaleWasmDiagnosticIfNeeded(runtime.runSource(payload.source))
+      payload: addStaleWasmDiagnosticIfNeeded(runtime.runSource(payload.source, normalizedSettings.backendSettings))
     };
   } catch (error) {
     return {

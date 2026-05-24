@@ -26,6 +26,42 @@ typedef enum Masm32SimWasmMemoryValidationMode {
     MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
 } Masm32SimWasmMemoryValidationMode;
 
+/// Selects the browser-facing Phase 53E memory range validation setting.
+typedef enum Masm32SimWasmMemoryRangeSetting {
+    /// Use only mandatory VM region, permission, and .CONST checks.
+    MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY = 0,
+    /// Emit non-fatal Level 2 section-capacity warnings.
+    MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_WARN,
+    /// Stop before mutation on Level 2 section-capacity violations.
+    MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_STRICT,
+    /// Emit non-fatal Level 3 section-image warnings.
+    MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_WARN,
+    /// Stop before mutation on Level 3 section-image violations.
+    MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_STRICT,
+    /// Emit non-fatal Level 4 declared-object bounds warnings.
+    MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_WARN,
+    /// Stop before mutation on Level 4 declared-object bounds violations.
+    MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_STRICT
+} Masm32SimWasmMemoryRangeSetting;
+
+/// Selects a browser-facing Phase 53E teaching diagnostic setting.
+typedef enum Masm32SimWasmTeachingDiagnosticSetting {
+    /// Suppress the selected teaching diagnostic while preserving deterministic execution.
+    MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF = 0,
+    /// Emit a non-fatal warning for the selected teaching diagnostic.
+    MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+    /// Stop before mutation when the selected teaching diagnostic condition is reached.
+    MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT
+} Masm32SimWasmTeachingDiagnosticSetting;
+
+/// Selects whether Phase 53D compatibility notices are emitted.
+typedef enum Masm32SimWasmCompatibilityNoticeSetting {
+    /// Suppress accepted compatibility no-op, metadata-only, and limited-behavior notices.
+    MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF = 0,
+    /// Emit accepted compatibility no-op, metadata-only, and limited-behavior notices.
+    MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+} Masm32SimWasmCompatibilityNoticeSetting;
+
 /// Selects optional section-boundary validation behavior for source-run helpers.
 typedef enum Masm32SimWasmSectionValidationPolicy {
     /// Do not diagnose section-boundary escapes.
@@ -78,6 +114,27 @@ int masm32_sim_wasm_milestone4_hardcoded_result(void);
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @return Pointer to a null-terminated JSON result string.
 const char *masm32_sim_wasm_run_source_json(const char *source);
+
+/// Parses and executes source using Phase 53E browser diagnostic settings.
+///
+/// This browser-facing export maps structured UI settings to already-existing
+/// backend policies. It does not introduce new validation semantics; it only
+/// selects existing region/object/section validation, uninitialized-read,
+/// undefined-flag-use, and compatibility-notice policies.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting
+);
 
 /// Parses and executes source using automatic deterministic layout sizing.
 ///

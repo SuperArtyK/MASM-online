@@ -2234,7 +2234,9 @@ static int test_phase28_numeric_equates_and_constant_expressions_regression(void
         "main ENDP\n"
         "END main\n",
         &buffers,
-        &result), VM_PARSER_STATUS_OK, "Phase 29 parser acceptance source should parse");
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 29 parser acceptance source should parse with Phase 53D .stack metadata notice");
+    failures += expect_size(result.diagnostic_count, 1U, "Phase 29 parser acceptance source should emit one .stack compatibility notice");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY, ".stack expression should emit compatibility-metadata-only notice");
     failures += expect_size(result.symbol_count, 3U, "numeric equates should not be stored as data symbols");
     failures += expect_u32(result.has_requested_stack_size ? result.requested_stack_size : 0U, 6U, ".stack should accept a constant expression");
     failures += expect_u32(buffers.symbols[0].element_count, 4U, "DUP count should resolve through an equate");
@@ -2381,8 +2383,9 @@ static int test_phase29_extended_constant_expressions(void) {
         "main ENDP\n"
         "END main\n",
         &buffers,
-        &result), VM_PARSER_STATUS_OK, "Milestone 29 extended expression source should parse");
-    failures += expect_size(result.diagnostic_count, 0U, "Milestone 29 extended expression source should not produce diagnostics");
+        &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Milestone 29 extended expression source should parse with Phase 53D .stack metadata notice");
+    failures += expect_size(result.diagnostic_count, 1U, "Milestone 29 extended expression source should produce one .stack compatibility notice");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY, "Extended expression .stack should emit compatibility-metadata-only notice");
     failures += expect_u32(result.has_requested_stack_size ? result.requested_stack_size : 0U, 4U, ".stack should accept Milestone 29 expressions");
     failures += expect_u32(buffers.symbols[0].element_count, 12U, "DUP count should accept multiplication expression");
     failures += expect_u8(buffers.data_image[12], 0x40U, "data initializer should accept division over equates");

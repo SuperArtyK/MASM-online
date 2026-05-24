@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Milestone 53C default teaching diagnostics.
+ * @brief Tests for the Wasm-facing source execution API through Milestone 53E diagnostic settings.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -6409,6 +6409,341 @@ static int test_phase53_mul_source_run_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies Phase 53D default compatibility notices are emitted and execution continues.
+///
+/// @return Number of failures.
+static int test_phase53d_default_compatibility_notices_continue_execution(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".686\n"
+        ".model flat, stdcall\n"
+        ".stack 4096\n"
+        "INCLUDE Macros.inc\n"
+        "TITLE Notice Sample\n"
+        "PAGE 60, 132\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 42\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 53D compatibility notice source should continue execution");
+    failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Compatibility diagnostics should be simulator notices");
+    failures += expect_json_contains(json, "compatibility-no-op", "Processor/listing compatibility notices should use compatibility-no-op");
+    failures += expect_json_contains(json, "compatibility-metadata-only", ".stack compatibility notice should use compatibility-metadata-only");
+    failures += expect_json_contains(json, "compatibility-limited", ".model and Macros.inc compatibility notices should use compatibility-limited");
+    failures += expect_json_contains(json, ".686 is accepted for MASM compatibility", "Processor notice should name the accepted directive");
+    failures += expect_json_contains(json, "runtime stack instructions", ".stack notice should explain deferred runtime stack behavior");
+    failures += expect_json_contains(json, "macro expansion", "Macros.inc notice should explain macro expansion limitation");
+    failures += expect_json_contains(json, "TITLE is accepted as a listing/documentation directive", "Listing notice should name TITLE");
+    failures += expect_json_contains(json, "PAGE is accepted as a listing/documentation directive", "Listing notice should name PAGE");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Execution should still mutate registers normally");
+    failures += expect_json_contains(json, "execution-complete", "Compatibility notices should be followed by successful completion");
+    failures += expect_json_contains_once(json, ".686 is accepted", "Processor notice should name the accepted directive");
+
+    return failures;
+}
+
+/// Verifies active semantic constructs do not receive generic Phase 53D notices.
+///
+/// @return Number of failures.
+static int test_phase53d_active_semantics_do_not_emit_compatibility_notices(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        "INCLUDE Irvine32.inc\n"
+        "OPTION CASEMAP:ALL\n"
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        ".CONST\n"
+        "limit DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    exit\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Active semantic source should execute successfully");
+    failures += expect_json_contains(json, "\"irvine32\":true", "Irvine32 include should retain active virtual include metadata");
+    failures += expect_json_not_contains(json, "compatibility-no-op", "Active semantic constructs should not emit generic no-op notices");
+    failures += expect_json_not_contains(json, "compatibility-metadata-only", "Active data sections should not emit metadata-only notices");
+    failures += expect_json_not_contains(json, "compatibility-limited", "Irvine32 include should not emit a generic limited-behavior notice");
+    failures += expect_json_contains(json, "execution-complete", "Active semantic source should still complete");
+
+    return failures;
+}
+
+/// Verifies Phase 53D notices do not downgrade true assembly errors.
+///
+/// @return Number of failures.
+static int test_phase53d_notice_plus_error_still_blocks_execution(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".686\n"
+        ".model small, c\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "A compatibility notice must not make an unsupported .model form executable");
+    failures += expect_json_contains(json, "compatibility-no-op", "Earlier accepted no-op should still be reported as a notice");
+    failures += expect_json_contains(json, "unsupported-model", "Unsupported .model should remain an assembly error");
+    failures += expect_json_contains(json, "\"kind\":\"assembly-error\"", "Unsupported .model should retain assembly-error category");
+    failures += expect_json_not_contains(json, "execution-complete", "Programs with assembly errors must not execute");
+    failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000001h\"", "Blocked program should not expose mutated EAX");
+
+    return failures;
+}
+
+/// Verifies Phase 53E browser-facing settings map to existing backend policies.
+///
+/// @return Number of failures.
+static int test_phase53e_ui_settings_route_to_existing_policies(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".686\n"
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 53E default UI settings should allow execution");
+    failures += expect_json_contains(json, "compatibility-no-op", "Phase 53E default UI settings should keep compatibility notices on");
+    failures += expect_json_contains(json, "uninitialized-read", "Phase 53E default UI settings should keep uninitialized-read warnings on");
+    failures += expect_json_contains(json, "execution-complete", "Phase 53E default UI settings should complete when only warnings/notices occur");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".686\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 7\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Compatibility-notice opt-out should still execute valid source");
+    failures += expect_json_not_contains(json, "compatibility-no-op", "Compatibility-notice opt-out should suppress no-op notices");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000007h\",\"unsigned\":7}", "Compatibility-notice opt-out should not affect execution");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Uninitialized-read off should continue execution");
+    failures += expect_json_not_contains(json, "uninitialized-read", "Uninitialized-read off should suppress default teaching warning");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Uninitialized-read off should preserve deterministic zero-filled read");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Uninitialized-read strict UI setting should stop execution");
+    failures += expect_json_contains(json, "\"kind\":\"runtime-error\"", "Uninitialized-read strict UI setting should produce runtime error");
+    failures += expect_json_contains(json, "uninitialized-read", "Uninitialized-read strict UI setting should use existing diagnostic code");
+    failures += expect_json_not_contains(json, "execution-complete", "Uninitialized-read strict UI setting must not report completion");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Undefined-flag-use off should continue execution");
+    failures += expect_json_contains(json, "undefined-shift-flag", "Undefined-flag-use off should not suppress producer warnings");
+    failures += expect_json_not_contains(json, "undefined-flag-use", "Undefined-flag-use off should suppress consumer diagnostics");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".code\n"
+        "main PROC\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Undefined-flag-use strict UI setting should stop execution");
+    failures += expect_json_contains(json, "undefined-flag-use", "Undefined-flag-use strict UI setting should use existing diagnostic code");
+    failures += expect_json_contains(json, "Execution stopped before using the undefined flag", "Undefined-flag-use strict UI setting should use existing error wording");
+    failures += expect_json_not_contains(json, "execution-complete", "Undefined-flag-use strict UI setting must not report completion");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 00700000h\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Section-capacity warning UI setting should continue execution");
+    failures += expect_json_contains(json, "section-capacity-violation", "Section-capacity warning UI setting should use existing diagnostic code");
+    failures += expect_json_contains(json, "execution-complete", "Section-capacity warning UI setting should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 00700000h\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_STRICT,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Section-capacity strict UI setting should stop execution");
+    failures += expect_json_contains(json, "section-capacity-violation", "Section-capacity strict UI setting should use existing diagnostic code");
+    failures += expect_json_not_contains(json, "execution-complete", "Section-capacity strict UI setting must not report completion");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".data\n"
+        "x DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    add eax, 4\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Section-image warning UI setting should continue execution");
+    failures += expect_json_contains(json, "section-image-violation", "Section-image warning UI setting should use existing diagnostic code");
+    failures += expect_json_contains(json, "execution-complete", "Section-image warning UI setting should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".data\n"
+        "x DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    add eax, 4\n"
+        "    mov DWORD PTR [eax], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_STRICT,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Section-image strict UI setting should stop execution");
+    failures += expect_json_contains(json, "section-image-violation", "Section-image strict UI setting should use existing diagnostic code");
+    failures += expect_json_not_contains(json, "execution-complete", "Section-image strict UI setting must not report completion");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".data\n"
+        "x DWORD 1\n"
+        "y DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, DWORD PTR [x+1]\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Declared-object warning UI setting should continue execution");
+    failures += expect_json_contains(json, "object-bounds-warning", "Declared-object warning UI setting should use existing object diagnostic");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".data\n"
+        "x DWORD 1\n"
+        "y DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov DWORD PTR [x+1], 123\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_STRICT,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Declared-object strict UI setting should stop execution");
+    failures += expect_json_contains(json, "object-bounds-violation", "Declared-object strict UI setting should use existing object diagnostic");
+    failures += expect_json_not_contains(json, "execution-complete", "Declared-object strict UI setting must not report completion");
+
+    return failures;
+}
+
+/// Verifies invalid Phase 53E C API setting values are rejected.
+///
+/// @return Number of failures.
+static int test_phase53e_invalid_ui_settings_return_invalid_argument(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        (Masm32SimWasmMemoryRangeSetting)99,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Invalid Phase 53E memory setting should fail");
+    failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid Phase 53E memory setting should return invalid argument status");
+
+    return failures;
+}
+
 /// Verifies Phase 50B undefined-flag-use warning behavior for an existing CF consumer.
 ///
 /// @return Number of failures.
@@ -7053,6 +7388,11 @@ int main(void) {
     failures += test_phase53c_default_uninitialized_mul_symbol_offset_warns();
     failures += test_phase53c_default_undefined_flag_use_warns_and_continues();
     failures += test_phase53c_undefined_flag_use_explicit_off_preserves_silent_behavior();
+    failures += test_phase53d_default_compatibility_notices_continue_execution();
+    failures += test_phase53d_active_semantics_do_not_emit_compatibility_notices();
+    failures += test_phase53d_notice_plus_error_still_blocks_execution();
+    failures += test_phase53e_ui_settings_route_to_existing_policies();
+    failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();
     failures += test_phase50b_undefined_flag_use_sbb_warn_policy_source_run();
@@ -7072,6 +7412,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 53C default teaching diagnostics coverage passed.");
+    puts("Source execution tests through Phase 53E diagnostic setting coverage passed.");
     return 0;
 }
