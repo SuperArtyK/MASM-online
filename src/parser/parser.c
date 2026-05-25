@@ -3196,6 +3196,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_IMUL;
         return true;
     }
+    if (vm_parser_token_equals(token, "div")) {
+        *out_opcode = VM_IR_OPCODE_DIV;
+        return true;
+    }
 
     return false;
 }
@@ -3286,9 +3290,9 @@ static bool vm_parser_opcode_is_lea(VmIrOpcode opcode) {
 /// Returns whether an opcode uses one source operand with implicit accumulator result registers.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for one-operand MUL and IMUL.
+/// @return true for one-operand MUL, IMUL, and DIV.
 static bool vm_parser_opcode_is_implicit_accumulator_source(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_MUL || opcode == VM_IR_OPCODE_IMUL;
+    return opcode == VM_IR_OPCODE_MUL || opcode == VM_IR_OPCODE_IMUL || opcode == VM_IR_OPCODE_DIV;
 }
 
 /// Returns the source-mnemonic spelling for implicit-accumulator instructions.
@@ -3298,6 +3302,9 @@ static bool vm_parser_opcode_is_implicit_accumulator_source(VmIrOpcode opcode) {
 static const char *vm_parser_implicit_accumulator_mnemonic(VmIrOpcode opcode) {
     if (opcode == VM_IR_OPCODE_IMUL) {
         return "IMUL";
+    }
+    if (opcode == VM_IR_OPCODE_DIV) {
+        return "DIV";
     }
     return "MUL";
 }

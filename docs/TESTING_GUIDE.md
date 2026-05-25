@@ -144,6 +144,118 @@ Expected final output:
 All implemented milestone tests passed.
 ```
 
+### Phase 56A focused runner groups
+
+The default command remains valid and is equivalent to full aggregate verification:
+
+```sh
+python3 scripts/run_tests.py
+python3 scripts/run_tests.py --all
+```
+
+The same commands work on Windows with `py`:
+
+```cmd
+py scripts\run_tests.py
+py scripts\run_tests.py --all
+py scripts\run_tests.py --diagnostics
+```
+
+Focused groups are available for timeout-safe verification:
+
+```sh
+python3 scripts/run_tests.py --structure
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+```
+
+Group ownership:
+
+- `structure`: repository structure, expected files, public header comments, Doxygen/static source-shape checks, and milestone metadata checks.
+- `native`: native C unit/parser/executor/helper tests that do not require Node and do not run the source-run integration binary.
+- `source-run`: native source-run JSON/integration coverage. In Phase 56A this is `tests/core/test_wasm_source_run.c`, kept whole for Phase 56A because `python3 scripts/run_tests.py --source-run` runs it independently from native, web, protocol, static, and rendered diagnostic tests.
+- `web`: browser-side Node module tests that do not require the native diagnostic producer.
+- `diagnostics`: native diagnostic JSON producer build plus exact rendered Simulator Messages checks.
+- `protocol`: worker/protocol schema tests separated from general web tests.
+- `static`: runner help, group-name documentation, timeout-policy, failure-reporting, and fixture-inventory consistency checks.
+
+Output controls:
+
+```sh
+python3 scripts/run_tests.py --quiet --source-run
+python3 scripts/run_tests.py --verbose --diagnostics
+```
+
+`--quiet` prints group start/status lines, the final compact summary, and failure details only. `--verbose` prints subprocess commands, captured subprocess output, fixture-level details, milestone fixture names, and expected rendered diagnostic lines where the runner owns that inventory.
+
+`--quick` is a smoke subset, not full verification:
+
+```sh
+python3 scripts/run_tests.py --quick
+```
+
+A milestone report that uses only `--quick` must say that full verification was not performed. Do not report `All implemented milestone tests passed` from a quick-only run.
+
+Source-run subgroups such as `--source-run=memory-layout` are not implemented in Phase 56A because the preserved source-run binary runs independently as a focused group. If `--source-run` later becomes too large for hosted assistant/container verification, the future test-runner decomposition maintenance owner should split it by behavior family, preferably memory/layout, instruction smoke, diagnostic policies, settings, and regressions.
+
+Diagnostic subgroups such as `--diagnostics=memory` are not implemented in Phase 56A because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
+
+Failure output must identify the failing group, failing command, subprocess exit code, stdout/stderr tail, and any available fixture context. Source-run fixture failures include the fixture name through the source-run test binary's assertion context.
+
+### Assistant/container timeout policy
+
+If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure.
+
+The assistant must rerun focused groups individually and report:
+
+- which focused groups were run;
+- which focused groups passed;
+- which focused groups failed;
+- which focused groups were skipped and why;
+- whether any focused group required subgroup or fixture-level reruns;
+- whether `--all` completed in that environment;
+- whether the final local/user run produced `All implemented milestone tests passed.`
+
+Milestone reports must distinguish:
+
+```text
+aggregate completed and passed
+aggregate timed out in assistant/container environment, focused groups passed
+aggregate failed with a real failing group
+focused group failed
+focused group timed out, subgroups or fixtures rerun
+group skipped because dependency unavailable, such as emcc
+```
+
+An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed and returned the final success line in that environment.
+
+An assistant may report focused verification only by naming the focused groups, subgroups, or fixtures that actually passed.
+
+If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `emcc` is unavailable. This is separate from native, source-run, Node, protocol, static, and rendered diagnostic test failure.
+
+### Source-run fixture inventory
+
+The Phase 56A source-run fixture inventory is intentionally a navigation aid. It does not duplicate every assertion in `tests/core/test_wasm_source_run.c`.
+
+| Fixture or family | Focused group | Category | Phase 56A disposition |
+| --- | --- | --- | --- |
+| minimal source execution sample | `source-run` | focused success fixture | kept whole for Phase 56A |
+| lexer/parser diagnostic source-run failures | `source-run` | focused error fixture | kept whole for Phase 56A |
+| memory/layout and automatic layout programs | `source-run` | regression fixture | kept whole for Phase 56A |
+| uninitialized-read and memory-validation policy programs | `source-run` | warning/notice fixture | kept whole for Phase 56A |
+| phase51-layout-fixed-automatic-equivalence | `source-run` | integration smoke fixture | kept whole for Phase 56A |
+| phase51-const-permission-precedence | `source-run` | integration smoke fixture | kept whole for Phase 56A |
+| phase51-uninitialized-rmw-warning | `source-run` | integration smoke fixture | kept whole for Phase 56A |
+| phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run` | integration smoke fixture | kept whole for Phase 56A |
+| phase53e-ui-settings-policy-routing | `source-run` | focused settings fixture | kept whole for Phase 56A |
+| phase56-div-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept whole for Phase 56A |
+
+Large individual MASM source fixtures were reviewed for Phase 56A. The Phase 51 instruction-family programs are intentionally labeled integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as focused success, error, warning/notice, edge-case, or regression fixtures. No fixture was moved, renamed, split, or weakened in Phase 56A.
+
 The test runner writes native test binaries under:
 
 ```text
@@ -802,19 +914,20 @@ Stop the Python server with `Ctrl+C` in the terminal where it is running.
 
 After serving, open the local URL printed by the script or server and run manual browser programs in the editor.
 
-For Milestone 55 signed `imul` verification, run:
+For Milestone 56 unsigned `div` verification, run:
 
 ```asm
 .code
 main PROC
-    mov eax, -2
-    mov ebx, 3
-    imul ebx
+    mov edx, 0
+    mov eax, 100
+    mov ebx, 7
+    div ebx
 main ENDP
 END main
 ```
 
-Expected final state includes `EDX = FFFFFFFFh`, `EAX = FFFFFFFAh`, `CF = 0`, `OF = 0`, no memory-change rows, and an `execution-complete` Simulator Messages entry.
+Expected final state includes `EAX = 0000000Eh`, `EDX = 00000002h`, no memory-change rows, and an `execution-complete` Simulator Messages entry. Divide-by-zero and quotient-overflow programs should report runtime errors in Simulator Messages without updating the quotient or remainder registers.
 
 Milestone 37 note: allocated-object warning/strict validation began as a test/configuration-facing mode. After Phase 53E, the browser diagnostic settings panel exposes the same existing declared-object bounds warning and strict-stop policies as optional Memory range validation choices. Default browser execution remains region-only.
 

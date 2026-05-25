@@ -10,24 +10,75 @@ repository-structure checks for the implemented milestone skeleton.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import os
 import pathlib
 import shutil
 import subprocess
 import sys
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Callable, Iterable, Sequence
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "tests"
+REQUIRED_GROUPS = ["structure", "native", "source-run", "web", "diagnostics", "protocol", "static"]
+MAX_FAILURE_TAIL_CHARS = 12000
+VERBOSE_OUTPUT = False
+QUIET_OUTPUT = False
+CURRENT_GROUP = "unknown"
 
 
 class TestFailure(RuntimeError):
     """Raised when a command-line test step fails."""
 
 
+@dataclass
+class GroupResult:
+    """Stores the status and detail line for one runner group."""
+
+    name: str
+    status: str
+    details: str
+
+
+def tail_text(text: str, limit: int = MAX_FAILURE_TAIL_CHARS) -> str:
+    """Return a bounded tail of captured subprocess text.
+
+    Args:
+        text: Full captured subprocess output.
+        limit: Maximum number of characters to return.
+
+    Returns:
+        The original text when short enough, otherwise a marked tail.
+    """
+
+    if len(text) <= limit:
+        return text
+    return f"[output truncated to last {limit} characters]\n" + text[-limit:]
+
+
+def format_command(command: Sequence[str]) -> str:
+    """Format a subprocess command for runner status output.
+
+    Args:
+        command: Command and arguments.
+
+    Returns:
+        A readable command string.
+    """
+
+    return " ".join(str(part) for part in command)
+
+
 def run_command(command: list[str], *, cwd: pathlib.Path = ROOT, env: dict[str, str] | None = None) -> None:
     """Run one command and raise TestFailure when it fails.
+
+    Successful subprocess output is captured to keep default and quiet runs
+    compact. Verbose mode prints commands and captured output. Failure output is
+    always shown with group, command, exit code, and bounded stdout/stderr tails.
 
     Args:
         command: Command and arguments to execute.
@@ -35,10 +86,74 @@ def run_command(command: list[str], *, cwd: pathlib.Path = ROOT, env: dict[str, 
         env: Optional environment variables for the subprocess.
     """
 
-    print("$ " + " ".join(command))
-    completed = subprocess.run(command, cwd=cwd, env=env, check=False)
+    command_text = format_command(command)
+    if VERBOSE_OUTPUT:
+        print("$ " + command_text)
+
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if VERBOSE_OUTPUT and completed.stdout:
+        print(completed.stdout, end="")
+    if VERBOSE_OUTPUT and completed.stderr:
+        print(completed.stderr, end="", file=sys.stderr)
+
     if completed.returncode != 0:
-        raise TestFailure(f"command failed with exit code {completed.returncode}: {' '.join(command)}")
+        details = [
+            "Failure details:",
+            f"- Group: {CURRENT_GROUP}",
+            "- Subgroup: n/a",
+            f"- Command: {command_text}",
+            f"- Exit code: {completed.returncode}",
+        ]
+        if completed.stdout:
+            details.extend(["- Stdout tail:", tail_text(completed.stdout).rstrip()])
+        if completed.stderr:
+            details.extend(["- Stderr tail:", tail_text(completed.stderr).rstrip()])
+        raise TestFailure("\n".join(details))
+
+
+def log_detail(message: str) -> None:
+    """Print a message only in verbose output mode.
+
+    Args:
+        message: Message to print when verbose output is enabled.
+    """
+
+    if VERBOSE_OUTPUT:
+        print(message)
+
+
+def print_group_start(name: str) -> None:
+    """Print the standardized start line for one group.
+
+    Args:
+        name: User-facing group name.
+    """
+
+    print(f"[{name}] START")
+
+
+def print_group_status(name: str, status: str, details: str) -> None:
+    """Print the standardized completion line for one group.
+
+    Args:
+        name: User-facing group name.
+        status: Group status such as PASS or FAIL.
+        details: Short human-readable detail line.
+    """
+
+    if QUIET_OUTPUT and status == "PASS":
+        print(f"[{name}] {status}")
+    else:
+        print(f"[{name}] {status} - {details}")
 
 
 def require_files(paths: Iterable[str]) -> None:
@@ -341,7 +456,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 55")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 56")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -419,7 +534,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 55")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 56")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -483,7 +598,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 55 IMUL coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 56 DIV coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -554,7 +669,7 @@ def run_structure_tests() -> None:
     assert_text_not_contains("src/core/vm_memory.c", "0x00400000U")
     assert_text_not_contains("src/core/vm_memory.c", "0x00500000U")
     assert_text_not_contains("src/core/vm_exec.c", "0x00500000U")
-    print("Milestone structure tests passed.")
+    log_detail("Milestone structure tests passed.")
 
 
 def executable_output_path(output_name: str) -> pathlib.Path:
@@ -615,8 +730,8 @@ def compile_and_run_c_test(output_name: str, sources: list[str]) -> None:
     run_command([str(output)])
 
 
-def run_c_tests() -> None:
-    """Compile and run C unit tests for implemented milestones."""
+def run_native_tests() -> None:
+    """Compile and run native C tests except source-run integration tests."""
 
     compile_and_run_c_test(
         "test_milestone_zero",
@@ -713,23 +828,6 @@ def run_c_tests() -> None:
         ],
     )
 
-    compile_and_run_c_test(
-        "test_wasm_source_run",
-        [
-            "tests/core/test_wasm_source_run.c",
-            "src/core/masm32_sim_api.c",
-            "src/core/vm_cpu.c",
-            "src/core/vm_memory.c",
-            "src/core/vm_layout.c",
-            "src/core/vm_ir.c",
-            "src/core/vm_exec.c",
-            "src/parser/lexer.c",
-            "src/parser/parser.c",
-            "src/parser/symbols.c",
-            "src/parser/object_map.c",
-            "src/wasm/wasm_api.c",
-        ],
-    )
 
     compile_and_run_c_test(
         "test_data_section",
@@ -769,6 +867,28 @@ def run_c_tests() -> None:
     )
 
 
+
+def run_source_run_tests() -> None:
+    """Compile and run native source-run integration coverage."""
+
+    compile_and_run_c_test(
+        "test_wasm_source_run",
+        [
+            "tests/core/test_wasm_source_run.c",
+            "src/core/masm32_sim_api.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+            "src/parser/lexer.c",
+            "src/parser/parser.c",
+            "src/parser/symbols.c",
+            "src/parser/object_map.c",
+            "src/wasm/wasm_api.c",
+        ],
+    )
+
 def build_diagnostic_json_producer() -> None:
     """Build the native source-run JSON producer used by Node rendering tests."""
 
@@ -790,15 +910,36 @@ def build_diagnostic_json_producer() -> None:
         ],
     )
 
-def run_js_tests() -> None:
-    """Run JavaScript and Node-based diagnostic rendering tests."""
+def require_node() -> None:
+    """Require Node.js for JavaScript-based tests."""
 
     if shutil.which("node") is None:
-        raise TestFailure("node is required for JavaScript and diagnostic rendering tests")
+        raise TestFailure("node is required for this focused test group")
+
+
+def run_protocol_tests() -> None:
+    """Run worker/protocol schema tests independently from other web tests."""
+
+    require_node()
     run_command(["node", "tests/web/test_protocol.mjs"])
+
+
+def run_web_tests() -> None:
+    """Run browser-side Node tests that do not require native diagnostics."""
+
+    require_node()
     run_command(["node", "tests/web/test_settings.mjs"])
     run_command(["node", "tests/web/test_collapsible_settings.mjs"])
     run_command(["node", "tests/web/test_formatters.mjs"])
+
+
+def diagnostic_rendering_environment() -> dict[str, str]:
+    """Build the deterministic environment for rendered diagnostic tests.
+
+    Returns:
+        Environment with stale diagnostic-control variables removed and the
+        native diagnostic JSON producer path set explicitly.
+    """
 
     diagnostic_env = os.environ.copy()
     for key in [
@@ -809,10 +950,352 @@ def run_js_tests() -> None:
         "MASM32_DIAGNOSTIC_AUTO_HEAP_REQUEST",
         "MASM32_DIAGNOSTIC_AUTO_HEAP_LIMIT",
         "MASM32_DIAGNOSTIC_AUTO_TOTAL_LIMIT",
+        "MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION",
+        "MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION",
+        "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
+        "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE",
     ]:
         diagnostic_env.pop(key, None)
     diagnostic_env["MASM32_DIAGNOSTIC_JSON_PRODUCER"] = str(executable_output_path("diagnostic_json_producer").resolve())
-    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_env)
+    return diagnostic_env
+
+
+def run_diagnostics_tests() -> None:
+    """Run native diagnostic JSON production plus rendered Simulator Messages tests."""
+
+    require_node()
+    build_diagnostic_json_producer()
+    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_rendering_environment())
+
+
+def run_quick_tests() -> None:
+    """Run a smoke subset that is explicitly not full milestone verification."""
+
+    run_structure_tests()
+    compile_and_run_c_test(
+        "quick_test_vm_cpu",
+        [
+            "tests/core/test_vm_cpu.c",
+            "src/core/vm_cpu.c",
+        ],
+    )
+    run_protocol_tests()
+
+
+def read_file(path: str) -> str:
+    """Read a repository-relative UTF-8 text file.
+
+    Args:
+        path: Repository-relative text file path.
+
+    Returns:
+        File contents.
+    """
+
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def assert_all_text_contains(path: str, expected_values: Iterable[str]) -> None:
+    """Verify that a file contains every expected text fragment.
+
+    Args:
+        path: Repository-relative text file path.
+        expected_values: Required text fragments.
+    """
+
+    text = read_file(path)
+    missing = [expected for expected in expected_values if expected not in text]
+    if missing:
+        raise TestFailure(f"{path} is missing expected text: {', '.join(missing)}")
+
+
+def create_arg_parser() -> argparse.ArgumentParser:
+    """Create the command-line parser for the test runner.
+
+    Returns:
+        Configured argparse parser.
+    """
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run Online MASM32 Educational Simulator tests. Default invocation "
+            "is equivalent to --all; use focused groups when hosted environments "
+            "time out or truncate output."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Focused groups:
+  --structure    repository structure, file/header, metadata, and shape checks
+  --native       native C unit/parser/executor/helper tests excluding source-run integration
+  --source-run   native source-run JSON/integration tests (currently one preserved binary)
+  --web          browser-side Node formatter/settings tests that do not need native diagnostics
+  --diagnostics  build native diagnostic JSON producer and run exact rendered Simulator Messages tests
+  --protocol     worker/protocol schema tests
+  --static       documentation, runner, group-name, and fixture-inventory consistency checks
+
+Output modes:
+  default         compact group status and final summary
+  --quiet         group start/status lines, final summary, and failure details only
+  --verbose       subprocess commands, captured subprocess output, and fixture inventory details
+
+Notes:
+  --quick is a smoke subset, not full verification.
+  Source-run and diagnostic subgroups are intentionally not split in Phase 56A;
+  rerun --source-run or --diagnostics independently when --all times out.
+
+Windows examples:
+  py scripts\\run_tests.py --all
+  py scripts\\run_tests.py --diagnostics
+""".strip(),
+    )
+    parser.add_argument("--all", action="store_true", help="run every focused group; default when no group is selected")
+    parser.add_argument("--quick", action="store_true", help="run a smoke subset only; not sufficient for full milestone acceptance")
+    parser.add_argument("--structure", action="store_true", help="run repository structure and static shape checks")
+    parser.add_argument("--native", action="store_true", help="run native C tests excluding source-run integration")
+    parser.add_argument("--source-run", action="store_true", help="run native source-run JSON/integration tests independently")
+    parser.add_argument("--web", action="store_true", help="run browser-side Node tests that do not need native diagnostics")
+    parser.add_argument("--diagnostics", action="store_true", help="run native diagnostic JSON plus exact rendered Simulator Messages tests")
+    parser.add_argument("--protocol", action="store_true", help="run worker/protocol schema tests independently")
+    parser.add_argument("--static", action="store_true", help="run documentation and runner consistency checks")
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument("--quiet", action="store_true", help="print group status lines, final summary, and full failure details only")
+    output_group.add_argument("--verbose", action="store_true", help="print commands, child output, and fixture inventory details")
+    return parser
+
+
+def supported_help_flags() -> list[str]:
+    """Return every public flag that runner self-tests expect in help output.
+
+    Returns:
+        Public command-line flags.
+    """
+
+    return [
+        "--all",
+        "--quick",
+        "--structure",
+        "--native",
+        "--source-run",
+        "--web",
+        "--diagnostics",
+        "--protocol",
+        "--static",
+        "--quiet",
+        "--verbose",
+    ]
+
+
+def select_groups(args: argparse.Namespace) -> tuple[list[str], bool]:
+    """Select runner groups from parsed command-line arguments.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Pair of selected group names and a boolean indicating full verification.
+    """
+
+    if args.quick:
+        return ["quick"], False
+
+    selected = [group for group in REQUIRED_GROUPS if getattr(args, group.replace("-", "_"))]
+    if args.all or not selected:
+        return list(REQUIRED_GROUPS), True
+    return selected, False
+
+
+def run_group(name: str, function: Callable[[], None]) -> GroupResult:
+    """Run one focused group and return its status.
+
+    Args:
+        name: User-facing group name.
+        function: Group runner callable.
+
+    Returns:
+        GroupResult describing pass/fail outcome.
+    """
+
+    global CURRENT_GROUP
+    previous_group = CURRENT_GROUP
+    CURRENT_GROUP = name
+    print_group_start(name)
+    try:
+        function()
+    except TestFailure as error:
+        details = str(error)
+        print_group_status(name, "FAIL", "see failure details below")
+        print(details, file=sys.stderr)
+        CURRENT_GROUP = previous_group
+        return GroupResult(name=name, status="FAIL", details="selected group failed")
+    CURRENT_GROUP = previous_group
+    print_group_status(name, "PASS", group_success_detail(name))
+    return GroupResult(name=name, status="PASS", details=group_success_detail(name))
+
+
+def group_success_detail(name: str) -> str:
+    """Return a compact success detail for one group.
+
+    Args:
+        name: User-facing group name.
+
+    Returns:
+        Short detail text.
+    """
+
+    details = {
+        "quick": "smoke subset passed; full verification not performed",
+        "structure": "repository structure and metadata checks passed",
+        "native": "native C non-source-run tests passed",
+        "source-run": "source-run integration binary passed independently",
+        "web": "browser-side Node module tests passed",
+        "diagnostics": "native diagnostic producer and rendered messages passed",
+        "protocol": "protocol tests passed independently",
+        "static": "runner/documentation consistency checks passed",
+    }
+    return details.get(name, "group passed")
+
+
+def print_summary(results: list[GroupResult], selected_groups: Sequence[str]) -> None:
+    """Print a compact final summary table.
+
+    Args:
+        results: Results for groups that were run.
+        selected_groups: Groups requested for this runner invocation.
+    """
+
+    result_by_name = {result.name: result for result in results}
+    table_groups = list(REQUIRED_GROUPS)
+    if "quick" in selected_groups:
+        table_groups = ["quick", *table_groups]
+
+    print("\nGroup        Status    Details")
+    for group in table_groups:
+        result = result_by_name.get(group)
+        if result is None:
+            print(f"{group:<12} NOT-RUN   not selected")
+        else:
+            print(f"{group:<12} {result.status:<8} {result.details}")
+
+    if shutil.which("emcc") is None:
+        print("Browser/Wasm rebuild smoke: SKIP - emcc unavailable in this environment.")
+    else:
+        print("Browser/Wasm rebuild smoke: NOT-RUN - not requested by this native/Node runner command.")
+
+
+def assert_help_lists_supported_flags() -> None:
+    """Verify that help output lists every public runner flag."""
+
+    help_text = create_arg_parser().format_help()
+    missing = [flag for flag in supported_help_flags() if flag not in help_text]
+    if missing:
+        raise TestFailure("help output is missing runner flags: " + ", ".join(missing))
+
+
+def assert_parser_accepts_required_flags() -> None:
+    """Verify that argparse accepts every required public flag."""
+
+    parser = create_arg_parser()
+    parser.parse_args(["--all"])
+    parser.parse_args(["--quick"])
+    parser.parse_args(["--quiet", "--structure"])
+    parser.parse_args(["--verbose", "--diagnostics"])
+    for group in REQUIRED_GROUPS:
+        parser.parse_args(["--" + group])
+
+
+def assert_unknown_flag_fails() -> None:
+    """Verify that an unknown flag fails with nonzero argparse status."""
+
+    parser = create_arg_parser()
+    stderr_capture = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(stderr_capture):
+            parser.parse_args(["--definitely-not-a-supported-runner-flag"])
+    except SystemExit as error:
+        if error.code != 0 and "unrecognized arguments" in stderr_capture.getvalue():
+            return
+    raise TestFailure("unknown runner flags must fail with a nonzero argparse exit and useful message")
+
+
+def assert_docs_match_runner_groups() -> None:
+    """Verify that testing documentation names every focused group."""
+
+    docs = read_file("docs/TESTING_GUIDE.md")
+    readme = read_file("README.md")
+    for group in REQUIRED_GROUPS:
+        command = f"python3 scripts/run_tests.py --{group}"
+        if command not in docs:
+            raise TestFailure(f"docs/TESTING_GUIDE.md does not document {command}")
+    for command in [
+        "python3 scripts/run_tests.py --all",
+        "python3 scripts/run_tests.py --quick",
+        "python3 scripts/run_tests.py --quiet",
+        "python3 scripts/run_tests.py --verbose",
+        "py scripts\\run_tests.py --all",
+        "py scripts\\run_tests.py --diagnostics",
+    ]:
+        if command not in docs:
+            raise TestFailure(f"docs/TESTING_GUIDE.md does not document {command}")
+    if "python3 scripts/run_tests.py --all" not in readme:
+        raise TestFailure("README.md does not document the aggregate test command")
+    if "python3 scripts/run_tests.py --source-run" not in readme:
+        raise TestFailure("README.md does not document focused source-run verification")
+
+
+def assert_fixture_inventory_documented() -> None:
+    """Verify that the Phase 56A source-run fixture inventory exists."""
+
+    assert_all_text_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "Source-run fixture inventory",
+            "tests/core/test_wasm_source_run.c",
+            "phase51-layout-fixed-automatic-equivalence",
+            "phase53e-ui-settings-policy-routing",
+            "phase56-div-source-run-coverage",
+            "kept whole for Phase 56A",
+        ],
+    )
+
+
+def assert_timeout_policy_documented() -> None:
+    """Verify that timeout-safe assistant verification policy is documented."""
+
+    assert_all_text_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure.",
+            "aggregate timed out in assistant/container environment, focused groups passed",
+            "An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed",
+            "group skipped because dependency unavailable, such as emcc",
+        ],
+    )
+
+
+def assert_failure_reporting_contract_present() -> None:
+    """Verify that failure-output contract text exists in runner and docs."""
+
+    assert_all_text_contains(
+        "scripts/run_tests.py",
+        [
+            "Failure details:",
+            "- Group:",
+            "- Command:",
+            "- Exit code:",
+            "- Stdout tail:",
+            "- Stderr tail:",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "failing group",
+            "failing command",
+            "subprocess exit code",
+            "stdout/stderr tail",
+            "Source-run fixture failures include the fixture name",
+        ],
+    )
 
 
 
@@ -835,29 +1318,28 @@ def report_phase51_smoke_harness_status() -> None:
         "phase51-rol-source-smoke",
         "phase51-ror-source-smoke",
     ]
-    ambiguous_memory_width = "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR."
     rendered_diagnostic_lines = [
-        ("automatic-layout instruction smoke", "[info] execution-complete: Execution completed successfully."),
-        ("CONST precedence", "[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const."),
-        ("uninitialized RMW warning", "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage."),
-        ("uninitialized RMW completion", "[info] execution-complete: Execution completed successfully."),
-        ("INC/DEC", ambiguous_memory_width),
-        ("AND/OR/XOR", ambiguous_memory_width),
-        ("NOT", ambiguous_memory_width),
-        ("SHL/SAL", ambiguous_memory_width),
-        ("SHR", ambiguous_memory_width),
-        ("SAR", ambiguous_memory_width),
-        ("ROL", ambiguous_memory_width),
-        ("ROR", ambiguous_memory_width),
+        "automatic-layout instruction smoke",
+        "CONST precedence",
+        "uninitialized RMW warning",
+        "uninitialized RMW completion",
+        "INC/DEC ambiguous-memory-width",
+        "AND/OR/XOR ambiguous-memory-width",
+        "NOT ambiguous-memory-width",
+        "SHL/SAL ambiguous-memory-width",
+        "SHR ambiguous-memory-width",
+        "SAR ambiguous-memory-width",
+        "ROL ambiguous-memory-width",
+        "ROR ambiguous-memory-width",
     ]
 
     print("Phase 51 source-run smoke programs exercised:")
     for program in source_run_programs:
         print(f"- {program}")
 
-    print("Phase 51 expected rendered diagnostic lines:")
-    for label, line in rendered_diagnostic_lines:
-        print(f"- {label}: {line}")
+    print("Phase 51 expected rendered diagnostic line families:")
+    for line in rendered_diagnostic_lines:
+        print(f"- {line}")
 
     browser_smoke_status = os.environ.get("MASM32_BROWSER_MANUAL_SMOKE_AFTER_WASM_REBUILD")
     if browser_smoke_status:
@@ -867,24 +1349,78 @@ def report_phase51_smoke_harness_status() -> None:
     else:
         print("Phase 51 browser manual smoke after rebuilding Wasm: not run by the aggregate native/Node test command.")
 
-def main() -> int:
-    """Run all implemented milestone tests.
+def run_static_tests() -> None:
+    """Run runner, documentation, and fixture-inventory consistency checks."""
+
+    assert_help_lists_supported_flags()
+    assert_parser_accepts_required_flags()
+    assert_unknown_flag_fails()
+    assert_docs_match_runner_groups()
+    assert_fixture_inventory_documented()
+    assert_timeout_policy_documented()
+    assert_failure_reporting_contract_present()
+    if VERBOSE_OUTPUT:
+        report_phase51_smoke_harness_status()
+
+
+def group_function(name: str) -> Callable[[], None]:
+    """Return the implementation function for one selected group.
+
+    Args:
+        name: User-facing group name.
+
+    Returns:
+        Callable that executes the group.
+    """
+
+    functions: dict[str, Callable[[], None]] = {
+        "quick": run_quick_tests,
+        "structure": run_structure_tests,
+        "native": run_native_tests,
+        "source-run": run_source_run_tests,
+        "web": run_web_tests,
+        "diagnostics": run_diagnostics_tests,
+        "protocol": run_protocol_tests,
+        "static": run_static_tests,
+    }
+    return functions[name]
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run selected implemented milestone test groups.
+
+    Args:
+        argv: Optional argument vector for tests; uses sys.argv when omitted.
 
     Returns:
         Zero on success, non-zero on failure.
     """
 
-    try:
-        run_structure_tests()
-        run_c_tests()
-        build_diagnostic_json_producer()
-        run_js_tests()
-        report_phase51_smoke_harness_status()
-    except TestFailure as error:
-        print(f"ERROR: {error}", file=sys.stderr)
+    global QUIET_OUTPUT, VERBOSE_OUTPUT
+    parser = create_arg_parser()
+    args = parser.parse_args(argv)
+    QUIET_OUTPUT = args.quiet
+    VERBOSE_OUTPUT = args.verbose
+    selected_groups, full_verification = select_groups(args)
+
+    if full_verification and argv is None and not args.all:
+        print("Default test run is equivalent to --all. Use focused groups such as --source-run or --diagnostics if a hosted environment times out.")
+
+    results: list[GroupResult] = []
+    for group in selected_groups:
+        results.append(run_group(group, group_function(group)))
+
+    print_summary(results, selected_groups)
+
+    if any(result.status == "FAIL" for result in results):
         return 1
 
-    print("All implemented milestone tests passed.")
+    if full_verification:
+        print("All implemented milestone tests passed.")
+    elif selected_groups == ["quick"]:
+        print("Quick smoke test groups passed. Full verification was not performed.")
+    else:
+        print("Selected test groups passed.")
     return 0
 
 

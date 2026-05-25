@@ -5,7 +5,7 @@
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
- * lea, mul, imul, and Irvine32 exit over the currently supported register and
+ * lea, mul, imul, div, and Irvine32 exit over the currently supported register and
  * memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
@@ -2270,6 +2270,113 @@ static VmExecStatus vm_exec_execute_mul(Vm *vm, const VmIrInstruction *instructi
     return VM_EXEC_STATUS_OK;
 }
 
+/// Executes one unsigned DIV instruction with implicit accumulator operands.
+///
+/// DIV reads one register or memory divisor. The selected divisor width chooses
+/// the implicit dividend and result registers: AX/r/m8 writes AL quotient and
+/// AH remainder, DX:AX/r/m16 writes AX quotient and DX remainder, and
+/// EDX:EAX/r/m32 writes EAX quotient and EDX remainder. Divide-by-zero and
+/// quotient-overflow conditions stop before any implicit result register or
+/// flag mutation.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction DIV instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_div(Vm *vm, const VmIrInstruction *instruction) {
+    VmCpu before_cpu;
+    uint8_t width_bits = 0U;
+    uint32_t divisor_value = 0U;
+    uint32_t low_value = 0U;
+    uint32_t high_value = 0U;
+    uint64_t dividend = 0ULL;
+    uint64_t divisor = 0ULL;
+    uint64_t quotient = 0ULL;
+    uint64_t remainder = 0ULL;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source))) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->source, &width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &divisor_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (width_bits == 8U) {
+        divisor = (uint64_t)(divisor_value & 0xFFU);
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &low_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend = (uint64_t)(low_value & 0xFFFFU);
+        if (divisor == 0ULL) {
+            return VM_EXEC_STATUS_DIVIDE_BY_ZERO;
+        }
+        quotient = dividend / divisor;
+        remainder = dividend % divisor;
+        if (quotient > 0xFFULL) {
+            return VM_EXEC_STATUS_QUOTIENT_OVERFLOW;
+        }
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_AL, (uint32_t)quotient) ||
+            !vm_cpu_write_register(&vm->cpu, VM_REGISTER_AH, (uint32_t)remainder)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 16U) {
+        divisor = (uint64_t)(divisor_value & 0xFFFFU);
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &low_value) ||
+            !vm_cpu_read_register(&vm->cpu, VM_REGISTER_DX, &high_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend = ((uint64_t)(high_value & 0xFFFFU) << 16U) | (uint64_t)(low_value & 0xFFFFU);
+        if (divisor == 0ULL) {
+            return VM_EXEC_STATUS_DIVIDE_BY_ZERO;
+        }
+        quotient = dividend / divisor;
+        remainder = dividend % divisor;
+        if (quotient > 0xFFFFULL) {
+            return VM_EXEC_STATUS_QUOTIENT_OVERFLOW;
+        }
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_AX, (uint32_t)quotient) ||
+            !vm_cpu_write_register(&vm->cpu, VM_REGISTER_DX, (uint32_t)remainder)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 32U) {
+        divisor = (uint64_t)divisor_value;
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EAX, &low_value) ||
+            !vm_cpu_read_register(&vm->cpu, VM_REGISTER_EDX, &high_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend = ((uint64_t)high_value << 32U) | (uint64_t)low_value;
+        if (divisor == 0ULL) {
+            return VM_EXEC_STATUS_DIVIDE_BY_ZERO;
+        }
+        quotient = dividend / divisor;
+        remainder = dividend % divisor;
+        if (quotient > 0xFFFFFFFFULL) {
+            return VM_EXEC_STATUS_QUOTIENT_OVERFLOW;
+        }
+        if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_EAX, (uint32_t)quotient) ||
+            !vm_cpu_write_register(&vm->cpu, VM_REGISTER_EDX, (uint32_t)remainder)) {
+            vm->cpu = before_cpu;
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Executes the common explicit-destination signed IMUL writeback path.
 ///
 /// The helper multiplies two signed operand-width values, writes the low
@@ -2670,6 +2777,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_imul(vm, instruction);
         case VM_IR_OPCODE_IMUL_IMMEDIATE:
             return vm_exec_execute_imul_immediate(vm, instruction);
+        case VM_IR_OPCODE_DIV:
+            return vm_exec_execute_div(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
         default:
@@ -2828,6 +2937,10 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "unsupported-operand";
         case VM_EXEC_STATUS_MEMORY_ERROR:
             return "memory-error";
+        case VM_EXEC_STATUS_DIVIDE_BY_ZERO:
+            return "divide-by-zero";
+        case VM_EXEC_STATUS_QUOTIENT_OVERFLOW:
+            return "quotient-overflow";
         case VM_EXEC_STATUS_UNDEFINED_FLAG_USE:
             return "undefined-flag-use";
         default:

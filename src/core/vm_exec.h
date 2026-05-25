@@ -4,7 +4,7 @@
  *
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
- * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror, lea, mul, imul, and Irvine32 exit forms
+ * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, and Irvine32 exit forms
  * over the currently supported register and memory operand shapes. Control
  * flow, stack behavior, non-exit Irvine32 routines, and resource watchdogs
  * remain later milestones.
@@ -50,6 +50,10 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_UNSUPPORTED_OPERAND,
     /// Operation failed because a checked memory access failed.
     VM_EXEC_STATUS_MEMORY_ERROR,
+    /// Operation stopped because unsigned division attempted to divide by zero.
+    VM_EXEC_STATUS_DIVIDE_BY_ZERO,
+    /// Operation stopped because a division quotient does not fit the destination register.
+    VM_EXEC_STATUS_QUOTIENT_OVERFLOW,
     /// Operation stopped before consuming an architecturally undefined modeled flag.
     VM_EXEC_STATUS_UNDEFINED_FLAG_USE
 } VmExecStatus;

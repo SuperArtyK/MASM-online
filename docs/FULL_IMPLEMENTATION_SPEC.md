@@ -1000,9 +1000,22 @@ These examples have valid memory operand syntax and inferable width. They may wa
 
 The simulator should implement instructions in staged, testable groups. The goal is educational MASM32/Irvine32 compatibility, not full x86 coverage.
 
-#### 8.6.1 Baseline and Early Textbook Instructions
+#### 8.6.1 Baseline and Early Textbook Instructions in the v1 Roadmap
 
-Baseline arithmetic, data movement, control flow, stack, and address computation:
+This subsection lists baseline and early textbook instruction families that belong in the v1 roadmap. It is not the current implemented-instruction list.
+
+The authoritative current implementation status for any instruction is determined by all of the following:
+
+1. the latest completed milestone report and repository state as evidence of what has been implemented;
+2. `docs/SUPPORTED_SYNTAX.md`;
+3. the current implementation guide phase ledger;
+4. passing parser, source-run, executor, structured diagnostic, and rendered Simulator Messages tests for that instruction.
+
+Milestone reports and repository state are evidence of what has been implemented. They do not override the canonical spec and guide when behavior must be corrected intentionally.
+
+A future implementation assistant must not implement, document as supported, or assume working behavior for an instruction merely because it appears in this roadmap list. Each instruction must still be implemented only in its owning guide phase, with that phase's accepted syntax, rejected syntax, diagnostics, non-goals, and tests.
+
+Baseline arithmetic, data movement, control flow, stack, and address computation roadmap items:
 
 - `mov`
 - `add`
@@ -3643,6 +3656,94 @@ When source changes after diagnostics were produced, editor markers are removed 
 
 Diagnostic marker caps, gutter marker caps, and summary diagnostics are mandatory to avoid unbounded UI work.
 
+
+### 21.3 Test Runner Decomposition, Fixture Size, and Timeout-Safe Verification Policy
+
+The project test suite must remain runnable in both local developer environments and constrained assistant/container environments.
+
+The full aggregate test command remains required. However, as the simulator grows, the aggregate command may become too long or too verbose for hosted assistant tool environments. A hosted assistant/container timeout is not automatically a project test failure.
+
+The project must distinguish these cases clearly:
+
+- **Project test failure:** a test command completes and reports a failing assertion, nonzero exit code, build error, parser/executor mismatch, rendered-message mismatch, malformed JSON output, unsupported syntax mismatch, or another real failure.
+- **Project hang:** a local or focused test command repeatedly stops making progress at the same fixture, same source-run program, same diagnostic-rendering fixture, or same phase.
+- **Assistant/container timeout:** a hosted execution environment stops a long command because of wall-time, output-size, process-management, or tool-session limits, without evidence that the underlying project command failed.
+- **Unavailable dependency:** a required optional tool, such as Emscripten, is unavailable in the current environment.
+
+Assistant/container timeouts must be reported as verification-environment limitations unless a focused rerun proves an actual project failure.
+
+The test infrastructure must support decomposition at three levels:
+
+1. **Runner group level:** the full test suite can be split into focused runner groups such as native tests, source-run tests, web/Node tests, rendered diagnostic tests, protocol tests, and static checks.
+2. **Test file level:** unusually large test files can be split by behavior family when that improves maintainability or focused execution.
+3. **Individual fixture/program level:** unusually large MASM source fixtures or test programs can be split, table-driven, moved to named external fixture files, or explicitly labeled as integration smoke fixtures.
+
+These decomposition levels exist to improve verification reliability. They must not weaken coverage.
+
+The project must preserve exact rendered Simulator Messages coverage for user-visible diagnostics. Test-runner decomposition must not remove exact diagnostic-rendering tests, replace exact rendered-message assertions with weaker substring checks, stop using the native diagnostic JSON producer, or stop using the real browser formatter module from Node tests.
+
+Individual MASM source fixtures should normally test one behavior family or one regression. A large "kitchen sink" source program is allowed only when it is deliberately labeled as an integration smoke fixture and is not the only coverage for the behavior it exercises.
+
+Preferred source fixture categories:
+
+```text
+focused success fixture
+focused error fixture
+focused warning/notice fixture
+edge-case fixture
+regression fixture
+integration smoke fixture
+```
+
+The preferred verification model is:
+
+1. Run the aggregate command locally or in CI when the environment permits.
+2. If the aggregate command times out or output is truncated in a hosted assistant/container environment, rerun focused groups individually.
+3. If a focused group is still too large, rerun its documented subgroups or specific fixture families.
+4. Report exactly which groups, subgroups, files, or fixtures passed, failed, or were skipped.
+5. Report whether the aggregate command completed in the available environment.
+6. Report unavailable dependencies, such as missing `emcc`, separately from test failures.
+
+Milestone reports must use precise wording for test verification status. Acceptable examples:
+
+```text
+Aggregate test command completed and passed.
+```
+
+```text
+Aggregate test command timed out in the assistant/container environment while producing long output. Focused groups were rerun individually and passed: structure, native, source-run, web, diagnostics, protocol, static.
+```
+
+```text
+The source-run group timed out in the assistant/container environment. Source-run subgroups were rerun individually and passed: memory-layout, instructions, diagnostic-policies, settings, regressions.
+```
+
+```text
+Browser/Wasm rebuild smoke was not run in this environment because `emcc` was unavailable. Native, source-run, Node, protocol, static, and diagnostic-rendering tests passed.
+```
+
+```text
+Focused group `diagnostics` failed. This is a real project test failure, not an assistant timeout.
+```
+
+Milestone reports must not describe a hosted assistant/container timeout as a project failure unless a focused command, subgroup command, fixture command, or local run reproduces a real failing test.
+
+Milestone reports must not describe a partial focused rerun as full aggregate verification unless the aggregate command actually completed in that environment.
+
+The default aggregate runner output should be compact enough to review. Verbose fixture-level output should remain available through an explicit verbose mode and should always be shown, or summarized with enough context, when a failure occurs.
+
+Release-gate implication:
+
+The final v1 release gate must be runnable through both the aggregate command and documented focused groups. Focused groups are not lesser tests; they are the decomposed form of the same verification obligations.
+
+A release report may use focused group results as evidence only when it lists every required group and every required group passed or was explicitly skipped for a documented environment reason.
+
+A release report must not treat `--quick` as full release verification.
+
+A release report must not treat unavailable Emscripten/browser smoke as a native/core test failure. It must report that limitation separately and must still run all native, source-run, Node, protocol, static, and diagnostic-rendering groups that are available in the environment.
+
+A release report must also identify any intentionally preserved large integration fixtures. Large integration fixtures are allowed only when they are labeled, purposeful, and supported by smaller focused tests for the same behavior.
+
 ## 22. Save and Share URL Format
 
 Use compressed encoded project state in the URL fragment.
@@ -3714,6 +3815,35 @@ Not saved:
 - UI theme and CodeMirror theme selection.
 - Editor local preferences such as folded panels, font size, and local-only editor options.
 - Scroll positions.
+
+Diagnostic UI settings persistence policy:
+
+Phase 53E - Memory Validation and Teaching Diagnostic UI Settings introduced browser controls for memory range validation, uninitialized-read diagnostics, undefined-flag-use diagnostics, and compatibility notices. In the Phase 53E implementation, these diagnostic UI settings are local page-session preferences. They are not currently encoded in share URLs.
+
+Until a later share/settings phase explicitly changes this policy, these settings must be treated as local-only:
+
+- memory range validation selection;
+- uninitialized-read diagnostic policy;
+- undefined-flag-use diagnostic policy;
+- compatibility-notice visibility;
+- collapsed or expanded state of the Diagnostic settings panel;
+- other diagnostic-panel presentation preferences.
+
+Diagnostic settings may affect whether teaching diagnostics are emitted as notices, warnings, or strict stops. They must not be described as changing MASM language semantics or adding/removing supported syntax.
+
+A future share URL or settings-persistence phase may deliberately promote selected diagnostic settings into share-safe project state, but it must do so explicitly. That future phase must state:
+
+1. which diagnostic settings are share-safe project semantics;
+2. which diagnostic settings remain local-only teaching or UI preferences;
+3. how omitted fields are interpreted during import;
+4. how imported settings interact with default teaching diagnostics;
+5. how stale or unknown setting values are rejected or downgraded;
+6. which structured diagnostics or UI errors are emitted for invalid imported settings;
+7. which parser/source-run/browser tests prove the persistence boundary.
+
+Do not silently include or silently exclude Phase 53E diagnostic settings in share URLs. The share/import behavior must be deliberate, documented, and tested.
+
+This policy does not change the runtime default diagnostic behavior. After Phase 53C and Phase 53D, default user-facing runs still warn for uninitialized reads, warn for undefined flag use, and show compatibility notices unless the user explicitly selects another local setting.
 
 ### 22.1 Post-30 Share URL and Import Contract
 

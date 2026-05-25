@@ -1,6 +1,6 @@
 # MASM32 Educational Simulator
 
-Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30, Milestone 31 native/Node diagnostic rendering tests, Milestone 32 fixed-layout policy infrastructure, Milestone 33 automatic deterministic layout sizing available to tests/configuration, Milestone 34 stack/heap size metadata applied to automatic layout, Milestone 35 seeded/fresh randomized layout placement available to tests/configuration, Milestone 35A MASM-compatible `OPTION CASEMAP` user-symbol case policy correction, Milestone 36 declared-object allocation map metadata for tests/internal tooling, Milestone 37 allocated-object warning mode for tests/configuration, Milestone 38 allocated-object strict mode for tests/configuration, Milestone 39 uninitialized-origin byte metadata/write tracking for test/internal inspection, Milestone 40 opt-in uninitialized-read warning/strict validation for tests/configuration, Milestone 41 virtual Irvine32 symbol-registry metadata/diagnostics, Milestone 42 Irvine32 `exit` virtual terminator behavior, Milestone 43 `inc`/`dec` instruction behavior, Milestone 44 `and`/`or`/`xor` instruction behavior, Milestone 45 `not` instruction behavior, Milestone 46 `shl`/`sal` instruction behavior, Milestone 47 `shr` instruction behavior, Milestone 48 `sar` instruction behavior, Milestone 49 `rol` instruction behavior, Milestone 50 `ror` instruction behavior, Milestone 50A undefined modeled-flag validity metadata for currently modeled flags, Milestone 50B opt-in undefined flag-use diagnostics for existing flag consumers, Milestone 51 post-30 smoke-harness validation coverage, Milestone 52 `lea` effective-address computation, Milestone 52A signed register and memory value display formatting, Milestone 53 unsigned `mul` instruction behavior, Milestone 53A memory-validation policy clarification with symbol-offset runtime correction, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching warnings for existing uninitialized-read and undefined-flag-use diagnostics, Milestone 53D default compatibility notices for accepted no-op, metadata-only, and limited-behavior MASM constructs, Milestone 53E browser UI settings for existing memory validation and teaching diagnostic policies, Milestone 54 one-operand signed `imul` instruction behavior, and Milestone 55 two- and three-operand signed `imul` forms.
+Static, browser-based MASM32 educational simulator with runtime MASM behavior implemented through Milestone 30, Milestone 31 native/Node diagnostic rendering tests, Milestone 32 fixed-layout policy infrastructure, Milestone 33 automatic deterministic layout sizing available to tests/configuration, Milestone 34 stack/heap size metadata applied to automatic layout, Milestone 35 seeded/fresh randomized layout placement available to tests/configuration, Milestone 35A MASM-compatible `OPTION CASEMAP` user-symbol case policy correction, Milestone 36 declared-object allocation map metadata for tests/internal tooling, Milestone 37 allocated-object warning mode for tests/configuration, Milestone 38 allocated-object strict mode for tests/configuration, Milestone 39 uninitialized-origin byte metadata/write tracking for test/internal inspection, Milestone 40 opt-in uninitialized-read warning/strict validation for tests/configuration, Milestone 41 virtual Irvine32 symbol-registry metadata/diagnostics, Milestone 42 Irvine32 `exit` virtual terminator behavior, Milestone 43 `inc`/`dec` instruction behavior, Milestone 44 `and`/`or`/`xor` instruction behavior, Milestone 45 `not` instruction behavior, Milestone 46 `shl`/`sal` instruction behavior, Milestone 47 `shr` instruction behavior, Milestone 48 `sar` instruction behavior, Milestone 49 `rol` instruction behavior, Milestone 50 `ror` instruction behavior, Milestone 50A undefined modeled-flag validity metadata for currently modeled flags, Milestone 50B opt-in undefined flag-use diagnostics for existing flag consumers, Milestone 51 post-30 smoke-harness validation coverage, Milestone 52 `lea` effective-address computation, Milestone 52A signed register and memory value display formatting, Milestone 53 unsigned `mul` instruction behavior, Milestone 53A memory-validation policy clarification with symbol-offset runtime correction, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching warnings for existing uninitialized-read and undefined-flag-use diagnostics, Milestone 53D default compatibility notices for accepted no-op, metadata-only, and limited-behavior MASM constructs, Milestone 53E browser UI settings for existing memory validation and teaching diagnostic policies, Milestone 54 one-operand signed `imul` instruction behavior, Milestone 55 two- and three-operand signed `imul` forms, and Milestone 56 unsigned `div` instruction behavior.
 
 ## Current scope
 
@@ -54,29 +54,50 @@ Implemented through the current milestone:
 - Milestone 53E diagnostic settings: the browser UI exposes existing memory range validation, uninitialized-read, undefined-flag-use, and compatibility-notice policies. Defaults remain region-only memory validation, uninitialized-read warn, undefined-flag-use warn, and compatibility notices on. Diagnostic settings are local page-session preferences; share URLs are not implemented yet and do not currently encode these settings.
 - Milestone 54 one-operand signed `imul`: signed multiplication supports 8-bit, 16-bit, and 32-bit register or unambiguous memory sources. `imul` multiplies signed `AL`, `AX`, or `EAX` by the signed source and stores the double-width product in `AX`, `DX:AX`, or `EDX:EAX`. `CF` and `OF` are clear only when the full signed product is exactly the sign extension of the lower result half; `ZF` and `SF` are preserved deterministically.
 - Milestone 55 two- and three-operand signed `imul`: 16-bit and 32-bit register destinations now support register and unambiguous memory sources, plus signed immediate third operands. These forms store the low destination-width product in the destination register, set `CF`/`OF` on signed truncation, and preserve `ZF`/`SF` deterministically.
+- Milestone 56 unsigned `div`: one-operand unsigned division supports 8-bit, 16-bit, and 32-bit register or unambiguous memory divisors. `div` divides `AX`, `DX:AX`, or `EDX:EAX` by the unsigned source, stores the quotient and remainder in the width-selected result registers, preserves modeled flags, and reports `divide-by-zero` or `quotient-overflow` runtime errors before mutation.
 - Command-line native and JavaScript tests.
 - Windows development scripts for Visual Studio and Emscripten.
 
 Not implemented yet:
 
-- Control flow, stack, call/ret, Irvine32 routines other than the virtual `exit` terminator, debugger stepping, scaled-index addressing, carry rotates, division, macros, runtime high-level condition expressions, full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
+- Control flow, stack, call/ret, Irvine32 routines other than the virtual `exit` terminator, debugger stepping, scaled-index addressing, carry rotates, signed division, macros, runtime high-level condition expressions, full expression parsing beyond the Milestone 29 compile-time subset, and Windows API behavior.
 - Extended 32-bit / 64-bit register behavior.
 
 See `docs/SUPPORTED_SYNTAX.md` for the current supported subset, scheduled features, and recognized unsupported constructs.
 
-## Run native tests
+## Run tests
+
+Full aggregate verification remains:
 
 ```sh
-./scripts/run_tests.py
+python3 scripts/run_tests.py
+python3 scripts/run_tests.py --all
 ```
 
-On Windows, run the same test command from a terminal with Python and a C compiler available:
+Focused Phase 56A runner groups are available when a hosted assistant/container environment times out or truncates aggregate output:
+
+```sh
+python3 scripts/run_tests.py --quick
+python3 scripts/run_tests.py --structure
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+```
+
+`--quick` is smoke-only and is not full milestone verification. `--quiet` reduces successful output, and `--verbose` prints subprocess commands and detailed fixture/reporting output.
+
+On Windows, run the same test commands from a terminal with Python and a C compiler available:
 
 ```cmd
-python scripts\run_tests.py
+py scripts\run_tests.py --all
+py scripts\run_tests.py --source-run
+py scripts\run_tests.py --diagnostics
 ```
 
-The native tests do not require Emscripten. They compile the C99 core/parser/executor/source-run tests with the host C compiler, build the native diagnostic JSON producer, then run JavaScript protocol, formatter, and diagnostic-rendering harness tests with Node.js.
+The native and Node tests do not require Emscripten. The runner compiles the C99 core/parser/executor tests with the host C compiler, runs source-run integration tests, builds the native diagnostic JSON producer, then runs JavaScript protocol, formatter, settings, and diagnostic-rendering harness tests with Node.js.
 
 ## Install emsdk on Windows
 

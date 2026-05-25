@@ -76,12 +76,12 @@ test("formats canonical registers and aliases in stable order", () => {
   }), [
     "EAX    | 0000002Ah / u: 42         / s:  42        ",
     "  AX   |     002Ah / u: 42         / s:  42        ",
-    "  AH   |     00h   / u: 0          / s:  0         ",
+    "    AH |     00h   / u: 0          / s:  0         ",
     "    AL |       2Ah / u: 42         / s:  42        ",
     "",
     "EBX    | 00000003h / u: 3          / s:  3         ",
     "  BX   |     0003h / u: 3          / s:  3         ",
-    "  BH   |     00h   / u: 0          / s:  0         ",
+    "    BH |     00h   / u: 0          / s:  0         ",
     "    BL |       03h / u: 3          / s:  3         ",
     "",
     "EFLAGS | 00000040h / 64"
@@ -96,17 +96,17 @@ test("separates independent register groups with blank lines", () => {
   }), [
     "EAX    | 00000001h / u: 1          / s:  1         ",
     "  AX   |     0001h / u: 1          / s:  1         ",
-    "  AH   |     00h   / u: 0          / s:  0         ",
+    "    AH |     00h   / u: 0          / s:  0         ",
     "    AL |       01h / u: 1          / s:  1         ",
     "",
     "ECX    | 00000002h / u: 2          / s:  2         ",
     "  CX   |     0002h / u: 2          / s:  2         ",
-    "  CH   |     00h   / u: 0          / s:  0         ",
+    "    CH |     00h   / u: 0          / s:  0         ",
     "    CL |       02h / u: 2          / s:  2         ",
     "",
     "EDX    | 00000003h / u: 3          / s:  3         ",
     "  DX   |     0003h / u: 3          / s:  3         ",
-    "  DH   |     00h   / u: 0          / s:  0         ",
+    "    DH |     00h   / u: 0          / s:  0         ",
     "    DL |       03h / u: 3          / s:  3         "
   ].join("\n"));
 });
@@ -117,7 +117,7 @@ test("formats register alias widths independently from parent register width", (
   }), [
     "EAX    | 000000FFh / u: 255        / s:  255       ",
     "  AX   |     00FFh / u: 255        / s:  255       ",
-    "  AH   |     00h   / u: 0          / s:  0         ",
+    "    AH |     00h   / u: 0          / s:  0         ",
     "    AL |       FFh / u: 255        / s: -1         "
   ].join("\n"));
 
@@ -126,7 +126,7 @@ test("formats register alias widths independently from parent register width", (
   }), [
     "EAX    | FFFFFFFFh / u: 4294967295 / s: -1         ",
     "  AX   |     FFFFh / u: 65535      / s: -1         ",
-    "  AH   |     FFh   / u: 255        / s: -1         ",
+    "    AH |     FFh   / u: 255        / s: -1         ",
     "    AL |       FFh / u: 255        / s: -1         "
   ].join("\n"));
 });
@@ -140,22 +140,22 @@ test("aligns high-byte aliases under the high byte of 16-bit aliases", () => {
   }), [
     "EAX    | 00001234h / u: 4660       / s:  4660      ",
     "  AX   |     1234h / u: 4660       / s:  4660      ",
-    "  AH   |     12h   / u: 18         / s:  18        ",
+    "    AH |     12h   / u: 18         / s:  18        ",
     "    AL |       34h / u: 52         / s:  52        ",
     "",
     "EBX    | 00005678h / u: 22136      / s:  22136     ",
     "  BX   |     5678h / u: 22136      / s:  22136     ",
-    "  BH   |     56h   / u: 86         / s:  86        ",
+    "    BH |     56h   / u: 86         / s:  86        ",
     "    BL |       78h / u: 120        / s:  120       ",
     "",
     "ECX    | 00009ABCh / u: 39612      / s:  39612     ",
     "  CX   |     9ABCh / u: 39612      / s: -25924     ",
-    "  CH   |     9Ah   / u: 154        / s: -102       ",
+    "    CH |     9Ah   / u: 154        / s: -102       ",
     "    CL |       BCh / u: 188        / s: -68        ",
     "",
     "EDX    | 0000DEF0h / u: 57072      / s:  57072     ",
     "  DX   |     DEF0h / u: 57072      / s: -8464      ",
-    "  DH   |     DEh   / u: 222        / s: -34        ",
+    "    DH |     DEh   / u: 222        / s: -34        ",
     "    DL |       F0h / u: 240        / s: -16        "
   ].join("\n"));
 });

@@ -69,6 +69,55 @@ The project must keep the browser Simulator Messages formatter in a side-effect-
 
 Manual browser testing remains required for rebuilt Wasm artifacts and DOM/Worker integration, but manual browser testing must not be the only way to validate diagnostic message wording.
 
+### 2.4b Test Runner Decomposition, Fixture Size, and Timeout-Safe Verification
+
+The aggregate test runner should remain the normal full-suite command, but it must not be the only way to verify the implemented milestone suite.
+
+The test runner must support focused groups so that assistants, CI jobs, and developers can run expensive or verbose test families independently. This is required because hosted assistant/container environments may impose wall-time, output-size, or process limits that are stricter than a local developer terminal.
+
+A timeout from a hosted assistant/container tool is not automatically a project test failure. When the aggregate command times out or its output is truncated in a hosted environment, the assistant must rerun focused test groups individually and report the result honestly.
+
+Required reporting distinction:
+
+```text
+aggregate completed and passed
+aggregate timed out in assistant/container environment, focused groups passed
+aggregate failed with a real failing group
+focused group failed
+focused group timed out, subgroups or fixtures rerun
+group skipped because dependency was unavailable, such as emcc
+```
+
+The assistant must not claim that the full aggregate suite passed unless the aggregate command completed and returned the final success status in that environment.
+
+The assistant may claim focused verification only when it lists the groups that were actually run and passed.
+
+If a focused group is itself too large for the assistant/container environment, the assistant must rerun documented subgroups or individual fixture families and report those results by name.
+
+The test runner and test files must keep user-visible diagnostic coverage intact:
+
+- do not remove exact rendered Simulator Messages tests to reduce runtime;
+- do not replace exact rendered-message assertions with weaker substring checks unless an exact assertion is preserved elsewhere and the exception is documented;
+- do not skip native diagnostic JSON generation when diagnostic wording, JSON shape, parser recovery, runtime errors, or warning routing changes;
+- do not treat manual browser testing as a substitute for native/Node diagnostic-rendering tests.
+
+Large test files and oversized individual MASM source fixtures must be handled deliberately.
+
+Rules:
+
+- Prefer focused fixtures over broad "kitchen sink" fixtures.
+- Use integration smoke fixtures only when cross-feature composition is the explicit purpose.
+- Label every source-run fixture with a stable, descriptive fixture name.
+- On failure, report the fixture name before printing fixture output.
+- Do not delete fixtures to reduce runtime.
+- Do not weaken assertions while splitting files or fixtures.
+- Do not move source-run fixtures into lower-level executor tests merely to reduce runtime; source-run tests intentionally exercise parser, layout, VM execution, diagnostics, and JSON/result behavior together.
+- If a source fixture becomes too long to maintain source line/column expectations safely, split it into smaller programs or move it to a named external fixture file.
+
+Default successful output should be compact. Verbose fixture-level output must be available on demand and must be shown or summarized when a failure occurs.
+
+Future milestone reports must document whether the aggregate runner completed, whether focused groups were run, whether any focused group required subgroup/fixture reruns, and whether browser/Wasm smoke testing was skipped because Emscripten was unavailable.
+
 ### 2.4 Preserve Source Locations
 
 Every parsed instruction and generated IR instruction must retain:
@@ -7516,15 +7565,25 @@ DIV r/m32:  EDX:EAX / r/m32 -> EAX quotient, EDX remainder
 ### Runtime errors
 
 - Divisor zero: `divide-by-zero`.
-- Quotient too large for AL/AX/EAX: `division-overflow` or `quotient-overflow`.
+- Quotient too large for the selected quotient register: `quotient-overflow`.
 - Invalid memory divisor address: existing runtime memory diagnostic.
 - On any divide error, leave quotient and remainder registers unchanged. Do not partially write `AL/AH`, `AX/DX`, or `EAX/EDX`.
 - Divide errors must not create memory-change rows or partial implicit-register deltas.
-- Divide errors must not create memory-change rows or partial implicit-register deltas.
+
+Post-implementation correction:
+
+Milestone 56 selected `quotient-overflow` as the canonical divide-family diagnostic code for an overflowing quotient. The earlier guide wording that allowed either `division-overflow` or `quotient-overflow` is obsolete. Future division-family phases, including Phase 57 - Signed IDIV, must use `quotient-overflow` unless a later reviewed canonical edit deliberately changes the diagnostic naming policy.
+
+`division-overflow` must not be introduced as a second equivalent diagnostic code. If older notes, comments, or tests mention `division-overflow`, treat them as stale pre-implementation wording and update them to `quotient-overflow`.
+
+This note corrects future-facing guide wording only. It does not imply that the completed Phase 56 implementation originally had different requirements or that milestone history should be rewritten.
 
 ### Flag behavior
 
-- Preserve all currently modeled flags as a deterministic educational policy for real x86 undefined flags.
+- Preserve all currently modeled flag bits as a deterministic educational policy for real x86 undefined flags.
+- Preserve Phase 50A flag-validity metadata exactly.
+- A successful `div` must not mark any modeled flag valid or invalid.
+- A failed `div`, including divide-by-zero, quotient overflow, invalid memory reads, strict planned-read validation failures, and strict uninitialized-read validation failures, must preserve both the deterministic flag bits and their validity metadata.
 
 ### Required tests
 
@@ -7564,17 +7623,651 @@ EDX = 00000002h / 2
 
 ---
 
-## 61. Phase 57 - Signed IDIV
+
+## 60A. Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics
 
 ### Goal
 
-Implement one-operand signed `idiv` after unsigned `div` is correct.
+Improve the test harness so the full implemented-milestone suite remains easy to run, easy to split, and easy to report in constrained assistant/container environments.
 
-This phase must not implement multiplication, labels, jumps, stack behavior, or procedure behavior.
+This phase addresses verification ergonomics only. It exists because the aggregate test runner and some accumulated test families have grown large enough that hosted assistant tool environments may time out or truncate output before the final success line.
+
+This phase must preserve all existing test coverage. It must not remove diagnostic-rendering tests, source-run regression tests, protocol tests, static checks, milestone-specific coverage, or exact rendered Simulator Messages checks merely to make the aggregate command shorter.
+
+This phase must address three distinct size/timeout risks:
+
+1. large aggregate runner or runner group output;
+2. large test files, especially `tests/core/test_wasm_source_run.c`;
+3. oversized individual MASM source fixtures or test programs.
+
+### Placement and roadmap rule
+
+This is a non-renumbering maintenance phase inserted after Phase 56 - Unsigned DIV and before Phase 57 - Signed IDIV.
+
+Do not renumber Phase 57 or any later phase.
+
+After Phase 56A is complete, the next runtime instruction milestone remains Phase 57 - Signed IDIV.
+
+### Behavior category
+
+Test-harness and reporting maintenance.
+
+This phase must not change simulator language behavior, parser behavior, VM/executor behavior, memory behavior, diagnostic semantics, Program Console output, Simulator Messages wording, browser UI behavior, Wasm API behavior, or supported syntax.
+
+The only allowed changes are test-runner, test-file organization, test-fixture organization, test-reporting, helper-script, and documentation changes needed to make test execution more modular and less noisy.
+
+### Non-goals
+
+This phase must not implement:
+
+- signed `idiv`;
+- new instructions;
+- new MASM syntax;
+- parser behavior changes;
+- VM/executor runtime changes;
+- memory model changes;
+- diagnostic code changes;
+- diagnostic JSON schema changes;
+- rendered Simulator Messages wording changes;
+- Program Console wording changes;
+- browser diagnostic settings;
+- browser UI features;
+- Wasm runtime behavior;
+- Emscripten build behavior except documentation or reporting of existing availability checks;
+- roadmap renumbering.
+
+This phase must not remove tests to make the suite faster.
+
+This phase must not weaken exact assertions to make the suite easier to split.
+
+If an implementation assistant finds a real project bug while working on this phase, it must report the bug separately. Do not mix simulator behavior fixes into Phase 56A unless the user explicitly authorizes a scope expansion.
+
+### Required runner modes
+
+Update `scripts/run_tests.py` so the implemented test suite can be run as a full aggregate or as focused groups.
+
+Required command forms:
+
+```text
+python3 scripts/run_tests.py
+python3 scripts/run_tests.py --all
+python3 scripts/run_tests.py --quick
+python3 scripts/run_tests.py --structure
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+```
+
+The existing command must remain valid:
+
+```text
+python3 scripts/run_tests.py
+```
+
+Default behavior may remain equivalent to `--all`. If default behavior is equivalent to `--all`, the runner should print a short hint explaining that focused groups are available when a hosted environment times out.
+
+Windows usage must also work:
+
+```bat
+py scripts\run_tests.py
+py scripts\run_tests.py --all
+py scripts\run_tests.py --diagnostics
+```
+
+Runner argument parsing and subprocess invocation must remain portable across Windows and POSIX environments. Do not rely on shell-only syntax, Unix-only path separators, or Bash-specific behavior inside `scripts/run_tests.py`.
+
+### Required output modes
+
+Add output controls:
+
+```text
+--quiet
+--verbose
+```
+
+Default output should be compact enough for assistant/container logs.
+
+`--quiet` should print only:
+
+- group start status;
+- group pass/fail/skip status;
+- final compact summary;
+- failure details when a failure occurs.
+
+`--verbose` should print fixture-level details, milestone fixture names, expected rendered diagnostic lines, subprocess commands, and other detailed output that is currently printed unconditionally.
+
+On failure, the runner must always print enough information to identify:
+
+- failing group;
+- failing subgroup, when applicable;
+- failing command;
+- failing test file, when available;
+- failing fixture or source-run program name, when available;
+- subprocess exit code;
+- captured stdout/stderr tail or full output according to size limits;
+- path to any temporary output file or diff file, if generated.
+
+A successful quiet run must not hide a failed subprocess. Quiet mode reduces noise only for success paths.
+
+### Required test groups
+
+The exact implementation may use repository-specific internal function names, but the runner must provide stable user-facing group names for at least:
+
+```text
+structure
+native
+source-run
+web
+diagnostics
+protocol
+static
+```
+
+Definitions:
+
+- `structure`: repository structure checks, documentation file/header checks, Doxygen/static policy checks, milestone metadata checks, and source tree shape checks.
+- `native`: native C unit, executor, parser, CPU, memory, and helper tests that do not require Node.
+- `source-run`: native source-run JSON tests and integration-style source execution tests.
+- `web`: Node tests for browser-side formatter, protocol, settings, or other modules that do not require a served browser.
+- `diagnostics`: native diagnostic JSON producer build plus Node rendered Simulator Messages tests.
+- `protocol`: worker/protocol/schema tests where separable from generic web tests.
+- `static`: documentation, status, supported-syntax, manifest, and other static consistency checks.
+
+If a test logically belongs to more than one group, choose one primary group and document that choice in the runner help text. Do not run the same expensive test twice in `--all` unless duplication is intentional and documented.
+
+### `--quick` mode
+
+Add a `--quick` mode for fast sanity checking.
+
+`--quick` must be clearly documented as a smoke subset, not full verification.
+
+`--quick` may run:
+
+- structure checks;
+- a representative native test subset;
+- a representative source-run success fixture;
+- a representative rendered diagnostic fixture;
+- a representative web/protocol check.
+
+`--quick` is never sufficient for milestone acceptance unless the user explicitly asks for smoke-only verification. A milestone report that uses only `--quick` must say that full verification was not performed.
+
+Milestone reports must not say `All implemented milestone tests passed` if only `--quick` was run.
+
+### Source-run test decomposition requirement
+
+`tests/core/test_wasm_source_run.c` is a known high-growth integration test file. It has accumulated source-run coverage from many milestones, including memory/layout behavior, diagnostic policy behavior, instruction-family smoke tests, UI-settings policy routing, and regression fixtures.
+
+Phase 56A must specifically review `tests/core/test_wasm_source_run.c`.
+
+If `tests/core/test_wasm_source_run.c` is still small enough to compile and run comfortably as one binary in local and hosted assistant/container environments, it may remain one file, but the milestone report must say that it was reviewed and explain why splitting was not necessary.
+
+If `tests/core/test_wasm_source_run.c` times out, produces excessive output, or is difficult to use for focused verification, split it into behavior-family source-run test files.
+
+Preferred split:
+
+```text
+tests/core/test_source_run_memory_layout.c
+tests/core/test_source_run_instruction_smoke.c
+tests/core/test_source_run_diagnostic_policies.c
+tests/core/test_source_run_settings.c
+tests/core/test_source_run_regressions.c
+```
+
+Alternative names are allowed, but the grouping must be documented in:
+
+- `scripts/run_tests.py --help`;
+- `docs/TESTING_GUIDE.md`;
+- the Phase 56A milestone report.
+
+The split must preserve every existing fixture and assertion. A fixture may be renamed only if the new name remains descriptive and the milestone report maps the old name to the new name.
+
+Do not move source-run fixtures into lower-level executor tests merely to reduce runtime. Source-run tests intentionally exercise parser, data layout, memory layout, VM execution, diagnostics, source-run JSON, and result rendering metadata together.
+
+Required and preferred source-run runner forms:
+
+Required:
+
+```text
+python3 scripts/run_tests.py --source-run
+```
+
+Preferred, and required if `tests/core/test_wasm_source_run.c` is split or if `--source-run` still risks timing out in hosted assistant/container verification:
+
+```text
+python3 scripts/run_tests.py --source-run=memory-layout
+python3 scripts/run_tests.py --source-run=instructions
+python3 scripts/run_tests.py --source-run=diagnostic-policies
+python3 scripts/run_tests.py --source-run=settings
+python3 scripts/run_tests.py --source-run=regressions
+python3 scripts/run_tests.py --source-run=all
+```
+
+At minimum, `--source-run` must run independently from native unit tests, web tests, protocol tests, static checks, and rendered diagnostic tests.
+
+If source-run subgrouping is not implemented in Phase 56A, the milestone report must explicitly say why, must prove that `tests/core/test_wasm_source_run.c` runs comfortably as an independent focused group, and must identify the future owner for subgrouping.
+
+### Individual test-program size and fixture scope policy
+
+Phase 56A must review not only large test files, but also large individual MASM source fixtures embedded in tests or loaded from fixture files.
+
+A source-run fixture should normally test one behavior family or one regression. It should not become a broad milestone demo program that exercises many unrelated features unless the fixture is explicitly marked as an integration smoke test.
+
+Large fixture risks:
+
+- one failing assertion becomes hard to diagnose;
+- one source program generates too much JSON or rendered output;
+- source-location expectations become brittle;
+- future assistants may misread a fixture as specifying more behavior than intended;
+- assistant/container runs may time out or truncate output before the failure location is visible.
+
+Rules for individual MASM test programs:
+
+- Prefer several small focused fixtures over one very large fixture.
+- Keep each fixture's purpose named and documented in the test helper call or fixture name.
+- Do not combine unrelated behavior families merely to reduce the number of test cases.
+- Do not use a giant "kitchen sink" source program as the only coverage for a feature.
+- Integration smoke fixtures are allowed, but they must be labeled as smoke or integration fixtures and must not replace focused unit/source-run tests.
+- If a fixture checks diagnostics, keep the expected diagnostic count and rendered output small enough that failures are easy to locate.
+- If a fixture needs many similar cases, prefer table-driven fixtures or separate named fixture cases.
+- If a fixture source becomes long enough that source line/column maintenance is error-prone, move it to a named fixture file or split it into smaller programs.
+- Every pre-existing test fixture must either remain in place or be moved to a new file/group with equivalent assertions.
+- The milestone report must account for moved, renamed, split, or intentionally preserved large fixtures.
+- When splitting or externalizing fixtures, do not rewrite the MASM program to rely on different simulator semantics unless the milestone report identifies the change as a test refactor preserving equivalent coverage.
+
+Recommended fixture categories:
+
+```text
+focused success fixture
+focused error fixture
+focused warning/notice fixture
+edge-case fixture
+regression fixture
+integration smoke fixture
+```
+
+Large fixture review requirement:
+
+Phase 56A must identify any unusually large embedded MASM source strings or external fixture programs. For each one, the milestone report must state one of:
+
+```text
+kept as-is because it is a labeled integration smoke fixture
+kept as-is because it is still small and focused enough
+split into smaller focused fixtures
+converted into a table-driven set of smaller fixtures
+moved into an external named fixture file for readability
+left for a later phase, with reason and risk
+```
+
+Splitting a fixture must preserve all assertions. Do not delete edge cases while shrinking a test program.
+
+### Diagnostic-rendering decomposition
+
+The diagnostic-rendering test group should be further splittable by family if practical.
+
+Required and preferred diagnostic runner forms:
+
+Required:
+
+```text
+python3 scripts/run_tests.py --diagnostics
+```
+
+Preferred, and required if `--diagnostics` still risks timing out in hosted assistant/container verification:
+
+```text
+python3 scripts/run_tests.py --diagnostics=memory
+python3 scripts/run_tests.py --diagnostics=directives
+python3 scripts/run_tests.py --diagnostics=compatibility
+python3 scripts/run_tests.py --diagnostics=arithmetic
+python3 scripts/run_tests.py --diagnostics=shift-rotate
+python3 scripts/run_tests.py --diagnostics=mul-div
+python3 scripts/run_tests.py --diagnostics=all
+```
+
+If the implementation chooses a different subgroup scheme, it must document the names in:
+
+- `python3 scripts/run_tests.py --help`;
+- `docs/TESTING_GUIDE.md`;
+- the Phase 56A milestone report.
+
+`--diagnostics` must work as an independent focused group. Diagnostic subgroups such as `--diagnostics=memory` are preferred. If diagnostic subgroups are not implemented in Phase 56A, the milestone report must document why and identify the future owner.
+
+Diagnostic-rendering coverage must remain exact for stable user-visible diagnostics. Do not weaken exact rendered Simulator Messages assertions merely to make subgrouping easier.
+
+### Large test file decomposition
+
+Review unusually large test files and split them only where doing so improves maintainability or focused execution.
+
+Primary candidates:
+
+- large native source-run regression files;
+- large rendered diagnostic-message test files;
+- large protocol/formatter tests if they mix unrelated concerns.
+
+Splitting rules:
+
+- Keep fixture names stable where practical.
+- Do not weaken assertions.
+- Do not remove exact rendered Simulator Messages tests.
+- Do not replace exact diagnostic checks with broad substring checks unless the original exact check is preserved elsewhere and the exception is documented.
+- Keep shared test helpers in common helper files rather than duplicating expected formatting logic.
+- Avoid splitting files solely by milestone number if behavior-family grouping is clearer.
+- Preserve current test order only when order is semantically important. Otherwise, group by behavior family.
+- Do not split a file merely to satisfy this phase if the runner can already invoke that test family independently and the file remains maintainable.
+
+Preferred file grouping:
+
+```text
+source-run memory/layout tests
+source-run arithmetic/instruction tests
+source-run diagnostics-policy tests
+source-run settings tests
+source-run regression tests
+rendered memory diagnostics
+rendered directive/compatibility diagnostics
+rendered arithmetic diagnostics
+rendered shift/rotate diagnostics
+rendered mul/div diagnostics
+web formatter tests
+web protocol/settings tests
+```
+
+If a file is split, the milestone report must list the old file, new files, and the reason for the split.
+
+### Source-run fixture inventory
+
+Phase 56A must produce or update a source-run fixture inventory.
+
+The inventory may live in `docs/TESTING_GUIDE.md`, runner help text, a test manifest, or another documented location.
+
+The inventory must make it possible to identify:
+
+- each source-run fixture or fixture family;
+- which focused group or subgroup owns it;
+- whether it is focused success, focused error, warning/notice, edge-case, regression, or integration smoke;
+- whether it was moved, renamed, split, or intentionally preserved during Phase 56A.
+
+The inventory does not need to duplicate every assertion. It is a navigation and audit aid for future assistants.
+
+### Aggregate summary output
+
+The aggregate runner must print a compact final summary table.
+
+The table should include at least:
+
+```text
+Group        Status    Details
+structure    PASS      ...
+native       PASS      ...
+source-run   PASS      ...
+web          PASS      ...
+diagnostics  PASS      ...
+protocol     PASS      ...
+static       PASS      ...
+```
+
+Allowed statuses:
+
+```text
+PASS
+FAIL
+SKIP
+NOT-RUN
+```
+
+`SKIP` must include a reason, such as:
+
+```text
+SKIP - emcc unavailable
+```
+
+`NOT-RUN` should be used only when a selected command did not request that group.
+
+The final aggregate success line must remain clear. The existing final wording may be preserved if already stable:
+
+```text
+All implemented milestone tests passed.
+```
+
+If any selected group fails, the runner must exit nonzero and must not print the all-tests-passed line.
+
+The goal is not to guarantee a universal runtime limit. The goal is that each focused group produces bounded, reviewable output and can be rerun independently when the aggregate command is too large for the environment.
+
+### Timeout-safe assistant verification policy
+
+Add documented verification guidance for assistant/container environments.
+
+Required wording for `docs/TESTING_GUIDE.md` or equivalent testing documentation:
+
+```text
+If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure.
+
+The assistant must rerun focused groups individually and report:
+
+- which focused groups were run;
+- which focused groups passed;
+- which focused groups failed;
+- which focused groups were skipped and why;
+- whether any focused group required subgroup or fixture-level reruns;
+- whether `--all` completed in that environment;
+- whether the final local/user run produced `All implemented milestone tests passed.`
+```
+
+Milestone reports must distinguish:
+
+```text
+aggregate completed and passed
+aggregate timed out in assistant/container environment, focused groups passed
+aggregate failed with a real failing group
+focused group failed
+focused group timed out, subgroups or fixtures rerun
+group skipped because dependency unavailable, such as emcc
+```
+
+An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed and returned the final success line in that environment.
+
+An assistant may report focused verification only by naming the focused groups, subgroups, or fixtures that actually passed.
+
+### Browser/Wasm availability reporting
+
+Preserve honest reporting around Emscripten availability.
+
+If `emcc` is unavailable, the runner or milestone report may say browser/Wasm rebuild smoke was not run in that environment. This must not be reported as a test failure unless the current phase explicitly requires an Emscripten-capable environment.
+
+The runner should keep or improve current browser manual-smoke status reporting.
+
+Manual browser testing remains required when these change:
+
+- Emscripten build scripts;
+- `web/dist` artifact generation;
+- Worker loading;
+- worker protocol shape;
+- UI DOM rendering;
+- CodeMirror diagnostic integration;
+- source-run JSON schema;
+- formatter module import path or public API.
+
+Manual browser testing is still supplemental. It is not a replacement for native, source-run, Node, protocol, static, or rendered diagnostic tests.
+
+### Required documentation updates
+
+Update:
+
+```text
+docs/TESTING_GUIDE.md
+README.md, if it lists test commands
+any milestone-reporting guidance or report template, if present
+```
+
+Documentation must include:
+
+- full aggregate command;
+- focused group commands;
+- source-run subgroup commands;
+- diagnostic subgroup commands, if implemented;
+- quiet and verbose modes;
+- quick mode and its limitations;
+- recommended assistant/container verification workflow;
+- how to interpret assistant tool timeouts;
+- how to report unavailable Emscripten/Wasm browser smoke;
+- how to classify large fixtures;
+- Windows command examples.
+
+### Required tests for the runner itself
+
+Add tests or static checks proving:
+
+- `python3 scripts/run_tests.py --help` lists every supported group flag.
+- `--all` is accepted.
+- `--quick` is accepted.
+- `--quiet` is accepted.
+- `--verbose` is accepted.
+- every required focused group flag is accepted.
+- `--source-run` is accepted.
+- source-run subgroup flags are accepted if implemented.
+- `--diagnostics` is accepted.
+- diagnostic subgroup flags are accepted if implemented.
+- unknown flags fail with a nonzero exit code and a useful message.
+- group names used in documentation match group names accepted by the runner.
+- the default command remains valid.
+- at least one focused group can be run independently without invoking the full aggregate suite.
+- failure reporting includes the group name and failing command.
+- source-run fixture failures include the fixture name.
+- moved or split fixture mappings are documented if files are split.
+
+These runner tests should avoid recursively running the entire suite where possible. Prefer lightweight static checks, dry-run mode, help-output checks, command-construction checks, or a small self-test path.
+
+If a dry-run mode is added for runner self-tests, it must be clearly documented as a runner-planning feature, not as a substitute for running tests.
+
+### Acceptance criteria
+
+This phase passes only when:
+
+- `python3 scripts/run_tests.py` still works.
+- `python3 scripts/run_tests.py --all` works.
+- focused group commands work for `structure`, `native`, `source-run`, `web`, `diagnostics`, `protocol`, and `static`.
+- `--quick` works and is documented as a smoke subset.
+- `--quiet` reduces routine successful output.
+- `--verbose` preserves detailed fixture-level reporting.
+- `tests/core/test_wasm_source_run.c` is explicitly reviewed.
+- the milestone report states whether `tests/core/test_wasm_source_run.c` was kept whole or split.
+- if `tests/core/test_wasm_source_run.c` is split, all moved fixtures are mapped from old location/name to new location/name.
+- if `tests/core/test_wasm_source_run.c` is not split, `python3 scripts/run_tests.py --source-run` must compile and run the source-run suite independently within the assistant/container limit.
+- large individual MASM source fixtures are reviewed.
+- any oversized fixture is either split, labeled as integration smoke, moved to an external fixture file, converted to table-driven smaller fixtures, kept with rationale, or explicitly deferred with rationale.
+- no fixture coverage is removed.
+- no exact rendered diagnostic assertion is weakened.
+- diagnostic-rendering tests can be run without running every native/source-run test first.
+- source-run tests can be run without running Node rendered diagnostic tests.
+- Node rendered diagnostic tests can be run without running the full source-run suite.
+- the aggregate runner prints a compact final summary table.
+- the runner exits nonzero on real selected-group failure.
+- a timeout-safe assistant verification policy is documented.
+- unavailable Emscripten/browser smoke is reported separately from test failure.
+- existing test coverage is preserved.
+- exact rendered Simulator Messages tests are preserved.
+- no simulator runtime behavior changes.
+- no supported syntax changes.
+- no diagnostic semantics changes.
+- no diagnostic wording changes except runner/reporting text.
+- no roadmap renumbering occurs.
+
+### Commands to use for Phase 56A verification
+
+Minimum expected commands:
+
+```text
+python3 scripts/run_tests.py --help
+python3 scripts/run_tests.py --quick
+python3 scripts/run_tests.py --structure
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+python3 scripts/run_tests.py --all
+```
+
+If source-run subgroups are implemented, also run:
+
+```text
+python3 scripts/run_tests.py --source-run=memory-layout
+python3 scripts/run_tests.py --source-run=instructions
+python3 scripts/run_tests.py --source-run=diagnostic-policies
+python3 scripts/run_tests.py --source-run=settings
+python3 scripts/run_tests.py --source-run=regressions
+python3 scripts/run_tests.py --source-run=all
+```
+
+If diagnostic subgroups are implemented, also run the documented diagnostic subgroup commands.
+
+If the hosted assistant/container environment times out on `--all`, rerun every focused group and report the timeout as an environment limitation, not a project failure, unless one focused group fails.
+
+If the hosted assistant/container environment times out on `--source-run`, rerun source-run subgroups or documented source-run fixture families and report exactly which ones passed.
+
+Windows examples for user/local verification:
+
+```bat
+py scripts\run_tests.py --help
+py scripts\run_tests.py --quick
+py scripts\run_tests.py --source-run
+py scripts\run_tests.py --diagnostics
+py scripts\run_tests.py --all
+```
+
+### Milestone report requirements
+
+The Phase 56A milestone report must include:
+
+- files changed;
+- test files split, with old and new file names;
+- explicit disposition of `tests/core/test_wasm_source_run.c`;
+- fixture-level changes, not only file-level changes;
+- moved/renamed/split fixture mapping;
+- large fixtures reviewed and their disposition;
+- runner flags added;
+- output modes added;
+- focused groups added;
+- source-run subgroup behavior;
+- diagnostic-rendering subgroup behavior;
+- documentation updated;
+- runner self-tests added;
+- exact commands run;
+- whether aggregate `--all` completed in the assistant/container environment;
+- focused group pass/fail/skip results;
+- subgroup or fixture pass/fail/skip results if a focused group timed out;
+- any skipped browser/Wasm checks and the reason;
+- explicit confirmation that no simulator behavior, supported syntax, diagnostic semantics, or rendered Simulator Messages wording changed.
+
+## 61. Phase 57 - Signed IDIV
+
+
+Phase 57 follows Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics.
+
+Before implementing Phase 57, verify that the test runner can execute focused groups independently, especially `--source-run`, `--diagnostics`, and `--native`.
+
+Signed IDIV adds additional runtime-error, quotient-overflow, divide-by-zero, memory-source, no-partial-mutation, and rendered Simulator Messages coverage. Therefore Phase 57 implementation must start from the decomposed runner introduced in Phase 56A.
+
+This dependency does not change Phase 57's instruction scope. Do not implement any additional test-runner work inside Phase 57 unless Phase 56A was explicitly skipped or left incomplete and the user authorizes that scope.
+
+
+### Goal
+
+Implement one-operand signed `idiv` after Phase 56 - Unsigned DIV is correct.
+
+This phase adds signed accumulator division only. It must preserve all existing `div`, `mul`, and `imul` behavior.
+
+This phase must not implement multiplication, labels, jumps, conditional jumps, `cmp`, stack behavior, procedure behavior, Irvine32 routine expansion, scaled-index addressing, executable QWORD/SQWORD memory operations, or any future instruction group.
 
 ### Behavior category
 
 Runtime arithmetic instruction with implicit accumulator operands.
+
+`idiv` is a memory-reading or register-reading instruction. It does not write memory. Memory divisor reads must use the same checked VM memory helper path, planned-read validation path, uninitialized-read policy path, and memory-validation policy path used by the existing memory-source arithmetic instructions.
 
 ### Accepted syntax
 
@@ -7582,62 +8275,270 @@ Runtime arithmetic instruction with implicit accumulator operands.
 idiv reg8
 idiv reg16
 idiv reg32
+
 idiv BYTE PTR [reg32]
 idiv WORD PTR [reg32]
 idiv DWORD PTR [reg32]
+
+idiv SBYTE PTR [reg32]
+idiv SWORD PTR [reg32]
+idiv SDWORD PTR [reg32]
+
 idiv symbol
 idiv symbol[offset]
 ```
+
+Signed PTR aliases are accepted by executable width:
+
+```text
+SBYTE PTR  -> 8-bit divisor
+SWORD PTR  -> 16-bit divisor
+SDWORD PTR -> 32-bit divisor
+```
+
+Signedness of the divisor is determined by the `idiv` instruction semantics, not by declaration signedness alone. For `idiv`, the resolved operand width controls how the divisor bits are sign-interpreted:
+
+```text
+8-bit divisor:   sign-interpret source8
+16-bit divisor:  sign-interpret source16
+32-bit divisor:  sign-interpret source32
+```
+
+Direct symbols and symbol-offset operands infer memory width from existing symbol metadata and the existing global memory-width resolution rules. Explicit `PTR` width overrides take precedence according to the established memory-width policy.
+
+`.CONST` divisor sources are readable. `idiv` must not reject `.CONST` memory sources merely because the section is read-only, because this instruction reads the divisor and does not write memory.
 
 ### Rejected syntax
 
 ```asm
 idiv 5
 idiv eax, ebx
-idiv [eax]          ; ambiguous width
-idiv QWORD PTR q    ; executable QWORD/SQWORD memory operation remains deferred
+idiv [eax]
+idiv QWORD PTR q
+idiv SQWORD PTR q
+idiv
+idiv eax, ebx, ecx
 ```
+
+Diagnostic expectations:
+
+- `idiv 5` reports `invalid-instruction-operands`.
+- `idiv eax, ebx` reports `invalid-instruction-operands`.
+- `idiv` with no operand reports `invalid-instruction-operands`.
+- `idiv eax, ebx, ecx` reports `invalid-instruction-operands`.
+- `idiv [eax]` reports `ambiguous-memory-width` because the memory access width is not inferable.
+- `idiv QWORD PTR q` and `idiv SQWORD PTR q` must use the same stable diagnostic code currently used by executable QWORD/SQWORD memory-operation rejection in MASM32 Educational Mode. Do not introduce a new IDIV-specific diagnostic code for this case.
+
+These rejections must not be described as temporary parser gaps if they are MASM32 Educational Mode policy. In particular, ambiguous memory-width forms must be diagnosed as ambiguous width, not as unsupported syntax.
 
 ### Runtime semantics
 
+For 8-bit divisor operands:
+
 ```text
-IDIV r/m8:   signed(AX)      / signed(r/m8)  -> AL quotient, AH remainder
-IDIV r/m16:  signed(DX:AX)   / signed(r/m16) -> AX quotient, DX remainder
-IDIV r/m32:  signed(EDX:EAX) / signed(r/m32) -> EAX quotient, EDX remainder
+signed(AX) / signed(source8) -> AL quotient, AH remainder
 ```
 
-- Quotient truncates toward zero.
-- Remainder has the same sign as the dividend.
-- Absolute value of remainder is less than absolute value of divisor.
+For 16-bit divisor operands:
+
+```text
+signed(DX:AX) / signed(source16) -> AX quotient, DX remainder
+```
+
+For 32-bit divisor operands:
+
+```text
+signed(EDX:EAX) / signed(source32) -> EAX quotient, EDX remainder
+```
+
+Rules:
+
+- Division is signed.
+- The divisor is read at the resolved operand width.
+- The divisor bits are sign-interpreted at the resolved operand width.
+- The dividend is the required implicit accumulator pair for the divisor width.
+- The dividend is sign-interpreted at the full dividend width:
+  - `AX` as signed 16-bit for an 8-bit divisor;
+  - `DX:AX` as signed 32-bit for a 16-bit divisor;
+  - `EDX:EAX` as signed 64-bit for a 32-bit divisor.
+- The quotient truncates toward zero.
+- The remainder has the same sign as the dividend.
+- The absolute value of the remainder is less than the absolute value of the divisor.
+- The quotient must fit in the signed range of the selected quotient register:
+  - `AL`: -128 through 127;
+  - `AX`: -32768 through 32767;
+  - `EAX`: -2147483648 through 2147483647.
+- Only the selected quotient and remainder registers are updated on success.
+- Source registers and source memory are not modified.
+- Memory divisor reads do not create memory-change rows.
+
+### Validation and execution order
+
+The implementation must validate all required conditions before committing quotient or remainder registers.
+
+For a memory divisor:
+
+1. Resolve the final effective address and memory width.
+2. Run mandatory checked VM memory read validation.
+3. Run selected memory-validation policy checks that apply to planned reads.
+4. Run selected uninitialized-read policy checks.
+5. If strict planned-read validation or strict uninitialized-read validation stops execution, do not consume the divisor value and do not perform division.
+6. If the divisor read succeeds, evaluate divide-by-zero.
+7. If the divisor is nonzero, compute the signed mathematical quotient and remainder using a safe intermediate representation.
+8. Check whether the quotient fits in the selected signed quotient register.
+9. Commit quotient and remainder registers only after every validation step succeeds.
+
+For a register divisor:
+
+1. Read the selected register or register alias value.
+2. Sign-interpret it at the selected divisor width.
+3. Evaluate divide-by-zero.
+4. Compute the signed mathematical quotient and remainder using a safe intermediate representation.
+5. Check whether the quotient fits in the selected signed quotient register.
+6. Commit quotient and remainder registers only after every validation step succeeds.
 
 ### Runtime errors
 
-- Divisor zero: `divide-by-zero`.
-- Quotient outside the signed destination range: `division-overflow` or `quotient-overflow`.
-- Invalid memory divisor address: existing runtime memory diagnostic.
-- On any divide error, leave quotient and remainder registers unchanged. Do not partially write `AL/AH`, `AX/DX`, or `EAX/EDX`.
+Runtime error codes:
+
+```text
+divide-by-zero
+quotient-overflow
+```
+
+`divide-by-zero` behavior:
+
+- Triggered when the divisor value is zero after reading and sign-interpreting the operand.
+- Stops execution before updating quotient or remainder registers.
+- Preserves source registers, source memory, modeled flag bits, flag-validity metadata, Program Console output, Simulator Messages already emitted, and memory-change rows.
+- Must include source line, column, byte offset, and span length for the `idiv` instruction or the divisor operand according to the current source-run diagnostic convention.
+- Rendered wording should name the divisor operand and the quotient/remainder registers that were not updated.
+
+Suggested wording shape:
+
+```text
+IDIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.
+```
+
+For memory divisors, preserve source operand text where available:
+
+```text
+IDIV divisor operand divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.
+```
+
+`quotient-overflow` behavior:
+
+- Triggered when the signed mathematical quotient is outside the signed range of the selected quotient register.
+- Stops execution before updating quotient or remainder registers.
+- Preserves source registers, source memory, modeled flag bits, flag-validity metadata, Program Console output, Simulator Messages already emitted, and memory-change rows.
+- Must include source line, column, byte offset, and span length for the `idiv` instruction or divisor operand according to the current source-run diagnostic convention.
+- Rendered wording should name the quotient register and the quotient/remainder registers that were not updated.
+
+Suggested wording shape:
+
+```text
+IDIV quotient is outside the signed range of quotient register EAX. Execution stopped before updating the quotient register EAX and remainder register EDX.
+```
+
+Do not use `division-overflow` for Phase 57. Milestone 56 established `quotient-overflow` as the canonical divide-family quotient overflow diagnostic.
+
+### No-partial-mutation behavior
+
+On any failed `idiv` execution path, the simulator must not partially mutate visible state.
+
+Failure paths include:
+
+- divide-by-zero;
+- quotient overflow;
+- invalid memory divisor address;
+- memory permission failure;
+- section-capacity strict validation failure;
+- section-image strict validation failure;
+- declared-object strict validation failure;
+- strict uninitialized-read validation failure;
+- address arithmetic overflow;
+- unsupported executable QWORD/SQWORD memory operation.
+
+On all failure paths:
+
+- leave quotient and remainder registers unchanged;
+- leave source registers unchanged;
+- leave source memory unchanged;
+- preserve modeled flag bits;
+- preserve Phase 50A flag-validity metadata;
+- do not write Program Console output;
+- do not create memory-change rows;
+- do not emit `execution-complete` after a fatal runtime diagnostic.
 
 ### Flag behavior
 
-- Preserve all currently modeled flags as a deterministic educational policy for real x86 undefined flags.
+Real x86 leaves flags undefined after `IDIV`. MASM32 Educational Mode uses deterministic preservation for currently modeled flags.
+
+Phase 57 behavior:
+
+- Preserve all currently modeled flag bits as a deterministic educational policy for real x86 undefined flags.
+- Preserve Phase 50A flag-validity metadata exactly on successful `idiv`.
+- Preserve Phase 50A flag-validity metadata exactly on failed `idiv`.
+- Do not mark `CF`, `ZF`, `SF`, or `OF` valid or invalid as a side effect of `idiv`.
+- Do not emit an undefined-modeled-flag producer warning for `idiv` in this phase unless a later reviewed phase explicitly changes multiply/divide undefined-flag policy.
 
 ### Required tests
 
-- 32-bit positive division: `100 / 7` gives quotient `14`, remainder `2`.
+Parser and operand-shape tests:
+
+- Accept `idiv reg8`, `idiv reg16`, and `idiv reg32`.
+- Accept `idiv BYTE PTR [reg32]`, `idiv WORD PTR [reg32]`, and `idiv DWORD PTR [reg32]`.
+- Accept `idiv SBYTE PTR [reg32]`, `idiv SWORD PTR [reg32]`, and `idiv SDWORD PTR [reg32]`.
+- Accept direct typed symbol divisors.
+- Accept typed symbol-offset divisors.
+- Accept readable `.CONST` divisor sources.
+- Reject `idiv 5` with `invalid-instruction-operands`.
+- Reject `idiv eax, ebx` with `invalid-instruction-operands`.
+- Reject `idiv` with no operand.
+- Reject `idiv eax, ebx, ecx` with `invalid-instruction-operands`.
+- Reject `idiv [eax]` with `ambiguous-memory-width`.
+- Reject `idiv QWORD PTR q` and `idiv SQWORD PTR q` with the same stable diagnostic code currently used by executable QWORD/SQWORD memory-operation rejection in MASM32 Educational Mode.
+
+Runtime success tests:
+
+- 32-bit positive dividend / positive divisor: `100 / 7` gives quotient `14`, remainder `2`.
 - 32-bit negative dividend / positive divisor: `-100 / 7` gives quotient `-14`, remainder `-2`.
 - 32-bit positive dividend / negative divisor: `100 / -7` gives quotient `-14`, remainder `2`.
 - 32-bit negative dividend / negative divisor: `-100 / -7` gives quotient `14`, remainder `-2`.
-- Tests prove quotient truncates toward zero and the remainder sign follows the dividend.
-- 32-bit overflow: `-2147483648 / -1` reports quotient overflow.
+- Tests prove quotient truncates toward zero.
+- Tests prove the remainder sign follows the dividend.
+- 16-bit signed division success.
+- 8-bit signed division success.
 - Stale/significant high-half test proving `IDIV r/m32` uses signed `EDX:EAX`, not only `EAX`.
-- 8-bit and 16-bit signed division success and overflow.
-- Divide by zero from register and memory.
-- Divide-error tests prove registers and modeled flags remain unchanged after failure.
-- Successful `idiv` preserves pre-set modeled flags `CF`, `ZF`, `SF`, and `OF`.
-- Memory source read through checked memory helpers, including direct symbol, symbol-offset, explicit `PTR [reg32]`, and `.CONST` divisor sources.
-- No memory-change rows are produced by divisor reads.
-- Ambiguous memory-width diagnostic.
-- Rendered runtime diagnostics.
+- Memory divisor read through checked memory helpers.
+- Memory divisor read from `.CONST`.
+- Memory divisor reads do not create memory-change rows.
+- Successful `idiv` preserves pre-set modeled flag bits `CF`, `ZF`, `SF`, and `OF`.
+- Successful `idiv` preserves Phase 50A flag-validity metadata.
+
+Runtime error tests:
+
+- Divide by zero from register.
+- Divide by zero from memory.
+- 8-bit quotient overflow.
+- 16-bit quotient overflow.
+- 32-bit quotient overflow, including `-2147483648 / -1`.
+- Failed memory divisor read stops before quotient/remainder mutation.
+- Strict uninitialized-read memory divisor diagnostic stops before divisor consumption and before quotient/remainder mutation.
+- Strict planned-read validation stops before division.
+- Divide-error tests prove quotient/remainder registers remain unchanged.
+- Divide-error tests prove modeled flag bits remain unchanged.
+- Divide-error tests prove Phase 50A flag-validity metadata remains unchanged.
+- Divide-error tests prove no memory-change rows are produced.
+
+Rendered Simulator Messages tests:
+
+- Exact rendered `divide-by-zero` message for a register divisor.
+- Exact rendered `divide-by-zero` message for a memory divisor, preserving operand text where available.
+- Exact rendered `quotient-overflow` message.
+- Exact rendered ambiguous-memory-width diagnostic.
+- Exact rendered unsupported executable QWORD/SQWORD diagnostic if the current formatter has a stable message for that path.
+- Verify fatal `idiv` diagnostics do not render `execution-complete`.
 
 ### Acceptance program
 
@@ -7658,6 +8559,29 @@ Expected:
 EAX = FFFFFFF2h / 4294967282   ; -14 as raw 32-bit storage
 EDX = FFFFFFFEh / 4294967294   ; -2 as raw 32-bit storage
 ```
+
+This acceptance program relies on previously implemented `cdq` behavior. If `cdq` is unavailable in a test harness, initialize `EDX:EAX` directly through supported setup helpers or use a 16-bit or 8-bit IDIV fixture instead. Do not implement `cdq` as part of Phase 57.
+
+### Non-goals and future work not implemented in this phase
+
+Phase 57 must not implement:
+
+- unsigned `div` changes;
+- multiplication changes;
+- `cmp`;
+- labels, `jmp`, conditional jumps, or `loop`;
+- `lea`;
+- `push`, `pop`, `call`, `ret`, `leave`, or stack behavior;
+- procedure metadata, stack frames, `LOCAL`, `PROTO`, `INVOKE`, or `ADDR`;
+- Irvine32 routine expansion beyond already implemented behavior;
+- Program Console input/output routines;
+- scaled-index addressing;
+- executable QWORD/SQWORD memory operations;
+- Windows API behavior;
+- PE loading;
+- object linking;
+- host include loading;
+- macro expansion.
 
 ---
 
@@ -15039,6 +15963,24 @@ share-safe project settings
 local-only settings
 transient runtime state
 ```
+
+Phase 53E diagnostic settings compatibility note:
+
+Phase 53E - Memory Validation and Teaching Diagnostic UI Settings initially treats diagnostic UI settings as local page-session preferences. Before this phase promotes any diagnostic setting into share-safe project state, it must explicitly reclassify that setting and add tests for the new persistence behavior.
+
+This phase must not assume that every existing browser diagnostic setting is automatically share-safe merely because it can affect execution diagnostics. It must classify each setting independently.
+
+At minimum, classify these settings:
+
+- memory range validation;
+- uninitialized-read diagnostics;
+- undefined-flag-use diagnostics;
+- compatibility-notice visibility;
+- Diagnostic settings panel collapsed/expanded state.
+
+The panel presentation state should remain local-only unless a later UI preferences phase deliberately persists it. Diagnostic behavior settings may become share-safe only if this phase documents the compatibility reason, defaulting behavior, import validation, and tests.
+
+Diagnostic settings may affect whether teaching diagnostics are emitted as notices, warnings, or strict stops. They must not be described as changing MASM language semantics or adding/removing supported syntax.
 
 Share-safe project settings include:
 

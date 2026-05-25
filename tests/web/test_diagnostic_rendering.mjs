@@ -3792,6 +3792,141 @@ END main
   assertRenderedEquals("phase53d-notice-plus-error", source, rawJson, rendered, "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.\n[assembly-error] unsupported-model line 2, column 1, byte offset 5, span length 6: .model form is unsupported. Use `.model flat, stdcall` in MASM32 Educational Mode.");
 });
 
+
+test("Phase 56 renders DIV divide-by-zero runtime error", () => {
+  const source = `.code
+main PROC
+    mov eax, 100
+    mov edx, 2
+    mov ebx, 0
+    div ebx
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase56-divide-by-zero", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 6,
+      column: 5,
+      byteOffset: 67,
+      spanLength: 7
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase56-divide-by-zero", source, rawJson, rendered, "[runtime-error] divide-by-zero line 6, column 5, byte offset 67, span length 7: DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 56 renders 8-bit DIV divide-by-zero runtime error with result register names", () => {
+  const source = `.code
+main PROC
+    mov ax, 0017h
+    mov bl, 0
+    div bl
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase56-divide-by-zero-8bit", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "DIV divisor operand BL evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register AL and remainder register AH.",
+      line: 5,
+      column: 5,
+      byteOffset: 52,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase56-divide-by-zero-8bit", source, rawJson, rendered, "[runtime-error] divide-by-zero line 5, column 5, byte offset 52, span length 6: DIV divisor operand BL evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register AL and remainder register AH.");
+});
+
+test("Phase 56 renders memory DIV divide-by-zero runtime error with divisor operand text", () => {
+  const source = `.data
+divisor DWORD 0
+.code
+main PROC
+    mov edx, 0
+    mov eax, 100
+    div divisor
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase56-divide-by-zero-memory", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "DIV divisor operand divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 7,
+      column: 5,
+      byteOffset: 74,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase56-divide-by-zero-memory", source, rawJson, rendered, "[runtime-error] divide-by-zero line 7, column 5, byte offset 74, span length 11: DIV divisor operand divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 56 renders DIV quotient-overflow runtime error", () => {
+  const source = `.code
+main PROC
+    mov edx, 1
+    mov eax, 0
+    mov ebx, 1
+    div ebx
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase56-quotient-overflow", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "quotient-overflow",
+      message: "DIV quotient is too large to fit in quotient register EAX. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 6,
+      column: 5,
+      byteOffset: 65,
+      spanLength: 7
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase56-quotient-overflow", source, rawJson, rendered, "[runtime-error] quotient-overflow line 6, column 5, byte offset 65, span length 7: DIV quotient is too large to fit in quotient register EAX. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 56 renders 8-bit DIV quotient-overflow runtime error with result register names", () => {
+  const source = `.code
+main PROC
+    mov ax, 0100h
+    mov bl, 1
+    div bl
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase56-quotient-overflow-8bit", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "quotient-overflow",
+      message: "DIV quotient is too large to fit in quotient register AL. Execution stopped before updating the quotient register AL and remainder register AH.",
+      line: 5,
+      column: 5,
+      byteOffset: 52,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase56-quotient-overflow-8bit", source, rawJson, rendered, "[runtime-error] quotient-overflow line 5, column 5, byte offset 52, span length 6: DIV quotient is too large to fit in quotient register AL. Execution stopped before updating the quotient register AL and remainder register AH.");
+});
+
 test("Phase 52A formats source-run register signed display from existing JSON", () => {
   const source = `.code
 main PROC

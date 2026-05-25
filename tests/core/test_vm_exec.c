@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 55.
+ * @brief Unit tests for the VM executor through Milestone 56.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -3337,6 +3337,182 @@ static int test_phase52_lea_effective_address_execution(void) {
     return failures;
 }
 
+
+/// Verifies Phase 56 unsigned DIV implicit-accumulator semantics and diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase56_div_semantics_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 56 DIV test");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BL, 0U), "main.asm", 3U, "div bl", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 0x0014U) ? 0 : record_failure("AX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 5U) ? 0 : record_failure("BL divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit DIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 8-bit DIV should succeed"));
+    failures += expect_u32(eax, 0x00000004U, "8-bit DIV should write AL quotient and AH remainder");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BL, 0U), "main.asm", 3U, "div bl", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit DIV remainder program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 0x0017U) ? 0 : record_failure("AX 8-bit remainder setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 5U) ? 0 : record_failure("BL 8-bit remainder divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit DIV remainder case should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 8-bit remainder DIV should succeed"));
+    failures += expect_u32(eax, 0x00000304U, "8-bit DIV should write AL quotient 4 and AH remainder 3");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BX, 0U), "main.asm", 3U, "div bx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 1000U) ? 0 : record_failure("AX 16-bit dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_DX, 0U) ? 0 : record_failure("DX 16-bit dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 7U) ? 0 : record_failure("BX divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "16-bit DIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 16-bit DIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after 16-bit DIV should succeed"));
+    failures += expect_u32(eax, 142U, "16-bit DIV should write AX quotient");
+    failures += expect_u32(edx, 6U, "16-bit DIV should write DX remainder");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "div ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("EAX 32-bit dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 1U) ? 0 : record_failure("EDX 32-bit dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 2U) ? 0 : record_failure("EBX divisor setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit DIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 32-bit DIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after 32-bit DIV should succeed"));
+    failures += expect_u32(eax, 0x80000000U, "32-bit DIV should write EAX quotient from EDX:EAX dividend");
+    failures += expect_u32(edx, 0U, "32-bit DIV should write EDX remainder");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "DIV should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "DIV should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "DIV should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "DIV should preserve OF");
+
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 7U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("DIV memory divisor fixture write should succeed"));
+    vm_memory_clear_changes(&vm.memory);
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_memory(VM_MEMORY_DEFAULT_DATA_BASE, 32U), "main.asm", 5U, "div factor", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "memory-source DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX memory DIV setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX memory DIV setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory-source DIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after memory DIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after memory DIV should succeed"));
+    failures += expect_u32(eax, 14U, "memory-source DIV should write quotient");
+    failures += expect_u32(edx, 2U, "memory-source DIV should write remainder");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "memory-source DIV should record one checked read");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 0U, 0U, "memory-source DIV should not write memory");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "div ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "divide-by-zero DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX divide-by-zero setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 2U) ? 0 : record_failure("EDX divide-by-zero setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0U) ? 0 : record_failure("EBX zero divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_DIVIDE_BY_ZERO, "DIV by zero should stop with divide-by-zero status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after divide-by-zero should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after divide-by-zero should succeed"));
+    failures += expect_u32(eax, 100U, "divide-by-zero should preserve EAX");
+    failures += expect_u32(edx, 2U, "divide-by-zero should preserve EDX");
+    diagnostic = vm_last_diagnostic(&vm);
+    failures += expect_status(diagnostic != NULL ? diagnostic->status : VM_EXEC_STATUS_OK, VM_EXEC_STATUS_DIVIDE_BY_ZERO, "divide-by-zero diagnostic should preserve status");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "div ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "overflow DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("EAX overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 1U) ? 0 : record_failure("EDX overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 1U) ? 0 : record_failure("EBX overflow divisor setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF overflow setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF overflow setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_QUOTIENT_OVERFLOW, "DIV quotient overflow should stop with quotient-overflow status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after quotient overflow should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after quotient overflow should succeed"));
+    failures += expect_u32(eax, 0U, "quotient overflow should preserve EAX");
+    failures += expect_u32(edx, 1U, "quotient overflow should preserve EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "quotient overflow should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "quotient overflow should preserve ZF");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BL, 0U), "main.asm", 3U, "div bl", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit overflow DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 0x0100U) ? 0 : record_failure("AX 8-bit overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 1U) ? 0 : record_failure("BL 8-bit overflow divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_QUOTIENT_OVERFLOW, "8-bit DIV quotient overflow should stop with quotient-overflow status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 8-bit quotient overflow should succeed"));
+    failures += expect_u32(eax, 0x00000100U, "8-bit quotient overflow should preserve AX");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BX, 0U), "main.asm", 3U, "div bx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit overflow DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 0U) ? 0 : record_failure("AX 16-bit overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_DX, 1U) ? 0 : record_failure("DX 16-bit overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 1U) ? 0 : record_failure("BX 16-bit overflow divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_QUOTIENT_OVERFLOW, "16-bit DIV quotient overflow should stop with quotient-overflow status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 16-bit quotient overflow should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after 16-bit quotient overflow should succeed"));
+    failures += expect_u32(eax, 0U, "16-bit quotient overflow should preserve AX");
+    failures += expect_u32(edx, 1U, "16-bit quotient overflow should preserve DX");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_memory(0U, 32U), "main.asm", 3U, "div DWORD PTR [eax]", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "invalid-memory DIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX invalid-memory setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX invalid-memory setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "DIV invalid memory read should use memory-error status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after invalid-memory DIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after invalid-memory DIV should succeed"));
+    failures += expect_u32(eax, 100U, "invalid-memory DIV should preserve EAX");
+    failures += expect_u32(edx, 0U, "invalid-memory DIV should preserve EDX");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3394,6 +3570,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IMUL_IMMEDIATE), "imul") != 0) {
         failures += record_failure("three-operand IMUL opcode name should be imul");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_DIV), "div") != 0) {
+        failures += record_failure("DIV opcode name should be div");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -3409,6 +3588,13 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_OK), "ok") != 0) {
         failures += record_failure("executor OK status name should be stable");
     }
+    if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_DIVIDE_BY_ZERO), "divide-by-zero") != 0) {
+        failures += record_failure("divide-by-zero status name should match");
+    }
+    if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_QUOTIENT_OVERFLOW), "quotient-overflow") != 0) {
+        failures += record_failure("quotient-overflow status name should match");
+    }
+
     if (vm_exec_status_name((VmExecStatus)99) != NULL) {
         failures += record_failure("invalid executor status name should be NULL");
     }
@@ -3416,7 +3602,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 55.
+/// Runs all executor tests through Milestone 56.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3479,6 +3665,7 @@ int main(void) {
     failures += test_phase54_imul_register_semantics();
     failures += test_phase54_imul_memory_sources_and_errors();
     failures += test_phase55_explicit_imul_semantics();
+    failures += test_phase56_div_semantics_and_errors();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -3486,6 +3673,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 55 passed.");
+    puts("Executor tests through Milestone 56 passed.");
     return 0;
 }
