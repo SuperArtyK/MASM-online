@@ -4,7 +4,13 @@ Static, browser-based MASM32 educational simulator with runtime MASM behavior im
 
 ## Current scope
 
-Implemented through the current milestone:
+Repository/archive milestone:
+Phase 56B - User-Facing Diagnostic Wording Cleanup
+
+Runtime/source-run MASM behavior phase:
+Phase 56 - Unsigned DIV
+
+Phase 56B is wording, current-status, and test-maintenance work only. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages categories. Implemented runtime behavior includes:
 
 - C99 core, parser, executor, memory model, and WebAssembly export boundary.
 - Static browser UI shell with worker-based source execution.

@@ -47,18 +47,18 @@ END main</textarea>
               <div class="setting-control">
                 <label for="memory-range-setting">Memory range validation</label>
                 <select id="memory-range-setting" aria-describedby="memory-range-setting-help">
-                  <option value="region-only" selected>Region-only (default)</option>
-                  <option value="section-capacity-warn">Section capacity: warn</option>
-                  <option value="section-capacity-strict">Section capacity: strict stop</option>
-                  <option value="section-image-warn">Section image: warn</option>
-                  <option value="section-image-strict">Section image: strict stop</option>
+                  <option value="region-only" selected>Program Region-only (default)</option>
+                  <option value="section-capacity-warn">Data Section capacity: warn</option>
+                  <option value="section-capacity-strict">Data Section capacity: strict stop</option>
+                  <option value="section-image-warn">Data Section image: warn</option>
+                  <option value="section-image-strict">Data Section image: strict stop</option>
                   <option value="declared-object-warn">Declared object bounds: warn</option>
                   <option value="declared-object-strict">Declared object bounds: strict stop</option>
                 </select>
                 <ul id="memory-range-setting-help" class="setting-help muted">
-                  <li><strong>Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
-                  <li><strong>Section capacity:</strong> report accesses that pass VM checks but fall outside the simulator's known section capacity range.</li>
-                  <li><strong>Section image:</strong> report accesses that stay in section capacity but leave the declared or initialized section image.</li>
+                  <li><strong>Program Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
+                  <li><strong>Data Section capacity:</strong> report accesses that pass VM checks but fall outside the simulator's known section capacity range.</li>
+                  <li><strong>Data Section image:</strong> report accesses that stay in section capacity but leave the declared or initialized section image.</li>
                   <li><strong>Declared object bounds:</strong> report accesses that leave or cross a declared data object, useful for catching accidental overrun/underrun bugs.</li>
                   <li>Warning modes continue execution; strict modes stop before mutation.</li>
                 </ul>
@@ -71,8 +71,8 @@ END main</textarea>
                   <option value="strict">Strict stop</option>
                 </select>
                 <ul id="uninitialized-reads-setting-help" class="setting-help muted">
-                  <li>Warn reports reads from <code>.DATA?</code> or <code>?</code> storage that has not been written yet.</li>
-                  <li>Off keeps deterministic zero-filled behavior without the teaching warning.</li>
+                  <li>Warn reports reads from <code>.DATA?</code> and other uninitialized storage that has not been written to yet.</li>
+                  <li>Off keeps deterministic zero-filled behavior without the warning.</li>
                   <li>Strict stops before consuming uninitialized-origin bytes.</li>
                 </ul>
               </div>

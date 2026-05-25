@@ -2286,7 +2286,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
     );
     failures += expect_json_contains(text_equ_json, "\"ok\":false", "text EQU should be rejected");
     failures += expect_json_contains(text_equ_json, "invalid-equate", "text EQU should report a structured invalid-equate diagnostic");
-    failures += expect_json_contains(text_equ_json, "Text EQU constants are not supported", "text EQU diagnostic should explain numeric-only support");
+    failures += expect_json_contains(text_equ_json, "Text EQU constants are not accepted", "text EQU diagnostic should explain numeric-only support");
 
     recursive_json = masm32_sim_wasm_run_source_json(
         "COUNT EQU COUNT + 1\n"

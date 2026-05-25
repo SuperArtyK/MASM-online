@@ -119,7 +119,7 @@ function addStaleWasmDiagnosticIfNeeded(runResult) {
   const diagnostic = {
     kind: "internal-simulator-error",
     code: "stale-wasm-artifact",
-    message: `The loaded Wasm artifact reports Milestone ${runResult.phase}, but the UI/source files expect Milestone ${IMPLEMENTED_PHASE}. Rebuild web/dist with the Emscripten build script.`
+    message: `The loaded Wasm artifact reports runtime/source-run MASM behavior phase ${runResult.phase}, but the UI/source files expect runtime/source-run MASM behavior phase ${IMPLEMENTED_PHASE}. Rebuild web/dist with the Emscripten build script.`
   };
 
   const messages = Array.isArray(runResult.simulatorMessages) ? runResult.simulatorMessages : [];

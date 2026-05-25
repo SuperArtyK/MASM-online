@@ -69,6 +69,21 @@ The project must keep the browser Simulator Messages formatter in a side-effect-
 
 Manual browser testing remains required for rebuilt Wasm artifacts and DOM/Worker integration, but manual browser testing must not be the only way to validate diagnostic message wording.
 
+User-facing diagnostic wording must be stable across repository/archive maintenance milestones.
+
+Diagnostics shown in Simulator Messages must not describe an error as “unsupported by the current milestone,” “not implemented in this milestone,” or similar milestone-relative wording. Such wording becomes stale when maintenance phases advance the repository/archive milestone without changing runtime/source-run MASM behavior.
+
+Diagnostics should instead identify one of these stable reasons:
+
+- malformed MASM syntax;
+- MASM-invalid ambiguous form, such as ambiguous memory width;
+- implemented simulator restriction, such as executable QWORD/SQWORD memory operations being unavailable in MASM32 Educational Mode;
+- planned future feature, named with both phase number and phase title when appropriate;
+- explicit non-goal, such as WinAPI execution, PE loading, object linking, host filesystem include loading, or native x86 execution;
+- runtime safety failure, such as invalid address range or `.CONST` write overlap.
+
+Historical milestone reports may contain milestone-relative wording because they describe what happened at the time. Current user-facing diagnostics, current supported-syntax documentation, current browser status text, and current tests should use stable wording.
+
 ### 2.4b Test Runner Decomposition, Fixture Size, and Timeout-Safe Verification
 
 The aggregate test runner should remain the normal full-suite command, but it must not be the only way to verify the implemented milestone suite.
@@ -118,7 +133,172 @@ Default successful output should be compact. Verbose fixture-level output must b
 
 Future milestone reports must document whether the aggregate runner completed, whether focused groups were run, whether any focused group required subgroup/fixture reruns, and whether browser/Wasm smoke testing was skipped because Emscripten was unavailable.
 
-### 2.4 Preserve Source Locations
+### 2.4c Repository Milestone Status versus Runtime Phase Metadata
+
+The repository/archive milestone and the runtime/source-run MASM behavior phase are related but not always identical.
+
+The repository/archive milestone identifies the latest accepted project state. It may advance because of any accepted project work, including:
+
+- runtime behavior;
+- parser behavior;
+- browser UI behavior;
+- source-run or Wasm API behavior;
+- diagnostic JSON shape or rendered message wording;
+- documentation;
+- supported-syntax reference updates;
+- test-runner infrastructure;
+- verification ergonomics;
+- repository maintenance.
+
+The runtime/source-run MASM behavior phase identifies the latest implemented MASM/source execution behavior that the runtime reports to tests, worker protocol results, browser status displays, source-run JSON payloads, Wasm/source-run status fields, supported-syntax current-status text, or other current-status surfaces. It must advance only when the target phase explicitly changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
+
+Current-status surfaces include, at minimum:
+
+- `README.md` current-scope and current-status text;
+- `docs/SUPPORTED_SYNTAX.md` current-status and expected-diagnostic text;
+- browser runtime-status text;
+- worker/protocol status text;
+- source-run JSON phase/status fields and any human-readable status strings carried in source-run JSON payloads;
+- Wasm/source-run status fields;
+- test assertions that describe runtime/source-run metadata;
+- user-facing diagnostics rendered in Simulator Messages;
+- worker-generated `ui-error` messages;
+- newly created milestone reports and current handoff/status summaries, while historical milestone reports remain historical evidence and do not need retroactive cleanup unless the user explicitly asks for historical report cleanup.
+
+Future assistants must apply this rule:
+
+```text
+Do not update source-run JSON phase fields, protocol phase values, browser runtime-status strings, supported-syntax runtime-status wording, README current-status wording, worker status wording, or tests that assert runtime phase values merely because a documentation-only, display-only, validation-only, diagnostic-wording, test-runner-only, verification-ergonomics, or repository-maintenance phase was completed.
+```
+
+A maintenance phase may advance the repository/archive milestone without changing runtime/source-run MASM behavior metadata.
+
+Examples:
+
+- Phase 52A - Signed Register and Memory Value Display advanced display formatting behavior but did not add new MASM syntax.
+- Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics advanced repository/test-runner status after Phase 56 but did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording.
+- Phase 56B - User-Facing Diagnostic Wording Cleanup advances repository/archive status after Phase 56A when implemented, but it is diagnostic wording, current-status wording, and test-maintenance work only. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, new diagnostic codes, new diagnostic JSON fields, or new rendered Simulator Messages categories.
+- After Phase 56A and Phase 56B, the runtime/source-run MASM behavior phase remains Phase 56 - Unsigned DIV until Phase 57 - Signed IDIV or another runtime behavior phase is implemented and accepted.
+
+Every future milestone report must state both values when they differ. Use this exact label format:
+
+```text
+Repository/archive milestone:
+Runtime/source-run MASM behavior phase:
+```
+
+For a runtime behavior milestone, the two values normally match. For a maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, or repository-maintenance milestone, the two values may differ.
+
+Required report wording when they differ:
+
+```text
+Repository/archive milestone:
+Phase <N or suffix> - <phase title>
+
+Runtime/source-run MASM behavior phase:
+Phase <M> - <runtime behavior phase title>
+
+Status interpretation:
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this target phase did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording. Do not update runtime/source-run phase metadata, supported-syntax runtime wording, or tests that assert runtime phase values unless the current target phase explicitly owns that change.
+```
+
+A future assistant must not "fix" a perceived mismatch between repository/archive milestone and runtime/source-run MASM behavior phase unless the current target phase explicitly owns that metadata change.
+
+If a test appears stale because it expects the previous runtime phase number after a maintenance phase, the assistant must first decide whether the target phase changed runtime-visible behavior. If it did not, the test is probably correct and must not be rewritten to match the repository/archive milestone.
+
+If a supported-syntax document appears stale because it says syntax support is through an earlier runtime phase after a later maintenance phase, the assistant must first decide whether the later phase changed supported MASM syntax. If it did not, the supported-syntax document is probably correct. At most, add a short note explaining that the later repository/archive phase was maintenance-only.
+
+Static/reporting acceptance criterion:
+
+```text
+When a milestone report describes a target phase whose repository/archive milestone differs from runtime/source-run MASM behavior phase, the report must include this exact block:
+
+Repository/archive milestone:
+Phase <N or suffix> - <phase title>
+
+Runtime/source-run MASM behavior phase:
+Phase <M> - <runtime behavior phase title>
+
+Status interpretation:
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this target phase did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording. Do not update runtime/source-run phase metadata, supported-syntax runtime wording, or tests that assert runtime phase values unless the current target phase explicitly owns that change.
+```
+
+This exact block is required for maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, and repository-maintenance phases when they do not advance runtime/source-run MASM behavior.
+
+Historical reports that predate this exact wording do not need to be rewritten unless the user explicitly asks for historical report cleanup. Future milestone reports must use the block.
+
+When a milestone is a runtime behavior milestone and the two values match, the report should still include both labels if the immediately preceding repository/archive milestone was maintenance-only. This prevents the assistant from losing the distinction at the point where runtime metadata intentionally advances again.
+
+### 2.4d Standing Rule: Modeled-Flag Consumers Must Use the Shared Undefined-Flag-Use Helper
+
+Every instruction, Irvine32 routine, debugger action, or future semantic feature that consumes a modeled flag value for behavior must use the shared undefined-flag-use checking path introduced by Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers.
+
+This rule applies when consuming any currently modeled flag whose validity metadata exists, including:
+
+```text
+CF
+ZF
+SF
+OF
+```
+
+A future feature must not read a modeled flag directly and silently ignore validity metadata.
+
+Required behavior:
+
+- In `off` mode, the consumer uses the deterministic preserved flag value and emits no `undefined-flag-use` diagnostic.
+- In `warn` mode, the consumer emits one `undefined-flag-use` warning at the consumer source location and continues using the deterministic preserved flag value.
+- In `error` mode, the consumer emits one `undefined-flag-use` runtime error at the consumer source location and stops before consumer mutation.
+- The diagnostic must identify the consumed flag or flags and include producer metadata when available.
+- Error mode must preserve registers, flags, memory, Program Console output, and memory-change rows as if the consumer instruction did not execute.
+
+Default user-facing behavior after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes is `warn`.
+
+Tests for any new flag-consuming feature must include:
+
+- valid flag consumption with no warning;
+- undefined flag consumption in default warning mode;
+- explicit off mode;
+- strict/error mode with no partial mutation;
+- exact rendered Simulator Messages coverage for warning and error paths.
+
+### 2.4e Standing Rule: Keyword Matching and User-Symbol CASEMAP Policy Are Separate
+
+Instruction mnemonics, register names, register aliases, directives, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 routine names are matched case-insensitively.
+
+User-defined symbol lookup is controlled by the current `OPTION CASEMAP` policy:
+
+- default behavior is equivalent to `OPTION CASEMAP:ALL`;
+- `OPTION CASEMAP:ALL` selects case-insensitive user-symbol matching;
+- `OPTION CASEMAP:NONE` selects exact-case user-symbol matching;
+- `OPTION CASEMAP:NOTPUBLIC` remains unsupported until public/external linkage semantics exist.
+
+Do not apply `OPTION CASEMAP:NONE` to instruction mnemonics, directives, registers, virtual include names, or recognized Irvine32 routine names.
+
+Example requirement:
+
+```asm
+OPTION CASEMAP:NONE
+INCLUDE Irvine32.inc
+
+.data
+Value DWORD 1
+value DWORD 2
+
+.code
+main PROC
+    mov eax, Value
+    mov ebx, value
+    EXIT
+main ENDP
+END main
+```
+
+The two data symbols must remain distinct because user-symbol lookup is exact-case under `OPTION CASEMAP:NONE`. The `EXIT` virtual Irvine32 terminator must still be recognized case-insensitively because Irvine32 routine/terminator matching is not governed by user-symbol CASEMAP policy.
+
+Future tests that combine Irvine32 names and mixed-case user symbols must prove both halves of this rule.
+
+### 2.4f Preserve Source Locations
 
 Every parsed instruction and generated IR instruction must retain:
 
@@ -2009,6 +2189,41 @@ Rules:
 Static documentation checks should flag stale references where feasible, especially references that point to a phase whose title does not match the feature being discussed.
 
 Static documentation checks should also flag shared-section headings that name bare phase ranges without phase titles, such as `for Phases 57-61`, unless the surrounding text lists the specific phase titles and explains why the range is still valid. Preferred shared-section headings should describe the behavior or policy directly, for example `Shared Direct Branch Target Classification`, rather than a bare numeric range.
+
+#### Markdown heading number versus canonical phase identifier
+
+The leading number in a Markdown heading is a document-section locator. It is not always the same as the canonical implementation phase identifier.
+
+The canonical implementation phase identifier is the text that begins with `Phase`.
+
+For example, in this heading:
+
+```text
+## 60A. Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics
+```
+
+the implementation phase is:
+
+```text
+Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics
+```
+
+not:
+
+```text
+Phase 60A
+```
+
+Future assistants must follow these rules:
+
+- Use the `Phase <number or suffix> - <title>` text as the phase identity.
+- Treat the leading Markdown heading number as only a document navigation aid.
+- Do not create, rename, or implement a phase based only on the leading Markdown heading number.
+- Do not renumber later phases merely to make Markdown heading numbers and phase identifiers match.
+- When a corrective phase such as `35A`, `50A`, `50B`, `52A`, `53A`, `53B`, `53C`, `53D`, `53E`, or `56A` is inserted, preserve later canonical phase identifiers unless the user explicitly requests a roadmap renumbering.
+- If a heading number and phase identifier appear to conflict, use the phase identifier, phase title, local scope text, and current canonical guide sequence to determine the intended owner.
+
+Static documentation checks may warn about bare phase-number references where the phase title is absent. Static checks must not require Markdown heading locator numbers to match canonical phase identifiers.
 
 ### Required test categories at release gate
 
@@ -8243,17 +8458,345 @@ The Phase 56A milestone report must include:
 - any skipped browser/Wasm checks and the reason;
 - explicit confirmation that no simulator behavior, supported syntax, diagnostic semantics, or rendered Simulator Messages wording changed.
 
+### Runtime metadata note
+
+Phase 56A does not advance runtime/source-run MASM behavior metadata.
+
+After Phase 56A:
+
+```text
+Repository/archive milestone: Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics
+Runtime/source-run MASM behavior phase: Phase 56 - Unsigned DIV
+```
+
+Future phases must preserve this distinction. Do not change source-run JSON phase fields, protocol phase assertions, browser runtime-status values, supported-syntax runtime wording, README current-status wording, worker status wording, or tests that check runtime phase metadata merely because Phase 56A exists.
+
+After Phase 56A, Phase 56B - User-Facing Diagnostic Wording Cleanup is the next corrective documentation/diagnostic cleanup phase. Phase 56B is inserted after Phase 56A and before Phase 57 - Signed IDIV without renumbering Phase 57 or any later phase.
+
+Phase 56B does not add MASM syntax, parser acceptance behavior, VM behavior, executor behavior, memory behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, diagnostic policy modes, or rendered Simulator Messages categories. It cleans live milestone-relative wording and current-status wording so the repository is clearer before the next runtime instruction milestone.
+
+After Phase 56B is complete, Phase 57 - Signed IDIV is the next runtime arithmetic phase that may advance runtime/source-run MASM behavior metadata.
+
+## 60B. Phase 56B - User-Facing Diagnostic Wording Cleanup
+
+### Goal
+
+Replace milestone-relative user-facing diagnostic wording with stable, feature-specific wording.
+
+This is a diagnostic wording, current-status wording, and test-maintenance phase. It must not add MASM syntax, parser behavior, executor behavior, VM behavior, memory behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, new diagnostic codes, new diagnostic policies, or new rendered Simulator Messages categories.
+
+### Placement, priority, and roadmap rule
+
+Insert this phase immediately after Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics and before Phase 57 - Signed IDIV.
+
+This is a non-renumbering corrective phase. Do not renumber Phase 57 - Signed IDIV or any later phase. If the guide's local Markdown section numbering changes in a future revision, preserve the phase title exactly and use the guide's local non-renumbering suffix convention.
+
+The user controls implementation order. This guide defines Phase 56B as the canonical cleanup phase for live milestone-relative wording and current-status wording after Phase 56A. Future assistants must treat Phase 56B as a documented corrective phase, not as a runtime behavior phase or an opportunity to combine unrelated work.
+
+Phase 56B is diagnostic wording, current-status wording, and test-maintenance work only. It must not add MASM syntax, parser acceptance, executor behavior, VM behavior, memory behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, new diagnostic codes, new diagnostic policies, or new rendered Simulator Messages categories.
+
+For this phase, milestone-relative wording includes phrases such as:
+
+```text
+current milestone
+this milestone
+unsupported by the current milestone
+not implemented in this milestone
+not supported in this milestone
+unsupported in this milestone
+```
+
+Milestone-relative wording is allowed in historical milestone reports, historical audit notes, historical handoff reports, and guide text that explicitly explains why such wording is prohibited. It must not appear as live current behavior wording in current user-facing diagnostics, current supported-syntax documentation, README current-status text, browser status text, worker-generated `ui-error` messages, or exact rendered-message tests for current behavior.
+
+### Motivation
+
+User-facing diagnostics should explain the actual simulator rule, unsupported form, non-goal, or future phase. They should not depend on phrases such as “current milestone,” because repository/archive milestones and runtime/source-run MASM behavior phases can differ after maintenance phases such as Phase 56A.
+
+Milestone-relative wording is allowed in historical milestone reports and internal audit notes. It should not appear in diagnostics shown to users in Simulator Messages.
+
+### Scope
+
+Audit live user-facing text, current-status text, and assistant-facing runtime-metadata wording emitted by or shipped with the current repository.
+
+The audit must include, at minimum:
+
+- lexer diagnostic messages;
+- parser diagnostic messages;
+- source-run/Wasm diagnostic messages;
+- executor/runtime diagnostic messages;
+- worker-generated `ui-error` messages;
+- browser Simulator Messages formatter output;
+- exact rendered Simulator Messages expected-output tests;
+- supported-syntax examples that quote expected user-facing diagnostics;
+- `docs/SUPPORTED_SYNTAX.md` current behavior summaries;
+- `README.md` current-scope and current-status text;
+- browser runtime-status strings;
+- worker/protocol status strings;
+- source-run JSON phase/status fields and any human-readable status strings carried in source-run JSON payloads;
+- test assertion descriptions that refer to runtime/source-run phase metadata;
+- test-runner reporting strings that name current runtime instruction coverage or current behavior.
+
+Replace milestone-relative phrases such as:
+
+```text
+unsupported by the current milestone
+current milestone
+this milestone does not support
+not supported in this milestone
+unsupported in this milestone
+will be added in a future milestone
+implemented through the current milestone
+current milestone metadata
+```
+
+with stable, feature-specific wording.
+
+Preferred wording patterns:
+
+```text
+This instruction form is not supported in MASM32 Educational Mode.
+This valid MASM form is deferred to Phase <N> - <Phase Title>.
+Executable QWORD/SQWORD memory operations are deferred until Extended 32-bit Mode.
+The memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+This construct is a simulator non-goal: real Windows API execution is not supported.
+This include is unsupported because host filesystem include loading is not part of the browser simulator.
+Runtime/source-run MASM behavior is implemented through Phase <N> - <Phase Title>.
+Repository/archive milestone is Phase <N or suffix> - <Phase Title>.
+Runtime/source-run MASM behavior phase is Phase <N> - <Phase Title>.
+```
+
+When a future phase is named, include both the phase number and phase title. Do not use a bare phase number.
+
+### Planned-future wording is allowed when stable
+
+Phase 56B must not remove useful, accurate roadmap references merely because they mention a future phase.
+
+The problem is milestone-relative wording such as:
+
+```text
+unsupported by the current milestone
+not supported in this milestone
+will be added in a future milestone
+```
+
+The problem is not a precise statement that a known feature is deferred to a named phase.
+
+Allowed examples:
+
+```text
+Two- and three-operand IMUL forms are deferred to Phase 55 - Two- and Three-Operand IMUL Forms.
+Signed IDIV is deferred to Phase 57 - Signed IDIV.
+Executable QWORD/SQWORD memory operations are not supported in MASM32 Educational Mode and are deferred until Extended 32-bit Mode.
+```
+
+Disallowed examples:
+
+```text
+Two- and three-operand IMUL forms are not supported in this milestone.
+IDIV is unsupported by the current milestone.
+QWORD memory execution will be added in a future milestone.
+```
+
+Use these rules:
+
+1. If a feature is assigned to a specific later phase, name both the phase number and phase title.
+2. If a feature is deferred to a broader mode or roadmap area, name that stable destination, such as `Extended 32-bit Mode`.
+3. If a feature is a simulator non-goal, say it is a non-goal and do not describe it as deferred.
+4. If a form is MASM-invalid, explain the MASM-style correction instead of calling it unsupported.
+5. Do not use `current milestone`, `this milestone`, or `future milestone` as the reason for rejection.
+
+The audit must distinguish live current-status/user-facing text from historical evidence. Historical milestone reports, handoff reports, audit reports, and change logs may retain milestone-relative wording if they are clearly historical. Do not rewrite historical reports during Phase 56B unless the user explicitly asks for historical report cleanup.
+
+The audit must also distinguish user-facing wording from internal comments. Internal comments may mention milestone-relative phrases only when they are explaining this rule or preserving historical context. New comments should still prefer stable phase names and behavior descriptions.
+
+### Known seed findings from the Phase 56A follow-up audit
+
+The Phase 56B implementation must perform a repository-wide audit. Do not limit the work to the examples in this subsection. These seed findings exist only to prevent future assistants from missing already-observed problem areas.
+
+A Phase 56A follow-up audit found milestone-relative or assistant-confusing wording in these areas:
+
+- parser diagnostics for unsupported `TYPE`, `LENGTHOF`, and `SIZEOF` expression forms;
+- parser diagnostics for unsupported destination widths;
+- generic unsupported-instruction diagnostics;
+- repeated-section or unsupported section-order diagnostics;
+- text `EQU` / `TEXTEQU` diagnostics;
+- README current-scope wording that says behavior is implemented through the “current milestone” rather than naming the runtime/source-run MASM behavior phase;
+- supported-syntax current behavior wording that says “unsupported in this milestone” rather than describing the current supported subset or the stable reason for rejection;
+- non-user-facing test assertion descriptions that say “current milestone metadata” where “runtime/source-run MASM behavior phase metadata” is more accurate.
+
+For each live user-facing diagnostic changed in Phase 56B:
+
+1. preserve the existing diagnostic code unless the code itself is inaccurate;
+2. preserve severity unless the severity itself is inaccurate;
+3. preserve source line, source column, byte offset, and span length;
+4. preserve JSON field names unless the user explicitly authorizes a diagnostic schema correction;
+5. update exact rendered Simulator Messages tests.
+
+For current-status documentation changed in Phase 56B:
+
+1. distinguish repository/archive milestone from runtime/source-run MASM behavior phase when they differ;
+2. name both phase number and phase title;
+3. do not imply that Phase 56B adds MASM syntax or runtime behavior;
+4. do not update runtime/source-run phase metadata merely because repository/archive milestone advances to Phase 56B.
+
+### Required constraints
+
+- Preserve existing diagnostic codes unless the code itself is inaccurate.
+- Preserve parser/executor acceptance and rejection behavior.
+- Preserve source line, column, byte offset, and span length.
+- When only message text changes, preserve the existing diagnostic code, severity, source line, source column, byte offset, span length, and JSON field names unless Phase 56B explicitly documents a structured diagnostic schema defect and the user authorizes a schema correction.
+- Preserve Program Console and Simulator Messages separation.
+- Preserve exact rendered Simulator Messages testing discipline.
+- Do not weaken exact rendered-message assertions to broad substring checks.
+- Do not remove diagnostics to reduce test maintenance.
+- Do not combine this cleanup with Phase 57 - Signed IDIV arithmetic unless the user explicitly authorizes combined scope.
+
+### Non-goals
+
+Phase 56B must not implement:
+
+- `idiv`;
+- any new instruction;
+- labels, jumps, conditional jumps, or `cmp`;
+- stack behavior;
+- procedure behavior;
+- Irvine32 routine expansion;
+- macro expansion;
+- WinAPI behavior;
+- PE/object/linker behavior;
+- new UI settings;
+- new diagnostic policies;
+- new diagnostic severity categories.
+
+### Required tests
+
+Add or update tests for every changed live user-facing diagnostic string, current-status string, or runtime-metadata assertion description.
+
+Required coverage:
+
+1. **Structured diagnostic coverage**
+   - Add or update native parser, executor, or source-run tests for every changed diagnostic path.
+   - Preserve the existing diagnostic code unless the code itself is inaccurate.
+   - Preserve severity, source line, source column, byte offset, span length, and JSON field names unless the user explicitly authorizes a schema correction.
+
+2. **Rendered Simulator Messages coverage**
+   - Add or update exact rendered Simulator Messages tests for every changed rendered diagnostic.
+   - Do not replace exact assertions with broad substring checks.
+   - Do not remove diagnostics to reduce test maintenance.
+
+3. **Worker/protocol coverage**
+   - Add or update protocol tests for changed worker-generated `ui-error` messages or status strings.
+   - Preserve malformed protocol request behavior unless the changed message is specifically in scope.
+
+4. **Current-status documentation coverage**
+   - Add or update static checks for README and supported-syntax current-status wording when those files are changed.
+   - If repository/archive milestone and runtime/source-run MASM behavior phase differ, documentation must name both values explicitly.
+   - Documentation must not say or imply that a maintenance-only phase added MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages categories.
+
+5. **Runtime/source-run metadata coverage**
+   - If test assertion descriptions mention “current milestone metadata,” update them to “runtime/source-run MASM behavior phase metadata” or equivalent stable wording.
+   - Do not update source-run JSON phase fields, protocol phase values, browser runtime-status strings, or supported-syntax runtime-status wording merely because Phase 56B exists.
+
+6. **Static milestone-relative wording audit**
+   - Add a static audit that fails when live user-facing or current-status files contain forbidden milestone-relative wording.
+   - The audit must scan at least:
+     - `src/`;
+     - `web/src/`;
+     - `tests/` expected rendered-message fixtures and assertion descriptions;
+     - `docs/SUPPORTED_SYNTAX.md`;
+     - `README.md`;
+     - any source-run diagnostic JSON producer fixtures;
+     - any worker/protocol status-message fixtures.
+   - The audit must ignore:
+     - `Milestone *.md` historical reports;
+     - historical changelog/audit/handoff documents;
+     - repository archives or generated ZIP contents;
+     - comments or guide text that explicitly explain why milestone-relative wording is prohibited;
+     - negative assertions or audit fixtures where the forbidden phrase appears only as the intentionally rejected text being searched for, such as `expect_json_not_contains(..., "unsupported by the current milestone", ...)`; such strings are allowed only when the test proves the phrase is absent from user-facing output and does not render the phrase as expected output;
+     - this Phase 56B section of the implementation guide when the forbidden phrase appears only as an example of wording that must not appear in live diagnostics or current-status text.
+
+### Acceptance criteria
+
+Phase 56B is complete only when all of the following are true:
+
+1. A repository-wide audit of live user-facing text, current-status text, and assistant-facing runtime-metadata wording has been performed.
+2. Live user-facing diagnostics no longer contain milestone-relative phrases such as:
+   - `current milestone`;
+   - `this milestone`;
+   - `unsupported by the current milestone`;
+   - `not implemented in this milestone`;
+   - `not supported in this milestone`;
+   - `unsupported in this milestone`.
+3. Current-status documentation no longer uses `current milestone` as a substitute for a named repository/archive milestone or runtime/source-run MASM behavior phase.
+4. README and supported-syntax current-status text distinguish repository/archive milestone from runtime/source-run MASM behavior phase when those values differ.
+5. Stable planned-future wording remains allowed when it names a specific phase number and phase title, or a stable roadmap destination such as Extended 32-bit Mode.
+6. Changed diagnostics preserve diagnostic code, severity, source line, source column, byte offset, span length, and JSON field names unless the milestone report explicitly documents a user-authorized schema correction.
+7. Changed rendered Simulator Messages have exact expected-output tests.
+8. Changed worker-generated `ui-error` messages, if any, have protocol or worker tests.
+9. A static milestone-relative wording audit exists and passes.
+10. Focused groups pass:
+    - `python3 scripts/run_tests.py --diagnostics`
+    - `python3 scripts/run_tests.py --source-run`
+    - `python3 scripts/run_tests.py --static`
+11. If the implementation touched browser formatter, worker, or protocol code, the relevant focused groups also pass:
+    - `python3 scripts/run_tests.py --web`
+    - `python3 scripts/run_tests.py --protocol`
+12. If the aggregate command completes in the environment, it must pass before the report may say `All implemented milestone tests passed.`
+13. If the aggregate command times out or its output is truncated in an assistant/container environment, focused verification must be reported honestly according to §2.4b.
+14. The milestone report states explicitly that Phase 56B did not change:
+    - MASM syntax support;
+    - parser acceptance or rejection behavior;
+    - executor behavior;
+    - VM behavior;
+    - memory behavior;
+    - Wasm API behavior;
+    - browser controls, browser layout, browser interaction behavior, or settings behavior;
+    - diagnostic codes, unless specifically user-authorized;
+    - diagnostic JSON fields, unless specifically user-authorized;
+    - rendered Simulator Messages categories.
+15. The milestone report includes both labels:
+    ```text
+    Repository/archive milestone:
+    Phase 56B - User-Facing Diagnostic Wording Cleanup
+
+    Runtime/source-run MASM behavior phase:
+    Phase 56 - Unsigned DIV
+    ```
+
+### Runtime metadata note
+
+Phase 56B is a diagnostic wording, current-status wording, and test-maintenance phase. It does not advance runtime/source-run MASM behavior metadata.
+
+After Phase 56B:
+
+```text
+Repository/archive milestone:
+Phase 56B - User-Facing Diagnostic Wording Cleanup
+
+Runtime/source-run MASM behavior phase:
+Phase 56 - Unsigned DIV
+```
+
+Do not update source-run JSON phase fields, protocol phase values, browser runtime-status strings, supported-syntax runtime-status wording, or tests that assert runtime phase values merely because Phase 56B exists.
+
+Phase 56B changes wording, current-status text, tests, and static audit coverage. Those changes do not make Phase 56B a runtime behavior phase.
+
+The runtime/source-run MASM behavior phase remains Phase 56 - Unsigned DIV after Phase 56B. Do not update runtime phase constants, source-run phase JSON fields, browser runtime behavior labels, supported-syntax runtime behavior labels, or tests that assert runtime phase values to Phase 56B.
+
+---
+
 ## 61. Phase 57 - Signed IDIV
 
 
-Phase 57 follows Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics.
+Phase 57 follows Phase 56B - User-Facing Diagnostic Wording Cleanup in the canonical roadmap.
+
+Phase 57 is the next runtime instruction phase after the Phase 56A/56B maintenance sequence. It adds signed `idiv` behavior and may intentionally advance runtime/source-run MASM behavior metadata after implementation and tests.
 
 Before implementing Phase 57, verify that the test runner can execute focused groups independently, especially `--source-run`, `--diagnostics`, and `--native`.
 
-Signed IDIV adds additional runtime-error, quotient-overflow, divide-by-zero, memory-source, no-partial-mutation, and rendered Simulator Messages coverage. Therefore Phase 57 implementation must start from the decomposed runner introduced in Phase 56A.
+Signed IDIV adds runtime-error, quotient-overflow, divide-by-zero, memory-source, no-partial-mutation, and rendered Simulator Messages coverage. Therefore Phase 57 implementation must start from the decomposed runner introduced in Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics and the cleaned diagnostic/current-status wording baseline established by Phase 56B - User-Facing Diagnostic Wording Cleanup.
 
-This dependency does not change Phase 57's instruction scope. Do not implement any additional test-runner work inside Phase 57 unless Phase 56A was explicitly skipped or left incomplete and the user authorizes that scope.
-
+This dependency does not change Phase 57's instruction scope. Do not implement additional test-runner work inside Phase 57 unless Phase 56A was left incomplete and the user authorizes that scope. Do not implement Phase 56B diagnostic wording cleanup inside Phase 57 unless the user explicitly authorizes combined scope.
 
 ### Goal
 
@@ -8268,6 +8811,74 @@ This phase must not implement multiplication, labels, jumps, conditional jumps, 
 Runtime arithmetic instruction with implicit accumulator operands.
 
 `idiv` is a memory-reading or register-reading instruction. It does not write memory. Memory divisor reads must use the same checked VM memory helper path, planned-read validation path, uninitialized-read policy path, and memory-validation policy path used by the existing memory-source arithmetic instructions.
+
+### Runtime metadata, documentation, and status updates
+
+Phase 57 adds runtime-visible MASM/source behavior. Therefore, after `idiv` is implemented, tested, and accepted, Phase 57 must advance the runtime/source-run MASM behavior phase from:
+
+```text
+Phase 56 - Unsigned DIV
+```
+
+to:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+This is different from Phase 56A. Phase 56A advanced repository/archive milestone status only. It did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording. Phase 56A therefore did not advance runtime/source-run MASM behavior metadata.
+
+Phase 56B - User-Facing Diagnostic Wording Cleanup follows the same maintenance-phase metadata rule. Phase 56B advances repository/archive status when implemented, but it does not advance runtime/source-run MASM behavior metadata.
+
+When Phase 57 starts from a Phase 56B repository/archive baseline, the starting status is:
+
+```text
+Repository/archive milestone:
+Phase 56B - User-Facing Diagnostic Wording Cleanup
+
+Runtime/source-run MASM behavior phase:
+Phase 56 - Unsigned DIV
+```
+
+After `idiv` is implemented, tested, and accepted, Phase 57 intentionally advances both repository/archive milestone and runtime/source-run MASM behavior phase to:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+Phase 57 must update every runtime-visible status surface that intentionally reports latest implemented MASM/source execution behavior, including:
+
+- source-run JSON phase fields;
+- source-run JSON status strings, if any;
+- native source-run tests that assert phase or runtime status;
+- worker/protocol phase assertions;
+- browser runtime-status text;
+- README current-status text;
+- `docs/SUPPORTED_SYNTAX.md`;
+- `docs/TESTING_GUIDE.md`;
+- aggregate or focused test-runner reporting text where it names runtime instruction coverage;
+- default browser sample/status text if it names the latest runtime instruction phase.
+
+Do not erase Phase 56A or Phase 56B history. Phase 56A remains the repository/archive maintenance milestone that introduced test-runner decomposition and assistant verification ergonomics. Phase 56B remains the repository/archive maintenance milestone that cleaned live diagnostic wording and current-status wording before Phase 57.
+
+After a successful Phase 57 runtime milestone, the normal status is:
+
+```text
+Repository/archive milestone:
+Phase 57 - Signed IDIV
+
+Runtime/source-run MASM behavior phase:
+Phase 57 - Signed IDIV
+```
+
+This match is allowed because Phase 57 is a runtime behavior milestone. Future maintenance-only phases after Phase 57 may again advance repository/archive milestone status without changing runtime/source-run MASM behavior metadata.
+
+Required Phase 57 metadata tests:
+
+- A source-run metadata test must prove runtime/source-run phase reporting identifies Phase 57 only after `idiv` support is implemented.
+- A protocol/browser-status test must prove browser-facing runtime status identifies Phase 57.
+- A supported-syntax documentation/static test must prove `docs/SUPPORTED_SYNTAX.md` lists `idiv` as supported and identifies runtime instruction support through Phase 57.
+- A regression test must prove Phase 56A and Phase 56B maintenance-only status did not cause premature Phase 57 metadata before `idiv` implementation.
 
 ### Accepted syntax
 
@@ -8397,6 +9008,53 @@ For a register divisor:
 5. Check whether the quotient fits in the selected signed quotient register.
 6. Commit quotient and remainder registers only after every validation step succeeds.
 
+### Source-run planned-read and diagnostic-policy integration
+
+Phase 57 owns integration of `idiv` memory divisor operands with every existing source-run planned-read and planned-access validation path.
+
+Executor-level checked memory reads are mandatory, but they are not sufficient by themselves. The simulator also has source-run/UI diagnostic policies that can stop execution before an instruction mutates state. A memory-source `idiv` must participate in those pre-mutation policy checks the same way existing memory-source arithmetic instructions do.
+
+When Phase 57 adds the `idiv` IR opcode, the implementation must audit and update every switch, helper, visitor, table, or collector that enumerates memory-reading opcodes for planned validation.
+
+At minimum, memory-divisor `idiv` forms must be included in:
+
+- planned memory-read collection for uninitialized-read diagnostics;
+- section-capacity planned-read validation;
+- section-image planned-read validation;
+- declared-object planned-read validation;
+- source-run/Wasm policy routing used by browser diagnostic settings;
+- native diagnostic JSON producer paths used by rendered Simulator Messages tests.
+
+If the codebase contains a TODO or comment that says future memory-capable opcodes must update planned-read or planned-access collection, Phase 57 owns resolving that TODO for `idiv`.
+
+The required ordering is:
+
+1. Parse and lower the `idiv` instruction.
+2. Resolve the divisor operand width.
+3. For memory divisors, compute the planned effective address and byte width without mutating quotient registers, remainder registers, modeled flags, flag-validity metadata, Program Console output, or memory-change rows.
+4. Apply strict planned-read policies that are configured for the current source-run/UI settings.
+5. If a strict planned-read policy fails, emit the appropriate runtime diagnostic and stop before divisor consumption and before division arithmetic.
+6. If planned-read policies allow execution, perform the actual checked VM memory read through the central memory helper.
+7. Apply divide-by-zero and quotient-overflow validation.
+8. Commit quotient and remainder registers only after every validation step succeeds.
+
+This planned-read integration must apply to all supported memory divisor forms:
+
+```asm
+idiv BYTE PTR [reg32]
+idiv WORD PTR [reg32]
+idiv DWORD PTR [reg32]
+idiv SBYTE PTR [reg32]
+idiv SWORD PTR [reg32]
+idiv SDWORD PTR [reg32]
+idiv symbol
+idiv symbol[offset]
+```
+
+The implementation must not treat `idiv` as register-only in source-run policy code after parser/executor memory support is added.
+
+The implementation must not weaken existing planned-read tests or exact rendered Simulator Messages tests to make `idiv` easier to add.
+
 ### Runtime errors
 
 Runtime error codes:
@@ -8512,9 +9170,56 @@ Runtime success tests:
 - Stale/significant high-half test proving `IDIV r/m32` uses signed `EDX:EAX`, not only `EAX`.
 - Memory divisor read through checked memory helpers.
 - Memory divisor read from `.CONST`.
+- Declaration-signedness independence:
+  - A divisor declared as `BYTE 0FFh` must be sign-interpreted as `-1` when used by `idiv` at 8-bit divisor width.
+  - A divisor declared as `SBYTE -1` must produce the same divisor value and the same quotient/remainder result as the raw-byte-equivalent `BYTE 0FFh` case.
+  - A divisor declared as `WORD 0FFFFh` must be sign-interpreted as `-1` when used by `idiv` at 16-bit divisor width.
+  - A divisor declared as `SWORD -1` must produce the same divisor value and the same quotient/remainder result as the raw-word-equivalent `WORD 0FFFFh` case.
+  - A divisor declared as `DWORD 0FFFFFFFFh` must be sign-interpreted as `-1` when used by `idiv` at 32-bit divisor width.
+  - A divisor declared as `SDWORD -1` must produce the same divisor value and the same quotient/remainder result as the raw-dword-equivalent `DWORD 0FFFFFFFFh` case.
+  - These tests must prove that IDIV sign interpretation comes from the instruction and resolved operand width, not from declaration signedness alone.
+  - These tests must not change ordinary `mov` behavior. Ordinary `mov` from signed memory still reads raw bytes at the resolved width and does not implicitly sign-extend.
+
+  Representative safe 8-bit equivalence fixture:
+
+  ```asm
+  .data
+  u BYTE 0FFh
+  s SBYTE -1
+
+  .code
+  main PROC
+      mov ax, 5
+      idiv u
+
+      mov bx, ax
+
+      mov ax, 5
+      idiv s
+  main ENDP
+  END main
+  ```
+
+  Expected behavior:
+
+  ```text
+  After `idiv u`: AL = FBh / signed -5, AH = 00h / signed 0.
+  After `idiv s`: AL = FBh / signed -5, AH = 00h / signed 0.
+  ```
+
+  The test may preserve the first result in another register or split the two cases into separate fixtures if that produces cleaner assertions.
 - Memory divisor reads do not create memory-change rows.
 - Successful `idiv` preserves pre-set modeled flag bits `CF`, `ZF`, `SF`, and `OF`.
 - Successful `idiv` preserves Phase 50A flag-validity metadata.
+- Successful `idiv` preserves already-invalid Phase 50A flag-validity metadata:
+  - Before executing a successful `idiv`, create an invalid modeled-flag metadata state using an already implemented undefined-flag producer, such as a shift or rotate count that marks `OF` or `CF` architecturally invalid.
+  - Then execute an `idiv` that succeeds.
+  - Verify that the deterministic flag bits are unchanged by `idiv`.
+  - Verify that every modeled flag that was valid before `idiv` remains valid after `idiv`.
+  - Verify that every modeled flag that was invalid before `idiv` remains invalid after `idiv`.
+  - Verify that undefined-origin metadata is preserved for invalid flags, including producer mnemonic, producer diagnostic code, producer source line, producer source column, byte offset, and span length where available.
+  - Verify that `idiv` does not become the producer mnemonic for any undefined flag metadata in this phase.
+  - If flag-validity metadata is not exposed through normal UI/source-run output, this requirement must be tested through native executor tests or an existing test-only inspection path. Do not add new user-visible flag-validity UI as part of Phase 57 merely to test this behavior.
 
 Runtime error tests:
 
@@ -8529,7 +9234,75 @@ Runtime error tests:
 - Divide-error tests prove quotient/remainder registers remain unchanged.
 - Divide-error tests prove modeled flag bits remain unchanged.
 - Divide-error tests prove Phase 50A flag-validity metadata remains unchanged.
+- Failed `idiv` preserves already-invalid Phase 50A flag-validity metadata:
+  - Before executing a failing `idiv` path, create an invalid modeled-flag metadata state using an already implemented undefined-flag producer, such as a shift or rotate count that marks `OF` or `CF` architecturally invalid.
+  - Then execute an `idiv` that fails with `divide-by-zero`.
+  - Repeat for an `idiv` that fails with `quotient-overflow`.
+  - Verify that the deterministic flag bits are unchanged by the failing `idiv`.
+  - Verify that every modeled flag that was valid before the failing `idiv` remains valid afterward.
+  - Verify that every modeled flag that was invalid before the failing `idiv` remains invalid afterward.
+  - Verify that undefined-origin metadata is preserved for invalid flags, including producer mnemonic, producer diagnostic code, producer source line, producer source column, byte offset, and span length where available.
+  - Verify that the fatal IDIV diagnostic does not clear, rewrite, validate, or replace unrelated pre-existing flag metadata.
+  - If flag-validity metadata is not exposed through normal UI/source-run output, this requirement must be tested through native executor tests or an existing test-only inspection path. Do not add new user-visible flag-validity UI as part of Phase 57 merely to test this behavior.
 - Divide-error tests prove no memory-change rows are produced.
+
+Additional planned-read integration tests:
+
+1. **Strict declared-object validation before mutation**
+
+   Program shape:
+
+   ```asm
+   .data
+   first  DWORD 1
+   second DWORD 2
+
+   .code
+   main PROC
+       mov esi, OFFSET first
+       mov edx, 0
+       mov eax, 10
+       idiv DWORD PTR [esi + 1]
+   main ENDP
+   END main
+   ```
+
+   The exact fixture may use a different offset, declaration, or policy setup, but it must prove that the final memory divisor read passes mandatory region validation and then fails the selected strict declared-object planned-read policy before quotient or remainder registers are mutated. The sample shape intentionally uses an address range that starts inside `first` and crosses into adjacent data, so future assistants must not replace it with an invalid-address fixture.
+
+2. **Strict section-image or section-capacity validation before mutation**
+
+   Add at least one fixture where the final memory divisor range passes mandatory VM region validation but fails the selected section policy in strict mode. The diagnostic must be the selected section-policy diagnostic, not a generic memory-read failure and not a divide diagnostic.
+
+3. **Strict uninitialized-read stop**
+
+   Program shape:
+
+   ```asm
+   .DATA?
+   divisor SDWORD ?
+
+   .code
+   main PROC
+       mov edx, 0
+       mov eax, 10
+       idiv divisor
+   main ENDP
+   END main
+   ```
+
+   In strict uninitialized-read mode, execution must stop before consuming the divisor and before updating quotient or remainder registers.
+
+4. **Default uninitialized-read warning composition**
+
+   Use the same uninitialized divisor in default warning mode. The simulator must emit the `uninitialized-read` warning and then proceed according to the deterministic zero-filled divisor value. If that value is zero, the next fatal diagnostic should be `divide-by-zero`, and no quotient or remainder mutation should occur.
+
+5. **No memory-change rows**
+
+   Successful and failed memory-divisor `idiv` programs must not create successful memory-change rows, because `idiv` reads source memory and writes only implicit quotient/remainder registers on success.
+
+6. **Rendered Simulator Messages**
+
+   Every new or affected diagnostic path must have an exact rendered Simulator Messages test through the native diagnostic JSON producer and Node formatter harness.
 
 Rendered Simulator Messages tests:
 
@@ -8553,14 +9326,54 @@ main ENDP
 END main
 ```
 
-Expected:
+Expected semantic result:
 
 ```text
-EAX = FFFFFFF2h / 4294967282   ; -14 as raw 32-bit storage
-EDX = FFFFFFFEh / 4294967294   ; -2 as raw 32-bit storage
+EAX raw 32-bit value = FFFFFFF2h
+EAX unsigned value   = 4294967282
+EAX signed value     = -14
+
+EDX raw 32-bit value = FFFFFFFEh
+EDX unsigned value   = 4294967294
+EDX signed value     = -2
 ```
 
-This acceptance program relies on previously implemented `cdq` behavior. If `cdq` is unavailable in a test harness, initialize `EDX:EAX` directly through supported setup helpers or use a 16-bit or 8-bit IDIV fixture instead. Do not implement `cdq` as part of Phase 57.
+If this acceptance program is checked through the current rendered final-register formatter, the rendered output must use the current known-width register display contract rather than an older unsigned-only format. The formatter-owned spacing may vary, but the displayed 32-bit `EAX` and `EDX` values must include:
+
+- hexadecimal raw storage;
+- unsigned decimal interpretation;
+- signed decimal interpretation.
+
+Do not add or change IDIV runtime semantics merely to satisfy a stale display string. If a test failure is only a formatter string mismatch, first verify whether the expected string predates Phase 52A - Signed Register and Memory Value Display.
+
+This acceptance program relies on previously implemented `cdq` behavior. If `cdq` is unavailable in a narrow executor-only test harness, initialize `EDX:EAX` directly through supported setup helpers or use a 16-bit or 8-bit IDIV fixture instead. Do not implement, modify, or broaden `cdq` as part of Phase 57.
+
+### Phase 57 milestone report requirements
+
+The Phase 57 milestone report must include both milestone/status labels, even if they match:
+
+```text
+Repository/archive milestone:
+Phase 57 - Signed IDIV
+
+Runtime/source-run MASM behavior phase:
+Phase 57 - Signed IDIV
+```
+
+The report must explicitly state:
+
+- that Phase 57 is a runtime behavior milestone;
+- that Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics was a maintenance/test-runner milestone and did not advance runtime/source-run MASM behavior metadata;
+- that Phase 56B - User-Facing Diagnostic Wording Cleanup was a diagnostic/current-status wording maintenance milestone and did not advance runtime/source-run MASM behavior metadata;
+- that Phase 57 intentionally advances runtime/source-run MASM behavior metadata after `idiv` implementation;
+- which status surfaces were updated;
+- which metadata/status tests were added or updated;
+- whether the aggregate runner completed;
+- which focused groups passed if the aggregate timed out or output was truncated in an assistant/container environment;
+- whether browser/Wasm smoke testing was run or skipped, and why;
+- that no future features were implemented.
+
+The report must not say `All implemented milestone tests passed.` unless the aggregate command completed and returned the final success status in that environment. If focused groups passed after aggregate timeout, the report must use the guide's focused-verification wording.
 
 ### Non-goals and future work not implemented in this phase
 
@@ -10813,6 +11626,49 @@ Implement virtual Irvine32 `WriteChar` independently from newline and string rou
 - Flags and registers are preserved.
 - Output-limit diagnostics render through Simulator Messages.
 
+### Shared Irvine32 Memory-Read and Program Console Output Policy
+
+This shared policy applies to every future Irvine32 routine that reads simulated memory or appends to Program Console. It is a standing implementation rule for the Irvine32 routine phases. A later phase may add routine-specific behavior, but it must not contradict this policy unless the phase explicitly says it is changing the shared policy and adds tests for the change.
+
+Memory-reading Irvine32 routines must use the same checked VM memory helper path as instruction execution.
+
+Required memory-read ordering:
+
+1. Resolve the routine input registers or operands according to the routine's phase contract.
+2. Compute every planned memory read address and width needed before committing routine-visible output when the routine has a no-partial-output policy.
+3. Apply mandatory address, range, region, permission, and overflow checks through checked VM memory helpers.
+4. Apply `.CONST` rules normally: `.CONST` reads are allowed, `.CONST` writes remain protected elsewhere.
+5. Apply optional section-capacity, section-image, and declared-object validation policies only after mandatory Level 1 region checks succeed.
+6. Apply uninitialized-origin diagnostics according to the current global uninitialized-read policy.
+7. If a strict policy emits a runtime error, stop before the routine consumes the bytes for output and before appending partial Program Console text.
+8. If a warning policy emits a non-fatal warning, continue using the deterministic simulator bytes unless a later fatal diagnostic occurs.
+
+Current default user-facing uninitialized-read behavior after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes is warning mode. Therefore, a future Irvine32 routine that reads `.DATA?`, `?`, or `DUP(?)` bytes must emit `uninitialized-read` as a non-fatal Simulator Messages warning by default when those bytes still carry uninitialized-origin metadata.
+
+Explicit uninitialized-read opt-out suppresses only the `uninitialized-read` teaching warning. It does not disable mandatory VM memory safety, `.CONST` protection, invalid-region errors, unaligned-access warnings, output-limit diagnostics, or unrelated diagnostics.
+
+Strict uninitialized-read mode stops before the routine consumes uninitialized-origin bytes for output and before it appends partial Program Console text.
+
+Program Console output must remain separate from Simulator Messages.
+
+Required Program Console output rules:
+
+- Program output goes only to Program Console.
+- Diagnostics, warnings, notices, runtime errors, and execution-status messages go only to Simulator Messages.
+- A routine with a no-partial-output policy must preflight memory reads and output length before appending text.
+- If output-limit validation fails, the routine must emit the appropriate Simulator Messages diagnostic and append no partial Program Console text.
+- Routine failures must preserve registers and modeled flags unless the routine-specific phase explicitly documents a different mutation contract.
+
+Future Irvine32 routine phases must not copy older pre-Phase-53C wording that says default mode emits no uninitialized-read diagnostic. That historical behavior was superseded by Phase 53C - Default Teaching Diagnostics for Existing Warning Modes.
+
+Required tests for each future Irvine32 routine that reads memory:
+
+- default uninitialized-read warning test when reading `.DATA?`, `?`, or `DUP(?)` bytes;
+- explicit uninitialized-read off test;
+- strict uninitialized-read stop-before-output test;
+- invalid address no-partial-output test;
+- Program Console / Simulator Messages separation test.
+
 ## 93. Phase 89 - Irvine32 WriteString
 
 ### Goal
@@ -10827,24 +11683,31 @@ call WriteString
 
 ### Runtime behavior
 
-- EDX contains the address of a null-terminated byte string.
+- `EDX` contains the address of a null-terminated byte string.
 - The routine pre-scans one byte at a time through checked memory helpers until the first `00h`, `string_scan_limit_bytes`, or memory/output validation failure.
 - Reading stops at byte `00h`.
 - Nonzero bytes before the terminator are appended to Program Console using the console byte-to-text policy only after validation succeeds.
 - The null terminator is not printed.
 - Modeled flags are preserved.
-- EDX is preserved.
+- `EDX` is preserved.
+- The routine follows the shared Irvine32 memory-read and Program Console output policy immediately above this phase.
 
-### Runtime errors
+### Runtime diagnostics
 
 - `invalid-memory-read` if any byte read is outside readable memory.
 - `string-scan-limit-exceeded` / compatibility alias `unterminated-string-output` if no terminator is found before `string_scan_limit_bytes`.
 - `console-output-limit-exceeded` if the validated output would exceed the configured console output limit.
-- `uninitialized-read` warning/error if validation mode detects uninitialized string bytes.
+- `uninitialized-read` warning/error according to the current global uninitialized-read policy when scanned bytes still carry uninitialized-origin metadata. After Phase 53C - Default Teaching Diagnostics for Existing Warning Modes, omitted/default user-facing behavior emits `uninitialized-read` as a non-fatal warning.
 
-No partial-output policy:
+### No-partial-output policy
 
-- WriteString must pre-scan until terminator, `string_scan_limit_bytes`, or configured output limit using checked reads, then append only if the full string is valid and within output limits. Runtime failure must append no partial string.
+`WriteString` must pre-scan until terminator, `string_scan_limit_bytes`, or configured output limit using checked reads, then append only if the full string is valid and within output limits. Runtime failure must append no partial string.
+
+Strict uninitialized-read mode is a runtime failure for this policy. It must stop before appending Program Console output.
+
+Default warning mode is not a runtime failure. It emits `uninitialized-read` through Simulator Messages and continues using deterministic simulator bytes unless a later fatal diagnostic occurs.
+
+Explicit uninitialized-read off suppresses only the `uninitialized-read` teaching warning. It does not suppress invalid-memory, output-limit, unterminated-string, unaligned-access, or unrelated diagnostics.
 
 ### Tests
 
@@ -10872,14 +11735,20 @@ Additional tests:
 
 - Empty string prints nothing.
 - Missing null terminator fails with `string-scan-limit-exceeded` / `unterminated-string-output` before unbounded scan.
-- Invalid EDX fails with runtime diagnostic.
+- Invalid `EDX` fails with runtime diagnostic and no partial Program Console output.
 - String in `.CONST` reads successfully.
-- String in `.DATA?` with zero first byte prints nothing but may warn in uninitialized-read mode.
+- String in initialized `.data` reads successfully without `uninitialized-read`.
+- String in `.DATA?` with zero first byte prints nothing, emits default `uninitialized-read` warning unless uninitialized-read diagnostics are explicitly off, and emits no warning when the byte has been initialized by a prior write.
+- String in `.DATA?` with explicit uninitialized-read off prints according to deterministic zero-filled bytes and emits no `uninitialized-read` warning.
+- String in `.DATA?` with strict uninitialized-read mode stops before appending Program Console output.
 - Program Console and Simulator Messages remain separated.
 
 Rendered Simulator Messages tests:
 
-- Invalid address and unterminated string diagnostics point to `call WriteString` and include EDX address.
+- Invalid address diagnostics point to `call WriteString` and include the `EDX` address.
+- Unterminated string diagnostics point to `call WriteString` and include the `EDX` address and scan limit.
+- Default uninitialized-origin string warning renders as `simulator-warning uninitialized-read` and execution can still complete.
+- Strict uninitialized-origin string failure renders as `runtime-error uninitialized-read` and no `execution-complete` message follows.
 
 ---
 
@@ -11059,16 +11928,32 @@ Expected Program Console must match the exact selected dump format.
 
 Additional tests:
 
-- EBX = 2 and EBX = 4 formatting.
-- EBX invalid value rejected.
-- ECX = 0 produces empty or header-only output according to documented policy.
-- Invalid address fails before partial output.
+- EBX = 1 formatting.
+- EBX = 2 formatting.
+- EBX = 4 formatting.
+- EBX invalid value rejected with `invalid-dumpmem-element-size`.
+- ECX = 0 produces empty or header-only output according to the exact documented DumpMem format.
+- ECX above the named max dump count fails with `dumpmem-count-limit-exceeded`.
+- Invalid starting address fails before partial Program Console output.
+- Address range that starts valid but crosses into unreadable memory fails before partial Program Console output.
 - `.CONST` memory can be dumped.
-- Uninitialized-read validation modes warn/error when the selected validation mode enables uninitialized-read diagnostics; default mode emits no uninitialized-read diagnostic.
+- Dumping initialized `.data` memory emits no `uninitialized-read` diagnostic.
+- Dumping `.DATA?`, `?`, or `DUP(?)` bytes that still carry uninitialized-origin metadata emits default `uninitialized-read` warning after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes and then continues if no fatal diagnostic occurs.
+- Dumping the same `.DATA?` bytes with explicit uninitialized-read off emits no `uninitialized-read` warning and uses deterministic zero-filled bytes.
+- Dumping the same `.DATA?` bytes with strict uninitialized-read mode stops before appending partial Program Console output.
+- Dumping bytes that were originally `.DATA?` but have all been overwritten by the simulated program emits no `uninitialized-read` warning.
+- Program Console contains only DumpMem output.
+- Simulator Messages contain diagnostics, warnings, and execution status only.
+- Registers and modeled flags are preserved on success.
+- Registers, modeled flags, Program Console output, and memory-change rows are preserved on fatal failure.
 
 Rendered Simulator Messages tests:
 
 - Invalid memory read points to `call DumpMem` and includes ESI/ECX/EBX metadata.
+- Invalid element size points to `call DumpMem` and includes the rejected EBX value.
+- Dump count limit failure points to `call DumpMem` and includes ECX plus the configured limit.
+- Default uninitialized-origin dump warning renders as `uninitialized-read` and identifies the final read range and byte count.
+- Strict uninitialized-origin dump failure renders as `runtime-error uninitialized-read` and no `execution-complete` message follows.
 
 ---
 

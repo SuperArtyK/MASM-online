@@ -456,7 +456,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Milestone 56")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 56 - Unsigned DIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -1298,6 +1298,68 @@ def assert_failure_reporting_contract_present() -> None:
     )
 
 
+def assert_live_text_avoids_milestone_relative_wording() -> None:
+    """Verify live diagnostics and current-status text avoid milestone-relative wording.
+
+    Phase 56B allows historical reports, guide examples, and negative tests to
+    mention prohibited phrases. This audit scans live source, web source/index, test, README,
+    and supported-syntax surfaces while allowing negative assertions that prove
+    a forbidden phrase is absent from user-facing output.
+    """
+
+    forbidden_phrases = [
+        "current milestone",
+        "this milestone",
+        "unsupported by the current milestone",
+        "not implemented in this milestone",
+        "not supported in this milestone",
+        "unsupported in this milestone",
+        "future milestone",
+        "will be added in a future milestone",
+        "implemented through the current milestone",
+        "current milestone metadata",
+    ]
+    scanned_paths: list[pathlib.Path] = []
+    for directory in [ROOT / "src", ROOT / "web" / "src", ROOT / "tests"]:
+        scanned_paths.extend(path for path in directory.rglob("*") if path.is_file())
+    scanned_paths.extend([ROOT / "web" / "index.html", ROOT / "docs" / "SUPPORTED_SYNTAX.md", ROOT / "README.md"])
+
+    violations: list[str] = []
+    for path in sorted(scanned_paths):
+        if path.suffix.lower() in {".zip", ".wasm", ".o", ".exe", ".pyc"}:
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        relative_path = path.relative_to(ROOT)
+        for line_number, line in enumerate(lines, start=1):
+            lowered = line.lower()
+            if "expect_json_not_contains" in line or "assert_text_not_contains" in line:
+                continue
+            for phrase in forbidden_phrases:
+                if phrase in lowered:
+                    violations.append(f"{relative_path}:{line_number}: {phrase}")
+                    break
+
+    if violations:
+        raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
+
+
+def assert_phase56b_status_labels_documented() -> None:
+    """Verify current docs distinguish repository and runtime phase labels."""
+
+    required_status_fragments = [
+        "Repository/archive milestone:",
+        "Phase 56B - User-Facing Diagnostic Wording Cleanup",
+        "Runtime/source-run MASM behavior phase:",
+        "Phase 56 - Unsigned DIV",
+        "Phase 56B is wording, current-status, and test-maintenance work only.",
+    ]
+    assert_all_text_contains("README.md", required_status_fragments)
+    assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
+
+
 
 def report_phase51_smoke_harness_status() -> None:
     """Report Phase 51 smoke-harness fixture coverage and browser-smoke status."""
@@ -1359,6 +1421,8 @@ def run_static_tests() -> None:
     assert_fixture_inventory_documented()
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
+    assert_live_text_avoids_milestone_relative_wording()
+    assert_phase56b_status_labels_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

@@ -428,7 +428,7 @@ static int test_sizeof_operator_source_run_rejects_expression_tail(void) {
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "SIZEOF expression tail should be a parse error");
     failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "SIZEOF expression tail should be categorized as unsupported feature");
     failures += expect_json_contains(json, "unsupported-sizeof-expression", "SIZEOF expression tail should expose stable diagnostic code");
-    failures += expect_json_contains(json, "Only SIZEOF symbol is supported", "SIZEOF expression diagnostic should be user-readable");
+    failures += expect_json_contains(json, "Write SIZEOF followed by exactly one declared data symbol", "SIZEOF expression diagnostic should be user-readable");
 
     return failures;
 }
@@ -498,7 +498,7 @@ static int test_lengthof_operator_source_run_rejects_expression_tail(void) {
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "LENGTHOF expression tail should be a parse error");
     failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "LENGTHOF expression tail should be categorized as unsupported feature");
     failures += expect_json_contains(json, "unsupported-lengthof-expression", "LENGTHOF expression tail should expose stable diagnostic code");
-    failures += expect_json_contains(json, "Only LENGTHOF symbol is supported", "LENGTHOF expression diagnostic should be user-readable");
+    failures += expect_json_contains(json, "Write LENGTHOF followed by exactly one declared data symbol", "LENGTHOF expression diagnostic should be user-readable");
 
     return failures;
 }
@@ -522,7 +522,7 @@ static int test_type_operator_source_run_rejects_expression_tail(void) {
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "TYPE expression tail should be a parse error");
     failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "TYPE expression tail should be categorized as unsupported feature");
     failures += expect_json_contains(json, "unsupported-type-expression", "TYPE expression tail should expose stable diagnostic code");
-    failures += expect_json_contains(json, "Only TYPE symbol is supported", "TYPE expression diagnostic should be user-readable");
+    failures += expect_json_contains(json, "Write TYPE followed by exactly one declared data symbol", "TYPE expression diagnostic should be user-readable");
 
     return failures;
 }
@@ -2050,7 +2050,7 @@ static int test_phase26_header_source_run_error_paths(void) {
     return failures;
 }
 
-/// Verifies .DATA? and .CONST source-run behavior under the current Milestone 30 source-run API.
+/// Verifies .DATA? and .CONST source-run behavior under the Milestone 30 source-run API.
 ///
 /// @return Number of failures.
 static int test_phase28_additional_data_sections_source_run_programs(void) {
@@ -2139,7 +2139,7 @@ static int test_phase30_dup_initializer_list_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":56", "DUP initializer list source should report current milestone metadata");
+    failures += expect_json_contains(json, "\"phase\":56", "DUP initializer list source should report runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "DUP initializer list source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "DUP initializer list source should set EAX to LENGTHOF msg");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "DUP initializer list source should set EBX to SIZEOF msg");
@@ -3929,7 +3929,7 @@ static int test_phase41_irvine32_virtual_include_metadata_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":56", "Irvine32 virtual include response should report current milestone metadata");
+    failures += expect_json_contains(json, "\"phase\":56", "Irvine32 virtual include response should report runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Irvine32 include acceptance program should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "Irvine32 include acceptance program should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":0", "Irvine32 include acceptance program should not synthesize routine execution");
@@ -3980,7 +3980,7 @@ static int test_phase41_irvine32_unsupported_routine_source_run_diagnostic(void)
     failures += expect_json_contains(json, "\"virtualIncludes\":{\"irvine32\":true,\"irvine32SymbolCount\":", "Known routine diagnostic should retain registry metadata");
     failures += expect_json_contains(json, "\"kind\":\"unsupported-feature\"", "Known Irvine32 routine diagnostic should render as unsupported feature category");
     failures += expect_json_contains(json, "\"code\":\"unsupported-irvine32-routine\"", "Known Irvine32 routine diagnostic code should be stable");
-    failures += expect_json_contains(json, "executable Irvine32 routine behavior is deferred", "Known Irvine32 routine diagnostic should explain deferred routine execution");
+    failures += expect_json_contains(json, "executable behavior for this routine is deferred to the routine-specific Irvine32 phases", "Known Irvine32 routine diagnostic should explain deferred routine execution");
     failures += expect_json_not_contains(json, "execution-complete", "Known Irvine32 routine diagnostic must prevent execution");
 
     return failures;
@@ -4002,7 +4002,7 @@ static int test_phase42_irvine32_exit_terminator_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":56", "Irvine32 exit response should report current milestone metadata");
+    failures += expect_json_contains(json, "\"phase\":56", "Irvine32 exit response should report runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "exit terminator source should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "exit terminator source should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "exit terminator should count MOV and EXIT only");
@@ -4401,7 +4401,7 @@ static int test_phase45_not_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":56", "Milestone 45 NOT regression response should report current milestone metadata");
+    failures += expect_json_contains(json, "\"phase\":56", "Milestone 45 NOT regression response should report runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 45 NOT regression source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":3", "Milestone 45 NOT regression source should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "Milestone 45 NOT regression source should leave EAX at FFFFFFFFh");
@@ -4705,7 +4705,7 @@ static int test_phase47_shr_source_run_program(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":56", "Phase 47 SHR regression should report current milestone metadata");
+    failures += expect_json_contains(json, "\"phase\":56", "Phase 47 SHR regression should report runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 47 SHR regression acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 47 SHR regression acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"10000000h\",\"unsigned\":268435456}", "SHR source should leave EAX at 10000000h");

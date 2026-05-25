@@ -9,9 +9,83 @@ Build a static, browser-based educational simulator for MASM32-style assembly pr
 
 The simulator is intended for learning, experimentation, debugging, and sharing small MASM32/Irvine32-style console programs.
 
-The core product is not a native MASM compiler and not a full Windows/x86 emulator. It is a MASM-like source parser plus an internal virtual machine that models registers, flags, memory, stack behavior, control flow, selected Irvine32 routines, and resource limits.
+The core product is not a native MASM compiler and not a full Windows/x86 emulator. It is a MASM-like source parser plus an internal virtual machine.
 
-A user should be able to:
+The current implementation supports only the MASM32 Educational Mode subset completed through the latest accepted implementation milestone. A feature is current behavior only when it has been implemented, tested, and documented by the canonical implementation guide and the corresponding repository state.
+
+The intended complete v1 roadmap incrementally models registers, currently selected flags, memory, selected stack behavior, selected control flow, selected Irvine32 routines, resource limits, and educational diagnostics. Roadmap language in this specification must not be read as saying that stack behavior, control flow, Irvine32 routines, debugger behavior, URL sharing, input routines, or other future systems are already implemented.
+
+When describing current project status, future assistants must distinguish these three categories:
+
+- implemented behavior: behavior completed by the latest accepted milestone and present in the current repository archive;
+- planned v1 behavior: behavior specified for a later implementation-guide phase but not yet implemented;
+- non-goal behavior: behavior outside the simulator boundary, such as native x86 execution, Windows API execution, PE loading, object linking, host filesystem access, or full MASM macro compatibility.
+
+If the current repository, latest milestone report, and guide disagree about whether a feature is implemented, the assistant must treat the feature as not confirmed until it verifies the repository tests or explicitly reports the uncertainty.
+
+### 1.1 Current-status Surface Hygiene
+
+The project has two related but distinct status values:
+
+- **Repository/archive milestone**: the latest accepted project state, including runtime work, parser work, UI work, diagnostics work, documentation work, test-runner work, verification-ergonomics work, or repository maintenance.
+- **Runtime/source-run MASM behavior phase**: the latest implemented MASM/source execution behavior that is reported through source-run JSON, worker protocol results, browser runtime-status text, supported-syntax current-status text, Wasm/source-run status fields, or tests that assert runtime behavior metadata.
+
+These two values are usually the same for runtime behavior phases. They may differ after maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-copy, or repository-cleanup phases.
+
+Current-status surfaces must not collapse these two values into vague phrases such as:
+
+```text
+current milestone
+this milestone
+implemented through the current milestone
+unsupported in this milestone
+not supported by the current milestone
+```
+
+Current-status surfaces include, at minimum:
+
+- `README.md` current-scope and current-status text;
+- `docs/SUPPORTED_SYNTAX.md` current-status and expected-diagnostic text;
+- browser runtime-status text;
+- worker/protocol status text;
+- source-run JSON phase/status fields and any human-readable status strings carried in source-run JSON payloads;
+- Wasm/source-run status fields;
+- test assertions that describe runtime/source-run metadata;
+- user-facing diagnostics rendered in Simulator Messages;
+- worker-generated `ui-error` messages;
+- newly created milestone reports and current handoff/status summaries, while historical milestone reports remain historical evidence and do not need retroactive cleanup unless the user explicitly asks for historical report cleanup.
+
+When the repository/archive milestone and runtime/source-run MASM behavior phase differ, current-status documentation, newly created milestone reports, and current handoff/status summaries must state both values explicitly.
+
+Use this label format:
+
+```text
+Repository/archive milestone:
+Phase <N or suffix> - <phase title>
+
+Runtime/source-run MASM behavior phase:
+Phase <M> - <runtime behavior phase title>
+```
+
+Example after a maintenance-only phase:
+
+```text
+Repository/archive milestone:
+Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics
+
+Runtime/source-run MASM behavior phase:
+Phase 56 - Unsigned DIV
+```
+
+Do not update runtime/source-run phase metadata merely because a maintenance-only phase has advanced the repository/archive milestone. Runtime/source-run phase metadata advances only when the target phase explicitly changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
+
+Historical milestone reports may retain milestone-relative wording because they document what was true at the time. Current documentation, current supported-syntax text, live diagnostics, current browser status text, current protocol status text, current handoff/status summaries, and current tests must use stable behavior-specific wording.
+
+Target complete-v1 user capabilities, not necessarily current implementation:
+
+The following list describes the intended complete v1 user experience. It is not a statement that every listed capability is implemented in the current repository. Current support remains limited to the latest accepted repository/archive milestone and, for MASM/source execution behavior, the latest runtime/source-run MASM behavior phase. Future assistants must not claim that an item in this list is currently supported unless the current canonical guide, current repository state, tests, or latest milestone evidence confirm that support.
+
+A user should eventually be able to:
 
 - Type or paste MASM32-style source code in a rich browser editor with line numbers, indentation support, and later MASM syntax highlighting.
 - Run the program in the browser.
@@ -60,16 +134,26 @@ The following are explicit non-goals for the first complete version:
 
 Default mode.
 
-Features:
+This section describes the intended complete v1 MASM32 Educational Mode capability set. It is not a statement that every listed capability is implemented in the current repository state.
+
+Current project behavior is only the subset completed by the latest accepted repository/archive milestone, present in the current repository archive, and verified by the current tests.
+
+Current MASM syntax and execution behavior are only the subset completed by the latest runtime/source-run MASM behavior phase. If the latest repository/archive milestone and the runtime/source-run MASM behavior phase differ, use the runtime/source-run MASM behavior phase to describe supported MASM syntax, parser behavior, VM behavior, executor behavior, runtime/source-run phase metadata, and supported-syntax documentation.
+
+Target v1 capabilities:
 
 - MASM32-style syntax subset.
 - 32-bit general-purpose registers.
-- Flat memory model.
-- Simulated `.code`, `.data`, heap, and stack regions.
-- Irvine32-style console routines.
-- Source-level debugging.
+- Flat simulated memory model.
+- Simulated `.code`, `.data`, `.DATA?`, `.CONST`, heap, and stack regions.
+- Stack execution behavior only after the relevant stack phases are implemented.
+- Selected Irvine32-style console routines only after their specific routine phases are implemented.
+- Source-level debugging only after the debugger phases are implemented.
+- Width-aware register, flag, memory-change, stack, and execution-state display where the relevant data is implemented and available.
 
-This mode targets beginner and intermediate MASM32/Irvine32 console programs.
+This mode targets beginner and intermediate MASM32/Irvine32 console programs while remaining a simulator-defined educational subset. It must not be described as a native MASM compiler, full x86 emulator, Windows emulator, PE loader/linker, WinAPI simulator, host-filesystem environment, or full MASM macro assembler.
+
+Future assistants must not infer implementation status from this target capability list. Before claiming that a capability is implemented, verify that the capability is present in the latest accepted repository/archive state, covered by the implementation guide phase history, and covered by tests or milestone evidence.
 
 ### 4.2 Extended 32-bit Mode
 
@@ -1584,6 +1668,30 @@ When an instruction makes a modeled flag architecturally undefined:
 
 The preserved value is a simulator fallback value only. It is not a portable real-x86 guarantee.
 
+#### Multiply and divide family flag-validity policy
+
+The simulator deliberately separates deterministic displayed flag bits from architectural flag validity metadata. For most instructions whose owning phase says a modeled flag is architecturally undefined, the simulator should preserve a deterministic bit value and mark that modeled flag invalid in Phase 50A flag-validity metadata.
+
+The multiply/divide family has an explicit exception when its owning implementation-guide phase says so. This exception preserves the policies from Phase 53 - Unsigned MUL, Phase 54 - One-Operand Signed IMUL, Phase 55 - Two- and Three-Operand IMUL Forms, Phase 56 - Unsigned DIV, and Phase 57 - Signed IDIV once Phase 57 is implemented. The affected instruction families are:
+
+- `mul`;
+- one-operand `imul`;
+- two- and three-operand `imul`;
+- `div`;
+- `idiv`, once Phase 57 is implemented.
+
+If the owning implementation-guide phase for one of these instructions explicitly says that the instruction preserves currently modeled flags or preserves Phase 50A flag-validity metadata, that phase-specific MASM32 Educational Mode rule is authoritative.
+
+Future assistants must not infer from real x86 documentation alone that multiply or divide instructions should mark `CF`, `ZF`, `SF`, or `OF` invalid. Any change to multiply/divide flag-validity behavior must be a deliberately reviewed flag-policy phase. Such a phase must include:
+
+- native executor tests;
+- source-run tests;
+- flag-validity metadata tests where metadata is observable through tests;
+- no-partial-mutation tests for failing memory/divide paths;
+- exact rendered Simulator Messages tests if any user-visible warning or error text changes.
+
+Until such a future flag-policy phase exists, successful `div` and successful `idiv` preserve the currently modeled flag bits and preserve existing flag-validity metadata exactly as specified by their owning phases.
+
 #### Undefined-flag reporting modes
 
 The simulator supports these conceptual reporting modes. The implementation guide owns the exact phase that introduces each mode and any API/settings exposure.
@@ -2212,26 +2320,46 @@ Any write whose final byte range overlaps read-only `.CONST` storage must fail a
 
 Reads from `.CONST` are allowed if the full range is otherwise valid. Reads crossing `.CONST` are not permission failures merely because `.CONST` is read-only. They fail only if they cross independent VM regions or violate an enabled section/object strict policy.
 
-### 11.9.2 Diagnostic Precedence for Memory Accesses
+### 11.9.2 Authoritative Diagnostic Precedence for Memory Accesses
 
-Memory diagnostics must be ordered so lower-level safety failures are not hidden by educational warnings.
+Memory diagnostics must be ordered so lower-level safety failures are not hidden by educational warnings or optional validation policies.
 
-Recommended precedence:
+This subsection is the authoritative current memory-access diagnostic precedence for the implemented post-30 memory-validation model. Later summaries in this specification must not override this order. If a future phase adds a new memory validation layer, that phase must either update this subsection directly or add a clearly named superseding subsection with tests proving the new precedence.
+
+For every runtime memory read or write, compute the final effective address and access width first. Then apply memory diagnostics in this order:
 
 ```text
 1. Address arithmetic overflow while computing [address, address + width - 1].
-2. Final range not wholly contained in one allocated VM memory region.
-3. Permission failure, including `.CONST` write overlap.
+2. Final byte range not wholly contained in one allocated VM memory region.
+3. Permission failure, including any `.CONST` write overlap.
 4. Section-capacity violation, if section-capacity validation is enabled.
 5. Section-image violation, if section-image validation is enabled.
 6. Declared-object violation, if declared-object validation is enabled.
-7. Uninitialized-read warning or strict error, if uninitialized-read validation is enabled.
+7. Uninitialized-read warning or strict error, if uninitialized-read validation is enabled and the access is a read.
 8. Non-fatal unaligned-access warning.
 ```
 
-A strict diagnostic stops execution before mutation. If execution stops at an earlier strict or fatal diagnostic, later warning-only diagnostics for the same access do not need to be emitted.
+A fatal or strict diagnostic stops execution before mutation. If execution stops at an earlier fatal or strict diagnostic, later warning-only diagnostics for the same memory access do not need to be emitted.
 
-Default rule: emit at most one diagnostic per enabled validation level for one memory access, in precedence order. Do not combine separate validation-level diagnostics unless the relevant phase explicitly defines a combined diagnostic shape and tests it.
+Default rule: emit at most one diagnostic per enabled validation level for one memory access, in the precedence order above. Do not combine separate validation-level diagnostics unless the relevant phase explicitly defines a combined diagnostic shape and adds structured diagnostic tests plus exact rendered Simulator Messages tests.
+
+Mandatory Level 1 checks are always active:
+
+- address arithmetic overflow;
+- region containment;
+- memory permission;
+- `.CONST` write overlap.
+
+Optional educational validation levels are active only when selected by source-run/test policy or browser settings:
+
+- section-capacity validation;
+- section-image validation;
+- declared-object validation;
+- uninitialized-read strictness beyond the default warning policy.
+
+Unaligned-access diagnostics remain warning-only unless a later reviewed phase explicitly changes that policy.
+
+`.CONST` write protection is always a mandatory permission/read-only failure. It must take precedence over section-capacity, section-image, declared-object, uninitialized-read, and unaligned-access diagnostics.
 
 ### 11.9.3 Parser Versus Runtime Boundary for Memory Operands
 
@@ -2299,22 +2427,11 @@ This feature must not change the default runtime value of `?` storage. The defau
 
 ### 11.11 Invalid Memory Access Handling and Diagnostic Precedence
 
-When a memory access could trigger multiple diagnostics, the simulator must select exactly one primary fatal diagnostic in this order:
+Current memory-access diagnostic precedence is defined authoritatively in §11.9.2. This subsection does not define a second independent precedence order.
 
-```text
-1. Effective-address calculation overflow.
-2. Full access range is not contained in any valid memory region.
-3. Region permission violation or `.CONST` read-only write.
-4. Stack overflow/underflow classification, if the access is in or near the stack region.
-5. Allocated-object strict violation.
-6. Provenance strict violation.
-7. Uninitialized-origin read strict violation.
-8. Unaligned-access warning.
-9. Provenance warning.
-10. Uninitialized-origin read warning.
-```
+Future stack-specific, provenance-specific, source-intent, or advanced validation diagnostics must not reorder current memory diagnostics unless their owning implementation-guide phase explicitly updates §11.9.2 or adds a clearly marked superseding precedence subsection with tests.
 
-Fatal diagnostics suppress lower-priority warnings unless a lower-priority warning is necessary to explain the fatal error. Successful accesses may emit warnings such as unaligned access, provenance escape, or uninitialized-origin read according to the active validation mode.
+Fatal diagnostics suppress lower-priority warnings unless a lower-priority warning is necessary to explain the fatal error. Successful accesses may emit non-fatal warnings such as unaligned access, provenance escape, or uninitialized-origin read according to the active validation mode, but those warnings must remain subordinate to the authoritative order in §11.9.2.
 
 ### 11.12 Post-30 Memory Layout, Validation, and Metadata Requirements
 
@@ -2331,28 +2448,25 @@ Object and uninitialized-origin metadata must have explicit capacity behavior:
 
 Object-bound classification is based on the full access byte range `[address, address + width - 1]`, with overflow checks. The classifier must distinguish wholly inside object, outside all objects, partial overlap, spanning adjacent objects, padding/gap access, outside all regions, and permission failure.
 
-Diagnostic precedence for memory failures is:
-
-1. address arithmetic overflow or address-size violation;
-2. region containment failure;
-3. missing permission or `.CONST` overlap;
-4. object-bound strict failure;
-5. uninitialized-read strict failure;
-6. unaligned access warning;
-7. object-bound or uninitialized-read warnings in warning modes.
+Current memory-access diagnostic precedence is defined authoritatively in §11.9.2. Do not introduce a second independent memory-precedence list in this post-30 layout summary. Future validation layers must update §11.9.2 or add a clearly marked superseding subsection when they become implemented.
 
 
-### 11.10 Default Teaching Diagnostics Policy
+### 11.13 Default Teaching Diagnostics Policy
 
 The simulator should use beginner-friendly teaching diagnostics by default while preserving MASM-compatible execution where safe.
 
 Default teaching diagnostics are warning or notice diagnostics. They must not change the deterministic VM value read, the instruction result, the Program Console output, or the hard runtime safety rules unless their policy explicitly says `strict` or `error`.
 
-The default policy after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes is:
+The default policy after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes, Phase 53D - Compatibility No-Op and Limited-Behavior Notices, and Phase 53E - Memory Validation and Teaching Diagnostic UI Settings is:
 
 ```text
 uninitialized-read policy: warn
 undefined-flag-use policy: warn
+compatibility notices: on
+memory range validation: region-only
+section-capacity validation: off unless selected
+section-image validation: off unless selected
+declared-object validation: off unless selected
 ```
 
 The following policies remain available for tests and later settings:
@@ -2385,7 +2499,45 @@ The default `warn` policy for undefined flag use means:
 - the consumer continues using the simulator's deterministic preserved flag value;
 - execution stops only if the user selected error mode.
 
-Meaningful compatibility no-op notices are a separate future notice category owned by Phase 53D - Compatibility No-Op and Limited-Behavior Notices. Phase 53C must not emit these notices by default and must not add the notice policy before that phase is implemented.
+Compatibility notices are implemented current behavior after Phase 53D - Compatibility No-Op and Limited-Behavior Notices and Phase 53E - Memory Validation and Teaching Diagnostic UI Settings.
+
+Compatibility notices are emitted through Simulator Messages as non-fatal `simulator-notice` diagnostics. They must not be emitted through Program Console.
+
+Compatibility notices are for accepted compatibility constructs whose real MASM behavior is intentionally not performed, metadata-only, or limited in this simulator. The supported notice diagnostic codes are:
+
+```text
+compatibility-no-op
+compatibility-metadata-only
+compatibility-limited
+```
+
+The browser/source-run settings path may explicitly suppress compatibility notices. Suppressing compatibility notices must not change parsing, symbol resolution, execution, warnings, runtime errors, `.CONST` protection, unsupported-feature diagnostics, Program Console output, memory changes, or final register/flag state.
+
+When compatibility notices are disabled:
+
+- accepted no-op, metadata-only, and limited-behavior compatibility constructs still parse according to their implemented behavior;
+- no `compatibility-no-op`, `compatibility-metadata-only`, or `compatibility-limited` notice diagnostics are emitted;
+- real assembly errors remain errors;
+- runtime errors remain errors;
+- simulator warnings remain warnings;
+- unsupported features and explicit non-goals remain diagnosed normally.
+
+Constructs with active simulator semantics must not receive generic no-op notices. Examples of active semantic constructs include:
+
+- `OPTION CASEMAP:ALL`;
+- `OPTION CASEMAP:NONE`;
+- `.DATA?`;
+- `.CONST`;
+- `.data`;
+- `.code`;
+- `PROC`;
+- `ENDP`;
+- `END`;
+- `INCLUDE Irvine32.inc`;
+- any implemented executable instruction;
+- any implemented Irvine32 virtual intrinsic.
+
+Compatibility notices are explanatory teaching diagnostics. They are not feature gates and must not be used to make unsupported behavior appear implemented.
 
 Default teaching diagnostics must remain separate from hard errors.
 
@@ -2414,11 +2566,16 @@ These remain opt-in unless a later reviewed phase deliberately changes them:
 - strict undefined-shift validation;
 - broad static-analysis warnings such as dead stores, register-alias hints, or signedness hints.
 
-Default user-facing source-run and browser behavior after Phase 53C must use:
+Default user-facing source-run and browser behavior after Phase 53C, Phase 53D, and Phase 53E must use:
 
 ```text
 uninitialized_read_policy = warn
 undefined_flag_use_policy = warn
+compatibility_notices = on
+memory_range_validation = region_only
+section_capacity_validation = off unless selected
+section_image_validation = off unless selected
+declared_object_validation = off unless selected
 ```
 
 Low-level unit tests may still construct explicit policies directly. Any user-facing run path that omits a policy must use the teaching defaults.
@@ -2429,7 +2586,7 @@ Tests that need old silent behavior must pass explicit `uninitialized_read_polic
 
 This policy does not change default producer warnings for `undefined-shift-flag` or `undefined-modeled-flag`; those remain as already implemented.
 
-### 11.11 Future Diagnostics Audit Checkpoint
+### 11.14 Future Diagnostics Audit Checkpoint
 
 The project should not finalize broad diagnostic presets before the implemented MASM subset is mature enough to evaluate warning noise and educational value.
 
@@ -2540,7 +2697,7 @@ Program termination policy:
 - `exit` terminates successfully;
 - `RET` from the entry procedure should terminate successfully in educational mode once `RET` exists, unless a later phase deliberately chooses a root-return diagnostic policy;
 - `RET` from a non-entry procedure must obey the call stack model;
-- calls to `ExitProcess` or other Windows API routines remain unsupported unless explicitly shimmed later.
+- calls to `ExitProcess` or other Windows API routines remain unsupported in v1. A later reviewed phase may define a narrow virtual educational compatibility diagnostic or a narrow virtual terminator contract for a specific textbook pattern, but that phase must not execute Windows API behavior, load imports, model a PE process, simulate process handles, simulate DLL linkage, or imply general WinAPI support. Any such compatibility handling must be documented as simulator-owned virtual behavior, not as real `ExitProcess`, real `kernel32`, real Windows process termination, or a WinAPI simulator. Any future phase that recognizes this pattern must include tests proving that the behavior is not generalized to arbitrary WinAPI names, arbitrary imports, host include files, PE metadata, or linker behavior.
 
 ### 13.3 Supported Irvine32 Routine Groups
 
@@ -3089,11 +3246,17 @@ Run anyway?
 ```
 
 
-### 18.4 Memory Layout and Safety Presets UI
+### 18.4 Memory Layout, Memory Range Validation, and Teaching Diagnostic UI
 
-The UI must expose memory layout and validation settings only after the core modes are implemented.
+The UI must treat memory layout, memory range validation, and teaching diagnostics as separate setting dimensions.
 
-Required controls:
+Do not collapse these settings into one generic `memory validation` enum. In particular, selecting `Region-only` memory range validation must not disable uninitialized-read warnings, undefined-flag-use warnings, compatibility notices, or any other independent teaching diagnostic.
+
+The UI must expose a setting only after the corresponding backend behavior exists. Until a setting is implemented end-to-end through the browser UI, worker protocol, source-run/backend option mapping, tests, and documentation, it must remain absent or visibly disabled. Do not display a setting as active merely because a future roadmap phase mentions it.
+
+Do not add browser controls, worker protocol fields, source-run settings, URL state, or tests for settings that are not already implemented or explicitly owned by the current target phase.
+
+Required memory layout controls, once the relevant layout modes are implemented:
 
 ```text
 Memory layout:
@@ -3101,47 +3264,120 @@ Memory layout:
   Automatic deterministic layout
   Seeded randomized layout
   Fresh randomized layout
-
-Memory validation:
-  Region-only
-  Allocated-object warnings
-  Allocated-object strict
-  Provenance warnings
-  Provenance strict
-  Uninitialized-read warnings
-  Uninitialized-read strict
-
-Invalid memory access handling:
-  Stop execution with runtime diagnostic
-  Warn and continue only for non-fatal warning modes
 ```
 
-Required presets:
+Memory layout controls select address placement policy only. They must not change parser behavior, instruction semantics, memory permissions, uninitialized-origin metadata, object-bound diagnostics, or teaching diagnostic policies.
+
+Required memory range validation controls, once the relevant validation policies are implemented:
+
+```text
+Memory range validation:
+  Region-only
+  Section capacity: warn
+  Section capacity: strict stop
+  Section image: warn
+  Section image: strict stop
+  Declared object bounds: warn
+  Declared object bounds: strict stop
+```
+
+Memory range validation controls only optional educational range checks layered above mandatory checked VM memory access.
+
+`Region-only` means:
+
+- mandatory VM region/range/permission checks remain enabled;
+- address overflow checks remain enabled;
+- `.CONST` write protection remains enabled;
+- invalid simulated addresses remain runtime errors;
+- object-bound diagnostics are not emitted unless a declared-object-bounds mode is selected;
+- section-capacity diagnostics are not emitted unless a section-capacity mode is selected;
+- section-image diagnostics are not emitted unless a section-image mode is selected.
+
+`Region-only` does not mean "all diagnostics off." It does not disable uninitialized-read diagnostics, undefined-flag-use diagnostics, compatibility notices, unaligned-access warnings, invalid-memory diagnostics, output-limit diagnostics, or syntax diagnostics.
+
+Required teaching diagnostic controls, once exposed in the UI:
+
+```text
+Uninitialized reads:
+  Warn
+  Off / I know what I am doing
+  Strict stop
+
+Undefined flag use:
+  Warn
+  Off / I know what I am doing
+  Strict stop
+
+Compatibility notices:
+  On
+  Off
+```
+
+Teaching diagnostic controls are independent of memory range validation.
+
+Default user-facing behavior after Phase 53C - Default Teaching Diagnostics for Existing Warning Modes and Phase 53D - Compatibility No-Op and Limited-Behavior Notices is:
+
+```text
+Memory layout:
+  Fixed educational layout, unless a later implemented UI phase explicitly changes the default.
+
+Memory range validation:
+  Region-only.
+
+Uninitialized reads:
+  Warn.
+
+Undefined flag use:
+  Warn.
+
+Compatibility notices:
+  On.
+```
+
+The default profile must be interpreted as:
+
+- use mandatory region/range/permission safety checks;
+- warn when a read consumes bytes that still carry uninitialized-origin metadata;
+- warn when an implemented flag consumer reads a modeled flag whose deterministic value is architecturally invalid;
+- show compatibility notices for accepted no-op, metadata-only, or limited-behavior MASM compatibility constructs;
+- continue execution after non-fatal warnings and notices unless a later fatal diagnostic occurs.
+
+Invalid memory access handling is not a separate user-selectable policy for mandatory VM safety failures. Mandatory invalid address, address-overflow, region, and permission failures must stop execution with a runtime diagnostic. Warn-and-continue behavior is allowed only for explicitly non-fatal warning policies.
+
+Required preset descriptions, once presets are exposed:
 
 ```text
 Beginner/default:
   fixed educational layout
-  region-only validation
+  region-only memory range validation
+  uninitialized-read warnings
+  undefined-flag-use warnings
+  compatibility notices on
   fatal invalid region/permission errors
 
 Debug:
   fixed or automatic deterministic layout
-  allocated-object warnings
+  declared-object-bounds warnings
   uninitialized-read warnings
+  undefined-flag-use warnings
+  compatibility notices on
 
 Robustness:
   seeded randomized layout
-  allocated-object strict
-  provenance warnings
-  uninitialized-read warnings
+  declared-object-bounds strict stop
+  section-image or section-capacity warnings where implemented
+  uninitialized-read warnings or strict stop according to the selected teaching profile
+  undefined-flag-use warnings or strict stop according to the selected teaching profile
 ```
 
 Seed requirements:
 
 - Seeded randomized mode must display the active seed.
-- Shared URLs must include the seed if deterministic reproduction is expected.
+- Shared URLs must include the seed if deterministic reproduction is expected and share URLs have been implemented for simulator settings.
 - Fresh randomized mode must display the generated seed after each run so a failing run can be reproduced.
 - Tests must use fixed or explicitly seeded layout. They must not depend on fresh random mode.
+
+Future provenance validation must be introduced as an explicitly named policy. Do not silently merge future provenance checks into declared-object-bounds validation, section-image validation, or uninitialized-read diagnostics.
 
 These controls belong in the later UI/settings phases, not in the core memory-layout phases.
 

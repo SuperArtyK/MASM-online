@@ -291,6 +291,65 @@ END main
 `,
     reason: "Parser/source unknown-symbol diagnostic fixture."
   },
+  typeExpressionTail: {
+    source: `.data
+x DWORD 0
+.code
+main PROC
+    mov eax, TYPE x + 1
+main ENDP
+END main
+`,
+    reason: "Phase 56B stable TYPE expression diagnostic wording fixture."
+  },
+  lengthofExpressionTail: {
+    source: `.data
+x DWORD 0
+.code
+main PROC
+    mov eax, LENGTHOF x + 1
+main ENDP
+END main
+`,
+    reason: "Phase 56B stable LENGTHOF expression diagnostic wording fixture."
+  },
+  sizeofExpressionTail: {
+    source: `.data
+x DWORD 0
+.code
+main PROC
+    mov eax, SIZEOF x + 1
+main ENDP
+END main
+`,
+    reason: "Phase 56B stable SIZEOF expression diagnostic wording fixture."
+  },
+  unsupportedInstruction: {
+    source: `.code
+main PROC
+    idiv ebx
+main ENDP
+END main
+`,
+    reason: "Phase 56B stable unsupported-instruction diagnostic wording fixture."
+  },
+  postCodeSection: {
+    source: `.code
+main PROC
+.data
+main ENDP
+END main
+`,
+    reason: "Phase 56B stable post-code section diagnostic wording fixture."
+  },
+  textEquate: {
+    source: `NAME EQU <text>
+.code
+main PROC
+END main
+`,
+    reason: "Phase 56B stable text EQU diagnostic wording fixture."
+  },
   unsupportedFeature: {
     source: `.code
 main PROC
@@ -1432,6 +1491,114 @@ test("renders unknown symbol diagnostic exactly", () => {
 });
 
 
+test("renders TYPE expression diagnostic with stable wording exactly", () => {
+  const name = "typeExpressionTail";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-type-expression",
+    message: "Unsupported TYPE expression. Write TYPE followed by exactly one declared data symbol, for example TYPE nums. Arithmetic, bracketed operands, and nested expressions are not accepted in TYPE operands.",
+    line: 5,
+    column: 21,
+    byteOffset: 52,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-type-expression line 5, column 21, byte offset 52, span length 1: Unsupported TYPE expression. Write TYPE followed by exactly one declared data symbol, for example TYPE nums. Arithmetic, bracketed operands, and nested expressions are not accepted in TYPE operands.");
+});
+
+test("renders LENGTHOF expression diagnostic with stable wording exactly", () => {
+  const name = "lengthofExpressionTail";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-lengthof-expression",
+    message: "Unsupported LENGTHOF expression. Write LENGTHOF followed by exactly one declared data symbol, for example LENGTHOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in LENGTHOF operands.",
+    line: 5,
+    column: 25,
+    byteOffset: 56,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-lengthof-expression line 5, column 25, byte offset 56, span length 1: Unsupported LENGTHOF expression. Write LENGTHOF followed by exactly one declared data symbol, for example LENGTHOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in LENGTHOF operands.");
+});
+
+test("renders SIZEOF expression diagnostic with stable wording exactly", () => {
+  const name = "sizeofExpressionTail";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-sizeof-expression",
+    message: "Unsupported SIZEOF expression. Write SIZEOF followed by exactly one declared data symbol, for example SIZEOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in SIZEOF operands.",
+    line: 5,
+    column: 23,
+    byteOffset: 54,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-sizeof-expression line 5, column 23, byte offset 54, span length 1: Unsupported SIZEOF expression. Write SIZEOF followed by exactly one declared data symbol, for example SIZEOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in SIZEOF operands.");
+});
+
+test("renders unsupported instruction diagnostic with stable wording exactly", () => {
+  const name = "unsupportedInstruction";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-instruction",
+    message: "Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.",
+    line: 3,
+    column: 5,
+    byteOffset: 20,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 4: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+});
+
+test("renders post-code section diagnostic with stable wording exactly", () => {
+  const name = "postCodeSection";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-section",
+    message: "Unsupported section order. Place optional .data, .DATA?, and .CONST declarations together before .code; do not repeat a data-section directive after code has started.",
+    line: 3,
+    column: 1,
+    byteOffset: 16,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-section line 3, column 1, byte offset 16, span length 5: Unsupported section order. Place optional .data, .DATA?, and .CONST declarations together before .code; do not repeat a data-section directive after code has started.");
+});
+
+test("renders text EQU diagnostic with stable wording exactly", () => {
+  const name = "textEquate";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-equate",
+    message: "Text EQU constants are not accepted. Define numeric equates with NAME EQU constant-expression, for example COUNT EQU 4; text substitution forms such as NAME EQU <text> and TEXTEQU are not implemented.",
+    line: 1,
+    column: 10,
+    byteOffset: 9,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-equate line 1, column 10, byte offset 9, span length 1: Text EQU constants are not accepted. Define numeric equates with NAME EQU constant-expression, for example COUNT EQU 4; text substitution forms such as NAME EQU <text> and TEXTEQU are not implemented.");
+});
+
 test("renders known Irvine32 routine diagnostic exactly", () => {
   const name = "irvine32UnsupportedRoutine";
   const source = fixtureSource(name);
@@ -1443,7 +1610,7 @@ test("renders known Irvine32 routine diagnostic exactly", () => {
     {
       kind: "unsupported-feature",
       code: "unsupported-irvine32-routine",
-      message: "Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.",
+      message: "Recognized Irvine32 routine, but executable behavior for this routine is deferred to the routine-specific Irvine32 phases.",
       line: 4,
       column: 5,
       byteOffset: 41,
@@ -1451,7 +1618,7 @@ test("renders known Irvine32 routine diagnostic exactly", () => {
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 11: Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine32-routine line 4, column 5, byte offset 41, span length 11: Recognized Irvine32 routine, but executable behavior for this routine is deferred to the routine-specific Irvine32 phases.");
 });
 
 test("renders exit without Irvine32 include diagnostic exactly", () => {

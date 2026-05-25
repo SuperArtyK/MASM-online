@@ -189,7 +189,10 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.type, "RUN_RESULT");
   assert.equal(response.payload.phase, 29);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
-  assert.match(response.payload.simulatorMessages[0].message, /reports Milestone 29/);
+  assert.equal(
+    response.payload.simulatorMessages[0].message,
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior phase 29, but the UI/source files expect runtime/source-run MASM behavior phase 56. Rebuild web/dist with the Emscripten build script."
+  );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 

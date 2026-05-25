@@ -4744,9 +4744,9 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
 
 /// Parses a TYPE symbol expression as a 32-bit immediate element-size value.
 ///
-/// The current milestone intentionally supports only the simple `TYPE symbol`
+/// The implemented source subset intentionally supports only the simple `TYPE symbol`
 /// form in source-immediate contexts. Arithmetic expression
-/// tails, bracketed operands, and other MASM expressions remain future phases.
+/// tails, bracketed operands, and other MASM expressions remain deferred parser work.
 ///
 /// @param state Parser state to mutate.
 /// @param out_operand Receives the immediate operand containing the element size.
@@ -4767,12 +4767,12 @@ static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperan
     }
 
     if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, symbol_token, "Unsupported TYPE expression. Only TYPE symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, symbol_token, "Unsupported TYPE expression. Write TYPE followed by exactly one declared data symbol, for example TYPE nums. Arithmetic, bracketed operands, and nested expressions are not accepted in TYPE operands.");
         return false;
     }
 
     if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, tail_token, "Unsupported TYPE expression. Only TYPE symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_TYPE_EXPRESSION, tail_token, "Unsupported TYPE expression. Write TYPE followed by exactly one declared data symbol, for example TYPE nums. Arithmetic, bracketed operands, and nested expressions are not accepted in TYPE operands.");
         return false;
     }
 
@@ -4789,9 +4789,9 @@ static bool vm_parser_parse_type_source_operand(VmParserState *state, VmIrOperan
 
 /// Parses a LENGTHOF symbol expression as a 32-bit immediate element-count value.
 ///
-/// The current milestone intentionally supports only the simple `LENGTHOF symbol`
+/// The implemented source subset intentionally supports only the simple `LENGTHOF symbol`
 /// form in source-immediate contexts. Arithmetic expression tails,
-/// bracketed operands, and other MASM expressions remain future phases.
+/// bracketed operands, and other MASM expressions remain deferred parser work.
 ///
 /// @param state Parser state to mutate.
 /// @param out_operand Receives the immediate operand containing the element count.
@@ -4812,12 +4812,12 @@ static bool vm_parser_parse_lengthof_source_operand(VmParserState *state, VmIrOp
     }
 
     if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, symbol_token, "Unsupported LENGTHOF expression. Only LENGTHOF symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, symbol_token, "Unsupported LENGTHOF expression. Write LENGTHOF followed by exactly one declared data symbol, for example LENGTHOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in LENGTHOF operands.");
         return false;
     }
 
     if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, tail_token, "Unsupported LENGTHOF expression. Only LENGTHOF symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LENGTHOF_EXPRESSION, tail_token, "Unsupported LENGTHOF expression. Write LENGTHOF followed by exactly one declared data symbol, for example LENGTHOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in LENGTHOF operands.");
         return false;
     }
 
@@ -4834,9 +4834,9 @@ static bool vm_parser_parse_lengthof_source_operand(VmParserState *state, VmIrOp
 
 /// Parses a SIZEOF symbol expression as a 32-bit immediate total-size value.
 ///
-/// The current milestone intentionally supports only the simple `SIZEOF symbol`
+/// The implemented source subset intentionally supports only the simple `SIZEOF symbol`
 /// form in source-immediate contexts. Arithmetic expression tails, bracketed
-/// operands, and other MASM expressions remain future phases.
+/// operands, and other MASM expressions remain deferred parser work.
 ///
 /// @param state Parser state to mutate.
 /// @param out_operand Receives the immediate operand containing the total byte size.
@@ -4857,12 +4857,12 @@ static bool vm_parser_parse_sizeof_source_operand(VmParserState *state, VmIrOper
     }
 
     if (!vm_parser_token_can_name_data_symbol(symbol_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, symbol_token, "Unsupported SIZEOF expression. Only SIZEOF symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, symbol_token, "Unsupported SIZEOF expression. Write SIZEOF followed by exactly one declared data symbol, for example SIZEOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in SIZEOF operands.");
         return false;
     }
 
     if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, tail_token, "Unsupported SIZEOF expression. Only SIZEOF symbol is supported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SIZEOF_EXPRESSION, tail_token, "Unsupported SIZEOF expression. Write SIZEOF followed by exactly one declared data symbol, for example SIZEOF nums. Arithmetic, bracketed operands, and nested expressions are not accepted in SIZEOF operands.");
         return false;
     }
 
@@ -5309,7 +5309,7 @@ static bool vm_parser_validate_source_width(
             vm_parser_report_ambiguous_memory_width(state, source_token);
             return false;
         }
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Destination operand width is unsupported by the current milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, source_token, "Unsupported destination operand width for this instruction form. Use an 8-bit, 16-bit, or 32-bit destination that this instruction supports, such as a register, typed data symbol, or explicit BYTE PTR, WORD PTR, or DWORD PTR memory operand.");
         return false;
     }
 
@@ -6187,7 +6187,7 @@ static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state
         return true;
     }
 
-    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, mnemonic_token, "Recognized Irvine32 routine, but executable Irvine32 routine behavior is deferred to a later milestone.");
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, mnemonic_token, "Recognized Irvine32 routine, but executable behavior for this routine is deferred to the routine-specific Irvine32 phases.");
     return true;
 }
 
@@ -6218,7 +6218,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
                 return false;
             }
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "Unsupported instruction for the current milestone.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
             return false;
         }
     }
@@ -6650,7 +6650,7 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Only one optional .data section followed by .code is supported by this milestone.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SECTION, token, "Unsupported section order. Place optional .data, .DATA?, and .CONST declarations together before .code; do not repeat a data-section directive after code has started.");
         return false;
     }
 
@@ -7015,7 +7015,7 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         (vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_LESS_THAN ||
          vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_STRING)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_EQUATE, vm_parser_current_token(state),
-                                 "Text EQU constants are not supported in this milestone; use numeric constant expressions only.");
+                                 "Text EQU constants are not accepted. Define numeric equates with NAME EQU constant-expression, for example COUNT EQU 4; text substitution forms such as NAME EQU <text> and TEXTEQU are not implemented.");
         equate->is_invalid = true;
         vm_parser_recover_skip_line(state);
         return true;
