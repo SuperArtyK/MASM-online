@@ -3200,6 +3200,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_DIV;
         return true;
     }
+    if (vm_parser_token_equals(token, "idiv")) {
+        *out_opcode = VM_IR_OPCODE_IDIV;
+        return true;
+    }
 
     return false;
 }
@@ -3290,9 +3294,9 @@ static bool vm_parser_opcode_is_lea(VmIrOpcode opcode) {
 /// Returns whether an opcode uses one source operand with implicit accumulator result registers.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for one-operand MUL, IMUL, and DIV.
+/// @return true for one-operand MUL, IMUL, DIV, and IDIV.
 static bool vm_parser_opcode_is_implicit_accumulator_source(VmIrOpcode opcode) {
-    return opcode == VM_IR_OPCODE_MUL || opcode == VM_IR_OPCODE_IMUL || opcode == VM_IR_OPCODE_DIV;
+    return opcode == VM_IR_OPCODE_MUL || opcode == VM_IR_OPCODE_IMUL || opcode == VM_IR_OPCODE_DIV || opcode == VM_IR_OPCODE_IDIV;
 }
 
 /// Returns the source-mnemonic spelling for implicit-accumulator instructions.
@@ -3305,6 +3309,9 @@ static const char *vm_parser_implicit_accumulator_mnemonic(VmIrOpcode opcode) {
     }
     if (opcode == VM_IR_OPCODE_DIV) {
         return "DIV";
+    }
+    if (opcode == VM_IR_OPCODE_IDIV) {
+        return "IDIV";
     }
     return "MUL";
 }
@@ -5721,12 +5728,12 @@ static bool vm_parser_validate_single_destination_operand(
     return true;
 }
 
-/// Validates the source operand for one-operand implicit-accumulator multiply.
+/// Validates the source operand for one-operand implicit-accumulator operations.
 ///
-/// MUL and one-operand IMUL accept exactly one register or known-width memory
-/// source. The source width selects the implicit accumulator and result
-/// register pair, so untyped register-indirect memory remains ambiguous and
-/// immediates are rejected.
+/// MUL, one-operand IMUL, DIV, and IDIV accept exactly one register or
+/// known-width memory source. The source width selects the implicit accumulator
+/// and result register pair, so untyped register-indirect memory remains
+/// ambiguous and immediates are rejected.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
 /// @param opcode Instruction opcode used for diagnostic wording.

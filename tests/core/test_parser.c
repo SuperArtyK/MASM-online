@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 56.
+ * @brief Unit and integration tests for the parser through Milestone 57.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, and integration with the current
@@ -4120,6 +4120,147 @@ static int test_phase56_div_parse_error_paths(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57 IDIV parser acceptance and IR shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57_idiv_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".data\n"
+        "value SDWORD -1\n"
+        "arr SDWORD 4 DUP(0)\n"
+        ".CONST\n"
+        "factor SDWORD -7\n"
+        ".code\n"
+        "main PROC\n"
+        "    idiv al\n"
+        "    idiv ax\n"
+        "    idiv eax\n"
+        "    idiv BYTE PTR [esi]\n"
+        "    idiv WORD PTR [esi]\n"
+        "    idiv DWORD PTR [esi]\n"
+        "    idiv SBYTE PTR [esi]\n"
+        "    idiv SWORD PTR [esi]\n"
+        "    idiv SDWORD PTR [esi]\n"
+        "    idiv value\n"
+        "    idiv arr[8]\n"
+        "    idiv factor\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 57 IDIV program should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57 IDIV program should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 12U, "Phase 57 IDIV program should emit twelve instructions");
+    if (result.instruction_count == 12U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_IDIV, "idiv al should emit IDIV opcode");
+        failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_NONE, "IDIV should emit no explicit destination operand");
+        failures += expect_u32(buffers.instructions[0].source.kind, VM_IR_OPERAND_REGISTER, "idiv al source should be register");
+        failures += expect_u32(buffers.instructions[0].source.reg, VM_REGISTER_AL, "idiv al source should be AL");
+        failures += expect_u32(buffers.instructions[1].source.reg, VM_REGISTER_AX, "idiv ax source should be AX");
+        failures += expect_u32(buffers.instructions[2].source.reg, VM_REGISTER_EAX, "idiv eax source should be EAX");
+        failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "idiv BYTE PTR [esi] should emit memory source");
+        failures += expect_u32(buffers.instructions[3].source.width_bits, 8U, "idiv BYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[4].source.width_bits, 16U, "idiv WORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[5].source.width_bits, 32U, "idiv DWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[6].source.width_bits, 8U, "idiv SBYTE PTR [esi] should use 8-bit width");
+        failures += expect_u32(buffers.instructions[7].source.width_bits, 16U, "idiv SWORD PTR [esi] should use 16-bit width");
+        failures += expect_u32(buffers.instructions[8].source.width_bits, 32U, "idiv SDWORD PTR [esi] should use 32-bit width");
+        failures += expect_u32(buffers.instructions[9].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "idiv value should emit direct memory source");
+        failures += expect_u32(buffers.instructions[9].source.width_bits, 32U, "idiv value should infer SDWORD width");
+        failures += expect_u32(buffers.instructions[10].source.width_bits, 32U, "idiv arr[8] should infer SDWORD width");
+        failures += expect_u32(buffers.instructions[11].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "idiv factor should accept readable .CONST source");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 57 IDIV parser diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57_idiv_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    idiv 5\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV immediate source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "IDIV immediate source should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register or memory source", "IDIV immediate diagnostic should explain source requirement");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    idiv eax, ebx\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV two-operand form should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "IDIV two-operand form should use invalid-instruction-operands");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "exactly one", "IDIV two-operand diagnostic should explain operand count");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    idiv [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV ambiguous memory source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "IDIV ambiguous memory diagnostic should be ambiguous-memory-width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    idiv\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV missing operand should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "IDIV missing operand should use expected-operand");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q QWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    idiv QWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV QWORD source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "IDIV QWORD PTR should remain unsupported executable width");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "q SQWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    idiv SQWORD PTR q\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IDIV SQWORD source should produce parser diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "IDIV SQWORD PTR should remain unsupported executable width");
+
+    return failures;
+}
+
 /// Verifies Phase 54 one-operand signed IMUL parser support.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4512,7 +4653,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 56.
+/// Runs all parser regression tests through Milestone 57.
 ///
 /// @return Zero on success, otherwise one.
 int main(void) {
@@ -4589,6 +4730,8 @@ int main(void) {
     failures += test_phase55_imul_parse_error_paths();
     failures += test_phase56_div_parse_to_ir();
     failures += test_phase56_div_parse_error_paths();
+    failures += test_phase57_idiv_parse_to_ir();
+    failures += test_phase57_idiv_parse_error_paths();
     failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 

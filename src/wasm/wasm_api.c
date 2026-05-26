@@ -10,7 +10,7 @@
  * instructions, accumulator conversions, exchange/negation/no-op
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
  * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, unsigned
- * MUL, one-operand signed IMUL, two- and three-operand signed IMUL, unsigned DIV, the virtual Irvine32 `exit` terminator, and recovered
+ * MUL, one-operand signed IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -1906,6 +1906,7 @@ static size_t masm32_sim_wasm_collect_planned_reads(
         case VM_IR_OPCODE_IMUL:
         case VM_IR_OPCODE_IMUL_IMMEDIATE:
         case VM_IR_OPCODE_DIV:
+        case VM_IR_OPCODE_IDIV:
             if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
             }
@@ -2025,6 +2026,7 @@ static size_t masm32_sim_wasm_collect_planned_object_accesses(
         case VM_IR_OPCODE_IMUL:
         case VM_IR_OPCODE_IMUL_IMMEDIATE:
         case VM_IR_OPCODE_DIV:
+        case VM_IR_OPCODE_IDIV:
             if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
                 masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
             }
@@ -2388,9 +2390,9 @@ static bool masm32_sim_wasm_copy_single_source_operand_text(const VmIrInstructio
     return length > 0U;
 }
 
-/// Returns the quotient register written by a successful DIV.
+/// Returns the quotient register written by a successful DIV or IDIV.
 ///
-/// @param width_bits DIV divisor width in bits.
+/// @param width_bits DIV or IDIV divisor width in bits.
 /// @return Static display text for the quotient register.
 static const char *masm32_sim_wasm_div_quotient_register(uint8_t width_bits) {
     if (width_bits == 8U) {
@@ -2405,9 +2407,9 @@ static const char *masm32_sim_wasm_div_quotient_register(uint8_t width_bits) {
     return "AL/AX/EAX";
 }
 
-/// Returns the remainder register written by a successful DIV.
+/// Returns the remainder register written by a successful DIV or IDIV.
 ///
-/// @param width_bits DIV divisor width in bits.
+/// @param width_bits DIV or IDIV divisor width in bits.
 /// @return Static display text for the remainder register.
 static const char *masm32_sim_wasm_div_remainder_register(uint8_t width_bits) {
     if (width_bits == 8U) {
@@ -2422,13 +2424,24 @@ static const char *masm32_sim_wasm_div_remainder_register(uint8_t width_bits) {
     return "AH/DX/EDX";
 }
 
-/// Copies display text for a DIV divisor operand.
+/// Returns the diagnostic mnemonic for one divide-family instruction.
+///
+/// @param instruction DIV or IDIV instruction associated with a diagnostic.
+/// @return Static uppercase mnemonic text.
+static const char *masm32_sim_wasm_divide_mnemonic(const VmIrInstruction *instruction) {
+    if (instruction != NULL && instruction->opcode == VM_IR_OPCODE_IDIV) {
+        return "IDIV";
+    }
+    return "DIV";
+}
+
+/// Copies display text for a DIV or IDIV divisor operand.
 ///
 /// Register divisors use canonical uppercase register names. Memory operands
 /// keep the original source operand text when available so diagnostics can
 /// point at the specific symbol or memory expression the user wrote.
 ///
-/// @param instruction DIV instruction whose source operand should be displayed.
+/// @param instruction DIV or IDIV instruction whose source operand should be displayed.
 /// @param buffer Destination buffer.
 /// @param buffer_size Number of bytes available in @p buffer.
 /// @return true when an operand display string was produced.
@@ -2455,12 +2468,12 @@ static bool masm32_sim_wasm_copy_div_divisor_operand_display(
     return masm32_sim_wasm_copy_single_source_operand_text(instruction, buffer, buffer_size);
 }
 
-/// Formats the Phase 56 divide-by-zero runtime diagnostic message.
+/// Formats the divide-by-zero runtime diagnostic message for DIV and IDIV.
 ///
 /// The message names the divisor operand when source text is available and
 /// names the quotient and remainder registers left unchanged.
 ///
-/// @param instruction DIV instruction associated with the diagnostic.
+/// @param instruction DIV or IDIV instruction associated with the diagnostic.
 /// @param buffer Destination buffer.
 /// @param buffer_size Number of bytes available in @p buffer.
 /// @return Pointer to @p buffer.
@@ -2473,6 +2486,7 @@ static const char *masm32_sim_wasm_format_divide_by_zero_message(
     uint8_t width_bits = instruction != NULL ? instruction->source.width_bits : 0U;
     const char *quotient_register = NULL;
     const char *remainder_register = NULL;
+    const char *mnemonic = masm32_sim_wasm_divide_mnemonic(instruction);
 
     if (instruction != NULL && width_bits == 0U && instruction->source.kind == VM_IR_OPERAND_REGISTER) {
         width_bits = vm_cpu_register_width_bits(instruction->source.reg);
@@ -2481,14 +2495,15 @@ static const char *masm32_sim_wasm_format_divide_by_zero_message(
     remainder_register = masm32_sim_wasm_div_remainder_register(width_bits);
 
     if (buffer == NULL || buffer_size == 0U) {
-        return "DIV divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient and remainder registers.";
+        return "DIV or IDIV divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient and remainder registers.";
     }
 
     if (masm32_sim_wasm_copy_div_divisor_operand_display(instruction, operand_text, sizeof(operand_text))) {
         (void)snprintf(
             buffer,
             buffer_size,
-            "DIV divisor operand %s evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register %s and remainder register %s.",
+            "%s divisor operand %s evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register %s and remainder register %s.",
+            mnemonic,
             operand_text,
             quotient_register,
             remainder_register
@@ -2497,7 +2512,8 @@ static const char *masm32_sim_wasm_format_divide_by_zero_message(
         (void)snprintf(
             buffer,
             buffer_size,
-            "DIV divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register %s and remainder register %s.",
+            "%s divisor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register %s and remainder register %s.",
+            mnemonic,
             quotient_register,
             remainder_register
         );
@@ -2506,13 +2522,13 @@ static const char *masm32_sim_wasm_format_divide_by_zero_message(
     return buffer;
 }
 
-/// Formats the Phase 56 quotient-overflow runtime diagnostic message.
+/// Formats the quotient-overflow runtime diagnostic message for DIV and IDIV.
 ///
 /// The message names the quotient and remainder registers for the selected DIV
-/// width so students can see exactly which result registers were protected from
+/// or IDIV width so students can see exactly which result registers were protected from
 /// partial mutation.
 ///
-/// @param instruction DIV instruction associated with the diagnostic.
+/// @param instruction DIV or IDIV instruction associated with the diagnostic.
 /// @param buffer Destination buffer.
 /// @param buffer_size Number of bytes available in @p buffer.
 /// @return Pointer to @p buffer.
@@ -2524,6 +2540,7 @@ static const char *masm32_sim_wasm_format_div_quotient_overflow_message(
     uint8_t width_bits = instruction != NULL ? instruction->source.width_bits : 0U;
     const char *quotient_register = NULL;
     const char *remainder_register = NULL;
+    const char *mnemonic = masm32_sim_wasm_divide_mnemonic(instruction);
 
     if (instruction != NULL && width_bits == 0U && instruction->source.kind == VM_IR_OPERAND_REGISTER) {
         width_bits = vm_cpu_register_width_bits(instruction->source.reg);
@@ -2532,13 +2549,14 @@ static const char *masm32_sim_wasm_format_div_quotient_overflow_message(
     remainder_register = masm32_sim_wasm_div_remainder_register(width_bits);
 
     if (buffer == NULL || buffer_size == 0U) {
-        return "DIV quotient is too large to fit in the quotient register. Execution stopped before updating the quotient and remainder registers.";
+        return "DIV or IDIV quotient is too large to fit in the quotient register. Execution stopped before updating the quotient and remainder registers.";
     }
 
     (void)snprintf(
         buffer,
         buffer_size,
-        "DIV quotient is too large to fit in quotient register %s. Execution stopped before updating the quotient register %s and remainder register %s.",
+        "%s quotient is too large to fit in quotient register %s. Execution stopped before updating the quotient register %s and remainder register %s.",
+        mnemonic,
         quotient_register,
         quotient_register,
         remainder_register
@@ -4592,7 +4610,7 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":56,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(&writer, "{\"phase\":57,\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -4640,6 +4658,13 @@ static const char *masm32_sim_wasm_build_run_json(
             parser_result != NULL ? parser_result->diagnostic_count : 0U
         );
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR) {
+        bool has_message = false;
+        if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
+            (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
+            if (has_message) {
+                (void)masm32_sim_json_append(&writer, ",");
+            }
+        }
         if (storage != NULL && storage->has_section_violation) {
             (void)masm32_sim_json_append_section_violation(&writer, &storage->section_violation);
         } else if (storage != NULL && storage->has_object_violation) {
@@ -4676,7 +4701,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":56,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":57,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 

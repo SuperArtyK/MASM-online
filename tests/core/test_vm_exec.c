@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 56.
+ * @brief Unit tests for the VM executor through Milestone 57.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported straight-line instruction semantics, CPU and memory
@@ -3513,6 +3513,153 @@ static int test_phase56_div_semantics_and_errors(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57 signed IDIV implicit-accumulator semantics and diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57_idiv_semantics_and_errors(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    const VmExecDelta *delta = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 57 IDIV test");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "idiv ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0xFFFFFF9CU) ? 0 : record_failure("EAX negative dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0xFFFFFFFFU) ? 0 : record_failure("EDX negative high-half setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 7U) ? 0 : record_failure("EBX positive divisor setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup before IDIV should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup before IDIV should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("SF setup before IDIV should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("OF setup before IDIV should succeed"));
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before IDIV should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit negative/positive IDIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after IDIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after IDIV should succeed"));
+    failures += expect_u32(eax, 0xFFFFFFF2U, "IDIV -100 / 7 should write EAX quotient -14");
+    failures += expect_u32(edx, 0xFFFFFFFEU, "IDIV -100 / 7 should write EDX remainder -2");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "IDIV should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "IDIV should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "IDIV should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "IDIV should preserve OF bit");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "IDIV should preserve invalid OF metadata");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "idiv ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "32-bit positive/negative IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX positive dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX positive high-half setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0xFFFFFFF9U) ? 0 : record_failure("EBX negative divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "32-bit positive/negative IDIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after positive/negative IDIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after positive/negative IDIV should succeed"));
+    failures += expect_u32(eax, 0xFFFFFFF2U, "IDIV 100 / -7 should truncate quotient toward zero");
+    failures += expect_u32(edx, 2U, "IDIV 100 / -7 should keep positive dividend remainder sign");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BX, 0U), "main.asm", 3U, "idiv bx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "16-bit IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x0000FF9CU) ? 0 : record_failure("AX negative dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x0000FFFFU) ? 0 : record_failure("DX negative high-half setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BX, 7U) ? 0 : record_failure("BX divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "16-bit IDIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 16-bit IDIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after 16-bit IDIV should succeed"));
+    failures += expect_u32(eax & 0xFFFFU, 0xFFF2U, "16-bit IDIV should write AX quotient -14");
+    failures += expect_u32(edx & 0xFFFFU, 0xFFFEU, "16-bit IDIV should write DX remainder -2");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BL, 0U), "main.asm", 3U, "idiv bl", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 5U) ? 0 : record_failure("AX 8-bit dividend setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 0xFFU) ? 0 : record_failure("BL 8-bit negative divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "8-bit IDIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 8-bit IDIV should succeed"));
+    failures += expect_u32(eax & 0xFFFFU, 0x00FBU, "8-bit IDIV should write AL quotient -5 and AH remainder 0");
+
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 0xFFFFFFF9U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("IDIV memory divisor fixture write should succeed"));
+    vm_memory_clear_changes(&vm.memory);
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_memory(VM_MEMORY_DEFAULT_DATA_BASE, 32U), "main.asm", 5U, "idiv factor", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "memory-source IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX memory IDIV setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX memory IDIV setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "memory-source IDIV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after memory IDIV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after memory IDIV should succeed"));
+    failures += expect_u32(eax, 0xFFFFFFF2U, "memory-source IDIV should write quotient");
+    failures += expect_u32(edx, 2U, "memory-source IDIV should write remainder");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "memory-source IDIV should record one checked read");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 0U, 0U, "memory-source IDIV should not write memory");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "idiv ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "divide-by-zero IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("EAX divide-by-zero setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("EDX divide-by-zero setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0U) ? 0 : record_failure("EBX zero divisor setup should succeed"));
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_CF, "seed-invalid", "seed", "seed.asm", 10U, 1U, 100U, 4U, "seed", 0U) ? 0 : record_failure("seed CF invalidity before failing IDIV should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_DIVIDE_BY_ZERO, "IDIV by zero should stop with divide-by-zero status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after IDIV divide-by-zero should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after IDIV divide-by-zero should succeed"));
+    failures += expect_u32(eax, 100U, "IDIV divide-by-zero should preserve EAX");
+    failures += expect_u32(edx, 0U, "IDIV divide-by-zero should preserve EDX");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_CF, false, "seed-invalid", "seed", 10U, "failing IDIV should preserve invalid CF metadata");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 3U, "idiv ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "overflow IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x80000000U) ? 0 : record_failure("EAX overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0xFFFFFFFFU) ? 0 : record_failure("EDX overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0xFFFFFFFFU) ? 0 : record_failure("EBX overflow divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_QUOTIENT_OVERFLOW, "IDIV quotient overflow should stop with quotient-overflow status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after IDIV quotient overflow should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after IDIV quotient overflow should succeed"));
+    failures += expect_u32(eax, 0x80000000U, "IDIV quotient overflow should preserve EAX");
+    failures += expect_u32(edx, 0xFFFFFFFFU, "IDIV quotient overflow should preserve EDX");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_BL, 0U), "main.asm", 3U, "idiv bl", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "8-bit overflow IDIV program load should succeed");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_AX, 0xFF80U) ? 0 : record_failure("AX 8-bit overflow setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_BL, 0xFFU) ? 0 : record_failure("BL 8-bit overflow divisor setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_QUOTIENT_OVERFLOW, "8-bit IDIV quotient overflow should stop with quotient-overflow status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after 8-bit IDIV overflow should succeed"));
+    failures += expect_u32(eax & 0xFFFFU, 0xFF80U, "8-bit IDIV quotient overflow should preserve AX");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3573,6 +3720,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_DIV), "div") != 0) {
         failures += record_failure("DIV opcode name should be div");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IDIV), "idiv") != 0) {
+        failures += record_failure("IDIV opcode name should be idiv");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
@@ -3602,7 +3752,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 56.
+/// Runs all executor tests through Milestone 57.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3666,6 +3816,7 @@ int main(void) {
     failures += test_phase54_imul_memory_sources_and_errors();
     failures += test_phase55_explicit_imul_semantics();
     failures += test_phase56_div_semantics_and_errors();
+    failures += test_phase57_idiv_semantics_and_errors();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -3673,6 +3824,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 56 passed.");
+    puts("Executor tests through Milestone 57 passed.");
     return 0;
 }

@@ -456,7 +456,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
     assert_text_contains("README.md", "Milestone 37")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 56 - Unsigned DIV")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -534,7 +534,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 56")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 57")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -598,7 +598,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 56 DIV coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57 IDIV coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1253,6 +1253,7 @@ def assert_fixture_inventory_documented() -> None:
             "phase51-layout-fixed-automatic-equivalence",
             "phase53e-ui-settings-policy-routing",
             "phase56-div-source-run-coverage",
+            "phase57-idiv-source-run-coverage",
             "kept whole for Phase 56A",
         ],
     )
@@ -1346,15 +1347,15 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase56b_status_labels_documented() -> None:
+def assert_phase57_status_labels_documented() -> None:
     """Verify current docs distinguish repository and runtime phase labels."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 56B - User-Facing Diagnostic Wording Cleanup",
+        "Phase 57 - Signed IDIV",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 56 - Unsigned DIV",
-        "Phase 56B is wording, current-status, and test-maintenance work only.",
+        "Phase 57 - Signed IDIV",
+        "Phase 57 is a runtime arithmetic milestone.",
     ]
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
@@ -1422,7 +1423,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase56b_status_labels_documented()
+    assert_phase57_status_labels_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

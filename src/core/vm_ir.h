@@ -86,6 +86,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IMUL_IMMEDIATE,
     /// Divide the implicit unsigned accumulator by a register or memory source.
     VM_IR_OPCODE_DIV,
+    /// Divide the implicit signed accumulator by a register or memory source.
+    VM_IR_OPCODE_IDIV,
     /// Compute an effective address into a 32-bit register without reading memory.
     VM_IR_OPCODE_LEA,
     /// Terminate execution successfully for Irvine32 `exit`.

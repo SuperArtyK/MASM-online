@@ -253,6 +253,7 @@ The Phase 56A source-run fixture inventory is intentionally a navigation aid. It
 | phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run` | integration smoke fixture | kept whole for Phase 56A |
 | phase53e-ui-settings-policy-routing | `source-run` | focused settings fixture | kept whole for Phase 56A |
 | phase56-div-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept whole for Phase 56A |
+| phase57-idiv-source-run-coverage | `source-run` | focused success/error/regression fixture family | added for Phase 57 signed IDIV and kept whole in the focused source-run group |
 
 Large individual MASM source fixtures were reviewed for Phase 56A. The Phase 51 instruction-family programs are intentionally labeled integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as focused success, error, warning/notice, edge-case, or regression fixtures. No fixture was moved, renamed, split, or weakened in Phase 56A.
 
@@ -988,6 +989,24 @@ Some archives may not preserve executable bits. Invoke scripts through their int
 python3 scripts/run_tests.py
 bash scripts/build_wasm.sh
 ```
+
+### Phase 57 signed IDIV verification
+
+Phase 57 adds runtime source behavior for signed one-operand `idiv`, so verification must include native executor tests, parser tests, source-run JSON tests, rendered Simulator Messages tests, protocol phase metadata tests, and static current-status checks. Memory-divisor `idiv` tests must prove planned-read validation runs before quotient/remainder mutation for strict uninitialized-read and object-boundary policies.
+
+Recommended focused commands after Phase 57 changes:
+
+```bash
+python3 scripts/run_tests.py --structure
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+```
+
+Run `python3 scripts/run_tests.py --all` when practical. If the aggregate command times out in a hosted assistant/container environment, report focused group results separately and do not claim an aggregate pass.
 
 ## 10. Recommended checklist before reporting a milestone complete
 

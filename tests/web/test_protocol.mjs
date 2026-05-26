@@ -28,7 +28,7 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 56);
+  assert.equal(IMPLEMENTED_PHASE, 57);
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -38,7 +38,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 56
+      phase: 57
     }
   });
 });
@@ -54,7 +54,7 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 56
+      phase: 57
     }
   });
 });
@@ -191,7 +191,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior phase 29, but the UI/source files expect runtime/source-run MASM behavior phase 56. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior phase 29, but the UI/source files expect runtime/source-run MASM behavior phase 57. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });

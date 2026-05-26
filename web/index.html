@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Milestone 56 source-run UI: source editing, Run button,
+  This page provides the Milestone 57 source-run UI: source editing, Run button,
   final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
   execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, and compatibility notice policies.
 -->
@@ -18,14 +18,14 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 56: unsigned DIV now runs with divide-by-zero and quotient-overflow diagnostics alongside the existing diagnostic settings.</p>
+        <p class="muted">Milestone 57: signed IDIV now runs with divide-by-zero and quotient-overflow diagnostics alongside the existing diagnostic settings.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov edx, 0
-    mov eax, 100
+    mov eax, -100
+    cdq
     mov ebx, 7
-    div ebx
+    idiv ebx
 main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
@@ -47,7 +47,7 @@ END main</textarea>
               <div class="setting-control">
                 <label for="memory-range-setting">Memory range validation</label>
                 <select id="memory-range-setting" aria-describedby="memory-range-setting-help">
-                  <option value="region-only" selected>Program Region-only (default)</option>
+                  <option value="region-only" selected>Allocated Program Region-only (default)</option>
                   <option value="section-capacity-warn">Data Section capacity: warn</option>
                   <option value="section-capacity-strict">Data Section capacity: strict stop</option>
                   <option value="section-image-warn">Data Section image: warn</option>
@@ -56,7 +56,7 @@ END main</textarea>
                   <option value="declared-object-strict">Declared object bounds: strict stop</option>
                 </select>
                 <ul id="memory-range-setting-help" class="setting-help muted">
-                  <li><strong>Program Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
+                  <li><strong>Allocated Program Region-only:</strong> apply mandatory VM address, region, permission, and <code>.CONST</code> checks only; closest to normal MASM-style memory behavior.</li>
                   <li><strong>Data Section capacity:</strong> report accesses that pass VM checks but fall outside the simulator's known section capacity range.</li>
                   <li><strong>Data Section image:</strong> report accesses that stay in section capacity but leave the declared or initialized section image.</li>
                   <li><strong>Declared object bounds:</strong> report accesses that leave or cross a declared data object, useful for catching accidental overrun/underrun bugs.</li>

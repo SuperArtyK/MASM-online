@@ -327,7 +327,7 @@ END main
   unsupportedInstruction: {
     source: `.code
 main PROC
-    idiv ebx
+    bswap ebx
 main ENDP
 END main
 `,
@@ -1557,10 +1557,10 @@ test("renders unsupported instruction diagnostic with stable wording exactly", (
     line: 3,
     column: 5,
     byteOffset: 20,
-    spanLength: 4
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 4: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 5: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 });
 
 test("renders post-code section diagnostic with stable wording exactly", () => {
@@ -3959,6 +3959,145 @@ END main
   assertRenderedEquals("phase53d-notice-plus-error", source, rawJson, rendered, "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.\n[assembly-error] unsupported-model line 2, column 1, byte offset 5, span length 6: .model form is unsupported. Use `.model flat, stdcall` in MASM32 Educational Mode.");
 });
 
+
+
+test("Phase 57 renders IDIV divide-by-zero runtime error", () => {
+  const source = `.code
+main PROC
+    mov eax, 100
+    cdq
+    mov ebx, 0
+    idiv ebx
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57-idiv-divide-by-zero", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "IDIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 6,
+      column: 5,
+      byteOffset: 60,
+      spanLength: 8
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57-idiv-divide-by-zero", source, rawJson, rendered, "[runtime-error] divide-by-zero line 6, column 5, byte offset 60, span length 8: IDIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 57 renders memory IDIV divide-by-zero with uninitialized warning composition", () => {
+  const source = `.DATA?
+factor SDWORD ?
+.code
+main PROC
+    mov edx, 0
+    mov eax, 100
+    idiv factor
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57-idiv-uninitialized-then-divide-by-zero", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from factor + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 7,
+      sourceLocation: {
+        line: 7,
+        column: null,
+        byteOffset: null,
+        spanLength: null
+      },
+      symbolName: "factor",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "IDIV divisor operand factor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 7,
+      column: 5,
+      byteOffset: 75,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57-idiv-uninitialized-then-divide-by-zero", source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7: Memory read range 00500000h..00500003h reads 4 bytes from factor + 0; 4 of those bytes still originated from uninitialized storage.\n[runtime-error] divide-by-zero line 7, column 5, byte offset 75, span length 11: IDIV divisor operand factor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 57 renders IDIV quotient-overflow runtime error", () => {
+  const source = `.code
+main PROC
+    mov eax, 80000000h
+    cdq
+    mov ebx, -1
+    idiv ebx
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57-idiv-quotient-overflow", source);
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "quotient-overflow",
+      message: "IDIV quotient is too large to fit in quotient register EAX. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 6,
+      column: 5,
+      byteOffset: 67,
+      spanLength: 8
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57-idiv-quotient-overflow", source, rawJson, rendered, "[runtime-error] quotient-overflow line 6, column 5, byte offset 67, span length 8: IDIV quotient is too large to fit in quotient register EAX. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+});
+
+test("Phase 57 renders IDIV section-image strict planned-read runtime error", () => {
+  const source = `.data
+x DWORD 1
+.code
+main PROC
+    mov esi, OFFSET x
+    add esi, 4
+    mov edx, 0
+    mov eax, 10
+    idiv DWORD PTR [esi]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57-idiv-section-image-strict", source, { MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "strict" });
+  assertRunStatus(json, false, "execution-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "section-image-violation",
+      message: "Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).",
+      line: 9,
+      column: 20,
+      byteOffset: 119,
+      spanLength: 5,
+      accessKind: "read",
+      accessStartAddress: "00500004h",
+      accessEndAddress: "00500007h",
+      accessSizeBytes: 4,
+      ownerSection: ".data/.DATA?",
+      boundaryStartAddress: "00500000h",
+      boundaryEndAddress: "00500003h"
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57-idiv-section-image-strict", source, rawJson, rendered, "[runtime-error] section-image-violation line 9, column 20, byte offset 119, span length 5: Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).");
+});
 
 test("Phase 56 renders DIV divide-by-zero runtime error", () => {
   const source = `.code

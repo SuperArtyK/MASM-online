@@ -5,7 +5,7 @@
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
- * lea, mul, imul, div, and Irvine32 exit over the currently supported register and
+ * lea, mul, imul, div, idiv, and Irvine32 exit over the currently supported register and
  * memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
@@ -13,6 +13,7 @@
 
 #include "vm_exec.h"
 
+#include <limits.h>
 #include <string.h>
 
 /// Canonical registers captured for register deltas.
@@ -2377,6 +2378,234 @@ static VmExecStatus vm_exec_execute_div(Vm *vm, const VmIrInstruction *instructi
     return VM_EXEC_STATUS_OK;
 }
 
+
+/// Sign-interprets an unsigned two's-complement value at the requested width.
+///
+/// The helper avoids implementation-defined casts for the high bit by computing
+/// the negative magnitude explicitly. Width 64 handles INT64_MIN as a special
+/// case because its positive magnitude is not representable as int64_t.
+///
+/// @param value Raw unsigned bits to interpret.
+/// @param width_bits Width of the signed integer, in bits.
+/// @param out_value Receives the signed interpretation.
+/// @return true when @p width_bits is 8, 16, 32, or 64.
+static bool vm_exec_sign_interpret_u64(uint64_t value, uint8_t width_bits, int64_t *out_value) {
+    uint64_t mask = 0ULL;
+    uint64_t sign_bit = 0ULL;
+    uint64_t raw = 0ULL;
+    uint64_t magnitude = 0ULL;
+
+    if (out_value == NULL) {
+        return false;
+    }
+    if (width_bits == 64U) {
+        mask = UINT64_MAX;
+        sign_bit = 1ULL << 63U;
+    } else if (width_bits == 32U) {
+        mask = 0xFFFFFFFFULL;
+        sign_bit = 1ULL << 31U;
+    } else if (width_bits == 16U) {
+        mask = 0xFFFFULL;
+        sign_bit = 1ULL << 15U;
+    } else if (width_bits == 8U) {
+        mask = 0xFFULL;
+        sign_bit = 1ULL << 7U;
+    } else {
+        return false;
+    }
+
+    raw = value & mask;
+    if ((raw & sign_bit) == 0ULL) {
+        *out_value = (int64_t)raw;
+        return true;
+    }
+
+    if (width_bits == 64U && raw == sign_bit) {
+        *out_value = INT64_MIN;
+        return true;
+    }
+
+    magnitude = ((~raw) & mask) + 1ULL;
+    *out_value = -(int64_t)magnitude;
+    return true;
+}
+
+/// Returns the minimum signed quotient accepted for an IDIV divisor width.
+///
+/// @param width_bits Divisor width in bits.
+/// @param out_min_value Receives the minimum signed quotient value.
+/// @return true when @p width_bits is 8, 16, or 32.
+static bool vm_exec_idiv_quotient_min(uint8_t width_bits, int64_t *out_min_value) {
+    if (out_min_value == NULL) {
+        return false;
+    }
+    if (width_bits == 8U) {
+        *out_min_value = -128;
+        return true;
+    }
+    if (width_bits == 16U) {
+        *out_min_value = -32768;
+        return true;
+    }
+    if (width_bits == 32U) {
+        *out_min_value = -2147483648LL;
+        return true;
+    }
+    return false;
+}
+
+/// Returns the maximum signed quotient accepted for an IDIV divisor width.
+///
+/// @param width_bits Divisor width in bits.
+/// @param out_max_value Receives the maximum signed quotient value.
+/// @return true when @p width_bits is 8, 16, or 32.
+static bool vm_exec_idiv_quotient_max(uint8_t width_bits, int64_t *out_max_value) {
+    if (out_max_value == NULL) {
+        return false;
+    }
+    if (width_bits == 8U) {
+        *out_max_value = 127;
+        return true;
+    }
+    if (width_bits == 16U) {
+        *out_max_value = 32767;
+        return true;
+    }
+    if (width_bits == 32U) {
+        *out_max_value = 2147483647LL;
+        return true;
+    }
+    return false;
+}
+
+/// Writes successful IDIV quotient and remainder results to implicit registers.
+///
+/// @param cpu CPU state to mutate.
+/// @param width_bits Divisor width in bits.
+/// @param quotient Signed quotient known to fit the result register.
+/// @param remainder Signed remainder known to fit the result register.
+/// @return true when the selected implicit registers were writable.
+static bool vm_exec_write_idiv_results(VmCpu *cpu, uint8_t width_bits, int64_t quotient, int64_t remainder) {
+    uint32_t quotient_bits = (uint32_t)((uint64_t)quotient & 0xFFFFFFFFULL);
+    uint32_t remainder_bits = (uint32_t)((uint64_t)remainder & 0xFFFFFFFFULL);
+
+    if (cpu == NULL) {
+        return false;
+    }
+    if (width_bits == 8U) {
+        return vm_cpu_write_register(cpu, VM_REGISTER_AL, quotient_bits & 0xFFU) &&
+               vm_cpu_write_register(cpu, VM_REGISTER_AH, remainder_bits & 0xFFU);
+    }
+    if (width_bits == 16U) {
+        return vm_cpu_write_register(cpu, VM_REGISTER_AX, quotient_bits & 0xFFFFU) &&
+               vm_cpu_write_register(cpu, VM_REGISTER_DX, remainder_bits & 0xFFFFU);
+    }
+    if (width_bits == 32U) {
+        return vm_cpu_write_register(cpu, VM_REGISTER_EAX, quotient_bits) &&
+               vm_cpu_write_register(cpu, VM_REGISTER_EDX, remainder_bits);
+    }
+    return false;
+}
+
+/// Executes one signed IDIV instruction with implicit accumulator operands.
+///
+/// IDIV reads one register or memory divisor. The selected divisor width chooses
+/// the signed dividend and result registers: AX/r/m8 writes AL quotient and AH
+/// remainder, DX:AX/r/m16 writes AX quotient and DX remainder, and EDX:EAX/r/m32
+/// writes EAX quotient and EDX remainder. Divide-by-zero and quotient-overflow
+/// conditions stop before quotient or remainder mutation. Modeled flag bits and
+/// flag-validity metadata are preserved exactly.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction IDIV instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_idiv(Vm *vm, const VmIrInstruction *instruction) {
+    VmCpu before_cpu;
+    uint8_t width_bits = 0U;
+    uint32_t divisor_value = 0U;
+    uint32_t low_value = 0U;
+    uint32_t high_value = 0U;
+    uint64_t dividend_bits = 0ULL;
+    int64_t dividend = 0;
+    int64_t divisor = 0;
+    int64_t quotient = 0;
+    int64_t remainder = 0;
+    int64_t min_quotient = 0;
+    int64_t max_quotient = 0;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && !vm_exec_operand_is_memory(&instruction->source))) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_exec_operand_width(&instruction->source, &width_bits) ||
+        !vm_exec_idiv_quotient_min(width_bits, &min_quotient) ||
+        !vm_exec_idiv_quotient_max(width_bits, &max_quotient)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    before_cpu = vm->cpu;
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &divisor_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (!vm_exec_sign_interpret_u64((uint64_t)divisor_value, width_bits, &divisor)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (divisor == 0) {
+        return VM_EXEC_STATUS_DIVIDE_BY_ZERO;
+    }
+
+    if (width_bits == 8U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &low_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend_bits = (uint64_t)(low_value & 0xFFFFU);
+        if (!vm_exec_sign_interpret_u64(dividend_bits, 16U, &dividend)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 16U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_AX, &low_value) ||
+            !vm_cpu_read_register(&vm->cpu, VM_REGISTER_DX, &high_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend_bits = ((uint64_t)(high_value & 0xFFFFU) << 16U) | (uint64_t)(low_value & 0xFFFFU);
+        if (!vm_exec_sign_interpret_u64(dividend_bits, 32U, &dividend)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else if (width_bits == 32U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EAX, &low_value) ||
+            !vm_cpu_read_register(&vm->cpu, VM_REGISTER_EDX, &high_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        dividend_bits = ((uint64_t)high_value << 32U) | (uint64_t)low_value;
+        if (!vm_exec_sign_interpret_u64(dividend_bits, 64U, &dividend)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+    } else {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (dividend == INT64_MIN && divisor == -1) {
+        return VM_EXEC_STATUS_QUOTIENT_OVERFLOW;
+    }
+    quotient = dividend / divisor;
+    remainder = dividend % divisor;
+    if (quotient < min_quotient || quotient > max_quotient) {
+        return VM_EXEC_STATUS_QUOTIENT_OVERFLOW;
+    }
+
+    if (!vm_exec_write_idiv_results(&vm->cpu, width_bits, quotient, remainder)) {
+        vm->cpu = before_cpu;
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
 /// Executes the common explicit-destination signed IMUL writeback path.
 ///
 /// The helper multiplies two signed operand-width values, writes the low
@@ -2779,6 +3008,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_imul_immediate(vm, instruction);
         case VM_IR_OPCODE_DIV:
             return vm_exec_execute_div(vm, instruction);
+        case VM_IR_OPCODE_IDIV:
+            return vm_exec_execute_idiv(vm, instruction);
         case VM_IR_OPCODE_EXIT:
             return vm_exec_execute_exit(vm, instruction);
         default:
