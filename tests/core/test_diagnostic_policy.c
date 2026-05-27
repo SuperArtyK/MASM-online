@@ -3,7 +3,7 @@
  * @brief Unit tests for the diagnostic-policy registry and migration helpers.
  *
  * These tests verify the shared off/warn/error vocabulary, policy-family
- * registry metadata, and Phase 57D behavior-preserving migration helpers.
+ * registry metadata, Phase 57D behavior-preserving migration helpers, and Phase 57E startup-state notices.
  */
 
 #include <stdbool.h>
@@ -119,7 +119,7 @@ static int test_policy_family_parse_and_format(void) {
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE ? record_failure("parse compatibility-notice enum") : 0;
     failures += expect_true(vm_diagnostic_policy_parse_family("const-uninitialized-storage", &family), "parse reserved const family should succeed");
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE ? record_failure("parse const-uninitialized-storage enum") : 0;
-    failures += expect_true(vm_diagnostic_policy_parse_family("startup-state-notice", &family), "parse reserved startup family should succeed");
+    failures += expect_true(vm_diagnostic_policy_parse_family("startup-state-notice", &family), "parse startup family should succeed");
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE ? record_failure("parse startup-state-notice enum") : 0;
     failures += expect_true(vm_diagnostic_policy_parse_family("code-image-read", &family), "parse reserved code family should succeed");
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ ? record_failure("parse code-image-read enum") : 0;
@@ -158,8 +158,16 @@ static int test_policy_family_metadata(void) {
         failures += info->default_value != VM_DIAGNOSTIC_POLICY_VALUE_WARN ? record_failure("compatibility-notice default should be warn") : 0;
     }
 
+    info = vm_diagnostic_policy_family_info(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE);
+    failures += info == NULL ? record_failure("startup-state-notice metadata should exist") : 0;
+    if (info != NULL) {
+        failures += info->state != VM_DIAGNOSTIC_POLICY_FAMILY_STATE_IMPLEMENTED ? record_failure("startup-state-notice should be implemented") : 0;
+        failures += !info->has_default_value ? record_failure("startup-state-notice should have current default") : 0;
+        failures += info->default_value != VM_DIAGNOSTIC_POLICY_VALUE_WARN ? record_failure("startup-state-notice default should be warn") : 0;
+    }
+
     failures += expect_true(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE), "const-uninitialized-storage should be reserved inactive");
-    failures += expect_true(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice should be reserved inactive");
+    failures += expect_false(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice should be implemented, not reserved");
     failures += expect_true(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ), "code-image-read should be reserved inactive");
     failures += expect_false(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ), "uninitialized-read should not be reserved inactive");
 
@@ -228,7 +236,7 @@ static int test_phase57d_implemented_family_helpers(void) {
     failures += expect_true(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ), "uninitialized-read should be implemented");
     failures += expect_true(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE), "undefined-flag-use should be implemented");
     failures += expect_true(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE), "compatibility-notice should be implemented");
-    failures += expect_false(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice should remain reserved inactive");
+    failures += expect_true(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice should be implemented for Phase 57E");
     failures += expect_false(vm_diagnostic_policy_family_is_implemented(VM_DIAGNOSTIC_POLICY_FAMILY_COUNT), "out-of-range family should not be implemented");
 
     failures += expect_true(vm_diagnostic_policy_family_default_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, &value), "uninitialized-read should expose a default");
@@ -240,13 +248,15 @@ static int test_phase57d_implemented_family_helpers(void) {
     failures += expect_true(vm_diagnostic_policy_family_default_value(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE, &value), "compatibility-notice should expose a default");
     failures += value != VM_DIAGNOSTIC_POLICY_VALUE_WARN ? record_failure("compatibility-notice default helper should return warn") : 0;
 
-    failures += expect_false(vm_diagnostic_policy_family_default_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, &value), "reserved startup-state-notice should not expose a current default");
+    value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+    failures += expect_true(vm_diagnostic_policy_family_default_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, &value), "startup-state-notice should expose a default");
+    failures += value != VM_DIAGNOSTIC_POLICY_VALUE_WARN ? record_failure("startup-state-notice default helper should return warn") : 0;
     failures += expect_false(vm_diagnostic_policy_family_default_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, NULL), "default helper should reject NULL output pointer");
 
     return failures;
 }
 
-/// Verifies Phase 57D accepted-value checks do not activate reserved families.
+/// Verifies Phase 57D and Phase 57E accepted-value checks preserve family-specific modes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase57d_family_value_acceptance(void) {
@@ -259,7 +269,9 @@ static int test_phase57d_family_value_acceptance(void) {
     failures += expect_true(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "compatibility-notice should accept warn");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "compatibility-notice should reject unsupported error mode");
 
-    failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "reserved startup-state-notice should reject warn");
+    failures += expect_true(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_OFF), "startup-state-notice should accept off");
+    failures += expect_true(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "startup-state-notice should accept warn");
+    failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "startup-state-notice should reject unsupported error mode");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "reserved code-image-read should reject error");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, VM_DIAGNOSTIC_POLICY_VALUE_COUNT), "implemented family should reject out-of-range value");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COUNT, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "out-of-range family should reject warn");
@@ -286,6 +298,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Diagnostic policy registry and migration tests passed.\n");
+    printf("Diagnostic policy registry, migration, and startup notice tests passed.\n");
     return 0;
 }

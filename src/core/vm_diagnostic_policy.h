@@ -36,7 +36,7 @@ typedef enum VmDiagnosticPolicyFamily {
     VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE,
     /// Reserved family for future `.CONST ?` and `.CONST DUP(?)` compatibility diagnostics.
     VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
-    /// Reserved family for future simulator startup-state notices.
+    /// Informational notice explaining deterministic simulator startup state.
     VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,
     /// Reserved family for future `.code` image memory-read diagnostics.
     VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ,
@@ -129,10 +129,10 @@ bool vm_diagnostic_policy_family_default_value(VmDiagnosticPolicyFamily family, 
 /// Reports whether a policy value is accepted for an implemented family.
 ///
 /// Implemented teaching-diagnostic families accept the shared off/warn/error
-/// vocabulary. Compatibility notices currently accept only off/warn because
-/// Phase 53E exposes them as off/on non-fatal notices. Reserved inactive
-/// families reject all values so future diagnostics are not accidentally
-/// activated by name.
+/// vocabulary when their current behavior includes a fatal mode. Compatibility
+/// notices and startup-state notices currently accept only off/warn because
+/// they are non-fatal notices. Reserved inactive families reject all values so
+/// future diagnostics are not accidentally activated by name.
 ///
 /// @param family Family identifier to inspect.
 /// @param value Policy value to validate for that family.

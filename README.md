@@ -5,16 +5,16 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57D - Existing Diagnostic Policy Migration
+Phase 57E - Startup State Notice and Zero-Default Documentation
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters while preserving user-visible defaults and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+Phase 57E documents deterministic simulator startup and emits a non-fatal `startup-state-notice` by default while preserving startup values, execution semantics, Program Console output, and runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, the default startup-state notice, and the virtual Irvine32 `exit` terminator.
 
 For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
 

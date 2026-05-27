@@ -4,8 +4,9 @@
  *
  * The registry keeps optional teaching diagnostic family names and the common
  * off/warn/error policy vocabulary in one C99 module. Phase 57D routes existing
- * configurable families through registry-backed compatibility helpers while
- * preserving source-run, browser, and rendered Simulator Messages behavior.
+ * configurable families through registry-backed compatibility helpers. Phase
+ * 57E activates the startup-state notice family without changing startup
+ * values or runtime/source-run MASM behavior metadata.
  */
 
 #include "vm_diagnostic_policy.h"
@@ -67,9 +68,9 @@ static const VmDiagnosticPolicyFamilyInfo VM_DIAGNOSTIC_POLICY_FAMILY_TABLE[] = 
     {
         VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,
         "startup-state-notice",
-        VM_DIAGNOSTIC_POLICY_FAMILY_STATE_RESERVED_INACTIVE,
-        false,
-        VM_DIAGNOSTIC_POLICY_VALUE_OFF,
+        VM_DIAGNOSTIC_POLICY_FAMILY_STATE_IMPLEMENTED,
+        true,
+        VM_DIAGNOSTIC_POLICY_VALUE_WARN,
     },
     {
         VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ,
@@ -173,7 +174,8 @@ bool vm_diagnostic_policy_family_accepts_value(VmDiagnosticPolicyFamily family, 
         return false;
     }
 
-    if (family == VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE) {
+    if (family == VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE ||
+        family == VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE) {
         return value == VM_DIAGNOSTIC_POLICY_VALUE_OFF || value == VM_DIAGNOSTIC_POLICY_VALUE_WARN;
     }
 

@@ -51,6 +51,12 @@ function resolveProducerPath() {
 /** Native producer path used by this harness; override for direct local runs. */
 const PRODUCER_PATH = resolveProducerPath();
 
+/** Exact Phase 57E startup-state notice text. */
+const STARTUP_STATE_NOTICE_TEXT = "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+
+/** Exact rendered Phase 57E startup-state notice line. */
+const STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${STARTUP_STATE_NOTICE_TEXT}`;
+
 /** Environment variables that control the native diagnostic producer. */
 const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_MEMORY_VALIDATION",
@@ -63,7 +69,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION",
   "MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION",
   "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
-  "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE"
+  "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE",
+  "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE"
 ];
 
 /**
@@ -106,7 +113,7 @@ function buildChildEnv(extraEnv = {}) {
     deleteEnvKeyCaseInsensitive(env, key);
   }
 
-  return { ...env, ...extraEnv };
+  return { ...env, MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "off", ...extraEnv };
 }
 
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} ExpectedMessage */
@@ -1480,6 +1487,35 @@ test("native producer accepts fixture file path for successful execution", () =>
     code: "execution-complete",
     message: "Execution completed successfully."
   });
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 57E startup-state notice exactly", () => {
+  const name = "phase57eStartupStateNotice";
+  const source = fixtureSource("success");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
+});
+
+test("renders Phase 57E startup-state notice opt-out exactly", () => {
+  const name = "phase57eStartupStateNoticeOff";
+  const source = fixtureSource("success");
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.simulatorMessages.some((message) => message.code === "startup-state-notice"), false);
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
 });
 

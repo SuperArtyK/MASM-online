@@ -54,6 +54,15 @@ typedef enum Masm32SimWasmTeachingDiagnosticSetting {
     MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT
 } Masm32SimWasmTeachingDiagnosticSetting;
 
+
+/// Selects whether the Phase 57E startup-state notice is emitted.
+typedef enum Masm32SimWasmStartupStateNoticeSetting {
+    /// Suppress the deterministic startup-state notice while preserving startup values.
+    MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF = 0,
+    /// Emit the deterministic startup-state notice as a non-fatal Simulator Message.
+    MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+} Masm32SimWasmStartupStateNoticeSetting;
+
 /// Selects whether Phase 53D compatibility notices are emitted.
 typedef enum Masm32SimWasmCompatibilityNoticeSetting {
     /// Suppress accepted compatibility no-op, metadata-only, and limited-behavior notices.
@@ -233,6 +242,20 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_va
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
     const char *source,
     Masm32SimWasmShiftValidationMode shift_mode
+);
+
+/// Parses and executes source with an explicit startup-state notice policy.
+///
+/// The normal browser export uses the Phase 57E default notice policy. This
+/// test/configuration-facing helper allows native tests to verify notice
+/// opt-out without adding a browser UI setting in this phase.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param setting Startup-state notice setting to apply.
+/// @return Pointer to the same static JSON buffer used by other source-run helpers.
+const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
+    const char *source,
+    Masm32SimWasmStartupStateNoticeSetting setting
 );
 
 /// Parses and executes source with explicit undefined-flag-use diagnostics.

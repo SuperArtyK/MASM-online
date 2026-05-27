@@ -410,7 +410,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_diagnostic_policy.h", "bool vm_diagnostic_policy_parse_family")
     assert_text_contains("src/core/vm_diagnostic_policy.c", "VM_DIAGNOSTIC_POLICY_FAMILY_TABLE")
     assert_text_contains("tests/core/test_diagnostic_policy.c", "/*\n * @file test_diagnostic_policy.c")
-    assert_text_contains("tests/core/test_diagnostic_policy.c", "Diagnostic policy registry and migration tests passed.")
+    assert_text_contains("tests/core/test_diagnostic_policy.c", "Diagnostic policy registry, migration, and startup notice tests passed.")
     assert_text_contains("tests/core/test_vm_flags.c", "/*\n * @file test_vm_flags.c")
     assert_text_contains("tests/core/test_vm_flags.c", "/// Verifies success-path named flag")
     assert_text_contains("tests/core/test_vm_memory.c", "/*\n * @file test_vm_memory.c")
@@ -470,7 +470,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57D - Existing Diagnostic Policy Migration")
+    assert_text_contains("README.md", "Phase 57E - Startup State Notice and Zero-Default Documentation")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -614,7 +614,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57 IDIV coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57E startup-state notice coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1396,18 +1396,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57d_diagnostic_policy_migration_present() -> None:
-    """Verify Phase 57D diagnostic-policy migration and current-status requirements."""
+def assert_phase57e_startup_state_notice_present() -> None:
+    """Verify Phase 57E startup-state notice and current-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57D - Existing Diagnostic Policy Migration",
+        "Phase 57E - Startup State Notice and Zero-Default Documentation",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57 - Signed IDIV",
-        "Phase 57D is backend diagnostic-policy migration work only.",
+        "Phase 57E",
+        "startup-state-notice",
     ]
     status_block = """Repository/archive milestone:
-Phase 57D - Existing Diagnostic Policy Migration
+Phase 57E - Startup State Notice and Zero-Default Documentation
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV"""
@@ -1450,6 +1451,7 @@ Phase 57 - Signed IDIV"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57E - Startup State Notice and Zero-Default Documentation",
             "Phase 57D - Existing Diagnostic Policy Migration",
             "Phase 57C - Diagnostic Policy Registry Design",
             "Phase 57B - Milestone History and Build Documentation Extraction",
@@ -1544,7 +1546,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57d_diagnostic_policy_migration_present()
+    assert_phase57e_startup_state_notice_present()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

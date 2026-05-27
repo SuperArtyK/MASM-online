@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57D - Existing Diagnostic Policy Migration
+Phase 57E - Startup State Notice and Zero-Default Documentation
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters and does not change parser behavior, VM behavior, executor behavior, browser UI behavior, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console output, Simulator Messages output, or runtime/source-run MASM behavior metadata.
+Phase 57E is deterministic-startup documentation and notice work. It activates the startup-state-notice diagnostic family and emits a non-fatal Simulator Messages notice by default while preserving parser behavior, VM instruction behavior, executor behavior, browser UI controls, Program Console output, startup values, and runtime/source-run MASM behavior metadata.
 
 ## Repository layout for development
 

@@ -330,6 +330,33 @@ static int diagnostic_json_producer_get_undefined_flag_use_policy(Masm32SimWasmU
     return 0;
 }
 
+/// Returns the requested startup-state notice setting from the diagnostic environment.
+///
+/// @param out_setting Receives the selected Phase 57E startup-state notice setting.
+/// @return Nonzero when MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE selects a setting.
+static int diagnostic_json_producer_get_startup_state_notice_setting(Masm32SimWasmStartupStateNoticeSetting *out_setting) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE");
+
+    if (out_setting == NULL) {
+        return 0;
+    }
+
+    *out_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "off") == 0) {
+        *out_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF;
+        return 1;
+    }
+    if (strcmp(mode, "warn") == 0 || strcmp(mode, "on") == 0) {
+        *out_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -392,6 +419,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
     Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+    Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
     int has_memory_validation = 0;
     int has_section_capacity_validation = 0;
     int has_section_image_validation = 0;
@@ -418,6 +446,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
         json = masm32_sim_wasm_run_source_json_with_shift_validation_mode(source, shift_mode);
     } else if (diagnostic_json_producer_get_undefined_flag_use_policy(&flag_use_policy)) {
         json = masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(source, flag_use_policy);
+    } else if (diagnostic_json_producer_get_startup_state_notice_setting(&startup_state_notice_setting)) {
+        json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(source, startup_state_notice_setting);
     } else {
         json = masm32_sim_wasm_run_source_json(source);
     }

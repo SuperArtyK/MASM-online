@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57D:
+Current status at Phase 57E:
 
 Repository/archive milestone:
-Phase 57D - Existing Diagnostic Policy Migration
+Phase 57E - Startup State Notice and Zero-Default Documentation
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
 Status interpretation:
 
-Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters without adding MASM syntax, parser behavior, VM behavior, executor behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
+Phase 57E documents deterministic simulator startup, activates the startup-state-notice diagnostic-policy family, and emits a non-fatal Simulator Messages notice by default without changing MASM syntax, parser behavior, VM instruction behavior, executor behavior, browser UI controls, startup values, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
 
 ## How to use this file
 
@@ -75,7 +75,14 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57B extracted long-form build and development guidance into [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md), updated this milestone-history navigation layer, and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57C added a behavior-preserving diagnostic-policy registry skeleton for optional teaching diagnostics and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57D routes existing configurable diagnostic-policy lookup through the registry or compatibility adapters while preserving existing user-visible behavior and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+- Phase 57E activates and documents the non-fatal startup-state notice while preserving deterministic startup values and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 
+
+## Phase 57E - Startup State Notice and Zero-Default Documentation
+
+Phase 57E documents that the simulator starts registers and modeled flags at zero, and that uninitialized storage bytes are zero-filled while preserving uninitialized-origin metadata for code-quality diagnostics. It activates the `startup-state-notice` diagnostic-policy family and emits a default non-fatal Simulator Messages notice explaining that real MASM programs should not rely on arbitrary register or flag startup values.
+
+Phase 57E preserves startup values, parser behavior, VM instruction behavior, executor behavior, browser UI controls, diagnostic setting names, Program Console output, and runtime/source-run MASM behavior metadata. Runtime/source-run MASM behavior remains Phase 57 - Signed IDIV. Test/configuration-facing paths can opt out of the notice through the diagnostic policy registry path.
 
 ## Phase 57D - Existing Diagnostic Policy Migration
 

@@ -16,6 +16,9 @@
 /// Number of bytes reserved for local copies of source-run JSON results.
 #define TEST_JSON_COPY_CAPACITY 8192U
 
+/// Exact Phase 57E startup-state notice wording expected in source-run JSON.
+#define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+
 /// Records a source-run test failure.
 ///
 /// @param message Human-readable failure description.
@@ -4007,7 +4010,8 @@ static int test_phase42_irvine32_exit_terminator_source_run(void) {
     failures += expect_json_contains(json, "\"status\":\"ok\"", "exit terminator source should report ok status");
     failures += expect_json_contains(json, "\"instructionCount\":2", "exit terminator should count MOV and EXIT only");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "instruction after exit must not execute");
-    failures += expect_json_contains(json, "\"simulatorMessages\":[{\"kind\":\"info\",\"code\":\"execution-complete\",\"message\":\"Execution completed successfully.\"}]", "exit terminator should complete normally");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "exit terminator should include startup-state notice");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "exit terminator should complete normally");
     failures += expect_json_not_contains(json, "programConsole", "exit must not create Program Console output");
     failures += expect_json_not_contains(json, "999", "instruction after exit should not affect observable state");
 
@@ -7634,6 +7638,128 @@ static int test_phase57d_ui_policy_families_remain_independent(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57E emits the deterministic startup-state notice by default.
+///
+/// @return Number of failures.
+static int test_phase57e_default_startup_state_notice_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 20\n"
+        "    add eax, 22\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57E should preserve runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"ok\":true", "Startup-state notice should not block execution");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Startup-state notice should not change register results");
+    failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Startup-state notice should render as simulator notice");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Startup-state notice should use stable diagnostic code");
+    failures += expect_json_contains(json, TEST_STARTUP_STATE_NOTICE_TEXT, "Startup-state notice should use stable exact wording");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Startup-state notice should still allow completion message");
+    failures += expect_json_not_contains(json, "Program Console", "Startup-state notice must not be Program Console output");
+    failures += expect_json_not_contains(json, "\"line\":", "Source-less startup-state notice fixture should not add line metadata");
+    failures += expect_json_not_contains(json, "\"byteOffset\":", "Source-less startup-state notice fixture should not add byte offset metadata");
+
+    return failures;
+}
+
+/// Verifies Phase 57E startup-state notice opt-out preserves execution behavior.
+///
+/// @return Number of failures.
+static int test_phase57e_startup_state_notice_opt_out_source_run(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 7\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
+        source,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Startup-state notice opt-out should still execute successfully");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000007h\",\"unsigned\":7}", "Startup-state notice opt-out should not alter register results");
+    failures += expect_json_not_contains(json, "startup-state-notice", "Startup-state notice opt-out should suppress only that notice");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Startup-state notice opt-out should preserve completion message");
+
+    return failures;
+}
+
+/// Verifies Phase 57E startup-state notice opt-out is independent of other diagnostics.
+///
+/// @return Number of failures.
+static int test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics(void) {
+    const char *source =
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
+        source,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Startup-state notice opt-out should allow warning-only execution");
+    failures += expect_json_not_contains(json, "startup-state-notice", "Startup-state opt-out should suppress the startup notice");
+    failures += expect_json_contains(json, "uninitialized-read", "Startup-state opt-out should not suppress uninitialized-read diagnostics");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Warning-only run should still complete");
+
+    return failures;
+}
+
+/// Verifies Phase 57E preserves uninitialized-origin metadata helpers.
+///
+/// @return Number of failures.
+static int test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_uninitialized_metadata(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".data\n"
+        "y DWORD 5\n"
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 57E metadata regression should execute successfully");
+    failures += expect_json_contains(json, "\"uninitializedOrigin\":{\"tracked\":true", "Phase 57E should preserve test-only uninitialized-origin metadata output");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "Phase 57E should preserve uninitialized-origin metadata for DWORD ? storage");
+    failures += expect_json_contains(json, "\"symbol\":\"y\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "Phase 57E should preserve initialized-origin metadata for explicit DWORD storage");
+    failures += expect_json_not_contains(json, "startup-state-notice", "metadata helper should preserve its test-facing startup-notice opt-out behavior");
+
+    return failures;
+}
+
+/// Verifies Phase 57E startup-state notice settings reject invalid enum values.
+///
+/// @return Number of failures.
+static int test_phase57e_invalid_startup_state_notice_setting(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        (Masm32SimWasmStartupStateNoticeSetting)99
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Invalid startup-state notice setting should fail");
+    failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid startup-state notice setting should return invalid argument status");
+    failures += expect_json_contains(json, "\"code\":\"invalid-source\"", "Invalid setting should use existing invalid-source diagnostic path");
+
+    return failures;
+}
+
 /// Verifies invalid Phase 53E C API setting values are rejected.
 ///
 /// @return Number of failures.
@@ -8439,6 +8565,11 @@ int main(void) {
     failures += test_phase53d_notice_plus_error_still_blocks_execution();
     failures += test_phase53e_ui_settings_route_to_existing_policies();
     failures += test_phase57d_ui_policy_families_remain_independent();
+    failures += test_phase57e_default_startup_state_notice_source_run();
+    failures += test_phase57e_startup_state_notice_opt_out_source_run();
+    failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
+    failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
+    failures += test_phase57e_invalid_startup_state_notice_setting();
     failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();
@@ -8459,6 +8590,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57 IDIV coverage passed.");
+    puts("Source execution tests through Phase 57E startup-state notice coverage passed.");
     return 0;
 }
