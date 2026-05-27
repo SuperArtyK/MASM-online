@@ -1,6 +1,6 @@
 # Milestone History
 
-This file preserves the milestone-history material that was removed from the README during Phase 57A - README Landing Page Cleanup.
+This file preserves long-form milestone-history material outside the README. Phase 57B updated it into a navigation layer for humans and AI assistants while keeping historical detail available.
 
 The README is intentionally concise. This file carries the longer milestone history that had previously made the README difficult to use as a landing page.
 
@@ -9,12 +9,76 @@ Source-of-truth rule:
 - [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md) remains the canonical source for product boundaries, stable behavior, cross-cutting rules, and current/future/non-goal distinctions.
 - [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md) remains the canonical source for phase numbering, phase tasks, required tests, and acceptance criteria.
 - [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md) remains the current reference for accepted MASM32 Educational Mode syntax and diagnostics.
+- [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57A:
+Current status at Phase 57B:
 
-- Repository/archive milestone: Phase 57A - README Landing Page Cleanup
-- Runtime/source-run MASM behavior phase: Phase 57 - Signed IDIV
+Repository/archive milestone:
+Phase 57B - Milestone History and Build Documentation Extraction
+
+Runtime/source-run MASM behavior phase:
+Phase 57 - Signed IDIV
+
+Status interpretation:
+
+Phase 57B is documentation and repository-hygiene work only. It preserves and reorganizes milestone history and build/development instructions without adding MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
+
+## How to use this file
+
+Use this file as a compact orientation layer before reading detailed reports or planning new work:
+
+1. Confirm the repository/archive milestone and runtime/source-run MASM behavior phase above.
+2. Use the concise ledger below to understand the implemented project shape.
+3. Use detailed milestone reports when available for implementation evidence, changed files, tests, assumptions, and non-goals.
+4. Use the canonical specification and implementation guide for implementation decisions. Historical entries here are not authority when they conflict with the current canonical docs.
+
+## Detailed milestone report references
+
+Detailed milestone reports are usually stored as separate handoff artifacts named with this pattern:
+
+```text
+Milestone <phase> report.md
+```
+
+Examples from recent handoff artifacts include:
+
+```text
+Milestone 57 report.md
+Milestone 57-CORR1 report.md
+Milestone 57-CORR2 report.md
+Milestone 57A report.md
+```
+
+Those reports are implementation history and evidence. They are useful for changed-file lists, exact tests run, assumptions, and regression risks, but they do not replace the canonical spec/guide pair.
+
+## Concise milestone ledger
+
+- Phase 0 through Phase 7 established the static browser scaffold, C99 core boundary, CPU/flag/memory basics, minimal IR/executor, lexer/parser path, and browser source-run path.
+- Phase 8 through Phase 14 implemented `.data`, symbols, constant symbol offsets, `PTR` overrides, register-indirect operands, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literal behavior.
+- Phase 15 through Phase 17 improved unsupported-feature classification, lexer/parser diagnostic surfacing, and multi-diagnostic recovery.
+- Phase 18 through Phase 30 added signed integer data declarations, sign/zero extension, selected unary/binary instructions, MASM compatibility directives, `.DATA?`, `.CONST`, numeric equates, extended constant expressions, and nested `DUP`.
+- Phase 31 through Phase 42 added native/Node diagnostic rendering tests, memory-layout policy infrastructure, automatic/randomized layout options for tests/configuration, CASEMAP correction, object maps, validation modes, uninitialized-origin tracking, the Irvine32 virtual registry, and the virtual `exit` terminator.
+- Phase 43 through Phase 50 added `inc`, `dec`, `and`, `or`, `xor`, `not`, `shl`, `sal`, `shr`, `sar`, `rol`, and `ror`.
+- Phase 50A through Phase 50B added modeled-flag validity metadata and configurable undefined-flag-use diagnostics for existing flag consumers.
+- Phase 51 added post-30 smoke-harness validation coverage.
+- Phase 52 added `lea` effective-address computation.
+- Phase 52A improved signed register and memory value display formatting.
+- Phase 53 through Phase 55 added unsigned `mul`, memory-validation policy clarification/correction, section-capacity and section-image validation modes, default teaching diagnostics, compatibility notices, browser diagnostic settings, one-operand signed `imul`, and two-/three-operand signed `imul` forms.
+- Phase 56 added unsigned `div`.
+- Phase 56A improved test-runner decomposition and assistant verification ergonomics.
+- Phase 56B cleaned live user-facing diagnostic and current-status wording.
+- Phase 57 added signed `idiv` and advanced runtime/source-run MASM behavior phase metadata to Phase 57.
+- Phase 57-CORR1 clarified fatal `region-boundary-crossing` diagnostics for cross-region accesses intersecting protected `.CONST` storage without advancing runtime/source-run MASM behavior metadata.
+- Phase 57-CORR2 corrected compact negative register-indirect displacement parsing, such as `[eax-4]`, without advancing runtime/source-run MASM behavior metadata.
+- Phase 57A rewrote the README into a concise landing page and moved preserved milestone history into this document.
+- Phase 57B extracted long-form build and development guidance into [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md), updated this milestone-history navigation layer, and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+
+## Phase 57B - Milestone History and Build Documentation Extraction
+
+Phase 57B completes the documentation decomposition started by Phase 57A. It updates this milestone-history document so it is a useful navigation layer, adds a dedicated build/development guide, keeps README concise, and preserves the distinction between repository/archive milestone and runtime/source-run MASM behavior phase.
+
+Phase 57B did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata changes.
 
 ## Phase 57A - README Landing Page Cleanup
 

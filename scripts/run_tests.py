@@ -455,7 +455,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57A - README Landing Page Cleanup")
+    assert_text_contains("README.md", "Phase 57B - Milestone History and Build Documentation Extraction")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -1233,14 +1233,17 @@ def assert_unknown_flag_fails() -> None:
 
 
 def assert_docs_match_runner_groups() -> None:
-    """Verify that testing documentation names every focused group."""
+    """Verify that testing and development documentation names every runner group."""
 
     docs = read_file("docs/TESTING_GUIDE.md")
+    build_docs = read_file("docs/BUILDING_AND_DEVELOPMENT.md")
     readme = read_file("README.md")
     for group in REQUIRED_GROUPS:
         command = f"python3 scripts/run_tests.py --{group}"
         if command not in docs:
             raise TestFailure(f"docs/TESTING_GUIDE.md does not document {command}")
+        if command not in build_docs:
+            raise TestFailure(f"docs/BUILDING_AND_DEVELOPMENT.md does not document {command}")
     for command in [
         "python3 scripts/run_tests.py --all",
         "python3 scripts/run_tests.py --quick",
@@ -1251,10 +1254,12 @@ def assert_docs_match_runner_groups() -> None:
     ]:
         if command not in docs:
             raise TestFailure(f"docs/TESTING_GUIDE.md does not document {command}")
+        if command not in build_docs:
+            raise TestFailure(f"docs/BUILDING_AND_DEVELOPMENT.md does not document {command}")
     if "python3 scripts/run_tests.py --all" not in readme:
         raise TestFailure("README.md does not document the aggregate test command")
-    if "python3 scripts/run_tests.py --source-run" not in readme:
-        raise TestFailure("README.md does not document focused source-run verification")
+    if "docs/BUILDING_AND_DEVELOPMENT.md" not in readme:
+        raise TestFailure("README.md does not link to detailed focused-test and build/development guidance")
 
 
 def assert_fixture_inventory_documented() -> None:
@@ -1362,18 +1367,29 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57a_readme_landing_page_documented() -> None:
-    """Verify Phase 57A README landing-page and status requirements."""
+def assert_phase57b_documentation_extraction_present() -> None:
+    """Verify Phase 57B documentation extraction and current-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57A - README Landing Page Cleanup",
+        "Phase 57B - Milestone History and Build Documentation Extraction",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57 - Signed IDIV",
-        "Phase 57A is documentation and repository-hygiene work only.",
+        "Phase 57B is documentation and repository-hygiene work only.",
     ]
+    status_block = """Repository/archive milestone:
+Phase 57B - Milestone History and Build Documentation Extraction
+
+Runtime/source-run MASM behavior phase:
+Phase 57 - Signed IDIV"""
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
+    assert_all_text_contains("docs/MILESTONE_HISTORY.md", required_status_fragments)
+    assert_all_text_contains("docs/BUILDING_AND_DEVELOPMENT.md", required_status_fragments)
+    assert_text_contains("README.md", status_block)
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", status_block)
+    assert_text_contains("docs/MILESTONE_HISTORY.md", status_block)
+    assert_text_contains("docs/BUILDING_AND_DEVELOPMENT.md", status_block)
 
     assert_all_text_contains(
         "README.md",
@@ -1383,12 +1399,10 @@ def assert_phase57a_readme_landing_page_documented() -> None:
             "docs/SUPPORTED_SYNTAX.md",
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
+            "docs/BUILDING_AND_DEVELOPMENT.md",
             "python3 -m http.server 8000 --directory web",
-            "scripts\\windows\\serve_web.cmd",
             "python3 scripts/run_tests.py --all",
-            "python3 scripts/run_tests.py --source-run",
             "./scripts/build_wasm.sh",
-            "scripts\\windows\\build_wasm.cmd",
         ],
     )
     assert_all_text_not_contains(
@@ -1400,20 +1414,41 @@ def assert_phase57a_readme_landing_page_documented() -> None:
             "## Notes for later milestones",
             "Visual Studio External Tools setup",
             "Visual Studio Makefile Project setup",
+            "scripts\\windows\\serve_web.cmd",
+            "scripts\\windows\\build_wasm.cmd",
         ],
     )
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57B - Milestone History and Build Documentation Extraction",
+            "Concise milestone ledger",
+            "Detailed milestone report references",
+            "Milestone reports, archived repository states, and this history file are historical evidence.",
+            "They do not replace or override the canonical specification and implementation guide.",
             "Phase 57A - README Landing Page Cleanup",
             "Preserved README milestone summary before Phase 57A",
             "Preserved current-scope history before Phase 57A",
             "Milestone 57 signed `idiv` instruction behavior",
             "Phase 57-CORR2 compact negative register-indirect displacement correction",
-            "Milestone reports, archived repository states, and this history file are historical evidence.",
-            "They do not replace or override the canonical specification and implementation guide.",
         ],
     )
+    assert_all_text_contains(
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+        [
+            "python3 -m http.server 8000 --directory web",
+            "./scripts/build_wasm.sh",
+            "scripts\\windows\\build_wasm.cmd",
+            "python3 scripts/run_tests.py --all",
+            "python3 scripts/run_tests.py --source-run",
+            "python3 scripts/run_tests.py --diagnostics",
+            "missing `emcc`",
+            "Browser/Wasm smoke guidance",
+            "does not include a committed Visual Studio solution or project file",
+            "Visual Studio External Tools",
+        ],
+    )
+
 
 
 
@@ -1478,7 +1513,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57a_readme_landing_page_documented()
+    assert_phase57b_documentation_extraction_present()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

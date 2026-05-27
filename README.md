@@ -5,12 +5,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57A - README Landing Page Cleanup
+Phase 57B - Milestone History and Build Documentation Extraction
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57A is documentation and repository-hygiene work only. Runtime/source-run MASM behavior remains Phase 57 - Signed IDIV.
+Phase 57B is documentation and repository-hygiene work only. Runtime/source-run MASM behavior remains Phase 57 - Signed IDIV.
 
 ## Current simulator scope
 
@@ -20,20 +20,10 @@ For exact accepted forms, rejected forms, diagnostics, and runtime-phase status,
 
 ## Quick start
 
-### Serve the website
-
-The browser app uses JavaScript modules and a Web Worker, so serve the `web` directory over local HTTP instead of opening it with `file://`.
-
-POSIX shell:
+Serve the browser app over local HTTP:
 
 ```sh
 python3 -m http.server 8000 --directory web
-```
-
-Windows command prompt:
-
-```cmd
-scripts\windows\serve_web.cmd
 ```
 
 Then open:
@@ -42,55 +32,19 @@ Then open:
 http://localhost:8000
 ```
 
-To stop the Windows helper server:
-
-```cmd
-scripts\windows\stop_web.cmd
-```
-
-### Build the WebAssembly module
-
-POSIX shell:
-
-```sh
-./scripts/build_wasm.sh
-```
-
-Windows command prompt:
-
-```cmd
-scripts\windows\build_wasm.cmd
-```
-
-Clean generated WebAssembly outputs on Windows:
-
-```cmd
-scripts\windows\clean_wasm.cmd
-```
-
-The build scripts require Emscripten `emcc`. If `emcc` is unavailable, native C and Node tests can still run, but browser/Wasm rebuild smoke checks are skipped by the test runner.
-
-### Run tests
-
-Aggregate verification:
+Run aggregate verification:
 
 ```sh
 python3 scripts/run_tests.py --all
 ```
 
-Focused verification groups are available when the aggregate command is too large for the local or hosted environment:
+Build WebAssembly artifacts when Emscripten `emcc` is available:
 
 ```sh
-python3 scripts/run_tests.py --structure
-python3 scripts/run_tests.py --native
-python3 scripts/run_tests.py --source-run
-python3 scripts/run_tests.py --web
-python3 scripts/run_tests.py --diagnostics
-python3 scripts/run_tests.py --protocol
-python3 scripts/run_tests.py --static
+./scripts/build_wasm.sh
 ```
 
-For full runner policy, timeout guidance, and fixture inventory, see [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md).
+For detailed setup, Windows command files, Visual Studio notes, missing-`emcc` troubleshooting, focused test groups, and browser/Wasm smoke guidance, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md).
 
 ## Documentation
 
@@ -98,7 +52,8 @@ For full runner policy, timeout guidance, and fixture inventory, see [`docs/TEST
 - [`docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`](docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md) - phase numbering, phase tasks, required tests, and acceptance criteria.
 - [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) - current accepted MASM32 Educational Mode subset and diagnostics.
 - [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) - aggregate and focused test guidance.
-- [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md) - milestone history moved out of the README during Phase 57A.
+- [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md) - milestone history moved out of the README and kept as historical evidence.
+- [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md) - local serving, build commands, prerequisites, Visual Studio notes, and development workflow.
 
 ## Project boundaries
 
