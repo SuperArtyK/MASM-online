@@ -1352,10 +1352,10 @@ def assert_phase57_status_labels_documented() -> None:
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57 - Signed IDIV",
+        "Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57 - Signed IDIV",
-        "Phase 57 is a runtime arithmetic milestone.",
+        "Phase 57-CORR2 is a parser-acceptance corrective milestone.",
     ]
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)

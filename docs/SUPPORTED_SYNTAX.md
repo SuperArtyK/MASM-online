@@ -1,14 +1,34 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57 - Signed IDIV
+Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57 is a runtime arithmetic milestone. It adds signed one-operand `idiv` behavior and intentionally advances runtime/source-run MASM behavior metadata after the Phase 56A and Phase 56B maintenance phases.
+Phase 57-CORR2 is a parser-acceptance corrective milestone. It keeps runtime/source-run MASM behavior metadata at Phase 57 - Signed IDIV while accepting compact negative register-indirect displacements such as `[eax-4]` as the same simple base-minus-constant byte displacement form as `[eax - 4]`. Phase 57-CORR1 remains the accepted diagnostic-context clarification for fatal `region-boundary-crossing` Simulator Messages on cross-region reads and writes whose requested final byte range intersects protected `.CONST` storage.
 
-This reference describes the implemented source subset through Phase 57 - Signed IDIV, with Milestone 52A display formatting, runtime MASM behavior through Phase 57 - Signed IDIV, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, Milestone 35A corrects MASM-compatible user-symbol case policy, Milestone 36 adds declared-object allocation map metadata for tests/internal tooling only, Milestone 37 adds allocated-object warning validation for tests/configuration only, Milestone 38 adds allocated-object strict validation for tests/configuration only, Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test-only inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes for tests/configuration, Milestone 41 adds virtual Irvine32 symbol-registry metadata plus specific diagnostics for known Irvine32 names before routine execution exists, Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator, Milestone 43 adds `inc` and `dec`, Milestone 44 adds `and`, `or`, and `xor`, Milestone 45 adds `not`, Milestone 46 adds `shl` and `sal`, Milestone 47 adds `shr`, Milestone 48 adds `sar`, Milestone 49 adds `rol`, Milestone 50 adds `ror`, Milestone 50A adds internal undefined modeled-flag validity metadata, Milestone 50B adds opt-in undefined flag-use diagnostics for existing flag consumers, Milestone 51 adds validation-only post-30 smoke-harness coverage, Milestone 52 adds `lea` effective-address computation, Milestone 52A adds signed register and memory value display formatting, Milestone 53 adds unsigned `mul`, Milestone 53A clarifies memory-validation levels while correcting symbol-offset runtime handling, Milestone 53B adds opt-in section-capacity and section-image validation diagnostics, Milestone 53C changes omitted/default browser source-run behavior so existing uninitialized-read and undefined-flag-use diagnostics warn by default, Milestone 53D emits default non-fatal compatibility notices for accepted no-op, metadata-only, and limited-behavior MASM constructs, Milestone 53E exposes existing memory validation and teaching diagnostic policies in the browser UI without changing backend semantics, Milestone 54 adds one-operand signed `imul` instruction behavior, Milestone 55 adds two- and three-operand signed `imul` forms, Milestone 56 adds unsigned `div` instruction behavior, and Milestone 57 adds signed `idiv` instruction behavior. These infrastructure, compatibility-correction, exit-terminator, INC/DEC, logical-binary, unary-NOT, shift, ROL, ROR, flag-validity metadata, undefined-flag-use diagnostic, Phase 51 smoke-harness, LEA, unsigned-MUL, memory-validation-clarification, section-boundary diagnostic, and default-teaching-diagnostic milestones do not add CALL/RET, stack behavior, Program Console routines, other Irvine32 routine bodies, scaled-index addressing, carry rotates, labels, or jumps. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented source subset through Phase 57 - Signed IDIV, with Milestone 52A display formatting, runtime MASM behavior through Phase 57 - Signed IDIV, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. Milestone 31 adds a native/Node diagnostic rendering harness only, Milestone 32 adds fixed memory-layout policy infrastructure only, Milestone 33 adds automatic deterministic layout sizing for tests/configuration only, Milestone 34 applies stack/heap size metadata to automatic layout only, Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration only, Milestone 35A corrects MASM-compatible user-symbol case policy, Milestone 36 adds declared-object allocation map metadata for tests/internal tooling only, Milestone 37 adds allocated-object warning validation for tests/configuration only, Milestone 38 adds allocated-object strict validation for tests/configuration only, Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test-only inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes for tests/configuration, Milestone 41 adds virtual Irvine32 symbol-registry metadata plus specific diagnostics for known Irvine32 names before routine execution exists, Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator, Milestone 43 adds `inc` and `dec`, Milestone 44 adds `and`, `or`, and `xor`, Milestone 45 adds `not`, Milestone 46 adds `shl` and `sal`, Milestone 47 adds `shr`, Milestone 48 adds `sar`, Milestone 49 adds `rol`, Milestone 50 adds `ror`, Milestone 50A adds internal undefined modeled-flag validity metadata, Milestone 50B adds opt-in undefined flag-use diagnostics for existing flag consumers, Milestone 51 adds validation-only post-30 smoke-harness coverage, Milestone 52 adds `lea` effective-address computation, Milestone 52A adds signed register and memory value display formatting, Milestone 53 adds unsigned `mul`, Milestone 53A clarifies memory-validation levels while correcting symbol-offset runtime handling, Milestone 53B adds opt-in section-capacity and section-image validation diagnostics, Milestone 53C changes omitted/default browser source-run behavior so existing uninitialized-read and undefined-flag-use diagnostics warn by default, Milestone 53D emits default non-fatal compatibility notices for accepted no-op, metadata-only, and limited-behavior MASM constructs, Milestone 53E exposes existing memory validation and teaching diagnostic policies in the browser UI without changing backend semantics, Milestone 54 adds one-operand signed `imul` instruction behavior, Milestone 55 adds two- and three-operand signed `imul` forms, Milestone 56 adds unsigned `div` instruction behavior, Milestone 57 adds signed `idiv` instruction behavior, and Phase 57-CORR1 clarifies the fatal `region-boundary-crossing` diagnostic for cross-region reads and writes whose requested final byte range intersects protected `.CONST` storage without adding MASM syntax or changing runtime/source-run phase metadata, and Phase 57-CORR2 corrects parser acceptance for compact negative register-indirect displacements such as `[eax-4]` while keeping runtime/source-run phase metadata at Phase 57 - Signed IDIV. These infrastructure, compatibility-correction, exit-terminator, INC/DEC, logical-binary, unary-NOT, shift, ROL, ROR, flag-validity metadata, undefined-flag-use diagnostic, Phase 51 smoke-harness, LEA, unsigned-MUL, memory-validation-clarification, section-boundary diagnostic, and default-teaching-diagnostic milestones do not add CALL/RET, stack behavior, Program Console routines, other Irvine32 routine bodies, scaled-index addressing, carry rotates, labels, or jumps. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+
+### Phase 57-CORR1 memory diagnostic clarification
+
+Repository/archive milestone Phase 57-CORR1 clarifies one runtime memory diagnostic without adding MASM syntax or changing the runtime/source-run MASM behavior phase.
+
+Runtime/source-run MASM behavior remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+Diagnostic behavior clarified by Phase 57-CORR1:
+
+- a cross-region memory read or write whose requested final byte range intersects protected `.CONST` storage reports `region-boundary-crossing`;
+- the rendered message identifies the access kind, attempted address, byte count, final byte range, `.CONST`, and the runtime `.CONST` base address;
+- the `.CONST` base address in the diagnostic must come from active layout metadata and must not be hardcoded to the fixed-layout default;
+- a direct or wholly-contained write into `.CONST` remains `permission-denied`;
+- a wholly-contained read from `.CONST` remains allowed when otherwise valid;
+- unrelated cross-region failures remain ordinary Level 1 region/range diagnostics unless they intersect a known protected region;
+- the simulator still never stitches one memory access across independent VM regions.
 
 ## Implemented now
 
@@ -168,12 +188,12 @@ Implemented memory forms:
 - Direct symbols: `mov var, 100`, `mov eax, var`.
 - Constant byte offsets: `nums[8]`, `nums[COUNT + 4]`, `[nums + 8]`, `[nums - 4]`, `[nums]`, `[nums + 0]`, `nums[0]`.
 - Register-indirect forms: `[eax]`, `[ebx]`, `[ecx]`, `[edx]`, `[esi]`, `[edi]`, `[ebp]`, `[esp]`.
-- Simple displacements for all 32-bit general-purpose base registers, such as `[eax + 4]`, `[ecx - 4]`, and `[esp + 8]`.
+- Simple base-plus-or-minus-constant byte displacements for all 32-bit general-purpose base registers. Whitespace is insignificant for this simple form, so spaced and compact spellings are accepted, such as `[eax + 4]`, `[eax+4]`, `[ecx - 4]`, `[ecx-4]`, `[esp + 8]`, and `[esp-8]`.
 - Simple symbol/register forms: `array[reg32]`, `[array + reg32]`, where `reg32` is a supported 32-bit general-purpose base register.
 - Width overrides: `BYTE PTR`, `WORD PTR`, `DWORD PTR`, `SBYTE PTR`, `SWORD PTR`, and `SDWORD PTR`.
 - `QWORD PTR` and `SQWORD PTR` are recognized but executable 64-bit memory operations are rejected in MASM32 Educational Mode.
 
-Array bracket offsets are byte offsets, not element indexes.
+Array bracket offsets and simple register displacements are byte offsets, not element indexes. Compact subtraction in a supported simple register displacement, such as `[eax-4]`, is the same form as `[eax - 4]`. Scaled-index addressing, base-plus-index addressing, and general arithmetic inside brackets remain unsupported until future phases explicitly implement them.
 
 Memory operands must have a known access width before execution. The width may come from an explicit `PTR` override, declared symbol metadata, symbol-relative metadata, or a register operand in the same instruction when that register unambiguously supplies the width.
 
@@ -187,6 +207,18 @@ adc [eax], al
 sbb [eax], ebx
 xchg [eax], cx
 test [eax], eax
+mov BYTE PTR [eax + 1], 7
+mov BYTE PTR [eax+1], 7
+mov BYTE PTR [eax - 1], 7
+mov BYTE PTR [eax-1], 7
+mov WORD PTR [eax + 2], 7
+mov WORD PTR [eax+2], 7
+mov WORD PTR [eax - 2], 7
+mov WORD PTR [eax-2], 7
+mov DWORD PTR [eax + 4], 7
+mov DWORD PTR [eax+4], 7
+mov DWORD PTR [eax - 4], 7
+mov DWORD PTR [eax-4], 7
 inc BYTE PTR [eax]
 dec WORD PTR [eax]
 test BYTE PTR [eax], 1

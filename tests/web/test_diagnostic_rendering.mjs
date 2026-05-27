@@ -382,6 +382,35 @@ END main
 `,
     reason: "Runtime invalid-address diagnostic fixture."
   },
+  constCrossRegionWriteOverlap: {
+    source: `.const
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, [eax]
+    sub eax, 2
+    mov DWORD PTR [eax], 0FFFFFFFFh
+main ENDP
+END main
+`,
+    reason: "Phase 57-CORR1 cross-region .CONST write-overlap diagnostic fixture."
+  },
+  constCrossRegionReadOverlap: {
+    source: `.const
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    sub eax, 2
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+`,
+    reason: "Phase 57-CORR1 cross-region .CONST read-overlap diagnostic fixture."
+  },
   incImmediateDestination: {
     source: `.code
 main PROC
@@ -1712,6 +1741,44 @@ test("renders runtime invalid address diagnostic exactly", () => {
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+});
+
+test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () => {
+  const name = "constCrossRegionWriteOverlap";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 57);
+  assert.equal(json.instructionCount, 3);
+  assert.deepEqual(json.memoryChanges, []);
+  assert.equal(json.registers.EAX.hex, "005FFFFEh");
+  assert.equal(json.registers.EBX.hex, "00000001h");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "region-boundary-crossing",
+    message: "Cross-region memory write at 005FFFFEh for 4 bytes. The memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h. This is not allowed; program stopped before access.",
+    line: 9
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] region-boundary-crossing line 9: Cross-region memory write at 005FFFFEh for 4 bytes. The memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h. This is not allowed; program stopped before access.");
+});
+
+
+test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => {
+  const name = "constCrossRegionReadOverlap";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 57);
+  assert.deepEqual(json.memoryChanges, []);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "region-boundary-crossing",
+    message: "Cross-region memory read at 005FFFFEh for 4 bytes. The memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h. This is not allowed; program stopped before access.",
+    line: 8
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] region-boundary-crossing line 8: Cross-region memory read at 005FFFFEh for 4 bytes. The memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h. This is not allowed; program stopped before access.");
 });
 
 test("renders INC immediate-destination diagnostic exactly", () => {
@@ -4306,4 +4373,94 @@ END main
   const registers = formatRegisters(json.registers);
   assert.match(registers, /^EAX    \| FFFFFFFFh \/ u: 4294967295 \/ s: -1\s*$/m);
   assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
+});
+
+test("Phase 57-CORR2 renders compact negative displacement write success", () => {
+  const source = `.data
+x DWORD 0, 0
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov DWORD PTR [eax-4], 10
+    mov ebx, x
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57corr2-compact-negative-write", source);
+  assert.equal(json.ok, true, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals("phase57corr2-compact-negative-write", source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 57-CORR2 renders compact negative displacement read success", () => {
+  const source = `.data
+x DWORD 10, 20
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov ebx, DWORD PTR [eax-4]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57corr2-compact-negative-read", source);
+  assert.equal(json.ok, true, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals("phase57corr2-compact-negative-read", source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 57-CORR2 renders compact negative displacement LEA success", () => {
+  const source = `.data
+x DWORD 0, 0
+.code
+main PROC
+    mov ebx, OFFSET x
+    add ebx, 4
+    lea eax, [ebx-4]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57corr2-compact-negative-lea", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals("phase57corr2-compact-negative-lea", source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 57-CORR2 renders compact malformed advanced address diagnostic", () => {
+  const source = `.data
+x DWORD 0, 0
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, DWORD PTR [eax-4*2]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57corr2-compact-negative-advanced-rejection", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-scaled-index",
+    message: "Scaled-index memory operands are not supported yet.",
+    line: 6,
+    column: 30,
+    byteOffset: 86,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57corr2-compact-negative-advanced-rejection", source, rawJson, rendered, "[unsupported-feature] unsupported-scaled-index line 6, column 30, byte offset 86, span length 1: Scaled-index memory operands are not supported yet.");
 });

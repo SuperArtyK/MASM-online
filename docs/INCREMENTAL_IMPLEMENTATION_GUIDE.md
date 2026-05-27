@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This guide preserves completed Phases 0-30, then defines the canonical post-30 phase roadmap and required implementation/test work.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for the Phase 57-CORR2 compact negative register-indirect displacement correction and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
 
 ## 1. Purpose
@@ -11,9 +11,13 @@ The goal is to avoid attempting full MASM compatibility at once. Each phase shou
 
 The guide assumes the final target described in `FULL_IMPLEMENTATION_SPEC.md`.
 
+Documentation ownership rule for future edits: keep stable product boundaries, broad non-goals, and cross-cutting behavior contracts in the specification. Keep phase order, phase scope, implementation tasks, required tests, and acceptance criteria in this guide. A phase may contain a short local reminder of a specification rule when that reminder prevents likely scope creep, but the phase must not restate a large product-boundary block unless the phase is specifically changing or testing that boundary.
+
 ## 2. General Development Rules
 
 ### 2.0 Core Language Policy
+
+`FULL_IMPLEMENTATION_SPEC.md` Section 6 owns the stable core language policy. This guide section is the phase-work reminder that must be applied during every implementation phase.
 
 The VM core, parser, executor, memory model, Irvine32 runtime, and Wasm-facing API must be implemented in **C99**.
 
@@ -86,6 +90,8 @@ Historical milestone reports may contain milestone-relative wording because they
 
 ### 2.4b Test Runner Decomposition, Fixture Size, and Timeout-Safe Verification
 
+`FULL_IMPLEMENTATION_SPEC.md` Section 21.3 owns the stable timeout-safe verification policy. This guide section owns the implementation-session reporting rules and the phase-level obligation to preserve exact structured and rendered diagnostic coverage.
+
 The aggregate test runner should remain the normal full-suite command, but it must not be the only way to verify the implemented milestone suite.
 
 The test runner must support focused groups so that assistants, CI jobs, and developers can run expensive or verbose test families independently. This is required because hosted assistant/container environments may impose wall-time, output-size, or process limits that are stricter than a local developer terminal.
@@ -152,18 +158,7 @@ The repository/archive milestone identifies the latest accepted project state. I
 
 The runtime/source-run MASM behavior phase identifies the latest implemented MASM/source execution behavior that the runtime reports to tests, worker protocol results, browser status displays, source-run JSON payloads, Wasm/source-run status fields, supported-syntax current-status text, or other current-status surfaces. It must advance only when the target phase explicitly changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
 
-Current-status surfaces include, at minimum:
-
-- `README.md` current-scope and current-status text;
-- `docs/SUPPORTED_SYNTAX.md` current-status and expected-diagnostic text;
-- browser runtime-status text;
-- worker/protocol status text;
-- source-run JSON phase/status fields and any human-readable status strings carried in source-run JSON payloads;
-- Wasm/source-run status fields;
-- test assertions that describe runtime/source-run metadata;
-- user-facing diagnostics rendered in Simulator Messages;
-- worker-generated `ui-error` messages;
-- newly created milestone reports and current handoff/status summaries, while historical milestone reports remain historical evidence and do not need retroactive cleanup unless the user explicitly asks for historical report cleanup.
+Use the current-status surface list in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. That list is mandatory for guide work and may be extended by a target phase when the phase introduces a new status-bearing surface. Do not maintain a second divergent copy of the complete surface list in this guide; if a new stable current-status surface is added, update the specification list and reference it from phase-local text.
 
 Future assistants must apply this rule:
 
@@ -262,6 +257,111 @@ Tests for any new flag-consuming feature must include:
 - strict/error mode with no partial mutation;
 - exact rendered Simulator Messages coverage for warning and error paths.
 
+
+### 2.4d-1 Standing Rule: Memory-Capable Features Must Use Planned-Access Validation Before Mutation
+
+`FULL_IMPLEMENTATION_SPEC.md` Sections 11.9 through 11.9.4 own the stable memory-validation model, parser/runtime memory-operand boundary, simple register-displacement whitespace policy, and diagnostic precedence. This guide section owns the phase-level implementation and test obligations for future memory-capable work.
+
+Every future instruction, Irvine32 routine, debugger action, procedure feature, stack feature, string/buffer feature, or runtime-library feature that performs a simulated memory read or simulated memory write must integrate with the project's two-layer memory-validation model.
+
+This rule applies even when the feature has only a memory source operand and does not write memory.
+
+This rule also applies when the feature performs memory access implicitly, such as stack push/pop, call/return token handling, procedure frame setup, Irvine32 buffer routines, or future string instructions.
+
+A memory-capable feature must perform both of these steps:
+
+1. **Use central checked VM memory helpers for the final read or write.**
+
+   The checked VM helpers remain the mandatory Level 1 authority for:
+
+   - final effective address validation;
+   - byte-range validation;
+   - address overflow detection;
+   - region containment;
+   - read/write permissions;
+   - mandatory `.CONST` write protection;
+   - low-level runtime memory errors.
+
+   Mandatory `.CONST` write protection remains a Level 1 permission/read-only failure and must not be reclassified as section-capacity, section-image, declared-object, or uninitialized-read validation.
+
+2. **Expose the planned read or planned write to the source-run/Wasm/browser policy path before the instruction consumes a memory value or mutates visible state.**
+
+   The planned-access path is required so optional educational policies can warn or stop consistently, including:
+
+   - Level 2 section-capacity validation;
+   - Level 3 section-image validation;
+   - Level 4 declared-object validation;
+   - uninitialized-origin read diagnostics;
+   - future memory provenance, source-intent, taint, or bounds policies, if implemented later.
+
+Calling a checked memory helper inside the executor is not enough when an optional strict policy is supposed to stop before the instruction uses a memory value or mutates state.
+
+For strict policy failures, the feature must preserve the no-partial-mutation guarantee:
+
+- all registers retain the values they had immediately before the failing instruction began;
+- modeled flag bits retain the values they had immediately before the failing instruction began;
+- Phase 50A flag-validity metadata retains the state it had immediately before the failing instruction began;
+- memory is unchanged;
+- Program Console output is unchanged;
+- no memory-change row is created;
+- no `execution-complete` message is emitted after the fatal diagnostic.
+
+For warning policy paths, the feature may continue execution using the deterministic checked-memory value after emitting the warning, unless a lower-level mandatory VM memory check fails.
+
+Required tests for every future memory-capable feature:
+
+- default region-only behavior through mandatory checked VM memory helpers;
+- invalid address, invalid range, invalid region, and invalid permission behavior through mandatory Level 1 diagnostics;
+- direct `.CONST` write-protection precedence for memory writes, when the feature can write memory;
+- cross-region write behavior for memory writes when a fixture can start in one VM region and end in another;
+- cross-region `.CONST`-overlap read/write behavior when a fixture can start before `.CONST` and end inside `.CONST` storage;
+- section-capacity warning and strict behavior when a suitable fixture can pass Level 1 but leave section capacity;
+- section-image warning and strict behavior when a suitable fixture can pass Level 1 but leave section image;
+- declared-object warning and strict behavior when a suitable fixture can pass Level 1 but cross declared-object bounds;
+- uninitialized-read warning and strict behavior for memory reads;
+- no-partial-mutation behavior for every strict or fatal planned-access failure;
+- exact rendered Simulator Messages coverage for every new user-visible diagnostic path.
+
+The cross-region protected-region-overlap case is a Level 1 diagnostic-quality requirement, not a new validation mode.
+
+A future memory-capable feature must preserve the following Level 1 behavior:
+
+- a single memory access must be wholly contained in one suitable VM memory region;
+- the simulator must not stitch one access across independent VM regions;
+- the simulator must not partially complete a read or write to produce a more precise diagnostic;
+- fatal Level 1 failures must stop before the failing instruction consumes a read value or mutates visible state.
+
+When a cross-region access intersects a protected memory region and the active layout metadata can identify that region, the diagnostic code must be:
+
+```text
+region-boundary-crossing
+```
+
+For this rule, **intersects** means that the requested final inclusive byte range shares at least one byte with the protected region's byte range.
+
+The rendered message must use this shape:
+
+```text
+Cross-region memory <read|write> at <address> for <N> bytes. The memory address range <start>..<end> crosses/overlaps a protected memory region, <region-name>, that starts at <region-start>. This is not allowed; program stopped before access.
+```
+
+For current `.CONST` behavior:
+
+- a cross-region read or write whose requested range intersects `.CONST` reports `region-boundary-crossing`;
+- a direct or wholly-contained write overlapping `.CONST` reports `permission-denied`;
+- a wholly-contained read from `.CONST` is allowed unless another mandatory or enabled strict validation rejects it;
+- a cross-region read intersecting `.CONST` must not be described as a general `.CONST` read prohibition.
+
+The protected-region start address in the message must come from runtime layout metadata. It must not be hardcoded to the fixed-layout default. This is required so the diagnostic remains correct under fixed educational layout, automatic deterministic layout, seeded randomized layout, and fresh randomized layout.
+
+TODO(future `.code` memory-access-denial phases): when `.code` becomes protected for a memory access kind, reuse the `region-boundary-crossing` diagnostic shape for cross-region accesses that intersect `.code`. Substitute `.code` for `.CONST` and use the runtime `.code` base address from active layout metadata. Do not hardcode fixed-layout addresses. Do not implement `.code` access denial merely because this TODO exists; implement it only in the phase that explicitly owns `.code` memory-access protection.
+
+Required test coverage does not need to cover every Cartesian combination of operand form and memory-validation policy unless the target phase explicitly requires that. It must cover every applicable policy at least once and every newly accepted memory operand class at least once.
+
+If a future phase introduces a memory-capable feature but a listed policy cannot apply to that feature, the milestone report must say why. For example, a memory-source-only instruction has no `.CONST` write-protection or cross-region `.CONST`-overlap write case because it does not write memory.
+
+Implementation reports for future memory-capable phases must explicitly state whether planned-read or planned-write collection was updated. Future assistants must not leave this as an implicit assumption.
+
 ### 2.4e Standing Rule: Keyword Matching and User-Symbol CASEMAP Policy Are Separate
 
 Instruction mnemonics, register names, register aliases, directives, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 routine names are matched case-insensitively.
@@ -298,13 +398,81 @@ The two data symbols must remain distinct because user-symbol lookup is exact-ca
 
 Future tests that combine Irvine32 names and mixed-case user symbols must prove both halves of this rule.
 
-### 2.4f Preserve Source Locations
+### 2.4f Standing Rule: Irvine32 Routine Recognition Must Use the Phase 41 Virtual Registry
+
+Recognized Irvine32 routine names must be classified through the Phase 41 - Virtual Irvine32 Symbol Registry or a direct successor to that registry. Future phases must not add ad hoc Irvine32 string checks in unrelated parser, executor, diagnostic, or UI code.
+
+The registry classification categories remain:
+
+```text
+supported virtual intrinsic now
+planned Irvine32 routine later
+known but explicitly unsupported in v1
+Windows/API/external symbol
+unknown symbol
+```
+
+Do not create a second independent Irvine32 classification taxonomy. If an implementation uses internal enum values, those enum values must map clearly to the Phase 41 categories in comments or tests.
+
+Required category behavior:
+
+- `supported virtual intrinsic now`: the routine or terminator has simulator-defined behavior implemented, tested, and documented.
+- `planned Irvine32 routine later`: the routine is recognized, but executable behavior is deferred. If the owning future phase is known, diagnostics should name both phase number and phase title.
+- `known but explicitly unsupported in v1`: the routine is recognized, but intentionally outside the first complete educational version.
+- `Windows/API/external symbol`: the name implies Windows API execution, external linking, import libraries, PE behavior, or other behavior outside the simulator boundary.
+- `unknown symbol`: the name is not recognized as an implemented instruction, user symbol, supported directive, or known virtual Irvine32 symbol.
+
+Diagnostics for recognized-but-unimplemented Irvine32 routines must be emitted through Simulator Messages and must preserve source line, column, byte offset, and span length for the routine name when available.
+
+Diagnostics must not use milestone-relative wording such as:
+
+```text
+unsupported by the current milestone
+not implemented in this milestone
+not supported in this milestone
+```
+
+Diagnostics must instead explain the stable reason:
+
+- deferred to a named future phase;
+- deferred to later Irvine32 routine phases;
+- unavailable because it is outside the simulator boundary.
+
+Examples:
+
+```text
+WriteString is a recognized Irvine32 routine, but executable Irvine32 output routines are deferred to Phase <N> - <phase title>.
+```
+
+```text
+ReadString is a recognized Irvine32 routine, but Irvine32 input routines are deferred to later Irvine32 routine phases.
+```
+
+```text
+Irvine32 file I/O routines are not supported because simulated programs cannot access the host filesystem.
+```
+
+This rule does not make any Irvine32 routine executable by itself. A future phase must explicitly implement the routine contract, parser/lowering behavior, runtime behavior, diagnostics, source-run JSON behavior, rendered Simulator Messages tests, and Program Console behavior.
+
+When a future phase implements an Irvine32 routine, it must update the centralized registry classification from deferred or unsupported to implemented. It must not leave stale deferred diagnostics in place for newly implemented behavior.
+
+Required tests for any future phase that touches Irvine32 routine recognition:
+
+- implemented routine success path, if the phase implements a routine;
+- recognized deferred routine diagnostic, if deferred routines remain visible;
+- exact rendered Simulator Messages text for deferred routine diagnostics;
+- source-location fields for the routine name;
+- `OPTION CASEMAP:NONE` regression proving recognized Irvine32 names remain case-insensitive;
+- user-symbol case-policy regression proving user symbols still obey `OPTION CASEMAP`;
+- non-goal diagnostic for at least one host-filesystem, WinAPI, linker, PE, or external-symbol path when applicable.
+
+### 2.4g Preserve Source Locations
 
 Every parsed instruction and generated IR instruction must retain:
 
 - Source file.
 - Source line.
-- Source column if practical.
+- Source column for real source tokens. If a diagnostic or metadata item is synthesized or source-less, use the documented nullable source-location representation instead of inventing a column.
 - Original source text.
 
 Diagnostics and debugger output depend on this.
@@ -1787,7 +1955,7 @@ This phase lets users paste ordinary MASM32/Irvine32 classroom programs without 
    .stack 1000h
    ```
 
-5. Store requested stack size as parser/project metadata if practical. Do not apply runtime stack behavior in this phase.
+5. Store requested stack size as parser/project metadata in the existing metadata model. If the metadata model cannot represent it yet, add the smallest explicit field needed for `.stack` metadata. Do not apply runtime stack behavior in this phase.
 
 6. Parse and accept built-in virtual includes:
 
@@ -1940,7 +2108,7 @@ Support common MASM simplified data sections that are important for textbook pas
 
 4. Store `.CONST` symbols with read-only metadata or in a read-only memory region.
 
-5. Reject statically known writes to `.CONST` symbols when practical.
+5. Reject statically known writes to `.CONST` symbols when the destination directly resolves to `.CONST`. Computed or indirect `.CONST` write overlap must still fail through checked runtime memory permissions.
 
 6. Ensure runtime writes to `.CONST` fail through checked memory permissions if `.CONST` has a read-only region.
 
@@ -2159,7 +2327,7 @@ The completed phases 0-30 above remain unchanged. The post-30 phases below imple
 - Backend source byte offsets remain authoritative; browser editor mappings to CodeMirror UTF-16 offsets must go through the tested mapping utility.
 - UI and settings diagnostics are rendered through the same Simulator Messages formatter using stable `ui-warning` or `ui-error` categories.
 - Local preferences and simulator settings are distinct from share-safe project state; transient runtime state is never encoded in share URLs.
-- Extended 32-bit Mode remains part of v1, but true x64 MASM, `ml64`, Windows ABI, PE loading, and WinAPI behavior remain non-goals unless a later post-v1 section explicitly adds them.
+- Extended 32-bit Mode remains part of v1, but true x64 MASM, `ml64`, Windows ABI, PE loading, and WinAPI behavior remain non-goals for this v1 guide. Do not treat them as future v1 roadmap items unless a later reviewed specification/guide revision deliberately changes the project scope.
 
 ### Post-30 phase-reference hygiene
 
@@ -2186,7 +2354,66 @@ Rules:
   Phase 72
   ```
 
-Static documentation checks should flag stale references where feasible, especially references that point to a phase whose title does not match the feature being discussed.
+### Static phase-reference audit requirement
+
+Static documentation checks should verify active roadmap phase references against the current phase-heading map.
+
+The check should build a map from every active guide heading of this form:
+
+```text
+Phase <N or suffix> - <current phase title>
+```
+
+Then it should scan active guide text for phase references and apply these rules:
+
+1. A reference written as `Phase <N> - <Title>` must match the current heading title for `Phase <N>` exactly, ignoring only Markdown emphasis and harmless whitespace differences.
+
+2. A reference written as `Phase <N> <description>` without a dash should be flagged when `<description>` contains a known feature keyword that conflicts with the current title for `Phase <N>`.
+
+   The static check may use an explicit denylist for known stale phrases and a warning-only report for uncertain matches. Uncertain matches should be reviewed manually rather than automatically rewritten.
+
+3. Bare phase ranges such as `Phases 95-98` should be flagged unless the surrounding text lists the specific phase titles and explains why the range is still valid.
+
+4. Known stale active-roadmap phrases should fail explicitly:
+
+   ```text
+   PROC USES eax ebx       ; Phase 59
+   signed-vs-unsigned difference from Phase 60
+   Phase 67 ReadString completion
+   Phase 95 virtual macro registry
+   Phase 95 encoder
+   Phase 91/92
+   memory form rejected until Phase 95
+   Phase 95 diagnostic model
+   Phase 96 source-offset mapper
+   Phase 97 diagnostic marker rendering
+   Phase 98 click-to-source navigation
+   Phase 100 highlight data model
+   Phase 105 debugger editor accessibility
+   Phase 106 accessibility audit harness
+   Phase 107 responsive layout
+   Phase 74 - RET imm16 Caller Cleanup
+   Phase 109 - PF/AF Storage and CPU Helper Scaffolding
+   ```
+
+5. The static audit applies to active forward-looking guide text only, including:
+   - phase goals;
+   - dependencies;
+   - tasks;
+   - accepted syntax;
+   - rejected syntax;
+   - required tests;
+   - acceptance criteria;
+   - non-goals;
+   - future-work notes.
+
+6. The static audit must not require changes to historical milestone reports, audit reports, changelog excerpts, or intentionally quoted stale examples unless those excerpts are promoted into active roadmap authority.
+
+7. If historical text is copied into the active guide, it must be updated to current phase numbering and current phase titles before it becomes source-of-truth text.
+
+8. When this check fails in active roadmap text, the normal fix is to correct the reference in place. Do not renumber phases, do not rewrite completed milestone history, and do not implement a future feature early merely because a stale reference points to the wrong phase.
+
+9. If the correct dependency is unclear, prefer the named feature and surrounding phase scope over the stale phase number. The corrected reference must include both the current phase number and current phase title.
 
 Static documentation checks should also flag shared-section headings that name bare phase ranges without phase titles, such as `for Phases 57-61`, unless the surrounding text lists the specific phase titles and explains why the range is still valid. Preferred shared-section headings should describe the behavior or policy directly, for example `Shared Direct Branch Target Classification`, rather than a bare numeric range.
 
@@ -5670,7 +5897,7 @@ The helper must:
 7. preserve registers, memory, flags, console state, and memory-change rows on `error`;
 8. not clear validity metadata merely because a warning was emitted.
 
-A consumer that reads multiple flags must report all invalid flags in one diagnostic when practical.
+A consumer that reads multiple flags must report all invalid flags in one diagnostic. The structured diagnostic must preserve the complete invalid-flag list even if the rendered message uses compact wording.
 
 Example:
 
@@ -6838,6 +7065,63 @@ Required assertions:
 
 ---
 
+
+### Corrective note after Phase 57 - `.CONST` cross-region diagnostic wording
+
+A later audit found one diagnostic-quality ambiguity in the Phase 53A memory-validation wording.
+
+The Phase 53A behavior remains correct in these ways:
+
+```text
+- A single memory access must be wholly contained in one suitable VM memory region.
+- The simulator must not stitch one source-level memory access across independent VM regions.
+- `.CONST` write protection remains mandatory.
+- A failed memory write must not partially mutate registers, flags, memory, Program Console output, or memory-change rows.
+```
+
+The ambiguity is a write whose final byte range both:
+
+```text
+1. crosses an independent VM-region boundary; and
+2. overlaps read-only `.CONST` storage.
+```
+
+Example:
+
+```asm
+.const
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    sub eax, 2
+    mov DWORD PTR [eax], 0FFFFFFFFh
+main ENDP
+END main
+```
+
+If `x` is at the start of the `.CONST` VM region, the final write range is:
+
+```text
+OFFSET x - 2 through OFFSET x + 1
+```
+
+That range starts before `.CONST` and ends inside `.CONST`. If `.data` and `.CONST` are separate VM regions in the current repository, the write is a fatal Level 1 region-containment failure because it is not wholly contained in one VM region. It is also useful to the user to know that the attempted write overlaps read-only `.CONST` storage.
+
+Corrected diagnostic expectation:
+
+```text
+- The write remains fatal.
+- The write remains non-mutating.
+- The simulator still does not stitch the access across VM regions.
+- The diagnostic should keep the existing Level 1 region/range diagnostic code unless implementation review shows that the current runtime already uses a more specific Level 1 permission diagnostic for this path.
+- The rendered message must mention `.CONST` overlap when layout metadata can prove that the failed write range overlaps `.CONST`.
+- The diagnostic must not be reclassified as section-capacity, section-image, declared-object, uninitialized-read, or unaligned-access behavior.
+```
+
+This is a diagnostic wording and diagnostic-context correction. It is not a memory-layout change, not a permission relaxation, not a new validation mode, and not a reason to implement section-capacity or section-image behavior outside its owning phase.
+
 ## 57B. Phase 53B - Section-Capacity and Section-Image Validation Modes
 
 ### Goal
@@ -7608,8 +7892,8 @@ imul symbol[offset]
 
 ```asm
 imul 5
-imul eax, ebx       ; implemented by Phase 55 - Two- and Three-Operand IMUL
-imul eax, ebx, 5    ; implemented by Phase 55 - Two- and Three-Operand IMUL
+imul eax, ebx       ; implemented by Phase 55 - Two- and Three-Operand IMUL Forms
+imul eax, ebx, 5    ; implemented by Phase 55 - Two- and Three-Operand IMUL Forms
 imul [eax]          ; ambiguous width
 imul QWORD PTR q    ; executable QWORD/SQWORD memory operation remains deferred
 ```
@@ -7640,7 +7924,7 @@ IMUL r/m32:  EDX:EAX = signed(EAX) * signed(r/m32)
 - Explicit `PTR [reg32]` memory source.
 - Readable `.CONST` memory source.
 - Invalid-address runtime diagnostic for register-indirect source.
-- Two-/three-operand forms are implemented and tested by **Phase 55 - Two- and Three-Operand IMUL**.
+- Two- and three-operand forms are implemented and tested by **Phase 55 - Two- and Three-Operand IMUL Forms**.
 - No memory-change rows are produced by memory-source reads.
 
 ### Acceptance program
@@ -8120,7 +8404,7 @@ Splitting a fixture must preserve all assertions. Do not delete edge cases while
 
 ### Diagnostic-rendering decomposition
 
-The diagnostic-rendering test group should be further splittable by family if practical.
+The diagnostic-rendering test group must be further splittable by family once it contains multiple fixture families or begins exceeding assistant/container execution limits.
 
 Required and preferred diagnostic runner forms:
 
@@ -9398,19 +9682,4226 @@ Phase 57 must not implement:
 
 ---
 
+
+## 61-CORR1. Phase 57-CORR1 - `.CONST` Cross-Region Diagnostic Clarification
+
+### Goal
+
+Clarify and test the Level 1 runtime diagnostic used when one simulated memory access crosses independent VM memory-region boundaries and the requested byte range intersects protected `.CONST` storage.
+
+This is a corrective diagnostic-quality phase after Phase 57 - Signed IDIV and before Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction and Phase 57A - README Landing Page Cleanup.
+
+This phase does not add MASM syntax, parser acceptance behavior, VM memory semantics, instruction behavior, layout behavior, browser controls, or runtime/source-run MASM behavior metadata. It only makes the existing fatal cross-region/protected-region failure more precise, better structured, and better tested.
+
+Repository/archive milestone:
+
+```text
+Phase 57-CORR1 - .CONST Cross-Region Diagnostic Clarification
+```
+
+Runtime/source-run MASM behavior phase:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+Status interpretation:
+
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this corrective phase does not add MASM syntax, parser behavior, VM instruction behavior, new executable language features, browser controls, or runtime/source-run phase metadata. Do not update source-run JSON phase fields, protocol phase values, supported-syntax runtime behavior phase, or tests that assert runtime phase values merely because Phase 57-CORR1 is completed.
+
+### Required behavior
+
+A single source-level memory access must remain wholly contained in one suitable VM memory region.
+
+If a memory access final byte range is not wholly contained in one VM memory region, the access is a mandatory Level 1 runtime failure. The simulator must not split, stitch, or partially execute the access across independent VM memory regions.
+
+When the final byte range crosses independent VM memory-region boundaries and the active layout metadata shows that the range intersects protected `.CONST` storage, the diagnostic code must be:
+
+```text
+region-boundary-crossing
+```
+
+For this phase, **intersects**, **overlaps**, and **crosses/overlaps** all mean that the requested final inclusive byte range shares at least one byte with the `.CONST` byte range. The implementation must use final byte ranges, not only static symbols or the access starting address, to classify the diagnostic.
+
+The rendered Simulator Message must use this shape:
+
+```text
+Cross-region memory <read|write> at <address> for <N> bytes. The memory address range <start>..<end> crosses/overlaps a protected memory region, .CONST, that starts at <runtime .CONST start address>. This is not allowed; program stopped before access.
+```
+
+The `<runtime .CONST start address>` value must be dynamic. It must be taken from the active VM layout metadata, not hardcoded to the fixed-layout default address. The diagnostic must remain correct under:
+
+- fixed educational layout;
+- automatic deterministic layout;
+- seeded randomized layout;
+- fresh randomized layout, once available.
+
+The phrase `protected memory region` is intentional for this diagnostic, but it must be interpreted precisely:
+
+- `.CONST` is currently protected against writes because it is read-only.
+- `.CONST` is not generally protected against reads.
+- A wholly-contained read from `.CONST` remains allowed unless another mandatory or enabled strict validation rejects it.
+- A cross-region read whose requested range intersects `.CONST` reports `region-boundary-crossing` because one memory access cannot span independent VM regions, not because `.CONST` is unreadable.
+
+Direct or wholly-contained writes whose final byte range overlaps `.CONST` remain permission failures. Their diagnostic code remains:
+
+```text
+permission-denied
+```
+
+Wholly-contained reads from `.CONST` remain allowed unless another mandatory validation or enabled strict validation rejects the access.
+
+Cross-region accesses that do not intersect `.CONST` or another known protected region remain ordinary Level 1 region/range failures. This phase does not require reclassifying every invalid address, invalid region, or range-containment diagnostic.
+
+### Example target diagnostic
+
+For a fixed-layout fixture where `.CONST` starts at `00600000h`:
+
+```asm
+.CONST
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, [eax]
+    sub eax, 2
+    mov DWORD PTR [eax], 0FFFFFFFFh
+main ENDP
+END main
+```
+
+The failing write attempts this range:
+
+```text
+005FFFFEh..00600001h
+```
+
+Expected rendered Simulator Message:
+
+```text
+[runtime-error] region-boundary-crossing line 9: Cross-region memory write at 005FFFFEh for 4 bytes. The memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h. This is not allowed; program stopped before access.
+```
+
+The fixed address values in this example are example output for the fixed educational layout. The implementation must not hardcode those addresses. Tests that run with other layout modes must derive the expected address values from that layout.
+
+### Required tests
+
+Add or update structured source-run tests and exact rendered Simulator Messages tests for all of the following cases.
+
+1. Cross-region `.CONST` write overlap:
+
+```asm
+.CONST
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, [eax]
+    sub eax, 2
+    mov DWORD PTR [eax], 0FFFFFFFFh
+main ENDP
+END main
+```
+
+Required result:
+
+- diagnostic kind: `runtime-error`;
+- diagnostic code: `region-boundary-crossing`;
+- message identifies `write`;
+- message includes the attempted start address;
+- message includes access width `4 bytes`;
+- message includes the computed inclusive byte range;
+- message identifies `.CONST`;
+- message includes the runtime `.CONST` start address;
+- no successful memory-change row is emitted for the failing write;
+- no `execution-complete` message appears after the fatal diagnostic;
+- registers, flags, flag-validity metadata, memory, Program Console output, and memory-change rows remain unchanged by the failing instruction.
+
+2. Cross-region `.CONST` read overlap:
+
+```asm
+.CONST
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    sub eax, 2
+    mov ebx, DWORD PTR [eax]
+main ENDP
+END main
+```
+
+Required result:
+
+- diagnostic kind: `runtime-error`;
+- diagnostic code: `region-boundary-crossing`;
+- message identifies `read`;
+- message includes the attempted start address;
+- message includes access width `4 bytes`;
+- message includes the computed inclusive byte range;
+- message identifies `.CONST`;
+- message includes the runtime `.CONST` start address;
+- the read value is not consumed;
+- no `execution-complete` message appears after the fatal diagnostic;
+- the diagnostic must not say or imply that `.CONST` is generally unreadable.
+
+3. Direct or wholly-contained `.CONST` write:
+
+```asm
+.CONST
+x BYTE 1
+
+.code
+main PROC
+    mov eax, OFFSET x
+    mov DWORD PTR [eax], 0FFFFFFFFh
+main ENDP
+END main
+```
+
+Required result:
+
+- diagnostic kind: `runtime-error`;
+- diagnostic code: `permission-denied`;
+- diagnostic remains a `.CONST` read-only/permission failure;
+- diagnostic is not `region-boundary-crossing` because the final byte range is handled as a wholly-contained permission failure rather than a cross-region boundary failure;
+- no successful memory-change row is emitted;
+- no `execution-complete` message appears after the fatal diagnostic.
+
+4. Cross-region write that does not intersect `.CONST` or another protected region:
+
+Required result:
+
+- remains the ordinary Level 1 region/range diagnostic for the existing invalid-address or invalid-region path;
+- does not use `region-boundary-crossing` unless the crossed range intersects a known protected region;
+- does not mention `.CONST`;
+- no successful memory-change row is emitted;
+- no `execution-complete` message appears after the fatal diagnostic.
+
+5. Phase/status regression:
+
+Required result:
+
+- repository/archive milestone may advance to Phase 57-CORR1 in README or status documentation;
+- runtime/source-run MASM behavior phase remains Phase 57 - Signed IDIV;
+- source-run JSON phase fields remain `57`;
+- worker/protocol phase values remain `57`;
+- tests that assert runtime/source-run phase metadata must not be rewritten to `57-CORR1`.
+
+6. Layout metadata regression:
+
+Required result:
+
+- the protected-region start address in diagnostics comes from runtime region metadata;
+- the implementation does not hardcode fixed-layout addresses;
+- if existing test infrastructure can exercise automatic or randomized layout, include at least one test proving the message uses the active layout's `.CONST` base address;
+- if current test infrastructure cannot exercise those modes for this diagnostic, state that the implementation uses dynamic metadata and leave broader layout-mode coverage to the phase that owns the unavailable layout mode.
+
+### Required implementation notes
+
+- Add `region-boundary-crossing` as a structured diagnostic code only for the cross-region/protected-region-overlap case approved by this phase.
+- Do not reclassify unrelated invalid addresses merely to use the new code.
+- Do not reclassify direct or wholly-contained `.CONST` writes away from `permission-denied`.
+- Do not reject ordinary wholly-contained reads from `.CONST`.
+- Preserve source line, column, byte offset, and span length for the failing memory operand.
+- Preserve Program Console and Simulator Messages as separate streams.
+- Preserve all no-partial-mutation guarantees.
+- Keep the core implementation C99.
+- Add or update exact rendered Simulator Messages tests for the new wording.
+- Update documentation/status only where needed to describe the corrective diagnostic behavior and repository/runtime status split.
+
+### Future-owned TODO for `.code` protected-region diagnostics
+
+TODO(future `.code` memory-access-denial phases): when `.code` becomes protected for a memory access kind, reuse the `region-boundary-crossing` diagnostic shape for cross-region accesses that intersect `.code`.
+
+The future `.code` diagnostic must:
+
+- substitute `.code` for `.CONST`;
+- use the runtime `.code` base address from active layout metadata;
+- avoid hardcoded fixed-layout addresses;
+- work under fixed educational layout, automatic deterministic layout, seeded randomized layout, and fresh randomized layout;
+- preserve no-partial-mutation behavior;
+- include exact structured diagnostics and rendered Simulator Messages tests.
+
+This TODO is future-owned. It must not be used to implement `.code` memory-access denial during Phase 57-CORR1.
+
+### Non-goals
+
+Phase 57-CORR1 must not implement:
+
+- new MASM syntax;
+- new instructions;
+- parser acceptance changes;
+- new memory-layout modes;
+- memory-region merging;
+- section-capacity behavior changes;
+- section-image behavior changes;
+- declared-object validation changes;
+- uninitialized-read behavior changes;
+- browser diagnostic settings;
+- `.CONST` writability changes;
+- `.code` access-denial behavior;
+- stack behavior;
+- control flow;
+- Irvine32 routine expansion;
+- Program Console input/output routines;
+- executable QWORD/SQWORD memory operations;
+- Windows API behavior;
+- PE loading;
+- object linking;
+- host include loading;
+- macro expansion;
+- runtime/source-run MASM behavior phase advancement beyond Phase 57.
+
+### Acceptance criteria
+
+Phase 57-CORR1 is complete only when all of the following are true:
+
+- cross-region `.CONST` write overlap reports `region-boundary-crossing`;
+- cross-region `.CONST` read overlap reports `region-boundary-crossing`;
+- both cross-region `.CONST` diagnostics use the canonical protected-region message shape;
+- the protected-region start address is dynamic and comes from active layout metadata;
+- direct or wholly-contained `.CONST` writes still report `permission-denied`;
+- wholly-contained `.CONST` reads remain allowed when otherwise valid;
+- non-`.CONST` cross-region failures remain ordinary Level 1 region/range diagnostics unless another protected region is involved;
+- failed accesses remain fatal and non-mutating;
+- no memory access is stitched across independent VM regions;
+- no successful memory-change row is emitted for the failing instruction;
+- no `execution-complete` message appears after the fatal diagnostic;
+- structured source-run tests cover the new diagnostic code;
+- exact rendered Simulator Messages tests cover the new wording;
+- current status documentation distinguishes repository/archive milestone from runtime/source-run MASM behavior phase;
+- runtime/source-run phase metadata remains Phase 57;
+- Phase 57-CORR2, Phase 57A through Phase 57T, Phase 58, and later phases are not renumbered.
+
+---
+
+## 61-CORR2. Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction
+
+### Goal
+
+Correct the register-indirect displacement parser so compact negative displacement spelling works for already-supported simple register-derived memory expressions.
+
+This phase fixes a whitespace-sensitive parser inconsistency. It must not implement advanced addressing.
+
+The motivating failing source form is:
+
+```asm
+mov DWORD PTR [eax-4], 10
+```
+
+The currently working equivalent form is:
+
+```asm
+mov DWORD PTR [eax - 4], 10
+```
+
+Both forms are the same simple base-minus-constant displacement. They must parse and execute the same way.
+
+### Behavior category
+
+Corrective parser/source-run acceptance fix for existing simple displacement syntax.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+### Status interpretation
+
+Phase 57-CORR2 is a corrective parser-quality phase after Phase 57-CORR1 and before Phase 57A.
+
+It advances repository/archive status because it changes parser acceptance for a currently inconsistent spelling of an already-supported memory operand form.
+
+It does not advance runtime/source-run MASM behavior phase metadata because it does not add a new instruction family, new runtime semantic family, new diagnostic policy, new browser setting, new source-run JSON field, or new VM execution feature.
+
+Do not update source-run JSON phase fields, worker/protocol phase values, browser runtime-status text, README runtime-status text, or supported-syntax runtime phase text merely because this phase is completed. Keep runtime/source-run MASM behavior phase metadata at Phase 57 - Signed IDIV unless a later accepted phase explicitly owns metadata advancement.
+
+### Source-of-truth context
+
+Phase 5 - Lexer supports signed numeric tokens such as:
+
+```asm
+-42
+-0x2A
+-2Ah
+```
+
+Phase 11 - Register-Indirect Memory Operands supports simple register displacement forms such as:
+
+```asm
+[esi + 4]
+[esi - 4]
+```
+
+Phase 52 - LEA reuses the currently supported address-expression subset and supports effective-address source forms equivalent to:
+
+```asm
+lea reg32, [reg32 + constant]
+lea reg32, [reg32 - constant]
+```
+
+Therefore compact spelling such as:
+
+```asm
+[eax-4]
+```
+
+must not be misclassified as advanced addressing. It is the same simple register-minus-constant form as:
+
+```asm
+[eax - 4]
+```
+
+### Problem being corrected
+
+The lexer may tokenize compact negative displacement text as one signed numeric token:
+
+```text
+NUMBER(-4)
+```
+
+instead of two tokens:
+
+```text
+MINUS
+NUMBER(4)
+```
+
+The existing register-indirect parser path accepts the explicit-minus-token form but rejects the signed-numeric-token form after a register base.
+
+That creates incorrect whitespace-sensitive behavior:
+
+```asm
+[eax - 4]   ; accepted
+[eax-4]     ; rejected
+```
+
+This phase removes that inconsistency.
+
+### Required behavior
+
+The parser must accept compact negative numeric displacement tokens after a supported 32-bit register base inside brackets.
+
+Accepted examples must include:
+
+```asm
+mov DWORD PTR [eax-4], 10
+mov DWORD PTR [esi-8], 10
+mov DWORD PTR [ebp-10h], 10
+mov DWORD PTR [ebp-0x10], 10
+mov eax, DWORD PTR [ecx-4]
+mov ax, WORD PTR [edx-2]
+mov al, BYTE PTR [edi-1]
+lea eax, [ebx-4]
+```
+
+Each accepted compact form must be semantically equivalent to the corresponding spaced form:
+
+```asm
+mov DWORD PTR [eax - 4], 10
+mov DWORD PTR [esi - 8], 10
+mov DWORD PTR [ebp - 10h], 10
+mov DWORD PTR [ebp - 0x10], 10
+mov eax, DWORD PTR [ecx - 4]
+mov ax, WORD PTR [edx - 2]
+mov al, BYTE PTR [edi - 1]
+lea eax, [ebx - 4]
+```
+
+The displacement remains a byte displacement. It is not an element index.
+
+The final effective address for memory-reading or memory-writing instructions remains subject to all existing runtime memory validation:
+
+- address arithmetic overflow checks;
+- region containment checks;
+- permission checks;
+- `.CONST` write protection;
+- Phase 57-CORR1 `region-boundary-crossing` behavior;
+- optional section-capacity, section-image, declared-object, and uninitialized-read policies where applicable.
+
+`lea` remains address-only. It must compute the effective address but must not perform a simulated memory read or write, must not emit memory-read diagnostics, and must not create memory-change rows.
+
+### Required parser behavior
+
+Update the shared register-displacement parsing path so that, after a valid 32-bit register base inside brackets, it accepts these suffix shapes:
+
+```text
+]
++ numeric-displacement ]
+- numeric-displacement ]
+signed-negative-numeric-displacement ]
+```
+
+The signed-negative-numeric-displacement path is required for compact forms such as:
+
+```asm
+[eax-4]
+[eax-10h]
+[eax-0x10]
+```
+
+The signed-negative-numeric-displacement path must use the same signed displacement range validation as the existing spaced-minus path.
+
+After consuming a displacement token, the parser must require the closing bracket. If any additional token appears before the closing bracket, the parser must reject the operand rather than accepting a prefix.
+
+For example:
+
+```asm
+mov eax, DWORD PTR [eax-4*2]
+```
+
+must not be accepted as:
+
+```asm
+mov eax, DWORD PTR [eax-4]
+```
+
+The `*2` makes the source an unsupported advanced effective-address expression.
+
+### Lexer constraint
+
+Do not change the lexer merely to force `-4` into separate `-` and `4` tokens.
+
+The lexer's signed numeric token behavior is valid project behavior. This phase fixes the parser so it accepts a signed numeric token in the specific register-displacement suffix position where that token is semantically equivalent to an explicit minus token followed by a positive displacement.
+
+### Unsupported forms that must remain rejected
+
+This phase must not implement scaled-index addressing, base-plus-index addressing, SIB addressing, or general effective-address arithmetic.
+
+The following forms must remain rejected:
+
+```asm
+mov eax, DWORD PTR [eax*4]
+mov eax, DWORD PTR [eax * 4]
+mov eax, DWORD PTR [eax+ebx]
+mov eax, DWORD PTR [eax + ebx]
+mov eax, DWORD PTR [eax+ebx*4]
+mov eax, DWORD PTR [eax + ebx * 4]
+mov eax, DWORD PTR [eax-4*2]
+mov eax, DWORD PTR [eax - 4 * 2]
+mov eax, DWORD PTR [eax-(4)]
+mov eax, DWORD PTR [eax - (4)]
+```
+
+The following malformed forms must remain rejected unless a later expression phase deliberately defines them:
+
+```asm
+mov eax, DWORD PTR [eax--4]
+mov eax, DWORD PTR [eax+-4]
+mov eax, DWORD PTR [eax-]
+mov eax, DWORD PTR [eax+]
+```
+
+Do not reinterpret any of these as accepted simple displacements.
+
+### Implementation guidance
+
+The safest implementation is to update the shared register-displacement helper rather than patching each instruction parser independently.
+
+After parsing a valid register base and before reporting the current "Expected ], + displacement, or - displacement after register memory base" diagnostic, add handling for a signed negative numeric token.
+
+Conceptual behavior:
+
+```text
+if next token is right bracket:
+    displacement = 0
+    accept
+
+else if next token is plus token:
+    require non-negative numeric displacement
+    displacement = +value
+    require right bracket
+    accept
+
+else if next token is minus token:
+    require non-negative numeric displacement
+    displacement = -value
+    require right bracket
+    accept
+
+else if next token is signed negative numeric token:
+    displacement = signed token value
+    require right bracket
+    accept
+
+else:
+    emit existing expected-suffix diagnostic or existing unsupported-addressing diagnostic
+```
+
+The implementation must preserve source-location metadata for diagnostics. If a compact negative displacement is malformed because extra unsupported address tokens follow it, the diagnostic span should identify the unsupported trailing token or the smallest useful offending address-expression span according to the existing parser diagnostic conventions.
+
+### Required native parser tests
+
+Add accepted parser tests proving compact negative forms parse with the same displacement as spaced equivalents:
+
+```asm
+mov DWORD PTR [eax-4], 10
+mov DWORD PTR [esi-8], 10
+mov DWORD PTR [ebp-10h], 10
+mov DWORD PTR [ebp-0x10], 10
+mov eax, DWORD PTR [ecx-4]
+mov ax, WORD PTR [edx-2]
+mov al, BYTE PTR [edi-1]
+lea eax, [ebx-4]
+```
+
+Add regression parser tests proving existing accepted forms still parse:
+
+```asm
+mov DWORD PTR [eax], 10
+mov DWORD PTR [eax+4], 10
+mov DWORD PTR [eax + 4], 10
+mov DWORD PTR [eax - 4], 10
+lea eax, [ebx + 4]
+lea eax, [ebx - 4]
+```
+
+Add parser rejection tests proving advanced and malformed forms remain rejected:
+
+```asm
+mov eax, DWORD PTR [eax*4]
+mov eax, DWORD PTR [eax * 4]
+mov eax, DWORD PTR [eax+ebx]
+mov eax, DWORD PTR [eax + ebx]
+mov eax, DWORD PTR [eax+ebx*4]
+mov eax, DWORD PTR [eax + ebx * 4]
+mov eax, DWORD PTR [eax-4*2]
+mov eax, DWORD PTR [eax - 4 * 2]
+mov eax, DWORD PTR [eax-(4)]
+mov eax, DWORD PTR [eax--4]
+mov eax, DWORD PTR [eax+-4]
+```
+
+### Required source-run tests
+
+Add source-run success coverage for compact negative displacement write:
+
+```asm
+.data
+x DWORD 0, 0
+
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov DWORD PTR [eax-4], 10
+    mov ebx, x
+main ENDP
+END main
+```
+
+Expected behavior:
+
+```text
+EBX = 0000000Ah
+x + 0 DWORD changes from 00000000h to 0000000Ah
+execution-complete is emitted
+```
+
+Add source-run success coverage for compact negative displacement read:
+
+```asm
+.data
+x DWORD 10, 20
+
+.code
+main PROC
+    mov eax, OFFSET x
+    add eax, 4
+    mov ebx, DWORD PTR [eax-4]
+main ENDP
+END main
+```
+
+Expected behavior:
+
+```text
+EBX = 0000000Ah
+execution-complete is emitted
+```
+
+Add source-run success coverage for compact negative displacement with `lea`:
+
+```asm
+.data
+x DWORD 0, 0
+
+.code
+main PROC
+    mov ebx, OFFSET x
+    add ebx, 4
+    lea eax, [ebx-4]
+main ENDP
+END main
+```
+
+Expected behavior:
+
+```text
+EAX equals OFFSET x
+LEA emits no memory-read diagnostics
+LEA emits no memory-change rows
+execution-complete is emitted
+```
+
+Add source-run rejection coverage proving unsupported advanced addressing remains rejected:
+
+```asm
+.data
+x DWORD 0, 0
+
+.code
+main PROC
+    mov eax, OFFSET x
+    mov ebx, DWORD PTR [eax-4*2]
+main ENDP
+END main
+```
+
+Expected behavior:
+
+```text
+An assembly diagnostic is emitted for unsupported advanced/scaled effective-address syntax.
+No execution occurs.
+No Program Console output is produced.
+No memory-change row is produced.
+```
+
+### Required rendered Simulator Messages tests
+
+Add exact rendered Simulator Messages tests for:
+
+- compact negative displacement write success, expecting only the normal execution-complete message;
+- compact negative displacement read success, expecting only the normal execution-complete message;
+- compact negative `lea` success, expecting only the normal execution-complete message;
+- malformed advanced expression such as `[eax-4*2]`, expecting the existing unsupported advanced/scaled-addressing diagnostic.
+
+The malformed-address diagnostic must not say that simple subtraction in memory addresses is unsupported. The issue is advanced effective-address arithmetic, not subtraction itself.
+
+### Required documentation updates
+
+Update `docs/SUPPORTED_SYNTAX.md` to list both spaced and compact simple register-displacement forms as accepted:
+
+```asm
+BYTE PTR [eax + 1]
+BYTE PTR [eax+1]
+BYTE PTR [eax - 1]
+BYTE PTR [eax-1]
+
+WORD PTR [eax + 2]
+WORD PTR [eax+2]
+WORD PTR [eax - 2]
+WORD PTR [eax-2]
+
+DWORD PTR [eax + 4]
+DWORD PTR [eax+4]
+DWORD PTR [eax - 4]
+DWORD PTR [eax-4]
+```
+
+The documentation must state that these are simple base-plus-or-minus-constant byte displacements.
+
+The documentation must also state that scaled-index addressing, base-plus-index addressing, and general bracket arithmetic remain unsupported until future phases explicitly implement them.
+
+### Required milestone report content
+
+The milestone report for Phase 57-CORR2 must include:
+
+- the user-observed failing form:
+
+```asm
+mov DWORD PTR [eax-4], 10
+```
+
+- the already-working equivalent form:
+
+```asm
+mov DWORD PTR [eax - 4], 10
+```
+
+- confirmation that the fix is parser acceptance for an existing simple displacement form;
+- confirmation that no advanced addressing was implemented;
+- confirmation that runtime/source-run MASM behavior phase metadata remains Phase 57 - Signed IDIV;
+- exact tests run, including aggregate and focused groups if applicable;
+- whether browser/Wasm smoke testing was skipped because `emcc` was unavailable.
+
+### Acceptance criteria
+
+- Compact negative register-displacement memory operands parse and execute anywhere the equivalent spaced form already parses and executes.
+- Compact negative `lea` effective-address operands parse and execute anywhere the equivalent spaced form already parses and executes.
+- Existing positive, zero-displacement, and spaced negative forms still work.
+- Unsupported advanced addressing remains rejected.
+- Source-run tests prove the fix through user-visible source, not only through parser internals.
+- Rendered Simulator Messages tests prove the user-facing success and rejection paths.
+- Runtime/source-run MASM behavior phase metadata remains Phase 57 - Signed IDIV.
+- No scaled-index, base-plus-index, SIB, parenthesized effective-address arithmetic, or general expression parsing is implemented.
+
+### Non-goals
+
+Do not implement:
+
+- scaled-index addressing;
+- base-plus-index addressing;
+- SIB addressing;
+- parenthesized effective-address expressions;
+- register-plus-register effective addresses;
+- general arithmetic inside memory brackets;
+- new instruction behavior;
+- new memory validation policy;
+- QWORD/SQWORD executable memory operations;
+- stack behavior;
+- control-flow behavior;
+- procedure behavior;
+- Irvine32 routine expansion;
+- `.code` memory-access diagnostics;
+- segment/group symbol diagnostics;
+- host include diagnostics;
+- `INCLUDELIB` diagnostics;
+- README landing-page cleanup.
+
+
+---
+
+## 61A. Phase 57A - README Landing Page Cleanup
+
+### Goal
+
+Turn `README.md` into a concise project landing page.
+
+This phase addresses README clutter only. It must not change source code, MASM syntax, parser behavior, VM behavior, executor behavior, Wasm APIs, browser UI behavior, diagnostic codes, diagnostic policies, source-run JSON fields, rendered Simulator Messages wording, or runtime/source-run MASM behavior metadata.
+
+### Behavior category
+
+Documentation and repository hygiene only.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57A - README Landing Page Cleanup
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+### Tasks
+
+1. Rewrite `README.md` as a short project entry point.
+
+2. Keep the README focused on:
+   - project name;
+   - one-paragraph project description;
+   - current repository/archive milestone;
+   - current runtime/source-run MASM behavior phase;
+   - concise current simulator scope;
+   - how to serve the website locally;
+   - how to run the aggregate test command;
+   - how to run focused test groups or where to find focused test group documentation;
+   - how to build with checked-in scripts, command files, or the Visual Studio solution if present;
+   - links to detailed documentation.
+
+3. Remove the large milestone-accomplishment wall from immediately after the title.
+
+4. Remove large milestone-accomplishment lists from the current-scope area.
+
+5. Replace those large sections with short status text and links to the later milestone-history document.
+
+6. Keep a short project-boundary section explaining that the simulator is:
+   - a static browser application;
+   - a C99 MASM-like parser plus internal VM compiled to WebAssembly;
+   - an educational MASM32/Irvine32-style console simulator;
+   - not a full MASM compiler;
+   - not a full x86 emulator;
+   - not a Windows emulator;
+   - not a PE loader/linker;
+   - not a WinAPI simulator.
+
+7. Keep only basic build/test guidance in the README.
+
+8. Do not move detailed build instructions into the README during this phase.
+
+9. Do not delete historical information merely because it is removed from the README. Leave extraction to Phase 57B - Milestone History and Build Documentation Extraction.
+
+### README target outline
+
+Use a compact outline similar to:
+
+```markdown
+# Online MASM32 Educational Simulator
+
+Short project description.
+
+## Current status
+
+- Repository/archive milestone: Phase 57A - README Landing Page Cleanup
+- Runtime/source-run MASM behavior phase: Phase 57 - Signed IDIV
+
+## Current simulator scope
+
+Short description of current accepted source/runtime behavior.
+
+## Quick start
+
+### Serve the website
+
+Command or link.
+
+### Run tests
+
+Aggregate command and focused-test pointer.
+
+### Build
+
+Command-file or Visual Studio solution note.
+
+## Documentation
+
+Links to detailed docs.
+
+## Project boundaries
+
+Short non-goal list.
+```
+
+### Required tests/checks
+
+Add static documentation checks where practical:
+
+- README contains current repository/archive milestone.
+- README contains current runtime/source-run MASM behavior phase.
+- README links to the full implementation spec.
+- README links to the incremental implementation guide.
+- README links to supported syntax documentation.
+- README links to testing documentation.
+- README does not contain the old large milestone-accomplishment block if a stable marker or heading can identify it.
+- README still contains at least one website-serving command or a link to one.
+- README still contains at least one aggregate test command or a link to one.
+- README still points users to focused-test guidance.
+
+### Acceptance criteria
+
+- README is short enough to function as a project landing page.
+- README no longer contains enormous milestone accomplishment blocks.
+- README still tells a new user how to serve, test, and build the project at a basic level.
+- README links to deeper documentation.
+- No source code behavior changes.
+- No runtime/source-run MASM behavior metadata change.
+
+### Non-goals
+
+- No source code changes.
+- No MASM syntax changes.
+- No parser, VM, executor, Wasm, browser UI, or diagnostic changes.
+- No new documentation files required in this phase except small placeholders or links if needed.
+- No milestone renumbering.
+
+---
+
+## 61B. Phase 57B - Milestone History and Build Documentation Extraction
+
+### Goal
+
+Move long-form milestone history and detailed build/development instructions out of the README and into dedicated documentation files.
+
+This phase completes the documentation decomposition started by Phase 57A.
+
+### Behavior category
+
+Documentation and repository hygiene only.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57B - Milestone History and Build Documentation Extraction
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+### Tasks
+
+1. Create or update:
+
+   ```text
+   docs/MILESTONE_HISTORY.md
+   ```
+
+2. Move long milestone-accomplishment history into `docs/MILESTONE_HISTORY.md`.
+
+3. Structure `docs/MILESTONE_HISTORY.md` so it is useful to an AI assistant without cluttering the README.
+
+4. Include:
+   - latest repository/archive milestone;
+   - latest runtime/source-run MASM behavior phase;
+   - concise milestone ledger;
+   - links or references to detailed milestone reports when available;
+   - warning that milestone reports are historical evidence and do not override the canonical spec/guide.
+
+5. Create or update:
+
+   ```text
+   docs/BUILDING_AND_DEVELOPMENT.md
+   ```
+
+6. Move detailed build/development content into `docs/BUILDING_AND_DEVELOPMENT.md`, including:
+   - local website serving;
+   - native test prerequisites;
+   - Emscripten prerequisites;
+   - command-file build paths;
+   - Visual Studio solution usage if the solution is included in the repository;
+   - Visual Studio External Tools setup if useful;
+   - troubleshooting for missing `emcc`;
+   - aggregate and focused test commands;
+   - browser/Wasm smoke guidance.
+
+7. Keep README links to both documents.
+
+8. Preserve information. Do not delete useful milestone or build instructions merely because they are no longer in the README.
+
+9. Ensure any Visual Studio-specific material clearly says whether the Visual Studio solution is expected to be present in the repository or local-only.
+
+10. Do not add future behavior claims to milestone history.
+
+### Required tests/checks
+
+Add static documentation checks where practical:
+
+- `docs/MILESTONE_HISTORY.md` exists.
+- `docs/BUILDING_AND_DEVELOPMENT.md` exists.
+- README links to both files.
+- milestone-history document states that milestone reports are historical evidence, not source of truth.
+- build/development document includes aggregate test command.
+- build/development document includes focused test command guidance.
+- build/development document includes missing-`emcc` guidance or explicitly links to it.
+- README does not contain detailed Visual Studio External Tools setup after extraction.
+
+### Acceptance criteria
+
+- README is short.
+- Long history is preserved in `docs/MILESTONE_HISTORY.md`.
+- Long build/development instructions are preserved in `docs/BUILDING_AND_DEVELOPMENT.md`.
+- Documentation remains internally consistent about current status.
+- No runtime/source-run MASM behavior metadata change.
+
+### Non-goals
+
+- No source code changes.
+- No build-system behavior changes unless a link or documentation correction requires it.
+- No diagnostic behavior changes.
+- No browser UI changes.
+- No milestone renumbering.
+
+---
+
+## 61C. Phase 57C - Diagnostic Policy Registry Design
+
+### Goal
+
+Design and add the shared diagnostic-policy registry skeleton without changing existing diagnostic behavior.
+
+This phase creates the architecture that later phases use for additional configurable diagnostics.
+
+### Behavior category
+
+Backend diagnostic-policy architecture only.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57C - Diagnostic Policy Registry Design
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+unless this phase intentionally adds public source-run setting schema fields. If any status surface advances, the milestone report must list it explicitly.
+
+### Policy vocabulary
+
+Define a common conceptual policy vocabulary:
+
+```text
+off
+warn
+error
+```
+
+Meanings:
+
+- `off`: do not emit this optional teaching diagnostic or notice.
+- `warn`: emit a non-fatal Simulator Message and continue when no lower-level fatal error occurs.
+- `error`: emit a fatal assembly or runtime diagnostic and stop before affected runtime mutation when applicable.
+
+Internal enum names may differ, but public documentation must map them clearly to this vocabulary.
+
+### Tasks
+
+1. Add a central diagnostic-policy registry type or equivalent internal structure.
+
+2. Add a central way to identify diagnostic policy families.
+
+3. Define initial family names for existing and planned families:
+
+   ```text
+   uninitialized-read
+   undefined-flag-use
+   compatibility-notice
+   const-uninitialized-storage
+   startup-state-notice
+   code-image-read
+   ```
+
+4. Mark future families as reserved or inactive if they do not have behavior yet.
+
+5. Add comments explaining how a future phase registers a new family.
+
+6. Add policy parse/format helpers if useful.
+
+7. Add tests for policy parse/format helpers.
+
+8. Do not migrate existing diagnostics to the registry in this phase unless the migration is purely internal and provably behavior-preserving.
+
+9. Do not change existing default behavior.
+
+10. Do not add browser UI controls.
+
+11. Do not change rendered Simulator Messages wording.
+
+12. Do not add new MASM syntax.
+
+### Required tests
+
+Add tests for:
+
+- policy value parsing:
+  - `off`;
+  - `warn`;
+  - `error`;
+- invalid policy value rejection;
+- known policy family lookup;
+- unknown policy family handling according to documented rule;
+- inactive/future family handling according to documented rule;
+- no behavior change in existing source-run defaults.
+
+### Acceptance criteria
+
+- There is a documented central policy model.
+- A future phase can add a new policy-controlled diagnostic without inventing a separate settings path.
+- Existing diagnostics behave exactly as before.
+- Existing rendered Simulator Messages tests still pass.
+- No UI controls are added.
+
+### Non-goals
+
+- No migration of all existing diagnostics unless strictly internal and behavior-preserving.
+- No new diagnostic family behavior.
+- No startup randomization.
+- No `.CONST ?` compatibility.
+- No `.code` read policy implementation.
+- No README rewrite.
+
+---
+
+## 61D. Phase 57D - Existing Diagnostic Policy Migration
+
+### Goal
+
+Migrate existing configurable diagnostic families onto the shared diagnostic-policy registry while preserving existing behavior.
+
+This phase should make the implementation more modular without changing the user-visible defaults.
+
+### Behavior category
+
+Backend diagnostic-policy migration.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57D - Existing Diagnostic Policy Migration
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+unless this phase intentionally changes source-run setting schemas or status fields. Any such change must be listed in the milestone report.
+
+### Tasks
+
+1. Audit existing policy/configuration paths for:
+   - uninitialized-read diagnostics;
+   - undefined-flag-use diagnostics;
+   - compatibility notices;
+   - section-capacity validation;
+   - section-image validation;
+   - declared-object validation;
+   - any Phase 53E diagnostic settings path.
+
+2. Migrate policy lookup for existing families to the shared registry where practical.
+
+3. Preserve all current default values.
+
+4. Preserve all current source-run/test-facing setting names, or provide backward-compatible aliases.
+
+5. Preserve all current browser/worker setting behavior.
+
+6. Preserve all existing diagnostic codes.
+
+7. Preserve all existing rendered Simulator Messages wording unless a wording change is explicitly required and tested.
+
+8. Add validation for invalid values through the existing renderable setting-diagnostic path.
+
+9. Ensure one policy family does not affect another.
+
+10. Do not add new diagnostic families in this phase unless they are inactive placeholders.
+
+### Required tests
+
+Add regression tests for:
+
+- uninitialized-read default behavior unchanged;
+- undefined-flag-use default behavior unchanged;
+- compatibility notices default behavior unchanged;
+- memory validation setting behavior unchanged;
+- explicit off/warn/error or off/warn/strict settings still map correctly for existing families;
+- invalid setting values still produce renderable diagnostics;
+- one policy family does not affect another;
+- exact rendered Simulator Messages tests still pass.
+
+### Acceptance criteria
+
+- Existing policy-controlled diagnostics route through the shared registry or an explicitly documented compatibility layer.
+- Existing defaults are unchanged.
+- Existing UI/source-run settings remain compatible.
+- Existing tests pass.
+- No new MASM syntax or runtime instruction behavior is added.
+
+### Non-goals
+
+- No new browser settings.
+- No startup randomization.
+- No `.CONST ?` compatibility.
+- No `.code` read policy behavior.
+- No diagnostic wording cleanup beyond necessary setting-error wording.
+
+---
+
+## 61E. Phase 57E - Startup State Notice and Zero-Default Documentation
+
+### Goal
+
+Make deterministic zero startup behavior visible and documented without changing startup values.
+
+This phase explains the simulator's default startup model to users.
+
+### Behavior category
+
+Documentation and diagnostic notice.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57E - Startup State Notice and Zero-Default Documentation
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57 - Signed IDIV
+```
+
+unless the source-run payload intentionally reports the new notice family as runtime metadata. The milestone report must state the decision.
+
+### Tasks
+
+1. Document that default startup state is deterministic and simulator-defined.
+
+2. Add or use diagnostic policy family:
+
+   ```text
+   startup-state-notice
+   ```
+
+3. Default behavior may emit a non-fatal notice explaining deterministic startup.
+
+4. The notice must be routed through Simulator Messages, not Program Console.
+
+5. The notice must not block parsing, loading, or execution.
+
+6. The notice must not imply that real MASM programs start with zeroed arbitrary registers or flags.
+
+7. The notice must not change register, flag, or memory initialization.
+
+8. Add opt-out through the diagnostic policy registry if Phase 57D made that practical.
+
+9. Do not implement randomization in this phase.
+
+### Example notice text
+
+```text
+The simulator starts registers, modeled flags, and deterministic memory state from known values for reproducibility. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+```
+
+The exact wording may differ, but it must be stable and covered by exact rendered Simulator Messages tests.
+
+### Required tests
+
+Add tests for:
+
+- default startup values unchanged;
+- representative existing program output unchanged except for the optional notice;
+- notice rendered through Simulator Messages;
+- no Program Console output from notice;
+- notice opt-out if implemented;
+- exact rendered Simulator Messages wording;
+- no changes to uninitialized-origin metadata.
+
+### Acceptance criteria
+
+- Users can see or find an explanation that zero startup is a simulator choice.
+- Default startup values do not change.
+- Existing execution semantics do not change.
+- No randomization is implemented.
+- Notice behavior is testable and configurable if policy plumbing supports it.
+
+### Non-goals
+
+- No seeded random mode.
+- No memory randomization.
+- No UI controls.
+- No MASM syntax changes.
+- No instruction behavior changes.
+
+---
+
+## 61F. Phase 57F - Seeded Random Register and Flag Startup Mode
+
+### Goal
+
+Add an opt-in deterministic seeded-random startup mode for registers and modeled flags.
+
+This phase does not randomize memory.
+
+### Behavior category
+
+Runtime/source-run configuration.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57F - Seeded Random Register and Flag Startup Mode
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57F - Seeded Random Register and Flag Startup Mode
+```
+
+because this phase adds runtime-visible initialization behavior when non-default settings are selected.
+
+Default behavior remains deterministic zero.
+
+### Settings
+
+Introduce register/flag startup randomization as its own setting axis. Do not use a single catch-all startup mode that later phases must overload for unrelated startup state.
+
+Public/test-facing settings added or confirmed by this phase:
+
+```text
+startup_register_flag_mode = zero | seeded-random
+startup_state_seed = <u32>
+```
+
+Internal enum names may differ, but the public/test-facing setting names, source-run option names, environment-test names, worker setting names, or documentation names used by this phase must make the register/flag scope explicit.
+
+The startup settings use three independent axes across Phase 57F and Phase 57G:
+
+- `startup_register_flag_mode`: owned by this phase; controls only general-purpose register and modeled-flag startup values.
+- `uninitialized_storage_visible_byte_mode`: not implemented by this phase; owned by Phase 57G - Seeded Random Uninitialized Storage Mode.
+- `startup_state_seed`: shared deterministic seed input; it does not by itself choose which startup categories are randomized.
+
+Future Phase 57G - Seeded Random Uninitialized Storage Mode adds an independent setting for visible bytes of uninitialized-origin storage. Do not merge that future memory setting into `startup_register_flag_mode`.
+
+### Required behavior
+
+`startup_register_flag_mode = zero`:
+
+- preserves the current default CPU startup behavior;
+- leaves general-purpose registers and modeled flag bits at the current default values;
+- ignores or does not require `startup_state_seed`.
+
+`startup_register_flag_mode = seeded-random`:
+
+- initializes general-purpose registers from a deterministic pseudo-random generator seeded by `startup_state_seed`;
+- initializes modeled flag bits from the same deterministic seed stream or a documented deterministic derivation;
+- produces the same initial register and modeled-flag state for the same source, same settings, same seed, and same input;
+- should produce at least one different register or modeled-flag value for different seeds in fixtures designed to observe startup randomization;
+- does not randomize any memory region;
+- does not randomize initialized `.data`;
+- does not randomize initialized `.CONST`;
+- does not randomize `.DATA?`, `?`, or `DUP(?)` visible bytes in this phase;
+- does not change uninitialized-origin metadata;
+- does not change deterministic behavior when `startup_register_flag_mode = zero`.
+
+This phase must not use host CPU/register/process state and must not use true nondeterministic randomness.
+
+### Required tests
+
+Add tests for:
+
+- default `startup_register_flag_mode = zero` unchanged;
+- fixed seed reproduces identical register and flag initial state;
+- different seeds produce at least one different register or modeled flag value;
+- memory bytes unchanged from existing default behavior;
+- initialized `.data` unchanged;
+- initialized `.CONST` unchanged;
+- uninitialized-origin visible bytes unchanged;
+- uninitialized-origin metadata unchanged;
+- invalid register/flag startup mode rejected with structured/renderable setting diagnostic;
+- invalid seed rejected with structured/renderable setting diagnostic;
+- startup randomization notice rendered if notice policy is enabled;
+- no Program Console output from startup notices.
+
+### Acceptance criteria
+
+- Seeded register/flag startup is deterministic and testable.
+- Default behavior remains zero.
+- Memory behavior is unchanged.
+- Uninitialized-origin metadata is unchanged.
+- No host CPU/register/process state is used.
+- No true nondeterministic randomness is used.
+- Existing tests pass under default settings.
+- Phase 57G remains able to add uninitialized-storage visible-byte randomization as an independent setting axis.
+
+### Non-goals
+
+- No memory randomization.
+- No uninitialized storage visible-byte randomization.
+- No `.CONST ?` acceptance.
+- No UI controls.
+- No stack execution behavior.
+- No instruction semantic changes.
+
+---
+
+## 61G. Phase 57G - Seeded Random Uninitialized Storage Mode
+
+### Goal
+
+Add an opt-in deterministic seeded mode for visible bytes in uninitialized-origin storage while preserving uninitialized-origin metadata.
+
+This phase builds on Phase 57F - Seeded Random Register and Flag Startup Mode but is separate because memory initialization interacts with layout, source-run results, uninitialized-read diagnostics, and tests.
+
+### Behavior category
+
+Runtime/source-run configuration and memory initialization.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57G - Seeded Random Uninitialized Storage Mode
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57G - Seeded Random Uninitialized Storage Mode
+```
+
+because this phase changes runtime-visible memory initialization when non-default settings are selected.
+
+Default behavior remains deterministic zero.
+
+### Settings
+
+Add uninitialized-storage visible-byte randomization as a second startup setting axis. This phase must not overload, replace, or reinterpret the Phase 57F register/flag startup setting.
+
+Public/test-facing settings after this phase:
+
+```text
+startup_register_flag_mode = zero | seeded-random
+uninitialized_storage_visible_byte_mode = zero | seeded-random
+startup_state_seed = <u32>
+```
+
+Internal enum names may differ, but public/test-facing names must make the two axes unambiguous.
+
+These setting axes must remain orthogonal. Changing `startup_register_flag_mode` must not silently change `uninitialized_storage_visible_byte_mode`, and changing `uninitialized_storage_visible_byte_mode` must not silently change `startup_register_flag_mode`. `startup_state_seed` is only the deterministic seed consumed by whichever seeded-random axes are enabled.
+
+Behavior:
+
+- `startup_register_flag_mode = zero` preserves current default register and modeled-flag initialization.
+- `startup_register_flag_mode = seeded-random` initializes general-purpose registers and modeled flag bits from the deterministic seed.
+- `uninitialized_storage_visible_byte_mode = zero` preserves current visible-byte initialization for `.DATA?`, `?`, and `DUP(?)`.
+- `uninitialized_storage_visible_byte_mode = seeded-random` initializes visible bytes of uninitialized-origin storage from the deterministic seed while preserving uninitialized-origin metadata.
+- The two settings are independent and may be combined.
+- The same source, same settings, same seed, and same input must produce the same startup state.
+- Different seeds should produce at least one different randomized register, modeled flag, or uninitialized-origin byte in fixtures designed to observe that category.
+- Initialized `.data` bytes are never randomized by either setting.
+- Initialized `.CONST` bytes are never randomized by either setting.
+- `.CONST ?` and `.CONST DUP(?)` bytes are governed by `uninitialized_storage_visible_byte_mode` only after Phase 57I - .CONST Uninitialized Storage Acceptance has made those forms accepted.
+- Default behavior remains `zero` for both axes.
+
+A mutually exclusive combined startup enum is not acceptable for Phase 57G. The implementation must expose register/flag startup and uninitialized-storage visible-byte startup as independent setting axes, even if an internal helper shares seeded-random generator code between the two axes.
+
+### Required behavior
+
+When `uninitialized_storage_visible_byte_mode = zero`:
+
+- visible bytes of uninitialized-origin storage remain deterministic zero by default;
+- uninitialized-origin metadata remains present until overwritten by simulated program writes;
+- existing uninitialized-read warning/strict behavior remains unchanged.
+
+When `uninitialized_storage_visible_byte_mode = seeded-random`:
+
+- visible bytes of uninitialized-origin storage are initialized from a deterministic pseudo-random generator seeded by `startup_state_seed`;
+- uninitialized-origin metadata remains present;
+- reads from those bytes still trigger uninitialized-read diagnostics according to the active policy;
+- initialized `.data` bytes are not randomized;
+- initialized `.CONST` bytes are not randomized;
+- `.CONST ?` bytes are randomized only if Phase 57I - .CONST Uninitialized Storage Acceptance has already implemented `.CONST ?` acceptance and this phase explicitly includes them through the shared uninitialized-origin storage initialization path;
+- region permissions are unchanged;
+- `.CONST` write protection is unchanged;
+- checked memory helpers remain authoritative.
+
+### Required tests
+
+Add tests for all four setting combinations:
+
+- zero registers/flags + zero uninitialized storage;
+- seeded registers/flags + zero uninitialized storage;
+- zero registers/flags + seeded uninitialized storage;
+- seeded registers/flags + seeded uninitialized storage.
+
+Also add tests for:
+
+- default zero/zero mode unchanged;
+- fixed seed reproduces identical uninitialized visible bytes;
+- different seeds produce at least one different uninitialized visible byte;
+- initialized `.data` unchanged;
+- initialized `.CONST` unchanged;
+- `.DATA?` uninitialized-origin metadata preserved;
+- `?` metadata preserved;
+- `DUP(?)` metadata preserved;
+- uninitialized-read warning still fires even when visible byte is nonzero;
+- strict uninitialized-read behavior still stops before consuming bytes;
+- no Program Console output from startup notices.
+
+After Phase 57I - .CONST Uninitialized Storage Acceptance, add or update tests proving `.CONST ?` and `.CONST DUP(?)` follow `uninitialized_storage_visible_byte_mode` while retaining read-only protection and uninitialized-origin metadata.
+
+### Acceptance criteria
+
+- Memory randomization is opt-in and deterministic.
+- Register/flag randomization and uninitialized-storage visible-byte randomization are independent setting axes.
+- Uninitialized-origin metadata is preserved.
+- Existing default tests pass.
+- Existing uninitialized-read diagnostics still work.
+- No initialized storage is randomized.
+
+### Non-goals
+
+- No randomization of initialized `.data`.
+- No randomization of initialized `.CONST`.
+- No `.CONST ?` acceptance; Phase 57I owns that acceptance.
+- No host memory use.
+- No nondeterministic randomness.
+- No UI controls.
+- No instruction semantic changes.
+
+---
+
+## 61H. Phase 57H - Register Unchanged Display Markers
+
+### Goal
+
+Add compact unchanged markers to final register display so users can quickly identify canonical register families left unmodified by the program.
+
+This is a display-formatting phase.
+
+### Behavior category
+
+Display formatting only.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57H - Register Unchanged Display Markers
+```
+
+Runtime/source-run MASM behavior phase remains the latest prior runtime/source-run phase.
+
+### Display policy
+
+For each canonical register family, append a compact marker to the canonical parent row only when no part of that register family was written by the program.
+
+Required marker text:
+
+```text
+[unchanged]
+```
+
+Required display shape:
+
+```text
+EAX    | 00000000h / u: 0 / s: 0        [unchanged]
+  AX   |     0000h / u: 0 / s: 0
+    AH |       00h / u: 0 / s: 0
+    AL |       00h / u: 0 / s: 0
+```
+
+Rules:
+
+- The marker appears only on the canonical parent register row.
+- The marker does not appear on alias rows.
+- Alias rows inherit the parent-family status visually.
+- If `AL`, `AH`, `AX`, or `EAX` is written, the `EAX` parent row must not show `[unchanged]`.
+- If `BL`, `BH`, `BX`, or `EBX` is written, the `EBX` parent row must not show `[unchanged]`.
+- If `CL`, `CH`, `CX`, or `ECX` is written, the `ECX` parent row must not show `[unchanged]`.
+- If `DL`, `DH`, `DX`, or `EDX` is written, the `EDX` parent row must not show `[unchanged]`.
+- If `SI` or `ESI` is written, the `ESI` parent row must not show `[unchanged]`.
+- If `DI` or `EDI` is written, the `EDI` parent row must not show `[unchanged]`.
+- If `BP` or `EBP` is written, the `EBP` parent row must not show `[unchanged]`.
+- If `SP` or `ESP` is written, the `ESP` parent row must not show `[unchanged]`.
+
+Preferred unchanged policy:
+
+```text
+write-tracking unchanged
+```
+
+Meaning:
+
+- A register family is `[unchanged]` only if no part of that family was written by the program.
+- A write from `0` to `0` still counts as changed because the program touched the register.
+
+If write-tracking is not available, the phase may temporarily use value-equality only if the milestone report documents the limitation and adds a future TODO. The preferred result remains write-tracking.
+
+Small-window rule:
+
+- The marker must be appended after the existing aligned numeric display.
+- The formatter must not wrap register rows merely to show `[unchanged]`.
+- The formatter must not break numeric alignment merely to show `[unchanged]`.
+- If the available display width is too narrow, the formatter may omit the marker.
+
+### Required tests
+
+Add formatter tests for:
+
+- all canonical register families unchanged;
+- `EAX` written through `EAX`;
+- `EAX` written through `AX`;
+- `EAX` written through `AH`;
+- `EAX` written through `AL`;
+- `ESI` written through `SI`;
+- `ESP` written through `SP`;
+- register written with same final value does not show `[unchanged]` if write-tracking is implemented;
+- marker appears only on parent row;
+- alias rows do not include marker;
+- existing signed/unsigned/hex display remains intact;
+- Program Console output remains unchanged;
+- Simulator Messages output remains unchanged.
+
+### Acceptance criteria
+
+- Final register display shows `[unchanged]` on parent rows for untouched register families.
+- Changed register families omit the marker.
+- Alias rows remain clean and aligned.
+- Existing signed/unsigned/hex display remains intact.
+- No VM execution changes.
+- No parser or executor behavior changes.
+- No diagnostic behavior changes.
+
+### Non-goals
+
+- No debugger stepping changes.
+- No memory-change display redesign.
+- No Program Console changes.
+- No browser settings UI.
+- No source-run semantic changes unless strictly required to expose write-tracking metadata to the formatter.
+
+---
+
+## 61I. Phase 57I - .CONST Uninitialized Storage Acceptance
+
+### Goal
+
+Accept `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage.
+
+Through Phase 57 - Signed IDIV, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts these forms; Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is the first phase that makes declaration diagnostics for these forms configurable.
+
+This phase implements compatibility acceptance only. It does not add the configurable warning/error policy; that belongs to Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy.
+
+### Behavior category
+
+Parser/data-layout compatibility.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57I - .CONST Uninitialized Storage Acceptance
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57I - .CONST Uninitialized Storage Acceptance
+```
+
+because this phase changes accepted MASM/source behavior.
+
+### Accepted syntax
+
+After this phase, `.CONST` accepts uninitialized storage forms that are already accepted in compatible data declarations elsewhere.
+
+Accepted examples:
+
+```asm
+.CONST
+x DWORD ?
+buf BYTE 16 DUP(?)
+words WORD 4 DUP(?)
+```
+
+The exact accepted initializer grammar must match the current repository's existing support for `?` and `DUP(?)` in data declarations.
+
+Do not broaden `DUP`, expression, type, or initializer syntax beyond what this phase explicitly requires.
+
+### Runtime/data semantics
+
+Required behavior:
+
+- `.CONST ?` storage is allocated in `.CONST`.
+- `.CONST DUP(?)` storage is allocated in `.CONST`.
+- Bytes are deterministic by default.
+- Bytes retain uninitialized-origin metadata.
+- Reads are allowed if the final address/range passes mandatory memory validation.
+- Writes are rejected through existing `.CONST` read-only protection.
+- Static direct writes to `.CONST` remain rejected when the implementation can detect them statically.
+- Computed writes whose final byte range overlaps `.CONST` remain rejected by mandatory runtime memory permission checks.
+- `.CONST` write failures must not be reclassified as uninitialized-read, section-image, section-capacity, declared-object, or teaching diagnostics.
+
+### Required tests
+
+Add parser/data-layout tests for:
+
+- `.CONST x DWORD ?` accepted;
+- `.CONST buf BYTE 16 DUP(?)` accepted;
+- `.CONST words WORD 4 DUP(?)` accepted;
+- `.CONST` initialized declarations still accepted;
+- malformed `.CONST` declarations still rejected;
+- unsupported initializer forms still rejected.
+
+Add source-run tests for:
+
+- reading `.CONST ?` returns deterministic bytes;
+- reading `.CONST ?` preserves uninitialized-origin metadata;
+- direct write to `.CONST ?` remains rejected;
+- computed write to `.CONST ?` remains rejected through mandatory runtime permission checks;
+- failed `.CONST` write does not mutate registers, flags, memory, Program Console output, or memory-change rows.
+
+### Acceptance criteria
+
+- `.CONST ?` and `.CONST DUP(?)` are accepted for compatibility.
+- `.CONST` remains read-only.
+- Uninitialized-origin metadata is preserved.
+- Existing initialized `.CONST` behavior remains unchanged.
+- Existing `.DATA?` behavior remains unchanged.
+- No new configurable warning/error policy is added in this phase.
+
+### Non-goals
+
+- No new browser UI controls.
+- No `const-uninitialized-storage` policy yet.
+- No diagnostic wording changes except existing diagnostics that must adapt to acceptance.
+- No weakening of `.CONST` write protection.
+- No executable QWORD/SQWORD memory operations.
+- No linker or PE behavior.
+
+---
+
+## 61J. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+
+### Goal
+
+Add configurable teaching diagnostics for `.CONST` uninitialized storage accepted by Phase 57I.
+
+### Behavior category
+
+Diagnostic policy and rendered messages.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+```
+
+because this phase changes user-visible diagnostics and policy behavior for accepted source.
+
+### Diagnostic family
+
+Add or activate diagnostic family:
+
+```text
+const-uninitialized-storage
+```
+
+Default policy:
+
+```text
+warn
+```
+
+Policy behavior:
+
+- `off`: accept `.CONST ?` and `.CONST DUP(?)` silently, while preserving uninitialized-origin metadata.
+- `warn`: emit a non-fatal `simulator-warning` and continue when no other fatal diagnostic exists.
+- `error`: emit an assembly error and refuse execution.
+
+### Warning message requirements
+
+The warning must:
+
+- identify the `.CONST` declaration;
+- explain that the simulator accepts the declaration for compatibility;
+- explain that bytes are initialized deterministically by the simulator;
+- explain that uninitialized-origin metadata is preserved;
+- avoid claiming that real programs should rely on the value;
+- appear in Simulator Messages, not Program Console.
+
+Example warning:
+
+```text
+.CONST declaration `x` reserves uninitialized read-only storage. The simulator accepts this for compatibility, initializes the bytes deterministically, and preserves uninitialized-origin metadata.
+```
+
+Exact wording may differ, but it must be stable, actionable, and covered by exact rendered Simulator Messages tests.
+
+### Interaction with uninitialized-read diagnostics
+
+Reading `.CONST ?` storage may also trigger `uninitialized-read` according to the active uninitialized-read policy.
+
+Example:
+
+```asm
+.CONST
+x DWORD ?
+
+.code
+main PROC
+    mov eax, x
+main ENDP
+END main
+```
+
+Expected default behavior when both policies warn:
+
+- `const-uninitialized-storage` warning is emitted for the declaration;
+- `uninitialized-read` warning is emitted for the read;
+- execution continues if no fatal diagnostic occurs;
+- `EAX` receives the deterministic bytes read;
+- `.CONST` remains read-only.
+
+If `const-uninitialized-storage` is off, only the declaration warning is suppressed.
+
+If `uninitialized-read` is off, only the read warning is suppressed.
+
+### Required tests
+
+Add source-run tests for:
+
+- default declaration warning;
+- policy `off` suppresses declaration warning only;
+- policy `error` rejects declaration and prevents execution;
+- uninitialized-read warning still applies to reads when enabled;
+- uninitialized-read policy off does not suppress declaration warning;
+- direct write to `.CONST ?` still uses existing `.CONST` protection diagnostics;
+- computed write to `.CONST ?` still uses runtime permission diagnostics.
+
+Add rendered Simulator Messages tests for:
+
+- default declaration warning;
+- policy `error` diagnostic;
+- read warning interaction;
+- `.CONST` write protection still uses existing permission/read-only wording.
+
+### Acceptance criteria
+
+- `.CONST ?` diagnostics are configurable.
+- Default behavior warns and continues.
+- Policy `error` blocks execution.
+- `.CONST` write protection remains mandatory.
+- Uninitialized-read policy remains separate.
+- Program Console remains unchanged.
+
+### Non-goals
+
+- No new `.CONST` acceptance syntax beyond Phase 57I.
+- No weakening of `.CONST` protection.
+- No browser UI controls.
+- No linker or PE behavior.
+
+---
+
+---
+
+## 61K. Phase 57K - .CODE and MASM Segment Symbol Access Policy
+
+### Goal
+
+Audit current `.code` memory access behavior and lock the v1 policy that `.code` is not user-readable or user-writable simulated program memory.
+
+This phase also defines how MASM/object/linker segment and group symbols such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` are classified.
+
+This is an audit, policy, documentation, and test-characterization phase. It should avoid behavior changes unless required to expose current behavior safely in tests.
+
+### Behavior category
+
+Memory-policy audit and MASM compatibility classification.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57K - .CODE and MASM Segment Symbol Access Policy
+```
+
+Runtime/source-run MASM behavior phase remains the latest prior runtime/source-run behavior phase unless this phase intentionally changes source-run memory-access behavior or diagnostics. The milestone report must state which case applies.
+
+### Required `.code` policy decision
+
+The v1 policy is:
+
+```text
+unsupported-code-memory-access
+```
+
+This is not optional.
+
+Do not keep or introduce these alternative v1 policies:
+
+```text
+unsupported-readable-code-image
+deterministic-simulator-code-image
+```
+
+Reason:
+
+- `.code` is not populated with real x86 instruction bytes;
+- returning deterministic zero bytes from `.code` is misleading;
+- returning simulator pseudo-bytes would imply a code-image contract the project does not currently have;
+- implementing real code bytes would move toward assembler/PE/linker behavior, which is outside current scope;
+- the simulator executes internal IR, not native x86 bytecode.
+
+### Required `.code` access policy
+
+All simulated source-level memory accesses whose final byte range overlaps `.code` are unsupported.
+
+The policy applies to:
+
+- reads wholly inside `.code`;
+- writes wholly inside `.code`;
+- reads partially overlapping `.code`;
+- writes partially overlapping `.code`;
+- direct absolute-address forms, if supported;
+- register-indirect forms;
+- displacement forms;
+- symbol-derived forms, if any future feature can produce them;
+- computed addresses that happen to land in `.code`.
+
+This policy applies regardless of whether the access would otherwise pass ordinary region validation.
+
+The target diagnostic family is:
+
+```text
+unsupported-code-memory-access
+```
+
+The implementation may split this into read/write-specific codes if the distinction is documented and tested:
+
+```text
+unsupported-code-memory-read
+unsupported-code-memory-write
+```
+
+The milestone report must state the chosen code names.
+
+### Diagnostic precedence policy
+
+Mandatory lower-level diagnostics still take precedence when the simulator cannot compute or classify a final `.code` overlap safely.
+
+Precedence examples:
+
+1. Malformed memory syntax remains a parser diagnostic.
+2. Ambiguous memory width remains an ambiguous-width diagnostic.
+3. Unsupported executable memory width remains an unsupported-width diagnostic.
+4. Address arithmetic overflow remains an address/range diagnostic.
+5. Address outside all VM regions remains an invalid-region diagnostic.
+6. `.CONST` write protection remains a `.CONST` permission/read-only diagnostic.
+7. If a final valid computed range overlaps `.code`, emit the selected unsupported `.code` memory-access diagnostic.
+
+Do not reclassify `.CONST` permission failures as `.code` access.
+
+Do not reclassify invalid-region accesses as `.code` access.
+
+### Required current-behavior audit
+
+Audit and document current `.code` behavior:
+
+- `.code` region base address, if one exists;
+- `.code` region capacity, if one exists;
+- `.code` region permissions;
+- whether reads are currently allowed;
+- whether writes are currently rejected;
+- what byte values are currently returned by reads;
+- why zero bytes are returned, if current reads return zero;
+- whether returned bytes are backing storage, section image, capacity slack, deterministic default memory, or another artifact;
+- source forms that can currently access `.code` addresses.
+
+The milestone report must state whether current behavior already denies `.code` writes, and whether this denial is from ordinary permissions or a specific `.code` access policy.
+
+### MASM segment and group symbol policy
+
+Classify these names as recognized unsupported MASM/object/linker concepts when used as addressable symbols or segment definitions:
+
+```text
+_TEXT
+_DATA
+_BSS
+CONST
+STACK
+DGROUP
+FLAT
+```
+
+The exact list may include additional conventional segment/group names if the implementation already recognizes them, but do not add broad segment modeling.
+
+Required classification:
+
+```text
+unsupported-segment-symbol
+```
+
+or a documented equivalent.
+
+These names must not become aliases for simulator internal regions.
+
+They must not be accepted as ways to access:
+
+- `.code`;
+- `.data`;
+- `.DATA?`;
+- `.CONST`;
+- stack;
+- heap;
+- any internal VM region.
+
+They must not imply:
+
+- COFF section symbols;
+- OMF segment behavior;
+- linker groups;
+- PE section layout;
+- relocation records;
+- loader behavior.
+
+Examples that must be classified as unsupported when recognized:
+
+```asm
+mov eax, OFFSET _TEXT
+mov eax, OFFSET _DATA
+mov eax, OFFSET _BSS
+mov eax, OFFSET CONST
+mov eax, OFFSET STACK
+mov eax, OFFSET DGROUP
+mov eax, OFFSET FLAT
+
+mov eax, DWORD PTR [_TEXT]
+mov eax, DWORD PTR [_DATA]
+
+_TEXT SEGMENT
+_TEXT ENDS
+_DATA SEGMENT
+_DATA ENDS
+```
+
+Ordinary user data labels remain supported and must not be confused with segment symbols:
+
+```asm
+.data
+value DWORD 1
+
+.code
+main PROC
+    mov eax, OFFSET value
+main ENDP
+END main
+```
+
+### CASEMAP policy for segment/group names
+
+Segment/group-symbol diagnostics must respect the active user-symbol lookup policy when the source form treats the token as a symbol.
+
+Default and `OPTION CASEMAP:ALL` behavior:
+
+- `_TEXT`, `_text`, and `_Text` should be recognized as the same unsupported segment symbol.
+
+`OPTION CASEMAP:NONE` behavior:
+
+- exact unsupported segment-symbol spellings such as `_TEXT` should still be diagnosed;
+- a different-case user-defined symbol may be allowed only if the current symbol policy permits it and it does not collide with a reserved exact spelling.
+
+The milestone report must state the implemented matching behavior.
+
+### Documentation requirements
+
+Update documentation to state:
+
+- `.code` memory reads are unsupported;
+- `.code` memory writes are unsupported;
+- `.code` is not a readable PE `.text` image;
+- the simulator executes internal IR;
+- the simulator does not expose `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, or `FLAT` as addressable linker symbols;
+- users should use declared data labels instead of MASM segment symbols for data addresses.
+
+### Required tests/checks
+
+Add audit or characterization tests where practical:
+
+- current `.code` read behavior is identified;
+- current `.code` write behavior is identified;
+- documentation names `unsupported-code-memory-access`;
+- documentation does not mention `deterministic-simulator-code-image` as a v1 option;
+- documentation does not claim x86 opcode bytes are emitted;
+- `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` are listed as unsupported segment/group symbols.
+
+### Acceptance criteria
+
+- The v1 policy is locked to `unsupported-code-memory-access`.
+- The optional deterministic `.code` image policy is removed.
+- MASM segment/group symbols are classified as unsupported addressable symbols.
+- Phase 57L has a precise `.code` runtime diagnostic target.
+- Phase 57M has a precise segment/group symbol diagnostic target.
+- No real x86 encoding is implemented.
+- No PE, COFF, OMF, linker, or loader behavior is implemented.
+
+### Non-goals
+
+- No `.code` access diagnostic implementation unless needed for safe characterization.
+- No segment/group symbol diagnostic implementation unless needed for safe characterization.
+- No x86 opcode emitter.
+- No disassembler.
+- No PE `.text` layout generation.
+- No object files.
+- No linker.
+- No relocation records.
+- No Windows loader behavior.
+- No host filesystem behavior.
+- No branch/control-flow implementation.
+- No segment-register behavior.
+- No segment override behavior.
+- No `ASSUME` implementation.
+
+---
+
+## 61L. Phase 57L - .CODE Memory Access Diagnostics
+
+### Goal
+
+Implement the unsupported `.code` memory-access policy defined by Phase 57K - .CODE and MASM Segment Symbol Access Policy.
+
+This phase denies both reads and writes whose final byte range overlaps `.code`.
+
+This phase does not implement MASM segment/group symbol diagnostics. Those belong to Phase 57M - MASM Segment and Group Symbol Diagnostics.
+
+### Behavior category
+
+Memory diagnostics and source-run behavior.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57L - .CODE Memory Access Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57L - .CODE Memory Access Diagnostics
+```
+
+because this phase changes source-run behavior for `.code` memory accesses.
+
+### Diagnostic codes
+
+Preferred code for any source-level memory access whose final range overlaps `.code`:
+
+```text
+unsupported-code-memory-access
+```
+
+Acceptable split codes, if implemented consistently:
+
+```text
+unsupported-code-memory-read
+unsupported-code-memory-write
+```
+
+The milestone report must list the actual diagnostic codes used.
+
+### Required `.code` read behavior
+
+A source-level memory read whose final byte range overlaps `.code` must fail before consuming a value.
+
+This includes:
+
+- read wholly inside `.code`;
+- read whose first byte is outside `.code` but later bytes overlap `.code`;
+- read whose first byte is inside `.code` and later bytes leave `.code`;
+- direct absolute address read, if absolute address reads are supported;
+- register-indirect read;
+- displacement read;
+- symbol-derived read, if any source form can produce one.
+
+Example shapes:
+
+```asm
+mov eax, DWORD PTR [ebx]      ; if EBX points into .code
+mov ax, WORD PTR [ebx + 1]    ; if final range overlaps .code
+mov al, BYTE PTR [ebx]        ; if EBX points into .code
+```
+
+The diagnostic must explain:
+
+- `.code` memory bytes are not exposed;
+- the simulator executes internal IR;
+- real PE `.text` bytes and x86 opcodes are not modeled;
+- the access stopped before reading a value.
+
+### Required `.code` write behavior
+
+A source-level memory write whose final byte range overlaps `.code` must fail before committing memory mutation.
+
+This includes:
+
+- write wholly inside `.code`;
+- write whose first byte is outside `.code` but later bytes overlap `.code`;
+- write whose first byte is inside `.code` and later bytes leave `.code`;
+- direct absolute address write, if absolute address writes are supported;
+- register-indirect write;
+- displacement write;
+- symbol-derived write, if any source form can produce one.
+
+Example shapes:
+
+```asm
+mov DWORD PTR [ebx], 1        ; if EBX points into .code
+inc DWORD PTR [ebx]           ; if EBX points into .code
+add BYTE PTR [ebx], 1         ; if EBX points into .code
+```
+
+The diagnostic must explain:
+
+- `.code` is not writable simulated program memory;
+- the simulator does not expose `.code` as a mutable section image;
+- the write stopped before memory mutation.
+
+### No-partial-mutation behavior
+
+For fatal `.code` memory-access diagnostics:
+
+- preserve all registers;
+- preserve modeled flags;
+- preserve flag-validity metadata;
+- preserve memory;
+- preserve Program Console output;
+- create no successful memory-change row;
+- do not emit `execution-complete`;
+- append only the relevant Simulator Messages diagnostic.
+
+For read-modify-write instructions such as `inc DWORD PTR [ebx]`:
+
+- do not perform the read;
+- do not perform the write;
+- do not update flags;
+- do not create a memory-change row.
+
+### Relationship to planned-access validation
+
+`.code` memory-access rejection is mandatory simulator behavior, not an optional teaching diagnostic.
+
+It must not be controlled by:
+
+- section-capacity policy;
+- section-image policy;
+- declared-object policy;
+- uninitialized-read policy;
+- compatibility-notice policy;
+- startup-state policy.
+
+If implementation architecture uses planned-access validation to detect `.code` overlap before mutation, that is acceptable. The resulting diagnostic remains mandatory and must not be downgraded to a warning by optional policies.
+
+### Diagnostic precedence
+
+Parser/source-shape diagnostics still happen before runtime memory classification:
+
+- malformed memory operands remain parser diagnostics;
+- ambiguous memory width still reports `ambiguous-memory-width`;
+- unsupported executable QWORD/SQWORD memory width remains the existing unsupported-width diagnostic;
+- unsupported advanced addressing remains the existing unsupported-addressing diagnostic.
+
+Mandatory Level 1 runtime memory failures must preserve this order:
+
+1. Address arithmetic overflow remains an address/range diagnostic.
+2. A final byte range that is plainly outside all VM regions and does not intersect a known protected region remains the existing invalid-address, invalid-region, or range diagnostic.
+3. A cross-region access that intersects a known protected region reports `region-boundary-crossing`.
+4. A wholly-contained `.CONST` write reports the existing `.CONST` permission/read-only diagnostic.
+5. A wholly-contained `.CONST` read remains allowed unless another mandatory or enabled strict validation rejects it.
+6. A wholly-contained `.code` read or write reports the Phase 57L `.code` memory-access diagnostic.
+7. A cross-region access that intersects `.code`, after `.code` is treated as a protected memory-access region by Phase 57L, reports `region-boundary-crossing` using runtime `.code` layout metadata.
+
+Do not report `.code` access for an address that cannot be proven to overlap `.code`.
+
+Do not suppress `.CONST` write-protection diagnostics by reporting `.code` access instead.
+
+The protected-region start address in any `region-boundary-crossing` rendered message must come from active runtime layout metadata. It must not be hardcoded to the fixed educational layout.
+
+This phase must not weaken or reword the Phase 57-CORR1 `.CONST` distinction:
+
+```text
+Wholly-contained write overlapping `.CONST`:
+  permission-denied
+
+Cross-region read or write whose final range intersects `.CONST`:
+  region-boundary-crossing
+
+Wholly-contained read from `.CONST`:
+  allowed, unless another mandatory or enabled strict validation rejects it
+
+Cross-region access that does not intersect `.CONST` or another known protected region:
+  ordinary Level 1 region/range diagnostic
+```
+
+### Required source-run `.code` access tests
+
+Add source-run tests for `.code` access. Use whatever setup the implementation provides to place a register at a known `.code` address.
+
+Required cases:
+
+- BYTE read wholly inside `.code`;
+- WORD read wholly inside `.code`;
+- DWORD read wholly inside `.code`;
+- read partially overlapping `.code` from before the region;
+- read partially overlapping `.code` from inside the region;
+- BYTE write wholly inside `.code`;
+- WORD write wholly inside `.code`;
+- DWORD write wholly inside `.code`;
+- write partially overlapping `.code` from before the region;
+- write partially overlapping `.code` from inside the region;
+- read-modify-write instruction targeting `.code`, if any implemented instruction can do so.
+
+Each fatal `.code` access test must verify:
+
+- no register mutation;
+- no flag mutation;
+- no flag-validity metadata mutation;
+- no memory mutation;
+- no Program Console output;
+- no successful memory-change row;
+- no `execution-complete`.
+
+### Required precedence tests
+
+Add tests proving:
+
+- invalid address still reports invalid address/range when no known protected region is intersected;
+- invalid region still reports invalid region when no known protected region is intersected;
+- ambiguous width still reports ambiguous memory width;
+- unsupported QWORD/SQWORD executable memory width remains unsupported width;
+- unsupported advanced addressing remains unsupported addressing;
+- wholly-contained `.CONST` write remains `.CONST` permission/read-only diagnostic;
+- wholly-contained `.CONST` read remains allowed unless another mandatory or enabled strict validation rejects it;
+- cross-region `.CONST` read overlap reports `region-boundary-crossing`;
+- cross-region `.CONST` write overlap reports `region-boundary-crossing`;
+- wholly-contained `.code` read reports the Phase 57L `.code` access diagnostic;
+- wholly-contained `.code` write reports the Phase 57L `.code` access diagnostic;
+- cross-region `.code` read overlap reports `region-boundary-crossing`;
+- cross-region `.code` write overlap reports `region-boundary-crossing`.
+
+The Phase 57L milestone report must explicitly state that `.CONST` `region-boundary-crossing` regression coverage was preserved while adding `.code` memory-access diagnostics.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- `.code` read diagnostic;
+- `.code` write diagnostic;
+- partial-overlap `.code` access diagnostic.
+
+Rendered messages must include source line, column, byte offset, and span length where available.
+
+### Documentation updates
+
+Update supported syntax and troubleshooting documentation to say:
+
+- `.code` memory reads are unsupported;
+- `.code` memory writes are unsupported;
+- `.code` is not exposed as a readable or writable byte image;
+- the simulator executes internal IR;
+- real x86 opcode bytes are not emitted.
+
+### Acceptance criteria
+
+- All `.code` reads are denied.
+- All `.code` writes are denied.
+- Partial overlaps are denied.
+- No partial mutation occurs after fatal `.code` access diagnostics.
+- `.CONST` write protection precedence is preserved.
+- Documentation no longer describes a deterministic `.code` image option.
+- No x86 opcode emission, PE layout, linker behavior, or segment modeling is implemented.
+
+### Non-goals
+
+- No MASM segment/group symbol diagnostics; Phase 57M owns those.
+- No `.code` readable byte image.
+- No deterministic simulator code-image bytes.
+- No x86 opcode emitter.
+- No disassembler.
+- No PE `.text` layout.
+- No object files.
+- No linker.
+- No relocation records.
+- No Windows loader behavior.
+- No host filesystem behavior.
+- No segment registers.
+- No segment override behavior.
+- No `ASSUME`.
+- No branch/control-flow implementation.
+
+---
+
+## 61M. Phase 57M - MASM Segment and Group Symbol Diagnostics
+
+### Goal
+
+Add targeted diagnostics for MASM/object/linker segment and group names when they are used as addressable symbols or segment definitions.
+
+This phase implements the segment/group symbol classification defined by Phase 57K - .CODE and MASM Segment Symbol Access Policy.
+
+This phase does not implement `.code` memory access diagnostics. Those belong to Phase 57L - .CODE Memory Access Diagnostics.
+
+### Behavior category
+
+Parser diagnostics, symbol classification, and MASM compatibility classification.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57M - MASM Segment and Group Symbol Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57M - MASM Segment and Group Symbol Diagnostics
+```
+
+because this phase changes source diagnostics for recognized MASM/object/linker symbol forms.
+
+### Diagnostic code
+
+Preferred code:
+
+```text
+unsupported-segment-symbol
+```
+
+If the implementation uses a more specific taxonomy, document the mapping in the milestone report. Examples:
+
+```text
+unsupported-code-segment-symbol
+unsupported-data-segment-symbol
+unsupported-group-symbol
+```
+
+Do not create multiple overlapping codes unless the distinction is documented and tested.
+
+### Recognized unsupported names
+
+Diagnose these names as unsupported segment/group symbols when they are used as addressable symbols or segment definitions:
+
+```text
+_TEXT
+_DATA
+_BSS
+CONST
+STACK
+DGROUP
+FLAT
+```
+
+The implementation may recognize additional conventional segment/group names if doing so is small and documented. Do not implement broad segment modeling.
+
+### Required rejected source forms
+
+Diagnose these forms:
+
+```asm
+mov eax, OFFSET _TEXT
+mov eax, OFFSET _DATA
+mov eax, OFFSET _BSS
+mov eax, OFFSET CONST
+mov eax, OFFSET STACK
+mov eax, OFFSET DGROUP
+mov eax, OFFSET FLAT
+
+mov eax, DWORD PTR [_TEXT]
+mov eax, DWORD PTR [_DATA]
+mov eax, DWORD PTR [_BSS]
+
+_TEXT SEGMENT
+_TEXT ENDS
+_DATA SEGMENT
+_DATA ENDS
+CONST SEGMENT
+CONST ENDS
+```
+
+Expected behavior:
+
+- emit `unsupported-segment-symbol` or a documented equivalent;
+- do not create a user symbol for the segment/group name;
+- do not resolve the name to an internal VM region;
+- do not expose `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any internal region address through these names;
+- source with this diagnostic does not execute.
+
+### Ordinary data labels remain supported
+
+This phase must not break ordinary data labels:
+
+```asm
+.data
+value DWORD 1
+
+.code
+main PROC
+    mov eax, OFFSET value
+    mov ebx, value
+main ENDP
+END main
+```
+
+The expected behavior for ordinary declared symbols remains unchanged.
+
+### CASEMAP policy and user-symbol collision rules for segment/group names
+
+Segment/group-symbol diagnostics must respect the active user-symbol lookup policy when the source form treats the token as a symbol. They must also avoid accidentally exposing internal VM regions or MASM object/linker concepts as ordinary user symbols.
+
+Recognized unsupported segment/group spellings include, at minimum:
+
+```text
+_TEXT
+_DATA
+_BSS
+CONST
+STACK
+DGROUP
+FLAT
+```
+
+The implementation may recognize additional conventional segment/group names, but it must not add broad segment modeling.
+
+Default and `OPTION CASEMAP:ALL` behavior:
+
+- `_TEXT`, `_text`, and `_Text` are the same spelling for lookup and diagnostic purposes.
+- `_DATA`, `_data`, and `_Data` are the same spelling for lookup and diagnostic purposes.
+- `_BSS`, `_bss`, and `_Bss` are the same spelling for lookup and diagnostic purposes.
+- `CONST`, `const`, and `Const` are the same spelling for lookup and diagnostic purposes.
+- `STACK`, `stack`, and `Stack` are the same spelling for lookup and diagnostic purposes.
+- `DGROUP`, `dgroup`, and `DGroup` are the same spelling for lookup and diagnostic purposes.
+- `FLAT`, `flat`, and `Flat` are the same spelling for lookup and diagnostic purposes.
+- Exact or case-variant use of a recognized segment/group name as an addressable symbol must report `unsupported-segment-symbol` or a documented equivalent.
+- A user-defined data label, code label, procedure name, or alias whose spelling collides with a recognized segment/group name under `CASEMAP:ALL` must not silently replace the diagnostic-only segment/group classification.
+
+`OPTION CASEMAP:NONE` behavior:
+
+- Exact unsupported segment/group spellings such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` must still be diagnosed when used as segment/group names or addressable linker-style symbols.
+- A different-case spelling may be accepted as an ordinary user-defined symbol only if the implementation deliberately permits it, the spelling does not exactly match a recognized segment/group name, and the milestone report documents the rule.
+- If the implementation chooses to reject different-case spellings as reserved-like names even under `CASEMAP:NONE`, that is allowed only if the behavior is documented and covered by tests.
+- Do not leave different-case behavior implicit.
+
+Definition-time behavior:
+
+- The parser must not create ordinary user symbols for exact recognized segment/group declarations such as:
+
+```asm
+_TEXT SEGMENT
+_TEXT ENDS
+_DATA SEGMENT
+_DATA ENDS
+_BSS SEGMENT
+_BSS ENDS
+CONST SEGMENT
+CONST ENDS
+STACK SEGMENT
+STACK ENDS
+DGROUP GROUP _DATA, _BSS
+```
+
+- These forms must report `unsupported-segment-symbol` or a documented equivalent.
+- These forms must not create internal `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, linker group, PE section, COFF section, OMF segment, relocation, or loader metadata.
+
+Reference-time behavior:
+
+- References such as the following must report `unsupported-segment-symbol` or a documented equivalent when the name is recognized according to the active policy:
+
+```asm
+mov eax, OFFSET _TEXT
+mov eax, OFFSET _DATA
+mov eax, OFFSET _BSS
+mov eax, OFFSET CONST
+mov eax, OFFSET STACK
+mov eax, OFFSET DGROUP
+mov eax, OFFSET FLAT
+
+mov eax, DWORD PTR [_TEXT]
+mov eax, DWORD PTR [_DATA]
+mov eax, DWORD PTR [_BSS]
+mov eax, DWORD PTR [CONST]
+```
+
+- These names must not resolve to internal simulator layout regions.
+- These names must not expose `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any other internal VM region address.
+- These names must not become shorthand for `OFFSET` of a simulator section.
+
+Ordinary data labels remain supported when they do not collide with recognized segment/group names under the active policy:
+
+```asm
+.data
+value DWORD 1
+
+.code
+main PROC
+    mov eax, OFFSET value
+    mov ebx, value
+main ENDP
+END main
+```
+
+The milestone report must explicitly state:
+
+- whether exact recognized names are rejected at definition time;
+- whether exact recognized names are rejected at reference time;
+- how `CASEMAP:ALL` handles case variants;
+- how `CASEMAP:NONE` handles different-case user-defined spellings;
+- which diagnostic code or diagnostic-code family was used;
+- whether any ordinary user-symbol spelling was intentionally permitted despite resembling a segment/group name.
+
+Required tests:
+
+- exact recognized names at definition time;
+- exact recognized names at reference time;
+- case variants under default `CASEMAP:ALL`;
+- case variants under explicit `OPTION CASEMAP:ALL`;
+- exact recognized names under `OPTION CASEMAP:NONE`;
+- different-case spellings under `OPTION CASEMAP:NONE`, with the expected behavior matching the documented implementation choice;
+- ordinary non-colliding data labels proving normal symbol lookup still works.
+
+### Diagnostic wording
+
+Example for `_TEXT`:
+
+```text
+`_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.
+```
+
+Example for `_DATA`:
+
+```text
+`_DATA` is a MASM/object data-segment symbol. Use declared data labels instead; MASM32 Educational Mode does not expose linker segment symbols.
+```
+
+Example for `DGROUP`:
+
+```text
+`DGROUP` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.
+```
+
+Exact wording may differ, but rendered Simulator Messages tests must cover the final wording.
+
+### Required parser tests
+
+Add parser tests for:
+
+- `mov eax, OFFSET _TEXT`;
+- `mov eax, OFFSET _DATA`;
+- `mov eax, OFFSET _BSS`;
+- `mov eax, OFFSET CONST`;
+- `mov eax, OFFSET STACK`;
+- `mov eax, OFFSET DGROUP`;
+- `mov eax, OFFSET FLAT`;
+- `mov eax, DWORD PTR [_TEXT]`;
+- `mov eax, DWORD PTR [_DATA]`;
+- `_TEXT SEGMENT`;
+- `_TEXT ENDS`;
+- `_DATA SEGMENT`;
+- `_DATA ENDS`.
+
+### Required CASEMAP tests
+
+Add tests for:
+
+- default/CASEMAP:ALL recognizes `_text` as `_TEXT`;
+- default/CASEMAP:ALL recognizes `_data` as `_DATA`;
+- default/CASEMAP:ALL recognizes `dgroup` as `DGROUP`;
+- `OPTION CASEMAP:NONE` exact spelling `_TEXT` is diagnosed;
+- `OPTION CASEMAP:NONE` different-case user symbol behavior is documented and tested;
+- ordinary declared data label still works.
+
+### Required source-run tests
+
+Add source-run tests proving:
+
+- source with unsupported segment symbol refuses execution;
+- source with segment definition form refuses execution;
+- no Program Console output is produced;
+- no `execution-complete` is emitted after assembly diagnostics;
+- ordinary declared data labels remain executable.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- `_TEXT` unsupported segment symbol;
+- `_DATA` unsupported segment symbol;
+- `_BSS` unsupported segment symbol;
+- `CONST` unsupported segment symbol;
+- `DGROUP` unsupported group symbol;
+- `_TEXT SEGMENT` unsupported segment definition.
+
+Rendered messages must include source line, column, byte offset, and span length where available.
+
+### Documentation updates
+
+Update supported syntax and troubleshooting documentation to say:
+
+- `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` are not exposed as addressable symbols;
+- MASM segment definitions such as `_TEXT SEGMENT` are unsupported;
+- users should use declared data labels for data addresses;
+- `.code` is not exposed through `_TEXT`;
+- `.data` is not exposed through `_DATA`;
+- `.DATA?` is not exposed through `_BSS`;
+- linker groups such as `DGROUP` are not modeled.
+
+### Acceptance criteria
+
+- MASM segment/group symbols are rejected with targeted diagnostics.
+- Segment definition forms are rejected with targeted diagnostics.
+- Ordinary data labels remain usable.
+- CASEMAP behavior is tested.
+- Source with these diagnostics refuses execution.
+- No internal VM region is exposed through a segment/group symbol.
+- No segment modeling is implemented.
+
+### Non-goals
+
+- No `.code` memory access diagnostics; Phase 57L owns those.
+- No segment registers.
+- No segment overrides.
+- No `ASSUME`.
+- No OMF/COFF segment modeling.
+- No linker groups.
+- No PE section layout.
+- No relocation records.
+- No object files.
+- No linker behavior.
+- No host filesystem behavior.
+
+## 61N. Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
+
+### Goal
+
+Audit, verify, repair if necessary, and harden the existing zero-operand `nop` instruction behavior.
+
+Phase 20 - Exchange, Negation, and NOP already specified zero-operand `nop` as an implemented instruction. However, this phase exists because `nop` behavior has been observed to fail in some paths, or may not be covered strongly enough by parser, IR, executor, source-run, browser, protocol, documentation, and rendered-message tests.
+
+This phase must not assume either of these extremes:
+
+- that `nop` is completely absent and should be reimplemented from scratch; or
+- that `nop` is fully correct merely because Phase 20 listed it.
+
+Instead, the assistant must inspect the current repository implementation and tests, determine which paths already work, preserve working behavior, repair broken or incomplete paths, and add regression coverage that prevents future `nop` regressions.
+
+This is an audit/repair/hardening phase, not a blind new implementation phase, and it must not be used as a reason to skip zero-operand `nop` verification.
+
+Explicit-width memory-looking NOP encoding-operand forms remain deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.
+
+### Behavior category
+
+Corrective runtime/source instruction audit and hardening.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
+```
+
+Runtime/source-run MASM behavior phase handling depends on the audit result:
+
+- If zero-operand `nop` already parses, lowers, executes, appears in source-run/browser-visible behavior, and has correct no-op semantics, then this phase is audit/test/documentation hardening. In that case, do not advance runtime/source-run MASM behavior metadata merely because Phase 57N was completed.
+- If zero-operand `nop` is absent, unreachable, rejected, incorrectly lowered, incorrectly executed, missing from source-run/browser-visible behavior, or incorrectly documented as unsupported, then this phase is a corrective runtime-visible behavior phase. In that case, runtime/source-run MASM behavior metadata may advance to Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening, because the phase actually made a source instruction usable or correct.
+- If only invalid-form diagnostic wording changes, the milestone report must state that the phase changed user-facing diagnostics but did not add new accepted MASM syntax.
+
+The milestone report must state which case occurred and must list the evidence used, such as parser tests, executor tests, source-run tests, rendered-message tests, or manual browser smoke testing.
+
+### Required audit checklist
+
+Before changing behavior, inspect and report whether the current repository has:
+
+- lexer handling that permits `nop` to reach parser instruction recognition;
+- parser recognition for zero-operand `nop`;
+- rejection of operand-bearing `nop` forms before Phase 57O;
+- an IR opcode or equivalent executor representation for `nop`;
+- opcode-name/debug-name handling for `nop`, if the current IR layer has opcode-name helpers;
+- source-location metadata for `nop`;
+- executor handling for `nop`;
+- source-run JSON behavior for programs containing `nop`;
+- browser/worker behavior for programs containing `nop`;
+- supported-syntax documentation for zero-operand `nop`;
+- parser tests;
+- executor or source-run tests;
+- rendered Simulator Messages tests for rejected operand forms;
+- instruction-limit accounting coverage.
+
+Do not replace existing working code merely to satisfy a preferred internal shape. Small repair is preferred over rewrite.
+
+### Accepted syntax to verify or repair
+
+Zero-operand `nop` must be accepted case-insensitively:
+
+```asm
+nop
+NOP
+NoP
+```
+
+### Rejected syntax before Phase 57O
+
+These operand forms must remain rejected in Phase 57N:
+
+```asm
+nop eax
+nop ax
+nop al
+nop 1
+nop eax, ebx
+nop [eax]
+nop BYTE PTR [eax]
+nop WORD PTR [eax]
+nop DWORD PTR [eax]
+nop QWORD PTR [eax]
+nop SQWORD PTR [eax]
+```
+
+Expected behavior:
+
+- register operands are invalid;
+- immediate operands are invalid;
+- two-operand forms are invalid;
+- memory-looking forms are intentionally deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms;
+- QWORD/SQWORD forms remain unavailable in MASM32 Educational Mode and must not imply executable 64-bit memory behavior.
+
+Rejected-form diagnostics must use stable wording. They must not say `not supported in this phase`, `unsupported by the current milestone`, `not implemented in this milestone`, or similar milestone-relative wording.
+
+Recommended diagnostic wording:
+
+```text
+NOP operand form is not accepted. Zero-operand `nop` is supported; explicit BYTE/WORD/DWORD PTR NOP encoding-operand forms are deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.
+```
+
+### Required runtime semantics
+
+Accepted zero-operand `nop` must have these semantics:
+
+- no register mutation;
+- no modeled flag mutation;
+- no flag-validity metadata mutation;
+- no memory read;
+- no memory write;
+- no planned memory access;
+- no Program Console output;
+- no Simulator Messages warning or notice merely because `nop` executed;
+- no memory-change row;
+- no change to uninitialized-origin metadata;
+- execution continues to the next IR instruction;
+- the instruction counts as one executed IR instruction for instruction-limit and future debugger/step accounting.
+
+`nop` must preserve deterministic behavior.
+
+### Source metadata
+
+The IR instruction or equivalent execution representation for `nop` must preserve:
+
+- mnemonic spelling or canonical mnemonic, according to current IR conventions;
+- source line;
+- source column;
+- byte offset;
+- span length;
+- original source text where current IR metadata supports it.
+
+If the current IR layer does not preserve one of these fields for any instruction, do not invent a `nop`-only metadata path. Document the existing limitation and preserve consistency with the current IR metadata model.
+
+### Required parser tests
+
+Add or verify parser tests for:
+
+- lowercase `nop`;
+- uppercase `NOP`;
+- mixed-case `NoP`;
+- `nop` inside a normal `.code` / `PROC` / `ENDP` / `END` program;
+- rejected register operand;
+- rejected immediate operand;
+- rejected two-operand form;
+- rejected memory-looking operand, with diagnostic wording that names Phase 57O - Explicit-Width NOP Encoding-Operand Forms as the future owner;
+- rejected QWORD/SQWORD operand forms.
+
+### Required executor/source-run tests
+
+Add or verify source-run or executor tests proving:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    nop
+    inc eax
+main ENDP
+END main
+```
+
+Expected final `EAX = 2`.
+
+Also prove that `nop`:
+
+- preserves all general-purpose registers except normal execution accounting not displayed as architectural state;
+- preserves modeled flags;
+- preserves flag-validity metadata;
+- preserves memory;
+- emits no Program Console output;
+- creates no memory-change rows;
+- emits no warning or notice merely because it executed;
+- counts toward the instruction execution limit.
+
+Include at least one test where `nop` appears:
+
+- before another instruction;
+- after another instruction;
+- between two mutating instructions;
+- as the only executable instruction in a procedure body.
+
+### Required diagnostic and rendered-message tests
+
+Add structured and rendered Simulator Messages tests for invalid forms that produce user-visible diagnostics:
+
+- `nop eax`;
+- `nop 1`;
+- `nop eax, ebx`;
+- `nop DWORD PTR [eax]`.
+
+Rendered-message tests must assert exact wording for at least one representative invalid operand form and must preserve structured source location fields for the `nop` mnemonic or offending operand, according to the project's current diagnostic-span policy.
+
+### Documentation updates
+
+Update supported syntax documentation only if it is stale or incomplete.
+
+Document zero-operand `nop` as supported when the audit confirms or repairs support.
+
+Do not document memory-looking `nop` forms until Phase 57O.
+
+Do not document `nop` as producing opcode `90h`.
+
+Do not document any real x86 opcode sequence.
+
+### Acceptance criteria
+
+- Existing zero-operand `nop` behavior has been audited.
+- Any broken or missing zero-operand `nop` parser, IR, executor, source-run, browser-visible, or documentation path has been repaired.
+- Zero-operand `nop` parses and executes as a true no-op.
+- `nop` counts as one executed instruction.
+- Operand forms are rejected or deferred with stable diagnostics.
+- Exact rendered Simulator Messages tests cover invalid operand forms.
+- Existing diagnostics and memory validation are not weakened.
+- Documentation does not imply `.code` byte-image support or x86 opcode emission.
+- The milestone report states whether this phase merely hardened existing behavior or repaired runtime-visible behavior.
+
+### Non-goals
+
+- No explicit-width NOP encoding-operand forms.
+- No real x86 opcode bytes.
+- No `.code` memory image.
+- No `ALIGN`.
+- No `EVEN`.
+- No raw byte emission into `.code`.
+- No PE `.text` layout.
+- No object files.
+- No linker behavior.
+- No relocation behavior.
+- No disassembly.
+- No timing, cycle, pipeline, or CPU-family behavior.
+
+---
+
+## 61O. Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+
+### Goal
+
+Accept selected explicit-width memory-looking `nop` forms as source-level encoding-operand no-ops.
+
+This phase builds on the zero-operand `nop` behavior specified by Phase 20 - Exchange, Negation, and NOP and audited, repaired if necessary, and hardened by Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening.
+
+The key rule is that accepted `nop` operands in this phase are **encoding operands**, not simulated memory operands.
+
+### Behavior category
+
+Runtime/source instruction behavior.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+```
+
+because this phase adds accepted executable source forms.
+
+### Accepted syntax
+
+Accept selected explicit-width forms where the operand uses the memory-addressing grammar already available in the current repository.
+
+Minimum accepted forms:
+
+```asm
+nop BYTE PTR [eax]
+nop WORD PTR [eax]
+nop DWORD PTR [eax]
+
+nop BYTE PTR [esi]
+nop WORD PTR [esi]
+nop DWORD PTR [esi]
+
+nop BYTE PTR [eax + 4]
+nop WORD PTR [eax + 4]
+nop DWORD PTR [eax + 4]
+```
+
+If the current parser already supports signed displacement spellings, equivalent negative displacement forms may be accepted:
+
+```asm
+nop DWORD PTR [eax - 4]
+```
+
+If the current parser already supports symbol-plus-register memory forms, this phase may accept them only if doing so reuses existing parsing and does not implement new addressing syntax:
+
+```asm
+nop DWORD PTR [array + esi]
+nop DWORD PTR array[esi]
+```
+
+Do not add new addressing syntax merely for `nop`.
+
+### Encoding-operand rule
+
+For accepted `nop` operands, the operand is an encoding operand, not a simulated memory operand.
+
+For accepted `nop` encoding operands:
+
+- parse the operand enough to classify the source form;
+- preserve source location metadata;
+- do not evaluate the final effective address at runtime;
+- do not read memory;
+- do not write memory;
+- do not call checked VM memory read helpers;
+- do not call checked VM memory write helpers;
+- do not perform planned-read validation;
+- do not perform planned-write validation;
+- do not emit uninitialized-read diagnostics;
+- do not emit declared-object diagnostics;
+- do not emit section-capacity diagnostics;
+- do not emit section-image diagnostics;
+- do not emit `.CONST` permission diagnostics;
+- do not create memory-change rows.
+
+This exception applies only to accepted `nop` encoding operands. It must not weaken the standing rule that real memory-capable instructions use checked memory helpers and planned-access validation.
+
+### Rejected syntax
+
+Reject or diagnose:
+
+```asm
+nop eax
+nop ax
+nop al
+nop 1
+nop eax, ebx
+nop BYTE PTR [eax], 1
+nop QWORD PTR [eax]
+nop SQWORD PTR [eax]
+nop [eax]
+```
+
+Expected behavior:
+
+- register operands remain invalid;
+- immediate operands remain invalid;
+- two-operand forms remain invalid;
+- untyped memory-looking operands such as `nop [eax]` are rejected as ambiguous or invalid because this phase only accepts explicit supported width forms;
+- QWORD/SQWORD operands remain unsupported in MASM32 Educational Mode;
+- malformed memory syntax remains a normal parser diagnostic.
+
+### Runtime semantics
+
+Every accepted `nop` form has identical runtime semantics:
+
+- no register mutation;
+- no modeled flag mutation;
+- no flag-validity metadata mutation;
+- no memory mutation;
+- no memory read;
+- no planned memory access;
+- no Program Console output;
+- no Simulator Messages warning;
+- no memory-change row;
+- no change to existing uninitialized-origin metadata;
+- execution continues to the next IR instruction;
+- the instruction counts as one executed IR instruction for execution-limit and future step/debug accounting.
+
+### Required parser tests
+
+Add parser tests for:
+
+- accepted `BYTE PTR [reg32]`;
+- accepted `WORD PTR [reg32]`;
+- accepted `DWORD PTR [reg32]`;
+- accepted displacement form already supported by current memory grammar;
+- rejected register operand;
+- rejected immediate operand;
+- rejected two-operand form;
+- rejected untyped memory-looking form `nop [eax]`;
+- rejected `QWORD PTR`;
+- rejected `SQWORD PTR`.
+
+### Required executor/source-run tests
+
+Add source-run or executor tests proving:
+
+- `nop DWORD PTR [eax]` does not read from `[eax]`;
+- `nop DWORD PTR [eax]` does not fail when `EAX` contains an address that would be invalid for a real memory read;
+- `nop DWORD PTR [eax]` does not emit uninitialized-read diagnostics;
+- `nop DWORD PTR [eax]` does not emit declared-object, section-capacity, section-image, or `.CONST` diagnostics;
+- `nop DWORD PTR [eax]` preserves registers;
+- `nop DWORD PTR [eax]` preserves modeled flags;
+- `nop DWORD PTR [eax]` preserves flag-validity metadata;
+- `nop DWORD PTR [eax]` preserves memory;
+- `nop DWORD PTR [eax]` emits no Program Console output;
+- `nop DWORD PTR [eax]` creates no memory-change rows;
+- `nop DWORD PTR [eax]` counts toward the instruction execution limit.
+
+### Required diagnostic and rendered-message tests
+
+Add structured and rendered Simulator Messages tests for invalid forms:
+
+- `nop eax`;
+- `nop 1`;
+- `nop eax, ebx`;
+- `nop [eax]`;
+- `nop QWORD PTR [eax]` or `nop SQWORD PTR [eax]`.
+
+Diagnostic wording must explain that zero-operand `nop` and supported explicit BYTE/WORD/DWORD PTR encoding-operand forms are accepted, but real x86 byte encoding is not emitted.
+
+Example diagnostic wording:
+
+```text
+NOP with this operand form is not supported. Zero-operand `nop` and explicit BYTE/WORD/DWORD PTR encoding-operand forms are supported as IR-level no-ops; real x86 byte encoding is not emitted.
+```
+
+Exact wording may differ, but rendered tests must cover it.
+
+### Documentation updates
+
+Update supported syntax documentation to list:
+
+```asm
+nop
+nop BYTE PTR [reg32]
+nop WORD PTR [reg32]
+nop DWORD PTR [reg32]
+```
+
+Document that accepted `nop` memory-looking operands are encoding operands only and do not perform memory access.
+
+Do not document `nop` as producing opcode `90h`.
+
+Do not document any real multi-byte x86 opcode sequence.
+
+### Acceptance criteria
+
+- Supported explicit-width source-level `nop` forms parse and execute as no-ops.
+- Accepted `nop` memory-looking operands do not perform memory access.
+- `nop` counts as one executed instruction.
+- Existing diagnostics and memory validation are not weakened for other instructions.
+- Documentation does not imply `.code` byte-image support or x86 opcode emission.
+
+### Non-goals
+
+- No real x86 opcode bytes.
+- No `.code` memory image.
+- No `ALIGN`.
+- No `EVEN`.
+- No `ORG`.
+- No raw byte emission into `.code`.
+- No PE `.text` layout.
+- No object files.
+- No linker behavior.
+- No relocation behavior.
+- No disassembly.
+- No timing, cycle, pipeline, or CPU-family behavior.
+
+---
+
+## 61P. Phase 57P - Host Include Path Diagnostics
+
+### Goal
+
+Replace repeated low-level lexer `unexpected-character` diagnostics for MASM32 host include paths with clear unsupported-feature diagnostics.
+
+This phase handles `INCLUDE` with host/path-like operands only. `INCLUDELIB` is handled separately by Phase 57Q - INCLUDELIB and External Library Diagnostics.
+
+### Behavior category
+
+Lexer/parser diagnostic quality and unsupported-feature classification.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57P - Host Include Path Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57P - Host Include Path Diagnostics
+```
+
+because this phase changes source diagnostics for recognized MASM/source constructs.
+
+### Problem this phase fixes
+
+A common MASM32 source file may contain:
+
+```asm
+include \masm32\include\masm32.inc
+include \masm32\include\kernel32.inc
+```
+
+The simulator should not emit one `unexpected-character` diagnostic per backslash.
+
+Instead, it should emit one meaningful diagnostic per unsupported host include directive.
+
+### Required recognition
+
+Recognize enough of these line shapes to produce directive-level diagnostics:
+
+```asm
+include \masm32\include\masm32.inc
+include \masm32\include\kernel32.inc
+include C:\masm32\include\kernel32.inc
+include ..\include\something.inc
+include .\local.inc
+include /usr/local/include/file.inc
+```
+
+Recognition may be line-oriented for this phase. It does not need to tokenize host paths as general expressions.
+
+### Diagnostic categories
+
+Use stable diagnostic codes.
+
+Recommended codes:
+
+```text
+unsupported-host-include-path
+unsupported-windows-api-include
+unsupported-masm32-library-include
+```
+
+If the implementation prefers fewer codes, this acceptable minimum taxonomy may be used:
+
+```text
+unsupported-host-include-path
+```
+
+However, rendered messages must still distinguish Windows/API and MASM32 SDK cases when recognized.
+
+### Diagnostic behavior
+
+For host include paths:
+
+```asm
+include \masm32\include\masm32.inc
+```
+
+Emit a diagnostic similar to:
+
+```text
+Host filesystem include paths such as `\masm32\include\masm32.inc` are not supported. This browser simulator does not read the local MASM32 SDK; use supported virtual includes only.
+```
+
+For Windows API includes:
+
+```asm
+include \masm32\include\kernel32.inc
+```
+
+Emit a diagnostic similar to:
+
+```text
+`kernel32.inc` describes Windows API symbols. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.
+```
+
+Exact wording may differ, but the message must be stable, actionable, and covered by exact rendered Simulator Messages tests.
+
+### Virtual include behavior
+
+Preserve existing virtual include behavior.
+
+For example, if the current repository supports:
+
+```asm
+INCLUDE Irvine32.inc
+```
+
+that behavior must continue unchanged.
+
+Do not reclassify supported virtual includes as host include paths merely because they use `INCLUDE`.
+
+Do not add new virtual include behavior in this phase unless it is only documentation or classification of a known unsupported virtual name.
+
+### Lexer behavior
+
+The lexer should not emit repeated `unexpected-character` diagnostics for backslashes inside recognized unsupported include directive lines.
+
+Allowed implementation strategies:
+
+- recognize `include` lines before ordinary tokenization when a path-like tail follows;
+- teach the lexer a path-tail token only in directive-tail context;
+- add parser recovery that consumes the rest of the line after `include` and emits one directive-level diagnostic.
+
+Do not make backslash a general expression token merely for this phase.
+
+Do not allow path tokens to leak into ordinary instruction operands.
+
+### Required tests
+
+Add lexer/parser/source-run tests for:
+
+- `include \masm32\include\masm32.inc`;
+- `include \masm32\include\kernel32.inc`;
+- `include C:\masm32\include\kernel32.inc`;
+- `include ..\include\file.inc`;
+- several host include directives in one file;
+- supported virtual include still works;
+- unsupported path diagnostics suppress repeated path-separator `unexpected-character` diagnostics;
+- source line, column, byte offset, and span length point at the directive or unsupported path according to the implementation's chosen diagnostic convention.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- unsupported host include path;
+- unsupported Windows API include;
+- multi-diagnostic host include source.
+
+### Documentation updates
+
+Update supported syntax and diagnostics documentation to say:
+
+- host filesystem include paths are unsupported;
+- supported virtual includes are simulator-defined and do not read the host filesystem;
+- Windows API includes are outside MASM32 Educational Mode.
+
+### Acceptance criteria
+
+- MASM32 host include paths produce meaningful unsupported-feature diagnostics.
+- Repeated backslash `unexpected-character` noise is eliminated for recognized include directive lines.
+- Supported virtual include behavior is preserved.
+- No host file loading is implemented.
+- No WinAPI execution is implemented.
+
+### Non-goals
+
+- No host filesystem access.
+- No MASM32 SDK file loading.
+- No include search paths.
+- No `INCLUDELIB` handling.
+- No object files.
+- No PE loading.
+- No imports.
+- No WinAPI execution.
+- No macro expansion.
+
+---
+
+## 61Q. Phase 57Q - INCLUDELIB and External Library Diagnostics
+
+### Goal
+
+Replace generic parser or lexer diagnostics for `INCLUDELIB` with clear unsupported linker/library diagnostics.
+
+This phase handles `INCLUDELIB` only. Host `INCLUDE` paths are handled by Phase 57P - Host Include Path Diagnostics.
+
+### Behavior category
+
+Parser diagnostic quality and non-goal classification.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57Q - INCLUDELIB and External Library Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57Q - INCLUDELIB and External Library Diagnostics
+```
+
+because this phase changes source diagnostics for recognized MASM/source constructs.
+
+### Required recognition
+
+Recognize enough of these line shapes to produce directive-level diagnostics:
+
+```asm
+includelib \masm32\lib\masm32.lib
+includelib \masm32\lib\kernel32.lib
+includelib kernel32.lib
+includelib masm32.lib
+includelib C:\masm32\lib\kernel32.lib
+```
+
+Recognition may be line-oriented for this phase. It does not need to tokenize library paths as general expressions.
+
+### Diagnostic categories
+
+Use stable diagnostic codes.
+
+Recommended codes:
+
+```text
+unsupported-includelib
+unsupported-windows-api-library
+unsupported-masm32-library
+```
+
+If the implementation prefers fewer codes, this acceptable minimum taxonomy may be used:
+
+```text
+unsupported-includelib
+```
+
+However, rendered messages must still distinguish linker/library behavior from host include loading.
+
+### Diagnostic behavior
+
+Diagnostics for `INCLUDELIB` must classify linker and import-library behavior as outside MASM32 Educational Mode.
+
+Do not say or imply that real object-file linking, import-library loading, PE import processing, host `.lib` loading, or WinAPI execution is merely "not supported yet" unless the source-of-truth documents are deliberately changed to make such behavior a future roadmap item.
+
+For a general `INCLUDELIB` directive:
+
+```asm
+includelib somefile.lib
+```
+
+Emit a diagnostic similar to:
+
+```text
+INCLUDELIB is a linker/import-library directive. MASM32 Educational Mode does not link object files, load .lib files, process PE imports, or execute external library routines.
+```
+
+For Windows API library paths:
+
+```asm
+includelib \masm32\lib\kernel32.lib
+includelib kernel32.lib
+includelib C:\masm32\lib\kernel32.lib
+```
+
+Emit a diagnostic similar to:
+
+```text
+kernel32.lib is a Windows import library. This simulator does not load PE imports or execute WinAPI routines.
+```
+
+For MASM32 SDK library paths:
+
+```asm
+includelib \masm32\lib\masm32.lib
+includelib masm32.lib
+```
+
+Emit a diagnostic similar to:
+
+```text
+masm32.lib is an external MASM32 library. This browser simulator does not link MASM32 .lib files or load external library routines; only documented virtual Irvine32 behavior is provided.
+```
+
+Exact wording may differ, but the message must be stable, actionable, and covered by exact rendered Simulator Messages tests.
+
+The message must distinguish `INCLUDELIB` from `INCLUDE`:
+
+- host `INCLUDE` paths are rejected because the browser simulator does not read local MASM32 SDK include files;
+- `INCLUDELIB` is rejected because the simulator does not link libraries, process object files, load PE imports, or execute external routines.
+
+The diagnostic must not create linker/import metadata that could be misread as future executable support.
+
+### Required behavior
+
+- `INCLUDELIB` diagnostics must be assembly diagnostics.
+- Source containing `INCLUDELIB` must not execute.
+- `INCLUDELIB` must not be accepted as a no-op.
+- `INCLUDELIB` must not be treated as a virtual include.
+- `INCLUDELIB` must not attempt to read host files.
+- `INCLUDELIB` must not create linker/import metadata that implies future execution.
+- `INCLUDELIB` diagnostics must not use vague future-promising wording such as "not supported yet" unless they immediately clarify that real linker/import-library behavior is outside the simulator boundary.
+- `INCLUDELIB` must not be documented as a planned runtime feature unless a later reviewed spec/guide revision deliberately changes the non-goal boundary.
+
+### Required tests
+
+Add lexer/parser/source-run tests for:
+
+- `includelib \masm32\lib\masm32.lib`;
+- `includelib \masm32\lib\kernel32.lib`;
+- `includelib kernel32.lib`;
+- `includelib masm32.lib`;
+- several `INCLUDELIB` directives in one file;
+- source containing `INCLUDELIB` refuses execution;
+- no Program Console output is produced;
+- no repeated path-separator `unexpected-character` diagnostics are emitted for recognized library path tails.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- unsupported `INCLUDELIB`;
+- MASM32 library linking diagnostic;
+- Windows API library diagnostic where recognized;
+- multi-diagnostic library source.
+
+### Documentation updates
+
+Update supported syntax and diagnostics documentation to say:
+
+- `INCLUDELIB` is unsupported because linking is outside the simulator;
+- MASM32 `.lib` and Windows `.lib` files are not loaded;
+- PE imports and object linking are not simulated.
+
+### Acceptance criteria
+
+- `INCLUDELIB` produces meaningful linker non-goal diagnostics.
+- Repeated path-character diagnostics are eliminated for recognized library directive lines.
+- No library linking is implemented.
+- No object/import/PE behavior is implemented.
+- Source containing `INCLUDELIB` does not execute.
+
+### Non-goals
+
+- No host filesystem access.
+- No library search paths.
+- No object files.
+- No import tables.
+- No PE loading.
+- No linker.
+- No WinAPI execution.
+- No MASM32 runtime loading.
+- No macro expansion.
+
+---
+
+## 61R. Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+
+### Goal
+
+Add clear unsupported-feature diagnostics for common MASM32 invocation syntax and external routine names without implementing invocation behavior.
+
+This phase handles `INVOKE`, `ADDR`, and recognized external routine categories such as `StdOut`, `crt_printf`, and `ExitProcess`.
+
+### Behavior category
+
+Parser diagnostic quality and unsupported-feature classification.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+```
+
+because this phase changes source diagnostics for recognized MASM/source constructs.
+
+### Required recognition
+
+Recognize common invocation lines enough to produce stable unsupported-feature diagnostics:
+
+```asm
+invoke StdOut, addr titleMsg
+invoke crt_printf, addr numberFmt, counter
+invoke ExitProcess, 0
+```
+
+Recognition may be line-oriented or parser-level. This phase does not need to fully parse all `INVOKE` argument expressions.
+
+### Diagnostic categories
+
+Recommended diagnostic codes:
+
+```text
+unsupported-invoke
+unsupported-addr
+unsupported-external-routine
+unsupported-winapi-execution
+unsupported-masm32-runtime-routine
+unsupported-crt-routine
+```
+
+The implementation may use fewer codes if existing taxonomy already has stable equivalents, but rendered messages must distinguish these concepts when recognized:
+
+- `INVOKE` syntax is not implemented;
+- `ADDR` operands are not implemented;
+- `StdOut` is an external MASM32 runtime-style routine, not implemented here;
+- `crt_printf` is C runtime-style output, not implemented here;
+- `ExitProcess` is WinAPI/external process termination behavior, not implemented here.
+
+### Required behavior
+
+For:
+
+```asm
+invoke StdOut, addr titleMsg
+```
+
+Expected diagnostics should explain:
+
+- `INVOKE` is unsupported or deferred;
+- `ADDR` is unsupported or deferred if reported separately;
+- `StdOut` is not an implemented virtual routine.
+
+For:
+
+```asm
+invoke crt_printf, addr numberFmt, counter
+```
+
+Expected diagnostics should explain:
+
+- `INVOKE` is unsupported or deferred;
+- C runtime formatted output is not implemented.
+
+For:
+
+```asm
+invoke ExitProcess, 0
+```
+
+Expected diagnostics should explain:
+
+- `ExitProcess` is WinAPI/external process behavior;
+- WinAPI execution is outside the simulator boundary;
+- users should not confuse this with the already supported virtual Irvine32 `exit` terminator, if present.
+
+### Relationship to Irvine32 registry
+
+If the current repository has a virtual Irvine32 routine registry, do not bypass it for Irvine32 names.
+
+External MASM32, CRT, and WinAPI routine classification may use the same registry if appropriate, but this phase must not create a second contradictory taxonomy.
+
+### Recovery behavior
+
+A source containing several `INVOKE` lines should produce useful diagnostics for each line when safe.
+
+Avoid cascaded diagnostics from every token inside an unsupported `INVOKE` line if the whole line has already been classified as unsupported.
+
+### Required tests
+
+Add parser/source-run tests for:
+
+- `invoke StdOut, addr titleMsg`;
+- `invoke crt_printf, addr numberFmt, counter`;
+- `invoke ExitProcess, 0`;
+- several `INVOKE` lines in one source;
+- source containing `INVOKE` refuses execution;
+- no Program Console output is produced;
+- `ExitProcess` is classified as WinAPI/external behavior, not as Irvine32 `exit`;
+- if `INCLUDE Irvine32.inc` and `exit` exist, virtual `exit` behavior remains unchanged.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- unsupported `INVOKE`;
+- unsupported `ADDR`;
+- unsupported external MASM32 runtime routine;
+- unsupported CRT routine;
+- unsupported WinAPI `ExitProcess`.
+
+If the implementation reports one combined diagnostic per `INVOKE` line rather than separate `INVOKE`/`ADDR`/routine diagnostics, the rendered test must prove the combined message contains all relevant explanation.
+
+### Documentation updates
+
+Update supported syntax and diagnostics documentation to say:
+
+- `INVOKE` is not implemented yet;
+- `ADDR` is not implemented yet unless already implemented by a prior phase;
+- MASM32 runtime routines such as `StdOut` are not executable unless a specific virtual routine phase implements them;
+- C runtime routines such as `crt_printf` are not executable;
+- WinAPI routines such as `ExitProcess` are outside the simulator boundary.
+
+### Acceptance criteria
+
+- Common `INVOKE` lines produce useful unsupported-feature diagnostics.
+- `ExitProcess` is classified as WinAPI/external behavior.
+- No invocation lowering is implemented.
+- No stack/calling-convention behavior is implemented.
+- Source containing unsupported invocation diagnostics does not execute.
+
+### Non-goals
+
+- No `INVOKE` implementation.
+- No `ADDR` implementation.
+- No calling convention behavior.
+- No stack setup.
+- No `StdOut` implementation.
+- No `crt_printf` implementation.
+- No `ExitProcess` implementation.
+- No WinAPI execution.
+- No PE imports.
+- No linker behavior.
+
+---
+
+## 61S. Phase 57S - Unsupported High-Level Flow Diagnostics
+
+### Goal
+
+Add clear unsupported-feature diagnostics and recovery for high-level MASM flow constructs without implementing their lowering or execution.
+
+This phase handles constructs such as `.IF`, `.ELSE`, and `.ENDIF`.
+
+### Behavior category
+
+Parser diagnostic quality and unsupported-feature recovery.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57S - Unsupported High-Level Flow Diagnostics
+```
+
+Runtime/source-run MASM behavior phase advances to:
+
+```text
+Phase 57S - Unsupported High-Level Flow Diagnostics
+```
+
+because this phase changes source diagnostics for recognized MASM/source constructs.
+
+### Required recognition
+
+Recognize these high-level flow constructs as unsupported or deferred when not already implemented:
+
+```asm
+.IF eax == 0
+.ELSE
+.ENDIF
+```
+
+Where practical, also recognize:
+
+```asm
+.ELSEIF condition
+.WHILE condition
+.ENDW
+.REPEAT
+.UNTIL condition
+.UNTILCXZ
+.BREAK
+.CONTINUE
+```
+
+Do not expand expression parsing merely to fully understand the condition. Recognize the directive family and consume enough of the line or block to avoid noisy cascades.
+
+### Diagnostic categories
+
+Recommended diagnostic codes:
+
+```text
+unsupported-high-level-if
+unsupported-high-level-else
+unsupported-high-level-endif
+unsupported-high-level-while
+unsupported-high-level-repeat
+unsupported-high-level-flow
+```
+
+The implementation may use fewer codes if it already has a stable equivalent taxonomy, but rendered messages must identify the construct family.
+
+### Required behavior
+
+For:
+
+```asm
+.IF eax == 0
+    mov ebx, 1
+.ELSE
+    mov ebx, 2
+.ENDIF
+```
+
+Expected behavior:
+
+- report `.IF` as unsupported high-level MASM flow;
+- recover through `.ELSE` and `.ENDIF` if safe;
+- avoid treating the contents as valid conditional execution;
+- refuse execution because assembly diagnostics exist.
+
+### Non-cascade rule
+
+Avoid noisy cascaded diagnostics from inside a recognized unsupported high-level flow block where safe.
+
+If the parser cannot safely recover, it may emit a fatal parser diagnostic, but the milestone report must identify the limitation.
+
+### Required tests
+
+Add parser/source-run tests for:
+
+- `.IF` / `.ELSE` / `.ENDIF`;
+- `.IF` without `.ELSE`;
+- malformed or unbalanced high-level flow block;
+- high-level flow block containing otherwise valid instructions;
+- high-level flow block containing unsupported instructions;
+- source containing high-level flow refuses execution;
+- no Program Console output is produced.
+
+### Required rendered-message tests
+
+Add exact rendered Simulator Messages tests for:
+
+- unsupported `.IF`;
+- unsupported `.ELSE` / `.ENDIF` handling, if emitted separately;
+- malformed high-level flow recovery, if applicable.
+
+### Documentation updates
+
+Update supported syntax and diagnostics documentation to say:
+
+- high-level MASM flow constructs are recognized but not executable;
+- they are not lowered to labels or branches;
+- branch/control-flow phases will own lower-level control-flow behavior later.
+
+### Acceptance criteria
+
+- High-level flow constructs produce clear diagnostics.
+- Diagnostics are source-located.
+- Parser recovery avoids excessive cascades where safe.
+- No high-level flow execution is implemented.
+- No branch lowering is implemented.
+- No expression parser expansion is implemented beyond what is needed for recognition.
+
+### Non-goals
+
+- No `.IF` lowering.
+- No `.WHILE` lowering.
+- No `.REPEAT` lowering.
+- No conditional branch execution.
+- No label generation.
+- No expression parser expansion beyond recognition.
+- No block execution semantics.
+
+---
+
+## 61T. Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+
+### Goal
+
+Add realistic MASM32 playground-program smoke fixtures that prove the simulator reports useful unsupported-feature diagnostics instead of collapsing into low-level lexer/parser noise.
+
+This is primarily a regression fixture and diagnostic-recovery verification phase. It must not implement the unsupported features in the playground program.
+
+### Behavior category
+
+Diagnostic recovery, fixture coverage, and documentation.
+
+Repository/archive milestone advances to:
+
+```text
+Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+```
+
+Runtime/source-run MASM behavior phase remains:
+
+```text
+Phase 57S - Unsupported High-Level Flow Diagnostics
+```
+
+unless this phase changes diagnostic behavior beyond adding tests/documentation. If it changes diagnostic behavior, the milestone report must identify the specific behavior and may advance the runtime/source-run MASM behavior phase.
+
+### Playground fixture
+
+Add a realistic unsupported MASM32 playground fixture based on this shape:
+
+```asm
+; ============================================
+; MASM32 Playground Program
+; ============================================
+
+.386
+.model flat, stdcall
+option casemap:none
+
+include \masm32\include\masm32.inc
+include \masm32\include\kernel32.inc
+
+includelib \masm32\lib\masm32.lib
+includelib \masm32\lib\kernel32.lib
+
+.data
+    titleMsg   db "=== MASM32 Playground ===",13,10,0
+    startMsg   db "Counting from 1 to 5",13,10,0
+    evenMsg    db " -> even number",13,10,0
+    oddMsg     db " -> odd number",13,10,0
+    doneMsg    db 13,10,"Finished!",13,10,0
+
+    numberFmt  db "Number: %d",13,10,0
+    sumFmt     db 13,10,"Final sum = %d",13,10,0
+
+    counter    dd 1
+    total      dd 0
+
+.code
+
+AddToTotal PROC
+    add total, eax
+    ret
+AddToTotal ENDP
+
+start:
+    invoke StdOut, addr titleMsg
+    invoke StdOut, addr startMsg
+
+main_loop:
+    invoke crt_printf, addr numberFmt, counter
+
+    mov eax, counter
+    and eax, 1
+
+    .IF eax == 0
+        invoke StdOut, addr evenMsg
+    .ELSE
+        invoke StdOut, addr oddMsg
+    .ENDIF
+
+    mov eax, counter
+    call AddToTotal
+
+    inc counter
+
+    cmp counter, 6
+    jl main_loop
+
+    invoke crt_printf, addr sumFmt, total
+    invoke StdOut, addr doneMsg
+    invoke ExitProcess, 0
+
+end start
+```
+
+The exact fixture may be trimmed if needed to keep line/column diagnostics maintainable, but it must remain representative of a normal MASM32/Windows sample produced by AI tools or tutorials.
+
+### Expected behavior
+
+The fixture must not execute.
+
+The simulator must report a concise set of useful diagnostics for unsupported feature families already covered by Phases 57P through 57S.
+
+Expected diagnostic families include, when encountered and not already implemented:
+
+```text
+unsupported-host-include-path
+unsupported-includelib
+unsupported-invoke
+unsupported-addr
+unsupported-high-level-flow
+unsupported-call
+unsupported-ret
+unsupported-conditional-jump
+unsupported-winapi-execution
+unsupported-external-routine
+```
+
+The exact diagnostic codes may differ if the existing implementation already uses stable equivalents. The milestone report must map the observed codes to the intended unsupported feature families.
+
+### Diagnostic recovery policy
+
+The fixture should prove that the simulator can recover from recognized unsupported constructs and continue scanning later lines when safe.
+
+Requirements:
+
+- report host include path problems at the include lines;
+- report `INCLUDELIB` problems at the library lines;
+- report `INVOKE` as unsupported or deferred;
+- report `ADDR` as unsupported or deferred when it appears in unsupported invoke operands, if Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics emits it separately;
+- report `.IF`, `.ELSE`, and `.ENDIF` as unsupported high-level flow where current implementation does not support them;
+- report `ret` as unsupported or deferred if procedure return is not implemented;
+- report `call` as unsupported or deferred if procedure call is not implemented;
+- report `cmp` or `jl` as unsupported/deferred if not implemented;
+- report `ExitProcess`/WinAPI behavior as outside the simulator boundary when recognized;
+- avoid cascades of meaningless secondary diagnostics inside already-reported unsupported constructs where safe.
+
+### Noise limits
+
+The fixture must not produce a wall of repeated character-level diagnostics.
+
+Specifically:
+
+- no repeated `unexpected-character` diagnostics for the backslashes in MASM32 include/library paths once Phase 57P - Host Include Path Diagnostics and Phase 57Q - INCLUDELIB and External Library Diagnostics are complete;
+- no generic `lexer-failed` umbrella diagnostic when more specific diagnostics are available;
+- no misleading diagnostic that suggests host filesystem includes, linker behavior, or WinAPI execution will be attempted;
+- no Program Console output.
+
+If the fixture still produces some lower-level diagnostics after the high-level diagnostics, the milestone report must classify them as either acceptable residual diagnostics or follow-up issues. The target should be concise feature-family diagnostics.
+
+
+### Phase 57Q `INCLUDELIB` wording inheritance
+
+Phase 57T must inherit the Phase 57Q `INCLUDELIB` non-goal wording.
+
+If a realistic playground fixture includes `INCLUDELIB`, the rendered message must classify it as linker/import-library behavior outside MASM32 Educational Mode.
+
+The message must not classify `INCLUDELIB` as:
+
+- a missing local file;
+- a host include-loading problem;
+- a temporary runtime limitation;
+- a feature that will later link `.lib` files;
+- a feature that will later load PE imports;
+- a feature that will later execute WinAPI routines.
+
+If a playground fixture includes both `INCLUDE` and `INCLUDELIB`, the diagnostics must distinguish the two:
+
+- host `INCLUDE` paths are rejected because the browser simulator does not read local MASM32 SDK include files;
+- `INCLUDELIB` is rejected because the simulator does not link libraries, process object files, load PE imports, or execute external routines.
+
+Recommended fixture line:
+
+```asm
+includelib \masm32\lib\kernel32.lib
+```
+
+or:
+
+```asm
+includelib kernel32.lib
+```
+
+Required rendered-message assertion:
+
+- the exact rendered message must state that `kernel32.lib` or `INCLUDELIB` is external linker/import-library behavior outside MASM32 Educational Mode;
+- the exact rendered message must not imply host filesystem probing, real linking, PE loading, or WinAPI execution.
+
+
+### Required tests
+
+Add source-run fixture tests for:
+
+- full playground fixture or representative trimmed fixture;
+- diagnostics include host include path;
+- diagnostics include `INCLUDELIB`;
+- diagnostics include `INVOKE` or equivalent unsupported routine invocation classification;
+- diagnostics include high-level `.IF` flow unsupported classification;
+- diagnostics include `call`/`ret` unsupported classification if still unimplemented;
+- diagnostics include conditional jump unsupported classification if still unimplemented;
+- diagnostics include WinAPI/external routine boundary if recognized;
+- source-run refuses execution;
+- no Program Console output;
+- no execution-complete message after assembly errors;
+- repeated backslash `unexpected-character` diagnostics are absent.
+
+Add rendered Simulator Messages tests for the fixture or for stable smaller fixtures covering the same feature families.
+
+### Fixture-size rule
+
+If the full playground fixture is too large for stable line/column maintenance, split it into named smaller fixtures:
+
+```text
+playground_host_includes.asm
+playground_includelib.asm
+playground_invoke_addr.asm
+playground_high_level_flow.asm
+playground_call_ret_jcc.asm
+playground_winapi_exitprocess.asm
+```
+
+The aggregate Phase 57T reporting must list which fixture family was run.
+
+Do not weaken assertions merely because the full fixture is large. Prefer smaller named fixtures with exact diagnostics.
+
+### Documentation updates
+
+Update supported syntax or troubleshooting documentation with a short section similar to:
+
+```text
+Many AI-generated MASM32 examples use host include paths, INCLUDELIB, INVOKE, WinAPI calls, high-level .IF/.ELSE/.ENDIF flow, CALL/RET, and conditional jumps. These are real MASM32 patterns, but they are outside or ahead of the current simulator subset. The simulator reports them as unsupported feature families instead of trying to load local MASM32 files or link Windows libraries.
+```
+
+### Acceptance criteria
+
+- A realistic MASM32 playground sample produces meaningful unsupported-feature diagnostics.
+- The diagnostics classify unsupported feature families rather than reporting many path-character errors.
+- No unsupported feature is accidentally implemented.
+- No source with assembly errors executes.
+- Program Console remains empty.
+- Exact rendered Simulator Messages coverage exists for representative diagnostics.
+- The milestone report identifies any remaining residual low-level diagnostics and whether they are acceptable or future work.
+
+### Non-goals
+
+- No `INVOKE` implementation.
+- No `ADDR` implementation.
+- No `.IF` / `.ELSE` / `.ENDIF` implementation.
+- No `call` implementation.
+- No `ret` implementation.
+- No `cmp` or conditional jump implementation unless already implemented by an earlier accepted phase.
+- No `StdOut` implementation.
+- No `crt_printf` implementation.
+- No `ExitProcess` implementation.
+- No host include loading.
+- No library linking.
+- No WinAPI execution.
+- No PE loading.
+- No macro expansion.
+
+---
+
+After Phases 57A through 57T, the roadmap resumes with Phase 58 without renumbering.
+
+The inserted 57A-57T phases are corrective documentation, diagnostic-policy, startup-state, display, `.CONST`, `.code` memory-access policy, MASM segment-symbol diagnostics, source-level `nop`, host include/library diagnostics, unsupported MASM invocation/flow diagnostics, and playground-fixture recovery phases. They do not renumber Phase 58 or later phases.
+
+Assistants must not treat these inserted phases as permission to skip Phase 58 or to implement Phase 58 control-flow consumers early.
+
+Assistants must not treat Phase 57K as permission to implement readable `.code` byte images, writable `.code` section images, deterministic simulator code-image bytes, real x86 opcode emission, PE layout, object-file behavior, linker behavior, relocation records, segment registers, segment overrides, or `ASSUME`.
+
+Assistants must not treat Phase 57L as permission to expose `.code` as simulated program memory. Phase 57L denies `.code` memory reads and writes.
+
+Assistants must not treat Phase 57M as permission to implement segment registers, segment overrides, `ASSUME`, OMF/COFF segment modeling, linker groups, PE section layout, or internal region aliases such as `_TEXT` or `_DATA`.
+
+Assistants must not treat Phase 57N or Phase 57O `nop` support as permission to implement real x86 opcode emission, `.code` byte images, PE layout, alignment padding, raw byte emission, or disassembly.
+
+Assistants must not treat Phases 57P through 57T as permission to implement host include loading, `INCLUDELIB` linking, `INVOKE`, `ADDR`, WinAPI execution, high-level MASM flow, `call`, `ret`, `cmp`, or conditional jumps.
+
 ## 62. Phase 58 - Code Label Table and Label Diagnostics
 
 ### Goal
 
-Build a reliable code label table before enabling branch execution.
+Build a reliable code-label table before enabling branch execution.
 
-This is a parser/IR metadata phase. It must not implement `jmp`, conditional jumps, loops, calls, stack behavior, or procedure execution.
+Phase 58 is a parser/IR metadata and diagnostics phase. It introduces accepted code-label declarations and procedure-entry label metadata. It must not implement branch parsing, branch lowering, branch execution, instruction-pointer mutation, conditional control flow, `loop`, `call`, `ret`, stack behavior, procedure invocation, procedure frame setup, debugger stepping, breakpoints, or UI click-to-label behavior.
+
+Phase 58 exists so later branch, loop, call, debugger, and procedure phases can rely on one tested source of label metadata instead of each later phase inventing label parsing and diagnostics independently.
 
 ### Behavior category
 
-Parser metadata and diagnostics.
+Parser/source metadata and diagnostics.
 
-### Accepted syntax
+Phase 58 changes accepted MASM/source parser behavior because code-label declarations become recognized and recorded. It does not add a new runtime arithmetic/logical instruction and does not add any instruction that consumes a label.
+
+After Phase 58 is implemented, tested, and accepted, current-status surfaces that describe the latest accepted MASM/source parser behavior may advance to:
+
+```text
+Phase 58 - Code Label Table and Label Diagnostics
+```
+
+If a status surface is intentionally instruction-runtime-only rather than parser/source-behavior status, the milestone report must identify that exception explicitly. Do not silently advance or silently preserve runtime/source-run metadata without stating the reason.
+
+The Phase 58 milestone report must include both status labels:
+
+```text
+Repository/archive milestone:
+Phase 58 - Code Label Table and Label Diagnostics
+
+Runtime/source-run MASM behavior phase:
+Phase 58 - Code Label Table and Label Diagnostics
+```
+
+If the implementation keeps any specific status field at Phase 57 because that field is explicitly instruction-runtime-only, the report must list that field and explain why it did not advance.
+
+### Relationship to Phase 57 and later phases
+
+Phase 57 - Signed IDIV was the last runtime instruction milestone before this phase. Phase 57 explicitly did not implement labels, `jmp`, conditional jumps, `loop`, stack behavior, procedure behavior, or future instruction groups.
+
+Phase 58 must preserve that boundary. It may accept and record label declarations, but it must not make labels executable control-flow targets yet.
+
+Later phases must own label-consuming behavior. A later branch-consuming phase must add its own tests for:
+
+- reference lookup;
+- missing-target diagnostics;
+- branch target validation;
+- instruction-pointer mutation;
+- execution-step behavior;
+- execution limits and infinite-loop protection, where applicable.
+
+Phase 58 must not implement any of those later behaviors early.
+
+### Accepted declaration syntax
+
+Phase 58 accepts ordinary code-label declarations and records procedure-entry labels from existing `PROC` structure.
+
+Accepted forms:
 
 ```asm
 start:
@@ -9419,58 +13910,561 @@ main PROC
 main ENDP
 ```
 
-Ordinary labels use `name:`. `PROC` names are recorded as procedure-entry code labels targeting the first executable instruction in that procedure. This is direct-branch metadata only; it does not imply CALL/RET or stack behavior.
-
-Label names follow the active user-defined symbol case policy. By default, labels are case-insensitive and `Loop:` conflicts with `loop:`. With `OPTION CASEMAP:NONE`, labels are case-sensitive and references must match the declared label spelling exactly.
-
-### Target policy
-
-- Ordinary labels must resolve to a following executable instruction.
-- A label immediately before `ENDP` or `END` with no following executable instruction is not a valid branch target in this batch.
-- If such a label is used, emit `empty-label-target` or `invalid-jump-target`, pointing at the target use and including prior-definition metadata when the referenced metadata exists.
-- Do not silently map empty labels to root-procedure termination until a later phase explicitly defines that behavior.
-
-### Rejected or diagnosed cases
+Ordinary labels use this form:
 
 ```asm
-start:
-start:       ; duplicate label
-
-.data
-value DWORD 1
-.code
-value:       ; collision with data symbol
+name:
 ```
 
-### Required metadata
+A `PROC` name is also recorded as a code-label declaration:
 
-For each code label:
+```asm
+name PROC
+```
 
-- label name;
-- source line;
-- source column;
-- byte offset;
-- span length;
-- target instruction index;
-- whether it came from `name:` or `name PROC`.
+A `name PROC` declaration records a **procedure-entry code label**. Its target is the first executable instruction inside that procedure body when one exists. This is metadata for later control-flow and procedure phases only.
+
+Recording `name PROC` as a procedure-entry label does not implement:
+
+- `call`;
+- `ret`;
+- stack frames;
+- root-procedure invocation semantics beyond the already existing execution model;
+- parameter passing;
+- `USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- calling conventions;
+- linker behavior;
+- Windows procedure behavior.
+
+A label by itself is not an executable instruction. It marks the next executable instruction when such an instruction exists.
+
+### Label target metadata policy
+
+For each accepted code-label declaration, Phase 58 must record a target classification or equivalent internal state.
+
+Required conceptual target classifications:
+
+```text
+executable instruction target
+procedure-entry target
+no executable target
+```
+
+These names are metadata concepts. They are not required public JSON enum names unless Phase 58 explicitly exposes label metadata through a tested public, source-run, debug, or test-only API.
+
+Definitions:
+
+- **Executable instruction target**: a `name:` ordinary code label whose resolved target is a real executable IR instruction.
+- **Procedure-entry target**: a `name PROC` entry whose resolved target is the first executable instruction inside that procedure body.
+- **No executable target**: a `name:` ordinary label or `name PROC` entry that appears before `ENDP`, `END`, another non-executable boundary, or the end of the executable code stream without any following executable instruction to target.
+
+No-executable-target labels are accepted declarations in Phase 58. They are not assembly errors merely because they exist.
+
+Example:
+
+```asm
+.code
+main PROC
+start:
+    mov eax, 1
+done:
+main ENDP
+END main
+```
+
+Expected Phase 58 behavior:
+
+- `start` is accepted and recorded as an executable instruction target for `mov eax, 1`.
+- `done` is accepted and recorded as a no-executable-target label.
+- No `empty-label-target`, `invalid-jump-target`, or branch-target diagnostic is emitted in Phase 58 because no branch instruction consumes `done`.
+
+Later branch-consuming phases must diagnose attempts to branch to a no-executable-target label. Those later diagnostics should point at the target use and include prior-definition metadata for the referenced label when available.
+
+Do not silently map no-executable-target labels to `ENDP`, `END`, root-procedure termination, successful program exit, or the next procedure unless a later phase explicitly defines that behavior.
+
+### Multiple labels before one instruction
+
+Phase 58 must support consecutive labels before one executable instruction.
+
+Example:
+
+```asm
+.code
+main PROC
+first:
+second:
+    mov eax, 1
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `first` is accepted.
+- `second` is accepted.
+- Both labels are recorded as executable instruction targets for the same following executable instruction, `mov eax, 1`.
+- Neither label mutates registers, flags, memory, Program Console output, or memory-change rows.
+
+### CASEMAP and label names
+
+Label declarations follow the active user-defined symbol case policy.
+
+The policy comes from the project-wide standing rule for keyword matching and user-defined symbols:
+
+- instruction mnemonics are case-insensitive;
+- register names and register aliases are case-insensitive;
+- directives are case-insensitive;
+- operators and data type names are case-insensitive;
+- `PTR` width names are case-insensitive;
+- virtual include names are case-insensitive;
+- recognized Irvine32 routine names are case-insensitive;
+- user-defined symbols are governed by `OPTION CASEMAP`.
+
+Code labels and `PROC` names are user-defined symbols for this purpose.
+
+Supported policy behavior:
+
+- default behavior is equivalent to `OPTION CASEMAP:ALL`;
+- `OPTION CASEMAP:ALL` selects case-insensitive user-symbol matching from that directive forward;
+- `OPTION CASEMAP:NONE` selects exact-case user-symbol matching from that directive forward;
+- `OPTION CASEMAP:NOTPUBLIC` remains unsupported until public/external linkage semantics exist.
+
+Do not apply `OPTION CASEMAP:NONE` to instruction mnemonics, directives, registers, virtual include names, or recognized Irvine32 routine names.
+
+Default and `OPTION CASEMAP:ALL` duplicate example:
+
+```asm
+.code
+main PROC
+Loop:
+    mov eax, 1
+loop:
+    mov ebx, 2
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- default behavior is `CASEMAP:ALL`;
+- `Loop:` and `loop:` conflict by ASCII-folded spelling;
+- the second declaration is rejected;
+- the diagnostic points at the second declaration and includes prior-definition metadata for the first declaration.
+
+Explicit `OPTION CASEMAP:ALL` must behave the same way:
+
+```asm
+OPTION CASEMAP:ALL
+
+.code
+main PROC
+Loop:
+    mov eax, 1
+loop:
+    mov ebx, 2
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `Loop:` and `loop:` conflict by ASCII-folded spelling;
+- the explicit directive does not change default behavior except by making it explicit.
+
+`OPTION CASEMAP:NONE` exact-case example:
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+Loop:
+    mov eax, 1
+loop:
+    mov ebx, 2
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `Loop:` and `loop:` are distinct label declarations because exact-case user-symbol matching is active.
+- This is declaration-metadata behavior only.
+- Phase 58 must not parse or execute a branch reference merely to test case-sensitive label lookup.
+
+### Label references are not implemented in Phase 58
+
+Phase 58 must not validate branch-target references because there are no branch-target reference consumers yet.
+
+The following source must continue to follow the current pre-branch unsupported-instruction behavior unless an earlier accepted phase already implemented `jmp`:
+
+```asm
+.code
+main PROC
+start:
+    mov eax, 1
+    jmp start
+main ENDP
+END main
+```
+
+Expected Phase 58 behavior:
+
+- `start:` is accepted and recorded.
+- `jmp start` is not implemented by Phase 58.
+- The diagnostic for `jmp` must use the current stable unsupported-instruction or future-feature wording.
+- Phase 58 must not implement `jmp`, instruction-pointer mutation, branch execution, or target-reference resolution in order to test label metadata.
+
+Later label-consuming phases must resolve label references using the user-symbol case policy active at the reference location and must add their own reference-resolution tests.
+
+### Symbol namespace and conflict policy
+
+Phase 58 must use the same effective user-defined symbol namespace policy as the rest of the simulator unless a later phase explicitly introduces separate scopes.
+
+For this phase, the effective namespace includes at least these already-implemented or already-planned user-defined symbol categories when they exist in the current repository state:
+
+- data symbols;
+- numeric equates;
+- code labels;
+- procedure names recorded from `name PROC`.
+
+Do not create an independent namespace where `main PROC` and `main:` can both exist with the same effective name.
+
+Do not create an independent namespace where a code label can silently shadow an existing data symbol or numeric equate.
+
+If a symbol category is not implemented in the current repository state, do not implement that category merely to test Phase 58. Instead, document in the milestone report that the corresponding conflict test is not applicable until that symbol category exists.
+
+#### Duplicate ordinary labels
+
+```asm
+.code
+main PROC
+start:
+    mov eax, 1
+start:
+    mov ebx, 2
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- the second `start:` declaration is rejected;
+- the first accepted `start:` declaration remains the prior definition;
+- the rejected second declaration is not inserted into the code-label table;
+- the rejected second declaration does not replace the first declaration.
+
+#### Code label conflicts with data symbol
+
+```asm
+.data
+value DWORD 1
+
+.code
+main PROC
+value:
+    mov eax, 1
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `value:` conflicts with the already accepted data symbol `value`;
+- under default or `OPTION CASEMAP:ALL`, a spelling that differs only by ASCII case also conflicts;
+- under `OPTION CASEMAP:NONE`, only an exact spelling conflict is rejected unless another documented namespace rule applies.
+
+#### Procedure-entry label conflicts with ordinary label
+
+```asm
+.code
+main PROC
+main:
+    mov eax, 1
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `main PROC` records `main` as a procedure-entry code label.
+- `main:` conflicts with the previously accepted procedure-entry code label.
+- The diagnostic points at `main:` and includes prior-definition metadata for `main PROC`.
+
+#### Ordinary label conflicts with later procedure-entry label
+
+```asm
+.code
+start:
+start PROC
+    mov eax, 1
+start ENDP
+END start
+```
+
+Expected behavior:
+
+- `start:` records an ordinary code label.
+- `start PROC` conflicts with the previously accepted ordinary code label.
+- The diagnostic points at the `start` name in `start PROC` and includes prior-definition metadata for `start:`.
+
+#### Code label conflicts with numeric equate, when numeric equates are implemented
+
+Use the numeric equate syntax already implemented in the current repository state.
+
+If the implemented syntax is `name = constant`, use this shape:
+
+```asm
+COUNT = 4
+
+.code
+main PROC
+COUNT:
+    mov eax, 1
+main ENDP
+END main
+```
+
+If the implemented syntax is another accepted numeric-equate form, use that implemented form instead.
+
+Expected behavior:
+
+- `COUNT:` conflicts with the already accepted numeric equate `COUNT`;
+- under default or `OPTION CASEMAP:ALL`, folded-case spellings also conflict;
+- under `OPTION CASEMAP:NONE`, exact-case policy applies.
+
+Do not add or broaden numeric-equate syntax merely to create this Phase 58 test. If numeric equates are not implemented in the Phase 58 base, mark this conflict case as not applicable in the Phase 58 milestone report.
+
+### Required label metadata
+
+For each accepted code-label declaration, record metadata sufficient for later control-flow diagnostics, debugger display, and source navigation.
+
+Required metadata:
+
+- original label spelling exactly as written in source;
+- normalized lookup key used under the active `OPTION CASEMAP` policy, if the implementation stores one;
+- active CASEMAP policy at the declaration location;
+- whether the declaration came from ordinary label syntax `name:` or procedure syntax `name PROC`;
+- source line for the label name;
+- source column for the label name;
+- byte offset for the label name;
+- span length for the label name;
+- target instruction index, if a following executable instruction exists;
+- target classification:
+  - executable instruction target;
+  - procedure-entry target;
+  - no executable target;
+- prior-definition metadata when a duplicate/conflict diagnostic is emitted.
+
+The implementation does not need to expose all of these fields in public JSON unless Phase 58 explicitly chooses to add a tested metadata API.
+
+If Phase 58 exposes code-label metadata through source-run JSON, debug JSON, or a test-only API, that payload must be documented and tested.
+
+If Phase 58 does not expose public metadata, native parser/IR tests must still verify the metadata internally.
 
 ### Diagnostics
 
-- `duplicate-label` for duplicate code labels.
-- `symbol-redefinition` or `label-symbol-conflict` for conflicts with data symbols/equates where applicable.
-- Diagnostics must include the duplicate/current definition location and prior-definition line, column, byte offset, and span length.
+Phase 58 diagnostics must be structured and source-located.
 
-### Required tests
+Required diagnostic families:
 
-- Multiple ordinary labels in one procedure.
-- Case-sensitive label lookup: `Loop:` and `loop:` are distinct.
-- Procedure-entry label from `main PROC` targets the first executable instruction.
-- Label immediately before first instruction targets that instruction.
-- Label immediately before `ENDP` with no target instruction is rejected as an empty target if used.
-- Duplicate labels.
-- Label/data symbol collision.
-- Labels do not change execution yet.
-- Source-run JSON diagnostics and rendered Simulator Messages for duplicates.
+- `duplicate-label`, or the implementation's selected equivalent, for duplicate code-label declarations;
+- `symbol-redefinition` or `label-symbol-conflict`, or the implementation's selected equivalent, for conflicts between a code label and another accepted user-defined symbol in the same effective namespace;
+- existing source-location and parser-capacity diagnostics must remain unchanged.
+
+Use the most specific diagnostic code already present in the implementation if one exists. Do not introduce multiple overlapping diagnostic codes for the same case unless the distinction is documented and tested.
+
+Diagnostic requirements:
+
+- The diagnostic must point at the current rejected declaration, not only at the previous declaration.
+- The diagnostic must include current declaration line, column, byte offset, and span length.
+- The diagnostic must include prior-definition line, column, byte offset, and span length when those fields are available.
+- The diagnostic message must identify the conflicting symbol spelling.
+- For folded-case conflicts under default or `OPTION CASEMAP:ALL`, the message should make clear that the conflict is caused by case-insensitive user-symbol matching.
+- For exact-case `OPTION CASEMAP:NONE`, diagnostics must not claim two labels conflict merely because their folded spellings match.
+- Rejected declarations must not be inserted into the label table after a diagnostic.
+- The diagnostic must be emitted through Simulator Messages, not Program Console.
+- A source with duplicate/conflicting labels must not execute.
+
+Diagnostics must not use milestone-relative wording such as:
+
+```text
+unsupported by the current milestone
+not implemented in this milestone
+not supported in this milestone
+```
+
+Diagnostics must use stable behavior-specific wording.
+
+Acceptable diagnostic message examples:
+
+```text
+Duplicate code label `start`; first defined at line 3, column 1.
+```
+
+```text
+Code label `value` conflicts with an existing data symbol defined at line 2, column 1.
+```
+
+```text
+Code label `loop` conflicts with `Loop` because user-defined symbols are case-insensitive under the active CASEMAP policy.
+```
+
+The exact wording may differ, but it must be stable, actionable, and covered by exact rendered Simulator Messages tests.
+
+### Required parser and metadata tests
+
+Phase 58 must add parser and metadata tests for accepted label declarations.
+
+Required tests:
+
+- Ordinary label accepted:
+  - `start:` before an executable instruction is recorded as an executable instruction target.
+- Multiple ordinary labels accepted:
+  - consecutive labels before one executable instruction are each recorded as executable instruction targets for the same following executable instruction.
+- Procedure-entry label accepted:
+  - `main PROC` records `main` as a procedure-entry code label.
+- Procedure-entry target:
+  - `main PROC` targets the first executable instruction in the procedure body when one exists.
+- No-executable-target ordinary label accepted:
+  - a label immediately before `ENDP` or `END` is recorded as no-executable-target and does not emit an error in Phase 58.
+- No-executable-target procedure entry accepted:
+  - an empty procedure body records the `PROC` name as a procedure-entry label with no executable target, or an equivalent documented internal representation.
+  - the empty procedure entry must not be mapped to `ENDP`, `END`, synthetic root-procedure termination, or the first executable instruction of a later unrelated procedure.
+- Procedure containing only non-executable compatibility constructs:
+  - if a procedure body contains accepted metadata-only, compatibility-notice, or listing/documentation constructs but no executable instruction, the procedure entry remains a procedure-entry/no-executable-target metadata record.
+  - accepted notices must not create fake executable instruction targets.
+- Adjacent empty and non-empty procedures:
+  - `Empty PROC` / `Empty ENDP` followed by `Real PROC` containing `mov eax, 1` must record `Empty` as no-executable-target and `Real` as targeting its own first executable instruction.
+  - `Empty` must not point to `Real`'s first instruction.
+- Metadata source locations:
+  - ordinary label metadata records line, column, byte offset, and span length for the label name.
+  - `PROC` label metadata records line, column, byte offset, and span length for the procedure name.
+- Labels are non-executable:
+  - label declarations do not generate executable IR instructions.
+  - label declarations do not mutate registers, flags, memory, Program Console output, Simulator Messages, or memory-change rows.
+
+### Required CASEMAP tests
+
+Phase 58 must add CASEMAP tests for labels.
+
+Required tests:
+
+- Default folded duplicate:
+  - `Loop:` followed by `loop:` is rejected under omitted/default CASEMAP behavior.
+- Explicit `OPTION CASEMAP:ALL` folded duplicate:
+  - `Loop:` followed by `loop:` is rejected after `OPTION CASEMAP:ALL`.
+- `OPTION CASEMAP:NONE` exact-case distinct labels:
+  - `Loop:` and `loop:` are accepted as distinct declarations after `OPTION CASEMAP:NONE`.
+- CASEMAP does not affect keywords:
+  - after `OPTION CASEMAP:NONE`, directive and instruction recognition remains case-insensitive where existing behavior already supports case-insensitive matching.
+- Irvine32 routine recognition remains separate from user-symbol CASEMAP:
+  - if `INCLUDE Irvine32.inc` and `exit` are available in the Phase 58 base, `EXIT`, `Exit`, and `exit` remain recognized case-insensitively even after `OPTION CASEMAP:NONE`.
+- Rejected folded duplicate is not inserted:
+  - after a folded duplicate label is rejected, parser metadata still points to the first accepted declaration.
+
+### Required symbol-conflict tests
+
+Phase 58 must add conflict tests for the symbol categories present in the current repository state.
+
+Required tests:
+
+- Duplicate ordinary label:
+  - `start:` followed by another `start:` reports the selected duplicate-label diagnostic.
+- Code label conflicts with data symbol:
+  - `.data value DWORD 1` followed by `.code value:` reports the selected symbol-conflict diagnostic.
+- Folded code label conflicts with data symbol under default or `OPTION CASEMAP:ALL`:
+  - `.data Value DWORD 1` followed by `.code value:` conflicts under default or explicit `OPTION CASEMAP:ALL`.
+- Exact-case data symbol and code label behavior under `OPTION CASEMAP:NONE`:
+  - exact spelling conflicts are rejected.
+  - different spelling by case is accepted only if the active namespace policy permits it and no other rule forbids it.
+- `PROC` name conflicts with ordinary label:
+  - `main PROC` followed by `main:` reports a conflict.
+- Ordinary label conflicts with later `PROC` name:
+  - `start:` followed by `start PROC` reports a conflict.
+- Numeric equate conflicts with code label, when numeric equates are implemented:
+  - use the numeric-equate syntax already implemented in the repository.
+  - the equate name followed by a same-effective-name code label reports a conflict.
+  - if numeric equates are not implemented in the Phase 58 base, document this case as not applicable instead of implementing equates early.
+
+### Required diagnostic and rendered-message tests
+
+Phase 58 must add structured diagnostic tests and exact rendered Simulator Messages tests for every new or changed user-visible diagnostic path.
+
+Structured diagnostics must verify:
+
+- diagnostic code;
+- severity/kind;
+- current declaration line;
+- current declaration column;
+- current declaration byte offset;
+- current declaration span length;
+- prior-definition line;
+- prior-definition column;
+- prior-definition byte offset;
+- prior-definition span length, where available;
+- conflicting symbol spelling or normalized conflict key when available.
+
+Exact rendered Simulator Messages tests must cover at least:
+
+- duplicate ordinary label;
+- folded duplicate label under default or `OPTION CASEMAP:ALL`;
+- data-symbol/code-label conflict;
+- `PROC`/ordinary-label conflict in both declaration orders, unless one order is structurally impossible in the current parser and the report explains why.
+
+Rendered tests must use the real Simulator Messages formatter path. Native C tests that only inspect internal parser status are not sufficient for user-visible diagnostic wording.
+
+### Required source-run tests
+
+Phase 58 must add source-run tests proving labels integrate without changing existing execution semantics.
+
+Required tests:
+
+- A valid source with labels and existing executable instructions still executes successfully.
+- Consecutive labels before an existing instruction still execute that instruction exactly once in normal fall-through order.
+- Labels do not create Program Console output.
+- Labels do not create memory-change rows.
+- Labels do not mutate registers or flags.
+- Labels do not alter existing instruction semantics.
+- A source with duplicate/conflicting labels refuses execution.
+- A source containing `jmp label` still follows current pre-branch unsupported-instruction behavior unless an earlier accepted phase already implemented `jmp`.
+
+### Required non-goal regression tests
+
+Phase 58 must add or preserve tests proving that future control-flow and procedure behavior was not implemented early.
+
+Required non-goal coverage:
+
+- `jmp` remains unsupported unless a prior accepted phase already implemented it.
+- conditional jumps remain unsupported unless a prior accepted phase already implemented them.
+- `loop` remains unsupported unless a prior accepted phase already implemented it.
+- `call` remains unsupported except for any already-implemented special virtual behavior.
+- `ret` remains unsupported unless a prior accepted phase already implemented it.
+- stack behavior is not added.
+- procedure invocation is not added.
+- debugger stepping, breakpoints, and UI label navigation are not added.
+
+These tests may be parser/source-run diagnostics rather than executor tests, depending on the current implementation architecture.
+
+### Required documentation updates
+
+Phase 58 must update current documentation and supported-syntax references to describe accepted label declarations accurately.
+
+Documentation must say:
+
+- ordinary labels using `name:` are accepted as code-label metadata;
+- `name PROC` records procedure-entry label metadata;
+- labels are not executable instructions;
+- labels do not yet enable `jmp`, conditional jumps, `loop`, `call`, `ret`, or procedure invocation;
+- no-executable-target labels are accepted declarations but are not valid branch targets until a later branch-consuming phase defines and diagnoses target use;
+- label declarations follow the user-defined symbol CASEMAP policy;
+- keyword, directive, register, virtual include, and Irvine32 routine matching remain case-insensitive.
+
+Supported-syntax documentation must not imply that labels can already be used as branch targets unless the same phase or a later accepted phase implements branch-consuming instructions.
 
 ### Acceptance criteria
 
@@ -9487,12 +14481,110 @@ main ENDP
 END main
 ```
 
-Expected:
+Expected final register state includes:
 
 ```text
 EAX = 00000001h / 1
 EBX = 00000002h / 2
 ```
+
+A program with consecutive labels before one executable instruction still executes that instruction once:
+
+```asm
+.code
+main PROC
+first:
+second:
+    mov eax, 1
+main ENDP
+END main
+```
+
+Expected final register state includes:
+
+```text
+EAX = 00000001h / 1
+```
+
+A program with a no-executable-target label is accepted when the label is not consumed as a branch target:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+done:
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- execution completes successfully;
+- `done` is recorded as no-executable-target metadata;
+- no branch-target diagnostic is emitted in Phase 58.
+
+A program with duplicate labels refuses execution and emits a structured, rendered diagnostic:
+
+```asm
+.code
+main PROC
+start:
+    mov eax, 1
+start:
+    mov ebx, 2
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- no program execution occurs;
+- the diagnostic points at the second `start:` declaration;
+- prior-definition metadata points at the first `start:` declaration;
+- rendered Simulator Messages include the exact duplicate/conflict wording selected by the implementation.
+
+Phase 58 is accepted only when the tests prove that labels are recorded as metadata without adding branch execution, stack behavior, procedure invocation, or debugger behavior.
+
+### Phase 58 milestone report requirements
+
+The Phase 58 milestone report must explicitly state that Phase 58 is a parser/source metadata and diagnostics phase.
+
+The report must include:
+
+- source-of-truth files used;
+- repository/archive milestone before and after the phase;
+- runtime/source-run MASM behavior phase before and after the phase;
+- whether Phase 58 advanced each status surface, with specific reasons;
+- exact accepted label declaration forms implemented;
+- exact target metadata policy implemented;
+- exact duplicate/conflict cases implemented;
+- explicit statement that branch parsing and branch execution were not implemented;
+- explicit statement that `jmp`, conditional jumps, `loop`, `call`, `ret`, stack behavior, procedure invocation, and debugger stepping were not implemented;
+- CASEMAP behavior tested:
+  - default folded duplicate rejection;
+  - explicit `OPTION CASEMAP:ALL` folded duplicate rejection;
+  - `OPTION CASEMAP:NONE` exact-case distinct labels;
+- symbol-conflict behavior tested:
+  - ordinary duplicate labels;
+  - data-symbol/code-label conflict;
+  - `PROC`/ordinary-label conflicts in both declaration orders;
+  - numeric equate/code-label conflict if numeric equates are present;
+- structured diagnostics added or changed;
+- exact rendered Simulator Messages tests added or changed;
+- whether public JSON/debug metadata was added or whether metadata was tested through internal native parser/IR tests only;
+- aggregate test result if the aggregate command completed;
+- focused test groups run if the aggregate timed out or output was truncated in an assistant/container environment;
+- whether browser/Wasm smoke testing was run or skipped, and why.
+
+The report must not say:
+
+```text
+All implemented milestone tests passed.
+```
+
+unless the aggregate command completed and returned the final success status in that environment.
+
+If focused groups passed after aggregate timeout, the report must use the guide's focused-verification wording and list the focused groups that passed.
 
 ---
 
@@ -9518,9 +14610,65 @@ Runtime resource-limit enforcement.
 4. Preserve all register, flag, memory, and console state produced by the first `limit` executed instructions; do not partially execute the next instruction.
 5. Return a structured runtime diagnostic when the limit is reached.
 6. Ensure no `execution-complete` message is emitted after limit failure.
-7. Include the configured limit, executed instruction count, attempted next instruction index, and current instruction index in source-run JSON.
+7. Include `instructionLimit`, `executedInstructionCount`, `attemptedNextInstructionIndex`, and `currentInstructionIndex` in source-run JSON.
 8. Preserve deterministic behavior for the same source and settings.
 9. Keep default limit high enough for normal straight-line examples.
+
+### Source-run option and structured diagnostic field names
+
+Phase 59 must expose the instruction-count limit through a single source-run/test-facing option named:
+
+```text
+instructionLimit
+```
+
+The option value must be a positive integer.
+
+If `instructionLimit` is omitted, the simulator uses its documented default limit.
+
+Invalid option values must produce a structured settings or source-run configuration diagnostic rather than falling back silently. Invalid values include:
+
+- zero;
+- negative values;
+- non-integer values;
+- non-numeric JSON values;
+- values above the implementation's documented maximum, if a maximum is enforced.
+
+When execution stops because the limit is reached, the diagnostic code must be:
+
+```text
+instruction-limit-exceeded
+```
+
+The source-run JSON result or diagnostic detail object must include these fields with these exact names:
+
+```text
+instructionLimit
+executedInstructionCount
+attemptedNextInstructionIndex
+currentInstructionIndex
+```
+
+Field meanings:
+
+- `instructionLimit`: the configured limit that stopped execution.
+- `executedInstructionCount`: the number of VM instructions that fully executed and committed state before the stop.
+- `attemptedNextInstructionIndex`: the instruction index that would have been fetched next and was blocked by the limit.
+- `currentInstructionIndex`: the index of the last VM instruction that fully executed and committed state. If no instruction has executed yet, this field must be `null`.
+
+The limit check occurs before fetching or executing the next instruction after the limit has been reached.
+
+With `instructionLimit = 2`, a three-instruction straight-line program must behave as follows:
+
+```text
+instruction 1 executes and commits state
+instruction 2 executes and commits state
+instruction 3 does not execute
+instruction-limit-exceeded is emitted
+execution-complete is not emitted
+```
+
+The failed instruction-limit check must not mutate registers, flags, memory, Program Console output, or memory-change rows. It may append only the instruction-limit runtime diagnostic to Simulator Messages.
 
 ### Diagnostics
 
@@ -9532,7 +14680,7 @@ Runtime resource-limit enforcement.
 - Straight-line program below limit succeeds.
 - Straight-line hardcoded test with artificially low limit fails.
 - Instruction count includes no-op and normal instructions.
-- Diagnostic JSON includes configured limit, executed instruction count, attempted next instruction index, and current instruction index.
+- Diagnostic JSON includes exact fields `instructionLimit`, `executedInstructionCount`, `attemptedNextInstructionIndex`, and `currentInstructionIndex`.
 - Tests assert the final register state after failure. With limit `2` on a three-instruction straight-line program, the first two instructions have executed and the third has not.
 - Rendered Simulator Messages test for instruction-limit failure.
 
@@ -9560,87 +14708,40 @@ Expected diagnostic:
 
 ## Shared Direct Branch Target Classification
 
-This section defines shared classification rules for direct branch target operands.
+This policy applies to Phase 58 - Code Label Table and Label Diagnostics, Phase 60 - Direct JMP Parsing and Target Lowering, Phase 61 - Direct JMP Runtime Execution, and later direct branch phases that consume source-level label operands.
 
-It is a shared rule for phases that parse or consume direct branch targets. It is not itself an implementation phase, and it must not be read as permission to add branch behavior to earlier preparation phases.
+This shared section defines target classification only. It does not implement any feature by itself.
 
-This section applies to:
-
-- Phase 60 - Direct JMP Parsing and Target Lowering;
-- Phase 61 - Direct JMP Runtime Execution, for already-lowered direct branch metadata;
-- later direct conditional-jump, `loop`, or other direct branch parsing phases that accept label operands;
-- later branch-runtime phases that consume branch target metadata produced by the parser.
-
-This section applies only to direct source-level branch operands. It does not define indirect branch target validation.
-
-This section does not make Phase 57, Phase 58, Phase 59, or any other preparation phase implement direct branch parsing or runtime branch execution. Preparation phases may create label metadata, execution-safety infrastructure, or parser scaffolding only when their own phase section explicitly requires that work.
-
-### Purpose
-
-All direct branch instructions must classify target operands the same way.
-
-The classifier prevents future branch phases from giving inconsistent answers for the same symbol. For example, a data symbol, numeric equate, procedure name, code label, Irvine32 virtual name, and unknown identifier can all be recognized by some part of the parser, but they are not all valid direct branch targets.
-
-A direct branch target classifier must answer:
-
-```text
-Is this operand a valid executable target for this direct branch form?
-```
-
-It must not answer unrelated questions such as:
-
-```text
-Is this a valid CALL target?
-Is this a valid Irvine32 routine?
-Is this a valid memory operand?
-Is this a valid data symbol?
-Should stack or procedure semantics be executed?
-```
-
-### Classification table
+All direct branch instructions that consume source-level label operands must use the same target classifier unless the owning phase explicitly documents a changed rule.
 
 | Target class | Result |
 |---|---|
 | Code label from `name:` with executable target instruction | Accepted |
-| Procedure-entry label from `name PROC` | Accepted as direct branch to the first instruction only; no CALL/RET semantics |
-| Empty label before `ENDP` or `END` with no executable target | Rejected as `empty-label-target` or `invalid-jump-target` |
-| Data symbol | Rejected as `invalid-jump-target` |
-| Numeric equate | Rejected as `invalid-jump-target` |
-| Irvine virtual symbol such as `exit` | Rejected as `invalid-jump-target` in direct branch phases unless a later phase explicitly changes Irvine branch/call semantics |
-| External/non-goal symbol | Rejected as `invalid-jump-target` or a more specific non-goal diagnostic |
-| Unknown symbol | Rejected as `unknown-label` or `unknown-jump-target` |
+| Procedure-entry label from `name PROC` with a first executable instruction in the procedure body | Accepted as a direct branch to the first executable instruction only |
+| Code label that resolves to no executable instruction | Rejected when consumed by a branch target operand |
+| Procedure-entry label for a procedure body with no executable instruction | Rejected when consumed by a branch target operand |
+| Data symbol | Rejected |
+| Numeric equate or constant symbol | Rejected |
+| Text equate or macro-like text symbol | Rejected |
+| Irvine32 virtual routine or virtual terminator name | Rejected for direct `jmp`; future `call` classification owns callable Irvine32 behavior |
+| Windows/API/external symbol | Rejected as a non-goal or invalid direct branch target, depending on the exact symbol category |
+| Unknown identifier | Rejected |
 | Empty target operand | Rejected as malformed branch syntax |
-| Register operand such as `eax` | Rejected in direct branch phases unless a later indirect-branch phase explicitly implements register-indirect branch behavior |
-| Memory operand such as `DWORD PTR [eax]` | Rejected in direct branch phases unless a later indirect-branch phase explicitly implements memory-indirect branch behavior |
-| Distance/type override such as `SHORT label`, `NEAR PTR label`, or `FAR PTR label` | Rejected until a later phase explicitly implements that syntax and semantics |
+| Immediate numeric target | Rejected |
+| Register target | Rejected for direct branch forms; future indirect branch behavior, if any, must be specified separately |
+| Memory operand target | Rejected for direct branch forms; future indirect branch behavior, if any, must be specified separately |
+| Distance/type override target such as `SHORT label`, `NEAR PTR label`, or `FAR PTR label` | Rejected unless a later phase explicitly implements that override |
 
-### Required diagnostic behavior
+A label with no executable target is not an error merely because it exists. It becomes an error only when a branch-consuming phase uses it as the operand of a branch instruction.
 
-Every rejected branch target diagnostic must point at the target operand rather than only at the branch mnemonic.
+Every rejected direct-branch target diagnostic must point its primary source span at the branch operand. If useful, the diagnostic may include secondary metadata for the definition location of the rejected symbol.
 
-When the target resolves to a known non-code symbol, structured JSON and rendered Simulator Messages must include or clearly communicate the resolved symbol kind. Examples:
+A direct branch to a `PROC` entry is still a direct branch. It is not a procedure call.
 
-```text
-data symbol
-numeric equate
-Irvine32 virtual symbol
-external/non-goal symbol
-```
+This shared classifier does not decide or implement:
 
-The diagnostic should explain that the symbol is known but is not a valid direct branch target.
-
-Unknown identifiers should use the unknown-label or unknown-jump-target diagnostic path rather than `invalid-jump-target`, because there is no resolved non-code symbol kind to report.
-
-Malformed empty target operands should use malformed branch syntax wording rather than unknown-symbol wording.
-
-### PROC target rule
-
-A procedure-entry label from `name PROC` is accepted as a direct branch target only as a code location.
-
-This rule does not implement:
-
-- `CALL`;
-- `RET`;
+- `CALL` target validity;
+- Irvine32 routine call validity;
 - stack mutation;
 - stack-frame setup or teardown;
 - procedure arguments;
@@ -9648,15 +14749,15 @@ This rule does not implement:
 - `LOCAL`;
 - `PROTO`;
 - `INVOKE`;
-- calling-convention behavior.
-
-A direct branch to a `PROC` entry is still a direct branch. It is not a procedure call.
+- calling-convention behavior;
+- indirect branch behavior;
+- Windows API behavior;
+- PE loading;
+- object linking.
 
 ### Non-goals for this shared section
 
-This shared section does not implement any feature by itself.
-
-It does not authorize:
+This shared section does not authorize:
 
 - direct `jmp` before Phase 60 - Direct JMP Parsing and Target Lowering;
 - runtime branch execution before Phase 61 - Direct JMP Runtime Execution;
@@ -9676,10 +14777,12 @@ Any phase that first uses the classifier for a new branch instruction family mus
 
 - accepted code label target;
 - accepted `PROC` entry target, with no CALL/RET semantics;
-- rejected empty label target;
+- rejected empty/no-executable label target;
 - rejected data symbol target;
 - rejected numeric equate target;
+- rejected text equate or macro-like text target if such symbols are visible to the classifier;
 - rejected Irvine32 virtual symbol such as `exit`;
+- rejected Windows/API/external symbol when applicable;
 - rejected unknown target;
 - rejected empty target operand;
 - rejected register target;
@@ -9690,6 +14793,34 @@ Any phase that first uses the classifier for a new branch instruction family mus
 
 If a later phase intentionally changes one target class, that phase must state the changed class explicitly and add regression tests proving unchanged classes still behave as before.
 
+### Reporting requirement for control-flow preparation phases
+
+Milestone reports for Phase 58 - Code Label Table and Label Diagnostics through Phase 61 - Direct JMP Runtime Execution must state clearly whether the phase changed runtime branch execution behavior.
+
+For metadata-only or parser/lowering-only phases, use this wording pattern:
+
+```text
+Runtime branch execution behavior:
+- Not implemented in this phase; this phase records metadata, validates labels, classifies targets, or lowers branch metadata only.
+```
+
+For the first runtime branch phase, use this wording pattern:
+
+```text
+Runtime branch execution behavior:
+- Implemented for direct `jmp` only. Conditional jumps, loop instructions, call/ret behavior, stack behavior, procedure-frame behavior, indirect jumps, and Irvine32 routine calls remain future work.
+```
+
+Reports for parser/lowering-only phases must not say that `jmp`, branches, or control flow are "supported" without qualifying whether support is parser-only, lowering-only, or executable runtime behavior.
+
+Reports for runtime branch phases must state:
+
+- which branch forms execute;
+- which branch forms are parsed but not executable, if any;
+- which branch forms are rejected;
+- which branch forms remain future work;
+- whether runtime/source-run MASM behavior phase metadata was advanced.
+
 ---
 
 ## 64. Phase 60 - Direct JMP Parsing and Target Lowering
@@ -9697,6 +14828,99 @@ If a later phase intentionally changes one target class, that phase must state t
 ### Goal
 
 Parse `jmp label` and lower it to a branch target reference without executing branch behavior yet.
+
+### Phase 60 runtime boundary before Phase 61
+
+Phase 60 accepts, classifies, and lowers direct `jmp label` syntax. It does not execute branches.
+
+Phase 60 must not implement any of the following behavior:
+
+- runtime instruction-pointer mutation for `jmp`;
+- execution transfer to a target label;
+- branch-loop behavior;
+- conditional jumps;
+- `loop`;
+- `call`;
+- `ret`;
+- stack behavior;
+- procedure-entry semantics beyond target metadata;
+- debugger stepping over branch execution.
+
+A lowered Phase 60 `jmp` instruction must not silently fall through. It must not behave as a no-op. It must not execute the next straight-line instruction as if the branch were absent.
+
+Before Phase 61 - Direct JMP Runtime Execution is implemented, any source-run execution path that reaches a lowered `jmp` instruction must stop before mutating the instruction pointer, registers, flags, memory, Program Console output, or memory-change rows.
+
+Use this structured runtime diagnostic code:
+
+```text
+branch-runtime-deferred
+```
+
+Rendered message wording should explain the boundary without milestone-relative wording. Example:
+
+```text
+Direct JMP was parsed and resolved, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution. Execution stopped before applying the jump.
+```
+
+This diagnostic is a Phase 60 transitional runtime boundary for accepted-but-not-yet-executable lowered direct branches.
+
+Phase 61 - Direct JMP Runtime Execution must remove this transitional runtime-deferred behavior for valid direct `jmp label` instructions and replace it with actual instruction-pointer transfer. The `branch-runtime-deferred` diagnostic must remain only for branch forms that are still accepted for metadata but not executable, if any such forms remain explicitly documented.
+
+Phase 60 tests may inspect lowered branch metadata without running the instruction. Source-run tests that execute a program containing `jmp` before Phase 61 must assert `branch-runtime-deferred` and must prove that no instruction after the `jmp` committed state.
+
+
+### Deferred JMP execution-count and diagnostic metadata
+
+Phase 60 lowers direct `jmp label` into IR so later phases can implement branch execution. Phase 60 does not execute the branch.
+
+When execution reaches a lowered `jmp` before Phase 61 - Direct JMP Runtime Execution is implemented, the executor/source-run path must stop with `branch-runtime-deferred`.
+
+The stopped `jmp` is an attempted instruction, not a committed instruction.
+
+Required metadata behavior:
+
+```text
+executedInstructionCount = number of previously committed VM instructions
+attemptedNextInstructionIndex = index of the lowered jmp instruction that was reached but not executed
+currentInstructionIndex = last committed instruction index, or null if no instruction committed before the jmp
+```
+
+If the existing source-run JSON schema uses different field names, preserve the schema's established names but keep the same meaning. Do not invent new public JSON fields merely for Phase 60 unless Phase 60 explicitly owns a schema update.
+
+Required runtime behavior for `branch-runtime-deferred`:
+
+- stop before making any branch decision;
+- do not mutate the instruction pointer;
+- do not mutate registers;
+- do not mutate modeled flags;
+- do not mutate Phase 50A flag-validity metadata;
+- do not mutate memory;
+- do not write Program Console output;
+- do not create memory-change rows;
+- do not execute instructions after the `jmp`;
+- do not emit `execution-complete`.
+
+Diagnostic source-span rule:
+
+- For `branch-runtime-deferred`, the primary source span should point at the `jmp` mnemonic or the full `jmp` instruction, because the problem is that runtime branch execution is deferred.
+- For rejected or invalid targets, the primary source span should point at the target operand, because the problem is target classification or target validity.
+
+Required tests:
+
+- Source-run fixture where one ordinary instruction commits before `jmp`.
+  - Assert that only the pre-`jmp` instruction is counted as committed.
+  - Assert that the `jmp` is reported as the attempted next instruction, if the current schema exposes that concept.
+  - Assert that instructions after `jmp` do not execute.
+  - Assert no `execution-complete` message appears.
+
+- Source-run fixture where `jmp` is the first executable instruction.
+  - Assert zero committed instructions.
+  - Assert no register, flag, memory, Program Console, or memory-change mutation occurs because of the `jmp`.
+
+- Exact rendered Simulator Messages test for `branch-runtime-deferred`.
+  - The message must use stable wording.
+  - It must not say "not implemented in this milestone," "unsupported by the current milestone," or equivalent milestone-relative wording.
+  - It should say that direct `JMP` parsing/lowering is present, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution.
 
 ### Accepted syntax
 
@@ -9724,15 +14948,17 @@ jmp FAR PTR label
 - Use `Shared Direct Branch Target Classification` for every `jmp` target operand. Do not create a `jmp`-specific target classifier with different symbol-kind rules.
 - Procedure entry labels are accepted as direct branch targets but do not imply CALL semantics.
 - Diagnostic source span points at the target token.
-- No runtime instruction-pointer mutation is required in this phase.
+- Runtime instruction-pointer mutation is not implemented in this phase. If source-run execution reaches a lowered `jmp`, it must stop with `branch-runtime-deferred` instead of falling through or acting as a no-op.
 
 ### Required tests
 
 - Code label target classification.
 - Procedure entry target classification.
 - Data/equate/Irvine/unknown target diagnostics.
-- Zero-length, directive-name, register-name, and instruction-name target rejections.
-- Rendered diagnostics for every rejected target class.
+- Zero-length, directive-name, register-name, instruction-name, memory-target, and distance/type-override target rejections.
+- Source-run `branch-runtime-deferred` diagnostic when execution reaches a lowered `jmp` before Phase 61.
+- No-partial-mutation source-run test proving instructions after the deferred `jmp` do not execute.
+- Rendered diagnostics for every rejected target class and for `branch-runtime-deferred`.
 
 ## 65. Phase 61 - Direct JMP Runtime Execution
 
@@ -9808,6 +15034,99 @@ Memory width must be known through symbol metadata, explicit `PTR`, or an existi
 - Compute subtraction for flags only.
 - Do not mutate registers, memory, or flags until all memory reads needed for the comparison have succeeded.
 - Produce no successful memory-change rows.
+
+
+### Planned-read validation requirements for CMP memory forms
+
+`cmp` memory forms read simulated memory and then update modeled flags from the comparison result. Therefore, every Phase 63 memory-source path must participate in the standing planned-access validation rule before the comparison consumes the memory value or updates flags.
+
+This applies to all accepted CMP forms with memory operands, including:
+
+```asm
+cmp reg, mem
+cmp mem, reg
+cmp mem, imm
+cmp symbol, reg
+cmp symbol, imm
+cmp symbol[offset], reg
+cmp symbol[offset], imm
+cmp BYTE PTR [reg32], imm
+cmp WORD PTR [reg32], imm
+cmp DWORD PTR [reg32], imm
+```
+
+Required policy behavior:
+
+- Default region-only mode:
+  - memory reads use mandatory checked VM memory helpers;
+  - valid region reads proceed;
+  - invalid address, invalid range, invalid region, or invalid permission diagnostics stop execution before flags are updated.
+
+- Section-capacity warning mode:
+  - a read that passes Level 1 but leaves section capacity emits `section-capacity-violation`;
+  - execution continues;
+  - flags are updated from the deterministic checked-memory value.
+
+- Section-capacity strict mode:
+  - a read that passes Level 1 but leaves section capacity emits `section-capacity-violation` as a runtime error;
+  - execution stops before flags are updated.
+
+- Section-image warning mode:
+  - a read that passes Level 1 and applicable section-capacity checks but leaves the declared section image emits `section-image-violation`;
+  - execution continues;
+  - flags are updated from the deterministic checked-memory value.
+
+- Section-image strict mode:
+  - a read that passes Level 1 and applicable section-capacity checks but leaves the declared section image emits `section-image-violation` as a runtime error;
+  - execution stops before flags are updated.
+
+- Declared-object warning mode:
+  - a read that passes lower-level validation but crosses declared-object bounds emits the existing declared-object diagnostic;
+  - execution continues;
+  - flags are updated from the deterministic checked-memory value.
+
+- Declared-object strict mode:
+  - a read that passes lower-level validation but crosses declared-object bounds emits the existing declared-object diagnostic as a runtime error;
+  - execution stops before flags are updated.
+
+- Uninitialized-read warning mode:
+  - a read from bytes that still carry uninitialized-origin metadata emits `uninitialized-read`;
+  - execution continues;
+  - flags are updated from the deterministic zero-filled or current memory value.
+
+- Uninitialized-read strict mode:
+  - a read from bytes that still carry uninitialized-origin metadata emits `uninitialized-read` as a runtime error;
+  - execution stops before flags are updated.
+
+No-partial-mutation requirement:
+
+For every strict or fatal planned-read failure, `cmp` must preserve:
+
+- all general-purpose registers;
+- `CF`, `ZF`, `SF`, and `OF`;
+- Phase 50A flag-validity metadata;
+- memory;
+- Program Console output;
+- memory-change rows.
+
+A failed CMP planned-read path must not emit `execution-complete`.
+
+Required test scope:
+
+The required tests do not need to cover every Cartesian combination of CMP operand form and memory-validation policy. They must cover every applicable policy at least once and every accepted CMP memory operand class at least once.
+
+At minimum, the Phase 63 test set must include:
+
+- one `cmp reg, mem` planned-read policy case;
+- one `cmp mem, reg` planned-read policy case;
+- one `cmp mem, imm` planned-read policy case;
+- one warning policy case that continues and updates flags;
+- one strict policy case that stops before flags and flag-validity metadata change;
+- one uninitialized-read warning case that continues using deterministic memory values;
+- one invalid Level 1 memory-read case that stops before flags change;
+- exact rendered Simulator Messages for one warning path and one strict path.
+
+A milestone report for Phase 63 must state that CMP memory forms were added to planned-read collection, source-run/Wasm policy routing, diagnostic JSON production, and rendered Simulator Messages coverage.
 
 ### Required tests
 
@@ -10021,7 +15340,7 @@ jna  label  ; alias of JBE
 - Unsigned above with `FFFFFFFFh > 1` takes `ja`.
 - Equal values take `jae` and `jbe`, not `ja` or `jb`.
 - Alias mnemonics match primary mnemonics. Require at least one taken and one not-taken test for each alias group: `JA/JNBE`, `JAE/JNB`, `JB/JNAE`, and `JBE/JNA`.
-- Same raw values demonstrate signed-vs-unsigned difference from Phase 60.
+- Same raw operand values must demonstrate the difference between unsigned relational jumps in this phase and signed relational jumps from Phase 65 - Signed Relational Conditional Jumps.
 - Unknown/data/`exit` target diagnostics.
 - Instruction-limit diagnostics for an unsigned conditional loop.
 
@@ -10343,7 +15662,7 @@ RET
 ### Rejected syntax
 
 ```asm
-ret 4          ; deferred to Phase 74 - RET imm16 Caller Cleanup
+ret 4          ; deferred to Phase 74 - RET imm16 Instruction
 ret eax
 ret WORD PTR [esp]
 retf
@@ -10382,7 +15701,7 @@ Executor tests:
 Parser tests:
 
 - `ret` accepted.
-- `ret 4` rejected until **Phase 74 - RET imm16 Caller Cleanup**. Phase 70 implements only near `ret` with no immediate operand.
+- `ret 4` is deferred to **Phase 74 - RET imm16 Instruction**, which models the caller-cleanup stack-adjustment form. Phase 70 implements only near `ret` with no immediate operand.
 - `retf` rejected as explicit non-goal.
 
 Source-run acceptance program:
@@ -10729,7 +16048,7 @@ Existing bare PROC behavior must continue to work.
 ### Rejected syntax in this phase
 
 ```asm
-MyProc PROC USES eax ebx       ; Phase 59
+MyProc PROC USES eax ebx       ; deferred to Phase 76 - PROC USES Parsing and Metadata; runtime save/restore starts in Phase 77 - PROC USES Runtime Save/Restore
 MyProc PROC arg1:DWORD         ; later PROC parameter phase
 MyProc PROC C                  ; language metadata deferred unless already accepted
 MyProc PROC STDCALL            ; deferred unless explicitly accepted
@@ -11971,7 +17290,7 @@ This phase must not implement Randomize, Random32, or RandomRange calls yet.
 2. Implement xorshift32 exactly: `x ^= x << 13; x ^= x >> 17; x ^= x << 5`, with unsigned 32-bit wrapping after each operation.
 3. Add named default seed constant `0x12345678`.
 4. Ensure reset/re-run produces deterministic RNG state unless project settings specify a different seed.
-5. Ensure shared project state can eventually carry deterministic seed if needed.
+5. Ensure shared project state has either a documented deterministic-seed field or an explicit future-owner note so later settings/share phases can carry a seed without changing this phase's RNG semantics.
 6. Add tests for repeatability and the documented first five values: `87985AA5h`, `155B24A3h`, `4820F4C4h`, `81B3AC98h`, `703A0788h`.
 
 ### Tests
@@ -14010,7 +19329,7 @@ Core flags, parser, IR, executor.
 ### Dependencies
 
 - Existing CPU/EFLAGS helper patterns from the initial flag model.
-- Phase 109 - PF/AF Storage and CPU Helper Scaffolding, as the most recent extended-flag storage precedent.
+- Phase 109 - PF and AF Flag Storage, Display, and Serialization, as the most recent extended-flag storage precedent.
 - Existing debugger/source-run flag serialization conventions, if they already expose modeled flags.
 
 DF ownership note:
@@ -15575,8 +20894,19 @@ Parser lowering and input integration.
 
 ### Dependencies
 
-- Phase 67 ReadString completion.
-- Phase 95 virtual macro registry.
+Phase 141 depends on the completed behavior from these phases:
+
+- Phase 108 - ReadString Checked Write and Completion.
+- Phase 138 - Macros.inc Virtual Macro Registry and Diagnostics.
+- The shared input wait-state and worker protocol behavior introduced by the Irvine32 input routine phases, especially Phase 103 - Irvine32 ReadChar, Phase 104 - Irvine32 ReadInt, and Phase 108 - ReadString Checked Write and Completion, if Phase 141 reuses their input-submission infrastructure.
+
+Interpretation rules:
+
+- `mReadString` must not be implemented before the underlying `ReadString` runtime behavior exists.
+- `mReadString` must be classified through the virtual macro registry from Phase 138 - Macros.inc Virtual Macro Registry and Diagnostics.
+- `mReadString` must not create a second independent macro-recognition path.
+- `mReadString` may reuse shared input-state and worker protocol infrastructure introduced by earlier Irvine32 input phases, but it must not depend on obsolete phase numbers or pre-renumbering references.
+- If a future assistant decides Phase 141 does not need any infrastructure from Phase 103 - Irvine32 ReadChar or Phase 104 - Irvine32 ReadInt, the milestone report must say so explicitly. Do not silently remove those references merely because `mReadString` is string-focused; the point is to verify whether shared input wait-state machinery is reused.
 
 ### Accepted syntax
 
@@ -16620,7 +21950,7 @@ Add user-facing share UI with deterministic size limits and clear diagnostics.
 ### Tasks
 
 1. Add Share button or equivalent UI action.
-2. Generate URL fragment using Phase 95 encoder.
+2. Generate the URL fragment using the encoder from Phase 167 - URL Share State Schema and Encoder.
 3. Enforce named constant `MAX_SHARE_URL_LENGTH = 8000` characters for the full generated URL string, not only the fragment.
 4. If the generated URL exceeds the limit, refuse to copy/share and show a diagnostic explaining that the source/settings are too large for URL sharing.
 5. Show copied/generated URL only after successful validation.
@@ -17660,7 +22990,7 @@ mov r64, r64
 ### Behavior
 
 - 64-bit immediates are parsed and range-checked as unsigned 0..0FFFFFFFFFFFFFFFFh or negative signed literals that fit 64-bit two's complement.
-- 32-bit writes to aliases zero-extend per Phase 91/92.
+- 32-bit writes to extended-mode aliases zero-extend according to Phase 189 - Extended 32-bit Register File: Existing GPR 64-bit Parents and Phase 190 - Extended 32-bit R8-R15 Register Group.
 - `mov` does not change flags.
 
 ### Rejected behavior
@@ -17690,7 +23020,7 @@ Add tests for:
 - `mov rax, rbx`;
 - flags preserved;
 - same source rejected in MASM32 mode;
-- memory form rejected until Phase 95.
+- Memory forms remain rejected until Phase 193 - Executable QWORD/SQWORD MOV Memory Access.
 
 ---
 
@@ -18801,7 +24131,7 @@ UI controls + local browser persistence.
    - font size;
    - line wrap.
 2. Persist preferences using `localStorage` only.
-3. Load persisted preferences at app startup before editor construction when practical.
+3. Load persisted preferences at app startup before editor construction. If a browser startup path cannot do this, document that path and prove preferences apply before the editor becomes interactive.
 4. Apply preferences without re-running the program.
 5. Keep preferences local-only.
 6. Never store local preferences in share URLs or project export.
@@ -18945,7 +24275,7 @@ UI utility + tests.
 
 ### Dependencies
 
-- Phase 95 diagnostic model.
+- Phase 222 - Editor Diagnostic Data Model and Source-Version Binding.
 - CodeMirror document access.
 
 ### Accepted behavior
@@ -18988,8 +24318,8 @@ UI rendering.
 
 ### Dependencies
 
-- Phase 95 diagnostic model.
-- Phase 96 source-offset mapper.
+- Phase 222 - Editor Diagnostic Data Model and Source-Version Binding.
+- Phase 223 - Source Byte Offset to Editor Offset Mapping for Diagnostics.
 
 ### Accepted behavior
 
@@ -19030,8 +24360,9 @@ UI integration.
 
 ### Dependencies
 
-- Phase 95 diagnostic model.
-- Phase 96 source-offset mapper.
+- Phase 222 - Editor Diagnostic Data Model and Source-Version Binding.
+- Phase 223 - Source Byte Offset to Editor Offset Mapping for Diagnostics.
+- Phase 224 - Editor Diagnostic Markers and Gutter Rendering.
 - Existing Simulator Messages formatter.
 
 ### Accepted behavior
@@ -19069,7 +24400,10 @@ UI state management.
 
 ### Dependencies
 
-- Phases 95-98.
+- Phase 222 - Editor Diagnostic Data Model and Source-Version Binding.
+- Phase 223 - Source Byte Offset to Editor Offset Mapping for Diagnostics.
+- Phase 224 - Editor Diagnostic Markers and Gutter Rendering.
+- Phase 225 - Simulator Messages Click-to-Source Navigation.
 
 ### Accepted behavior
 
@@ -19152,8 +24486,8 @@ UI rendering.
 
 ### Dependencies
 
-- Phase 100 highlight data model.
-- Phase 96 source-offset mapper.
+- Phase 227 - Current Instruction Highlight Data Model.
+- Phase 223 - Source Byte Offset to Editor Offset Mapping for Diagnostics.
 
 ### Accepted behavior
 
@@ -19296,7 +24630,10 @@ UI accessibility.
 
 ### Dependencies
 
-- Phases 100-104.
+- Phase 224 - Editor Diagnostic Markers and Gutter Rendering, for diagnostic marker accessibility where applicable.
+- Phase 225 - Simulator Messages Click-to-Source Navigation, for keyboard-accessible navigation from messages to source.
+- Phase 228 - Current Instruction Highlight UI Rendering, for accessible current-instruction indication.
+- Phase 230 - Breakpoint Gutter UI Interactions, for keyboard-operable breakpoint controls.
 
 ### Accepted behavior
 
@@ -19721,9 +25058,9 @@ UI validation harness.
 ### Dependencies
 
 - Phase 92 CodeMirror theme extensions.
-- Phase 97 diagnostic marker rendering.
-- Phase 101 current instruction rendering.
-- Phase 103 breakpoint gutter interactions.
+- Phase 224 - Editor Diagnostic Markers and Gutter Rendering.
+- Phase 228 - Current Instruction Highlight UI Rendering.
+- Phase 230 - Breakpoint Gutter UI Interactions.
 
 ### Accepted behavior
 
@@ -19757,11 +25094,11 @@ Accessibility/integration validation.
 
 ### Dependencies
 
-- Phase 105 debugger editor accessibility.
-- Phase 106 accessibility audit harness.
-- Phase 107 responsive layout.
-- Phase 98 click-to-source navigation.
-- Phase 103 breakpoint gutter interactions.
+- Phase 232 - Debugger Editor Accessibility and Keyboard Behavior.
+- Phase 233 - Accessibility Audit Harness and Manual Checklist.
+- Phase 234 - Responsive Layout and Mobile Interaction Pass.
+- Phase 225 - Simulator Messages Click-to-Source Navigation.
+- Phase 230 - Breakpoint Gutter UI Interactions.
 
 ### Accepted behavior
 
@@ -19863,7 +25200,7 @@ Validation harness and release checklist only. This phase must not add new simul
 
 ### Dependencies
 
-- Phases 91-116 complete.
+- All runtime, Irvine32, input, debugger, editor, settings, sharing, persistence, accessibility, release, and UI policy phases required before Phase 244 - Final UI Policy Conformance and Accessibility Regression Sweep are complete. Do not treat any old bare phase range as authoritative for this final validation phase.
 - Browser CI harness available.
 - Native/Node diagnostic rendering harness available.
 - Release artifact generation available.
@@ -19924,6 +25261,8 @@ These requirements apply to every post-30 phase unless a phase explicitly define
 - Every parser/runtime phase must state accepted syntax, rejected syntax, source-span target, no-partial-mutation behavior on failure, required tests, and non-goals.
 - New helper modules, exported structs/enums, public APIs, and configuration records remain subject to file-header and Doxygen requirements.
 - Later-phase references are not permission to implement future behavior early.
+- If a later corrective phase revisits a feature that an earlier completed phase already specified, the later phase must be written as audit/repair/hardening work unless it intentionally changes the feature contract. The assistant must inspect the current implementation first, preserve working behavior, repair broken or incomplete behavior, add regression tests, and state in the milestone report whether runtime/source-run behavior actually changed. Do not blindly reimplement the feature, do not skip the phase merely because an earlier phase claimed the feature, and do not advance runtime/source-run MASM behavior metadata unless the corrective work actually changes accepted syntax, runtime semantics, source-run behavior, or user-visible runtime diagnostics.
+- When a phase references another phase as the owner of a future feature, include both the phase number and the phase title whenever practical. If a phase number and phase title disagree with the feature being discussed, treat that as a documentation defect. Do not implement a feature merely because a stale phase number points to the wrong phase.
 
 ### String, flow, STRUCT/RECORD, and macro precision rules
 
@@ -19958,7 +25297,7 @@ These requirements apply to every post-30 phase unless a phase explicitly define
 - CodeMirror is UI-only. The C99 parser and VM remain the semantic authority.
 - Editor/source mapping, diagnostics, breakpoints, current-instruction highlights, settings, and release artifacts remain subject to the browser accessibility and release-gate phases.
 
-## Appendix A. Cross-Cutting Test Matrix References
+## Appendix B. Cross-Cutting Test Matrix References
 
 Large repeated matrices are centralized here and referenced by individual phases:
 
@@ -19968,10 +25307,10 @@ Large repeated matrices are centralized here and referenced by individual phases
 - URL import matrix: version, duplicate parameters, canonical base64url, decompression failure, schema failure, unsafe/local-only settings, and atomic no-partial-apply behavior.
 - CodeMirror offset matrix: ASCII, CRLF/LF, non-ASCII, combining marks, emoji/surrogate pairs, stale source snapshots, line-only diagnostics, and diagnostics with no source location.
 
-## Appendix B. Suggested AI Assistant Workflow
+## Appendix C. Suggested AI Assistant Workflow
 
 For each implementation phase: read the current source-of-truth spec and guide, implement only the requested phase, add or update tests before reporting completion, run the required native/Node/browser/Wasm test categories for that phase, report exact commands and results, and explicitly state any diagnostics, edge cases, or non-goals that were verified. Environment-dependent skipped suites require explicit reasons. Do not implement future-phase syntax or behavior as convenience work.
 
-## Appendix C. Definition of v1 Complete
+## Appendix D. Definition of v1 Complete
 
 Version 1 is complete only when every implemented feature is documented in the supported syntax reference, every supported syntax entry maps to at least one passing test fixture, every known unsupported/non-goal example is represented in a corpus or diagnostic test, release artifacts and hashes are generated, required test suites pass, and the known-limitations report distinguishes deferred features from explicit non-goals.

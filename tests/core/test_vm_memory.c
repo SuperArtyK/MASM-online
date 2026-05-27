@@ -326,13 +326,21 @@ static int test_invalid_address_errors_are_structured(void) {
     failures += expect_u32(diagnostic.size, 1U, "invalid read diagnostic size mismatch");
     failures += expect_u32(value8, 0xABU, "failed read should not overwrite output value");
 
-    failures += expect_status(vm_memory_read_u16(&memory, data_region->base + data_region->size - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_INVALID_ADDRESS, "range crossing data end should fail");
+    failures += expect_status(vm_memory_read_u16(&memory, data_region->base + data_region->size - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing data end into .CONST should use region-boundary diagnostic");
     failures += expect_bool(diagnostic.has_region, true, "range crossing should identify starting region");
     failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_MEMORY_REGION_DATA, "range crossing diagnostic region mismatch");
     failures += expect_u32(value16, 0xABCDU, "failed range read should not overwrite output value");
 
-    failures += expect_status(vm_memory_write_u16(&memory, data_region->base + data_region->size - 1U, 0x1234U, &diagnostic), VM_MEMORY_STATUS_INVALID_ADDRESS, "range crossing write should fail");
+    failures += expect_status(vm_memory_write_u16(&memory, data_region->base + data_region->size - 1U, 0x1234U, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing write into .CONST should use region-boundary diagnostic");
+    failures += expect_bool(diagnostic.has_const_overlap, true, "range crossing write into .CONST should report const overlap context");
+    failures += expect_u32(diagnostic.const_region_start, VM_MEMORY_DEFAULT_CONST_BASE, "const region start should match active .CONST base");
+    failures += expect_u32(diagnostic.const_overlap_start, VM_MEMORY_DEFAULT_CONST_BASE, "const overlap start should match .CONST base");
+    failures += expect_u32(diagnostic.const_overlap_end, VM_MEMORY_DEFAULT_CONST_BASE, "single-byte const overlap end should match .CONST base");
     failures += expect_size(vm_memory_change_count(&memory), 0U, "failed range write should not record changes");
+
+    failures += expect_status(vm_memory_read_u16(&memory, data_region->base + data_region->size - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing read into .CONST should use region-boundary diagnostic");
+    failures += expect_bool(diagnostic.has_const_overlap, true, "range crossing read into .CONST should report protected-region context");
+    failures += expect_u32(diagnostic.const_region_start, VM_MEMORY_DEFAULT_CONST_BASE, "const read-crossing region start should match active .CONST base");
 
     vm_memory_deinit(&memory);
     return failures;

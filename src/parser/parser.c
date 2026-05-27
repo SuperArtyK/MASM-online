@@ -3367,6 +3367,41 @@ static bool vm_parser_number_token_has_leading_plus(const VmLexerToken *token) {
            token->lexeme[0] == '+';
 }
 
+/// Returns whether a numeric token represents a signed negative displacement.
+///
+/// The lexer may keep compact text such as `[eax-4]` as a register token
+/// followed by one negative number token instead of a minus token followed by a
+/// positive number token. Register-displacement parsing treats that signed
+/// number as the same simple byte displacement as `[eax - 4]`.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is a numeric token with a leading minus sign.
+static bool vm_parser_number_token_is_signed_negative(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_NUMBER &&
+           token->number_is_negative;
+}
+
+/// Converts a compact negative numeric token to a register displacement.
+///
+/// This helper intentionally mirrors the already-supported explicit-minus
+/// suffix path. A compact token such as `-4` is accepted only when the magnitude
+/// would also be accepted after a separate `-` token in `[eax - 4]`.
+///
+/// @param token Signed negative numeric token to convert.
+/// @param out_displacement Receives the negative byte displacement.
+/// @return true when @p token fits the established register-displacement range.
+static bool vm_parser_compact_negative_register_displacement_to_i32(const VmLexerToken *token, int32_t *out_displacement) {
+    if (token == NULL || out_displacement == NULL || !vm_parser_number_token_is_signed_negative(token)) {
+        return false;
+    }
+    if (token->number_value > 0x7FFFFFFFULL) {
+        return false;
+    }
+    *out_displacement = -(int32_t)token->number_value;
+    return true;
+}
+
 /// Returns whether a token can carry a data symbol name.
 ///
 /// The lexer classifies register-looking words such as `ch` as register tokens.
@@ -3650,8 +3685,10 @@ static bool vm_parser_build_register_memory_operand(
 
 /// Parses an optional displacement after a bracketed register base.
 ///
-/// Supported forms are no displacement, `+ number`, and `- number`. Scaled
-/// forms using `*` are rejected with an explicit unsupported-feature diagnostic.
+/// Supported forms are no displacement, `+ number`, `- number`, and a signed
+/// negative numeric token produced by compact spelling such as `[eax-4]`.
+/// Scaled forms using `*` are rejected with an explicit unsupported-feature
+/// diagnostic.
 ///
 /// @param state Parser state positioned after the register token.
 /// @param out_displacement Receives the signed byte displacement.
@@ -3673,13 +3710,19 @@ static bool vm_parser_parse_register_displacement_suffix(VmParserState *state, i
         return false;
     }
 
-    if (vm_parser_number_token_has_leading_plus(token)) {
-        int32_t magnitude = 0;
-        if (!vm_parser_number_to_i32_offset(token, &magnitude)) {
+    if (vm_parser_number_token_has_leading_plus(token) || vm_parser_number_token_is_signed_negative(token)) {
+        int32_t displacement = 0;
+        bool displacement_fits = false;
+        if (vm_parser_number_token_is_signed_negative(token)) {
+            displacement_fits = vm_parser_compact_negative_register_displacement_to_i32(token, &displacement);
+        } else {
+            displacement_fits = vm_parser_number_to_i32_offset(token, &displacement);
+        }
+        if (!displacement_fits) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_SYMBOL_OFFSET_OUT_OF_RANGE, token, "Register displacement is outside the supported signed 32-bit range.");
             return false;
         }
-        *out_displacement = magnitude;
+        *out_displacement = displacement;
         vm_parser_advance(state);
         if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_ASTERISK) {
             vm_parser_add_scaled_index_diagnostic(state, vm_parser_current_token(state));

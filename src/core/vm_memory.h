@@ -96,6 +96,8 @@ typedef enum VmMemoryStatus {
     VM_MEMORY_STATUS_INVALID_ARGUMENT,
     /// Operation failed because the address range is outside all matching regions.
     VM_MEMORY_STATUS_INVALID_ADDRESS,
+    /// Operation failed because one access crossed a protected memory-region boundary.
+    VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING,
     /// Operation failed because the matching region lacks the required permission.
     VM_MEMORY_STATUS_PERMISSION_DENIED,
     /// Operation failed because backing storage could not be allocated.
@@ -156,6 +158,14 @@ typedef struct VmMemoryDiagnostic {
     VmMemoryRegionKind region;
     /// Whether @ref region contains a meaningful value.
     bool has_region;
+    /// Whether the failed range overlaps protected `.CONST` storage.
+    bool has_const_overlap;
+    /// Runtime base address of the active `.CONST` region.
+    uint32_t const_region_start;
+    /// Inclusive first address in the attempted range that overlaps `.CONST`.
+    uint32_t const_overlap_start;
+    /// Inclusive last address in the attempted range that overlaps `.CONST`.
+    uint32_t const_overlap_end;
     /// Whether the operation used an unaligned multi-byte address.
     bool is_unaligned;
 } VmMemoryDiagnostic;

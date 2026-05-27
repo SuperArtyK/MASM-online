@@ -73,6 +73,10 @@ static void vm_memory_fill_diagnostic(
     diagnostic->size = size;
     diagnostic->region = VM_MEMORY_REGION_CODE;
     diagnostic->has_region = false;
+    diagnostic->has_const_overlap = false;
+    diagnostic->const_region_start = 0U;
+    diagnostic->const_overlap_start = 0U;
+    diagnostic->const_overlap_end = 0U;
     diagnostic->is_unaligned = false;
 }
 
@@ -198,6 +202,57 @@ static const VmMemoryRegion *vm_memory_find_region_for_address(const VmMemory *m
     return NULL;
 }
 
+/// Records protected `.CONST` overlap context for a failed cross-region range.
+///
+/// This helper intentionally stores the runtime `.CONST` base address from the
+/// active memory layout rather than any fixed default address, so diagnostics
+/// remain correct under fixed, automatic, and randomized layouts.
+///
+/// TODO(Phase-owned future protected-region diagnostics): When future
+/// milestones make `.code` memory access-denying, generalize this helper into
+/// a shared protected-region overlap collector. The rendered message should use
+/// the active region metadata, substitute `.code` for `.CONST`, and report the
+/// runtime `.code` base address without hardcoding fixed-layout addresses.
+///
+/// @param memory Memory object whose `.CONST` region should be inspected.
+/// @param address First simulated address requested.
+/// @param size Number of bytes requested.
+/// @param diagnostic Optional diagnostic structure to update.
+static void vm_memory_add_const_overlap_diagnostic(
+    const VmMemory *memory,
+    uint32_t address,
+    uint32_t size,
+    VmMemoryDiagnostic *diagnostic
+) {
+    const VmMemoryRegion *const_region = NULL;
+    uint32_t request_end = 0U;
+    uint32_t const_end = 0U;
+    uint32_t overlap_start = 0U;
+    uint32_t overlap_end_exclusive = 0U;
+
+    if (memory == NULL || diagnostic == NULL || size == 0U || size > UINT32_MAX - address) {
+        return;
+    }
+
+    const_region = &memory->regions[(size_t)VM_MEMORY_REGION_CONST];
+    if (!vm_memory_region_end(const_region, &const_end)) {
+        return;
+    }
+
+    request_end = address + size;
+    overlap_start = address > const_region->base ? address : const_region->base;
+    overlap_end_exclusive = request_end < const_end ? request_end : const_end;
+
+    if (overlap_start >= overlap_end_exclusive) {
+        return;
+    }
+
+    diagnostic->has_const_overlap = true;
+    diagnostic->const_region_start = const_region->base;
+    diagnostic->const_overlap_start = overlap_start;
+    diagnostic->const_overlap_end = overlap_end_exclusive - 1U;
+}
+
 /// Validates a checked access before bytes are read or written.
 ///
 /// @param memory Memory object to inspect.
@@ -241,6 +296,11 @@ static VmMemoryStatus vm_memory_validate_access(
     region = vm_memory_find_region_const(memory, address, size);
     if (region == NULL) {
         const VmMemoryRegion *near_region = vm_memory_find_region_for_address(memory, address);
+        vm_memory_add_const_overlap_diagnostic(memory, address, size, out_diagnostic);
+        if (out_diagnostic != NULL && out_diagnostic->has_const_overlap) {
+            vm_memory_finish_diagnostic(out_diagnostic, VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, near_region, false);
+            return VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING;
+        }
         vm_memory_finish_diagnostic(out_diagnostic, VM_MEMORY_STATUS_INVALID_ADDRESS, near_region, false);
         return VM_MEMORY_STATUS_INVALID_ADDRESS;
     }
@@ -699,6 +759,8 @@ const char *vm_memory_status_name(VmMemoryStatus status) {
             return "invalid-argument";
         case VM_MEMORY_STATUS_INVALID_ADDRESS:
             return "invalid-address";
+        case VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING:
+            return "region-boundary-crossing";
         case VM_MEMORY_STATUS_PERMISSION_DENIED:
             return "permission-denied";
         case VM_MEMORY_STATUS_OUT_OF_MEMORY:

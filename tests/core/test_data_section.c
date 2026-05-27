@@ -2168,7 +2168,8 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "END main\n"
     );
     failures += expect_json_contains(partial_overlap_const_write_json, "\"ok\":false", "partial-overlap write crossing into .CONST should fail");
-    failures += expect_json_contains(partial_overlap_const_write_json, "invalid-address", "partial-overlap write crossing into .CONST should be rejected by checked memory range validation");
+    failures += expect_json_contains(partial_overlap_const_write_json, "region-boundary-crossing", "partial-overlap write crossing into .CONST should use protected-region boundary diagnostic");
+    failures += expect_json_contains(partial_overlap_const_write_json, "Cross-region memory write", "partial-overlap .CONST diagnostic should identify a cross-region write");
     failures += expect_json_contains(partial_overlap_const_write_json, "\"memoryChanges\":[]", "failed partial-overlap .CONST write should not report successful memory changes");
 
     initialized_data_question_json = masm32_sim_wasm_run_source_json(

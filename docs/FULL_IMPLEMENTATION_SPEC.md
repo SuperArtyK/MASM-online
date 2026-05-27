@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the active post-Milestone-30 overhauled source-of-truth documents unless superseded by a later reviewed canonical pair. This specification owns product boundaries and stable behavior; the paired implementation guide owns phase numbering, implementation tasks, and required tests.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for the Phase 57-CORR2 compact negative register-indirect displacement correction and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -85,7 +85,7 @@ Target complete-v1 user capabilities, not necessarily current implementation:
 
 The following list describes the intended complete v1 user experience. It is not a statement that every listed capability is implemented in the current repository. Current support remains limited to the latest accepted repository/archive milestone and, for MASM/source execution behavior, the latest runtime/source-run MASM behavior phase. Future assistants must not claim that an item in this list is currently supported unless the current canonical guide, current repository state, tests, or latest milestone evidence confirm that support.
 
-A user should eventually be able to:
+For complete v1, a user should be able to:
 
 - Type or paste MASM32-style source code in a rich browser editor with line numbers, indentation support, and later MASM syntax highlighting.
 - Run the program in the browser.
@@ -195,7 +195,7 @@ The Web Worker may be terminated by the UI if the simulator becomes unresponsive
 
 ### 5.1 Source Editor Component
 
-The browser source editor should eventually use **CodeMirror 6** rather than a raw `<textarea>`. CodeMirror 6 is the selected editor component for the polished editor experience because it is permissively licensed, modular, and designed for custom language extensions.
+The complete-v1 browser source editor target is **CodeMirror 6**, not a raw `<textarea>`, for the polished editor experience. CodeMirror 6 is selected because it is permissively licensed, modular, and designed for custom language extensions. Until the CodeMirror implementation phases are completed and accepted, a repository may still contain an earlier editor shell; that earlier shell must not be treated as the final editor contract.
 
 Editor integration goals:
 
@@ -394,10 +394,15 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 - `OFFSET`, `TYPE`, `LENGTHOF`, `SIZEOF`, constant offsets, and later expression-backed offsets must work for `.DATA?` symbols using the same symbol metadata rules as `.data`.
 - Initialized declarations in `.DATA?`, such as `x DWORD 5` or `buf BYTE ?, 1`, must produce structured assembly diagnostics. They must not be silently converted to zero-filled declarations.
 
-`.CONST` behavior is mandatory:
+`.CONST` behavior is mandatory and phase-sensitive:
 
-- `.CONST` creates initialized read-only storage.
-- `.CONST` must be protected by address range, not only by symbol metadata.
+- Through Phase 57 - Signed IDIV, `.CONST` accepts initialized read-only storage only.
+- In the current through-Phase-57 implementation state, `.CONST` declarations using `?` or `DUP(?)` are rejected.
+- Uninitialized-origin storage is represented by the currently implemented non-`.CONST` declaration forms that already accept `?` or `DUP(?)`, especially `.DATA?`.
+- Phase 57I - .CONST Uninitialized Storage Acceptance deliberately changes this compatibility rule. After Phase 57I is implemented, tested, and accepted, `.CONST ?` and `.CONST DUP(?)` are accepted as read-only `.CONST` storage with deterministic visible bytes and preserved uninitialized-origin metadata.
+- Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns configurable declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`.
+- `.CONST` creates read-only storage in every implementation state.
+- `.CONST` must be protected by final effective address range, not only by symbol metadata.
 - The preferred implementation is a dedicated read-only `.const` VM memory region.
 - An acceptable implementation may use a protected-range table, but every central VM memory write helper must check that table before committing writes.
 - Every write whose final effective byte range overlaps `.CONST` storage must fail, even if only one byte overlaps.
@@ -407,7 +412,6 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 - Parser/static diagnostics are not sufficient. Runtime write protection must still be enforced by the memory write path.
 - Reads from `.CONST` must work normally.
 - Failed `.CONST` writes must not create successful memory-change rows.
-- `.CONST` declarations must be initialized. `?` and `DUP(?)` belong in `.DATA?`, not `.CONST`.
 
 Required runtime write algorithm:
 
@@ -877,7 +881,7 @@ Mandatory evaluator rules:
 - Unsupported operators must produce specific unsupported-expression diagnostics, not generic expected-line-end diagnostics.
 - Forward references to numeric equates are not supported until a future multi-pass expression phase. A use of an equate before its definition must produce a structured unknown-equate diagnostic.
 - Recursive or self-referential equates must produce a structured recursive-equate or invalid-equate diagnostic.
-- Duplicate names across data symbols, labels, procedures, and equates must be rejected unless a later phase explicitly introduces separate scopes. The diagnostic must name the earlier symbol category when practical.
+- Duplicate names across data symbols, labels, procedures, and equates must be rejected unless a later phase explicitly introduces separate scopes. The diagnostic must identify the earlier symbol category when that category is available. If the implementation cannot determine the earlier category, the diagnostic must state that the name conflicts with an existing symbol without guessing.
 - `name = expression` may be redefined only if the implementation phase explicitly says redefinition is supported. Until then, redefinition must be rejected consistently.
 - `name EQU expression` is non-redefinable in the v1 numeric-equate subset.
 - `TEXTEQU` and text `EQU <...>` remain unsupported until the text-equate or selected macro phase.
@@ -1055,30 +1059,7 @@ Runtime invalid or warning:
 
 A diagnostic named `symbol-offset-out-of-range` may be retained only for cases where the symbol-relative constant expression cannot be represented in the simulator address model or cannot be lowered to a valid effective address. It must not mean "the access crosses the source symbol's declared-object bounds" or "the access crosses the source symbol's section-image bounds."
 
-Examples of valid memory syntax that must not be rejected merely by parser-time object or image bounds:
-
-```asm
-.data
-x DWORD ?
-.code
-main PROC
-    mov eax, DWORD PTR [x + 1]
-main ENDP
-END main
-```
-
-```asm
-.DATA?
-x DWORD ?
-.code
-main PROC
-    mov eax, 10
-    mul [x+1]
-main ENDP
-END main
-```
-
-These examples have valid memory operand syntax and inferable width. They may warn or stop at runtime only according to the selected memory-validation policy and final VM memory range.
+Detailed examples for this parser/runtime validation boundary are centralized in Section 11.9.3 - Parser Versus Runtime Boundary for Memory Operands. Do not duplicate those examples here unless the new example is specifically about addressing-form syntax rather than memory-validation policy.
 
 ### 8.6 Instructions
 
@@ -1672,13 +1653,13 @@ The preserved value is a simulator fallback value only. It is not a portable rea
 
 The simulator deliberately separates deterministic displayed flag bits from architectural flag validity metadata. For most instructions whose owning phase says a modeled flag is architecturally undefined, the simulator should preserve a deterministic bit value and mark that modeled flag invalid in Phase 50A flag-validity metadata.
 
-The multiply/divide family has an explicit exception when its owning implementation-guide phase says so. This exception preserves the policies from Phase 53 - Unsigned MUL, Phase 54 - One-Operand Signed IMUL, Phase 55 - Two- and Three-Operand IMUL Forms, Phase 56 - Unsigned DIV, and Phase 57 - Signed IDIV once Phase 57 is implemented. The affected instruction families are:
+The multiply/divide family has an explicit exception when its owning implementation-guide phase says so. This exception preserves the policies from Phase 53 - Unsigned MUL, Phase 54 - One-Operand Signed IMUL, Phase 55 - Two- and Three-Operand IMUL Forms, Phase 56 - Unsigned DIV, and Phase 57 - Signed IDIV. The affected instruction families are:
 
 - `mul`;
 - one-operand `imul`;
 - two- and three-operand `imul`;
 - `div`;
-- `idiv`, once Phase 57 is implemented.
+- `idiv`.
 
 If the owning implementation-guide phase for one of these instructions explicitly says that the instruction preserves currently modeled flags or preserves Phase 50A flag-validity metadata, that phase-specific MASM32 Educational Mode rule is authoritative.
 
@@ -2282,20 +2263,97 @@ object-bounds-violation
 
 Do not use `symbol-offset-out-of-range` for runtime section or object validation. A `symbol-offset-out-of-range` diagnostic may be retained only for expression/address representability failures, not for crossing symbol/object bounds.
 
-### 11.9.1 Cross-Region, Cross-Section, and `.CONST` Rules
+### 11.9.1 Cross-Region, Cross-Section, Protected-Region, and `.CONST` Rules
 
-A single memory access must not be stitched across two independent VM memory regions.
+A single source-level memory access must not be stitched across two independent VM memory regions.
 
-If the final byte range is not wholly contained in one suitable VM memory region, execution must stop with the ordinary runtime memory diagnostic. This is true even in default mode. It is not a warning-only educational diagnostic.
+A memory access is evaluated on its final inclusive byte range:
 
-If `.data`, `.DATA?`, and `.CONST` are represented as subranges inside one shared allocated VM memory region, crossing from one section subrange into another is not automatically a low-level region error. It is classified by the enabled section-capacity or section-image validation level.
+```text
+[address, address + access_width - 1]
+```
+
+The range calculation must be checked for unsigned address overflow before region lookup or diagnostic classification.
+
+A memory access is a **cross-region access** when the final inclusive byte range is not wholly contained in one allocated VM memory region. Cross-region access is a mandatory Level 1 runtime memory failure. It is not an optional educational warning and it must not be controlled by section-capacity, section-image, declared-object, uninitialized-read, unaligned-access, browser diagnostic settings, or any other opt-in diagnostic policy.
+
+A cross-region access must stop execution before the access is completed. For a failing write, no bytes may be written. For a failing read, the read value must not be consumed by the instruction. The simulator must not split the access into smaller per-region operations. The simulator must not partially execute the access to produce a more specific diagnostic.
+
+A **protected memory region** is a VM memory region, or a protected VM-region subrange, that the current access is not allowed to enter or span for the current access kind. Protection is access-kind-sensitive.
+
+Current `.CONST` protection rules:
+
+- `.CONST` is protected for writes because `.CONST` storage is read-only.
+- `.CONST` is not protected against ordinary reads merely because it is read-only.
+- A wholly-contained read from `.CONST` is allowed unless another mandatory validation or enabled strict validation rejects it.
+- A wholly-contained write whose final byte range overlaps `.CONST` fails as a permission/read-only diagnostic.
+- A cross-region read or write whose final byte range intersects the `.CONST` byte range fails as a cross-region diagnostic. For a cross-region read, this does not mean `.CONST` is unreadable; it means one memory access cannot span independent VM regions.
+
+For this section, **overlaps**, **crosses/overlaps**, and **intersects** mean that the requested final inclusive byte range shares at least one byte with the protected region's byte range. Implementations and tests should use this exact byte-range intersection rule rather than relying on the starting address alone.
+
+When a cross-region access intersects a protected memory region and layout metadata can identify that protected region, the primary diagnostic code must be:
+
+```text
+region-boundary-crossing
+```
+
+The rendered message must identify:
+
+- the access kind, `read` or `write`;
+- the starting address of the access;
+- the access width in bytes;
+- the inclusive final byte range;
+- the protected region name;
+- the runtime start address of the protected region;
+- that the access is not allowed;
+- that the program stopped before access.
+
+Canonical rendered-message shape:
+
+```text
+Cross-region memory <read|write> at <address> for <N> bytes. The memory address range <start>..<end> crosses/overlaps a protected memory region, <region-name>, that starts at <region-start>. This is not allowed; program stopped before access.
+```
+
+For `.CONST` cross-region diagnostics, `<region-name>` must be:
+
+```text
+.CONST
+```
+
+The `<region-start>` value must come from the active runtime layout metadata. It must not be hardcoded to the fixed-layout default address. This requirement applies to fixed educational layout, automatic deterministic layout, seeded randomized layout, and fresh randomized layout.
+
+A cross-region access that does not intersect a known protected region remains a mandatory Level 1 runtime memory failure, but it does not use the protected-region message shape unless another protected region is involved. It may use the ordinary Level 1 region/range diagnostic for the implementation's existing invalid-address or invalid-region path.
+
+A write whose final byte range is wholly contained in one VM memory region but overlaps read-only `.CONST` storage must fail as a runtime permission/read-only diagnostic. The expected structured diagnostic code for the wholly-contained `.CONST` write path remains:
+
+```text
+permission-denied
+```
+
+This means `.CONST` write and `.CONST` cross-region diagnostics are intentionally split by the low-level failure shape:
+
+```text
+Wholly-contained write overlapping `.CONST`:
+  permission-denied
+
+Cross-region read or write whose final range intersects `.CONST`:
+  region-boundary-crossing
+
+Cross-region access that does not intersect `.CONST` or another known protected region:
+  ordinary Level 1 region/range diagnostic
+```
+
+Do not classify a diagnostic by static symbol identity alone. The final effective address, access width, final byte range, active VM region metadata, permissions, and active layout metadata are authoritative.
+
+If `.data`, `.DATA?`, and `.CONST` are represented as subranges inside one shared allocated VM memory region, crossing from one section subrange into another is not automatically a Level 1 cross-region error. In that layout, the access is classified by mandatory region permissions and by the enabled optional section-capacity, section-image, or declared-object validation levels.
 
 Default behavior:
 
 ```text
-- Crossing section boundaries may execute if the final byte range is inside one readable/writable allocated VM region.
-- Crossing declared-object boundaries may execute if the final byte range is inside one readable/writable allocated VM region.
-- `.CONST` write overlap still fails.
+- Crossing section boundaries may execute if the final byte range is inside one readable/writable allocated VM region and permissions allow the access.
+- Crossing declared-object boundaries may execute if the final byte range is inside one readable/writable allocated VM region and permissions allow the access.
+- Writes overlapping `.CONST` still fail.
+- Cross-region accesses still fail.
 ```
 
 Warning behavior:
@@ -2314,11 +2372,23 @@ Strict behavior:
 - Declared-object strict mode stops before mutation on declared-object violation.
 ```
 
-`.CONST` write protection is mandatory and is not a warning-only teaching diagnostic.
+`.CONST` write protection and cross-region access validation are mandatory Level 1 behavior. They are not warning-only teaching diagnostics.
 
-Any write whose final byte range overlaps read-only `.CONST` storage must fail as a runtime permission/read-only diagnostic before section-capacity, section-image, declared-object, uninitialized-read, or unaligned-access diagnostics.
+Reads from `.CONST` are allowed if the full range is otherwise valid. A read that intersects `.CONST` fails only when it crosses independent VM regions, violates address/range validation, or violates another mandatory or enabled strict validation. It must not be rejected merely because `.CONST` is read-only.
 
-Reads from `.CONST` are allowed if the full range is otherwise valid. Reads crossing `.CONST` are not permission failures merely because `.CONST` is read-only. They fail only if they cross independent VM regions or violate an enabled section/object strict policy.
+Future `.code` access-denial phases must reuse the protected-region diagnostic model when applicable. If a future phase makes `.code` protected for a given access kind and a cross-region access intersects `.code`, the diagnostic must substitute `.code` for `.CONST` and must use the runtime `.code` base address from layout metadata. Future implementations must not hardcode fixed-layout addresses. This future `.code` note is not current behavior and must not be used to implement `.code` access denial before the owning phase.
+
+Required no-partial-mutation behavior for fatal cross-region, protected-region-overlap, or `.CONST` write failures:
+
+```text
+- registers are unchanged except for instructions that completed before the failing instruction;
+- modeled flags are unchanged by the failing instruction;
+- flag-validity metadata is unchanged by the failing instruction;
+- memory is unchanged by the failing instruction;
+- Program Console output is unchanged by the failing instruction;
+- no successful memory-change row is created for the failing instruction;
+- no execution-complete message is emitted after the fatal diagnostic.
+```
 
 ### 11.9.2 Authoritative Diagnostic Precedence for Memory Accesses
 
@@ -2326,27 +2396,64 @@ Memory diagnostics must be ordered so lower-level safety failures are not hidden
 
 This subsection is the authoritative current memory-access diagnostic precedence for the implemented post-30 memory-validation model. Later summaries in this specification must not override this order. If a future phase adds a new memory validation layer, that phase must either update this subsection directly or add a clearly named superseding subsection with tests proving the new precedence.
 
-For every runtime memory read or write, compute the final effective address and access width first. Then apply memory diagnostics in this order:
+For every runtime memory read or write, compute the final effective address and access width first. The final inclusive byte range is:
+
+```text
+[address, address + access_width - 1]
+```
+
+Apply memory diagnostics in this order:
 
 ```text
 1. Address arithmetic overflow while computing [address, address + width - 1].
-2. Final byte range not wholly contained in one allocated VM memory region.
-3. Permission failure, including any `.CONST` write overlap.
+
+2. Region-boundary failure:
+   - the final byte range is not wholly contained in one allocated VM memory region.
+   - if the crossed range intersects a known protected VM memory region for the current access kind, report region-boundary-crossing and include protected-region context.
+   - if the crossed range does not intersect a known protected VM memory region, report the ordinary Level 1 region/range diagnostic.
+
+3. Permission failure inside the containing VM region:
+   - includes wholly-contained writes whose final byte range overlaps read-only `.CONST`.
+   - direct or wholly-contained `.CONST` write failures remain permission-denied.
+
 4. Section-capacity violation, if section-capacity validation is enabled.
+
 5. Section-image violation, if section-image validation is enabled.
+
 6. Declared-object violation, if declared-object validation is enabled.
+
 7. Uninitialized-read warning or strict error, if uninitialized-read validation is enabled and the access is a read.
+
 8. Non-fatal unaligned-access warning.
 ```
 
 A fatal or strict diagnostic stops execution before mutation. If execution stops at an earlier fatal or strict diagnostic, later warning-only diagnostics for the same memory access do not need to be emitted.
 
-Default rule: emit at most one diagnostic per enabled validation level for one memory access, in the precedence order above. Do not combine separate validation-level diagnostics unless the relevant phase explicitly defines a combined diagnostic shape and adds structured diagnostic tests plus exact rendered Simulator Messages tests.
+Default rule: emit at most one primary fatal diagnostic for one failed memory access. Do not combine separate validation-level diagnostics unless the relevant phase explicitly defines a combined diagnostic shape and adds structured diagnostic tests plus exact rendered Simulator Messages tests.
+
+`region-boundary-crossing` is a Level 1 diagnostic. It does not introduce a new validation mode. It does not make cross-region access optional, configurable, warning-only, or dependent on browser diagnostic settings.
+
+The protected-region context for `region-boundary-crossing` is diagnostic context attached to a region-boundary failure. It is not the same thing as permission validation. The simulator must not perform a partial read or partial write in order to prove the overlap. It may report protected-region context only when existing layout metadata can prove that the requested final byte range intersects the protected region byte range.
+
+For `.CONST`:
+
+```text
+Cross-region access intersecting `.CONST`:
+  region-boundary-crossing
+
+Wholly-contained write overlapping `.CONST`:
+  permission-denied
+
+Wholly-contained read from `.CONST`:
+  allowed, unless another mandatory or enabled strict validation rejects it
+```
+
+For cross-region `.CONST` reads, the diagnostic code `region-boundary-crossing` means the access crosses independent VM memory-region boundaries. It must not be interpreted as a general `.CONST` read prohibition.
 
 Mandatory Level 1 checks are always active:
 
 - address arithmetic overflow;
-- region containment;
+- region containment and region-boundary crossing;
 - memory permission;
 - `.CONST` write overlap.
 
@@ -2359,7 +2466,66 @@ Optional educational validation levels are active only when selected by source-r
 
 Unaligned-access diagnostics remain warning-only unless a later reviewed phase explicitly changes that policy.
 
-`.CONST` write protection is always a mandatory permission/read-only failure. It must take precedence over section-capacity, section-image, declared-object, uninitialized-read, and unaligned-access diagnostics.
+The diagnostic code, source line, source column, byte offset, span length, JSON fields, and rendered Simulator Messages text must remain stable enough for exact tests.
+
+### 11.9.2A Standing Rule: Memory-Capable Features Must Participate in Both Mandatory VM Safety and Optional Educational Validation
+
+Every simulator feature that performs a simulated memory read or simulated memory write must participate in two distinct validation layers.
+
+#### 1. Mandatory VM memory safety
+
+The final effective address and final byte range must be checked through the central VM memory helpers.
+
+Mandatory VM memory safety includes, at minimum:
+
+- address arithmetic overflow detection;
+- final byte-range validation;
+- containment in one readable or writable VM memory region, as appropriate;
+- region permission enforcement;
+- mandatory `.CONST` write protection;
+- mandatory invalid-address, invalid-range, invalid-region, and permission diagnostics.
+
+Mandatory VM memory safety is always enforced. It is not an optional teaching setting.
+
+Mandatory `.CONST` write protection remains a Level 1 permission/read-only failure. It must not be reclassified as section-capacity, section-image, declared-object, or uninitialized-read validation.
+
+#### 2. Optional educational validation policies
+
+Source-run, Wasm, and browser execution must also be able to apply optional policy-level checks before a memory value is consumed or before an instruction mutates visible state.
+
+Optional educational validation includes, where applicable:
+
+- Level 2 section-capacity validation;
+- Level 3 section-image validation;
+- Level 4 declared-object validation;
+- uninitialized-origin read diagnostics;
+- future source-intent, provenance, taint, or bounds policies, if later implemented.
+
+A future feature must not satisfy this rule merely by calling a checked memory read or write helper inside the executor. If a warning or strict policy is supposed to apply before the instruction consumes a memory value or mutates state, the feature must expose its planned read or planned write to the source-run/Wasm/browser policy path before committing the instruction.
+
+This rule applies to:
+
+- runtime instructions with explicit memory operands;
+- runtime instructions with implicit memory accesses;
+- Irvine32 routines that read or write simulated memory;
+- stack operations;
+- string or buffer operations;
+- debugger actions that read or write simulated memory;
+- future procedure, call-frame, or runtime-library features that touch simulated memory.
+
+This rule does not make optional policies mandatory in default mode. Default behavior remains whatever the canonical implementation guide specifies for the relevant policy. The rule only requires that every memory-capable feature route through the same validation architecture so selected warning and strict modes behave consistently.
+
+Strict policy failures must preserve the simulator's no-partial-mutation guarantee:
+
+- all registers retain the values they had immediately before the failing instruction began;
+- modeled flag bits retain the values they had immediately before the failing instruction began;
+- Phase 50A flag-validity metadata retains the state it had immediately before the failing instruction began;
+- memory is unchanged;
+- Program Console output is unchanged;
+- no new memory-change row is created;
+- no `execution-complete` message is emitted after a fatal runtime diagnostic.
+
+The paired implementation guide owns the exhaustive phase-level test matrix for future memory-capable phases. This specification owns the stable behavior those tests must prove: mandatory checked access, optional planned-access policy participation where applicable, structured diagnostics, rendered Simulator Messages for user-visible diagnostics, and no partial mutation on strict or fatal failures.
 
 ### 11.9.3 Parser Versus Runtime Boundary for Memory Operands
 
@@ -2408,6 +2574,112 @@ Parser/static diagnostics remain appropriate for:
 ```
 
 Static `.CONST` direct-write diagnostics are an optimization and user-experience improvement. They do not replace runtime `.CONST` permission checks.
+
+
+### 11.9.4 Simple Register-Displacement Whitespace Policy
+
+The parser must treat whitespace as insignificant for the currently supported simple register-indirect plus-or-minus constant displacement forms.
+
+This rule applies to the existing simple register-displacement subset only. It does not implement advanced addressing.
+
+For a supported 32-bit base register and a constant displacement representable as a signed 32-bit byte offset, these forms are equivalent:
+
+```asm
+[reg32 + constant]
+[reg32+constant]
+[reg32 - constant]
+[reg32-constant]
+```
+
+Examples that must be treated as equivalent:
+
+```asm
+DWORD PTR [eax - 4]
+DWORD PTR [eax-4]
+
+DWORD PTR [esi - 8]
+DWORD PTR [esi-8]
+
+DWORD PTR [ebp - 10h]
+DWORD PTR [ebp-10h]
+
+BYTE PTR [edi - 1]
+BYTE PTR [edi-1]
+
+WORD PTR [edx - 2]
+WORD PTR [edx-2]
+```
+
+The displacement is always a byte displacement. It is not an element index.
+
+This policy exists because the lexer may tokenize compact negative numeric text such as `-4`, `-10h`, or `-0x10` as a single signed numeric token. A parser path that accepts `[eax - 4]` must also accept `[eax-4]` when both forms represent the same simple base-minus-constant displacement.
+
+The parser must not make valid simple displacement syntax depend on spaces around the minus sign.
+
+This policy applies to memory operands used by executable memory-accessing instructions and to address-only instructions that reuse the same supported effective-address subset, such as `lea` after its implementation phase.
+
+Accepted examples:
+
+```asm
+mov DWORD PTR [eax-4], 10
+mov eax, DWORD PTR [ecx-4]
+mov ax, WORD PTR [edx-2]
+mov al, BYTE PTR [edi-1]
+lea eax, [ebx-4]
+```
+
+Each compact form above is equivalent to the corresponding spaced form:
+
+```asm
+mov DWORD PTR [eax - 4], 10
+mov eax, DWORD PTR [ecx - 4]
+mov ax, WORD PTR [edx - 2]
+mov al, BYTE PTR [edi - 1]
+lea eax, [ebx - 4]
+```
+
+This rule does not enable any of the following:
+
+- scaled-index addressing;
+- base-plus-index addressing;
+- SIB addressing;
+- parenthesized effective-address expressions;
+- general arithmetic inside memory brackets;
+- register-plus-register effective addresses;
+- symbolic arithmetic beyond forms already implemented by the current source-of-truth guide.
+
+The following forms remain unsupported until explicit future phases implement them:
+
+```asm
+[eax * 4]
+[eax*4]
+[eax + ebx]
+[eax+ebx]
+[eax + ebx * 4]
+[eax+ebx*4]
+[eax - 4 * 2]
+[eax-4*2]
+[eax - (4)]
+[eax-(4)]
+```
+
+A compact negative displacement must be accepted only when the signed numeric token is the complete displacement and the following token closes the memory operand.
+
+For example, this is a valid simple displacement:
+
+```asm
+mov eax, DWORD PTR [eax-4]
+```
+
+This is not a valid simple displacement:
+
+```asm
+mov eax, DWORD PTR [eax-4*2]
+```
+
+The parser must not silently accept `[eax-4*2]` as `[eax-4]`. Extra arithmetic tokens after a compact negative displacement make the operand an unsupported advanced effective-address expression.
+
+Parser/static diagnostics remain appropriate for malformed or unsupported address syntax. Runtime memory helpers remain authoritative for final byte-range validation, region containment, permissions, `.CONST` write protection, cross-region protected-region diagnostics, and optional memory-validation policies.
 
 ### 11.10 Uninitialized-Origin Byte Tracking and Read Diagnostics
 
@@ -2921,21 +3193,81 @@ WaitMsg:
   It may map to the input-wait protocol or emit a deterministic prompt, according to the phase contract.
 ```
 
-Unsupported Irvine32 file routines must produce `unsupported-irvine32-file-io` or an equivalent specific diagnostic. They must not attempt host filesystem access.
+The central unsupported-file-routine diagnostic rule is in Section 13.6 - Post-30 Irvine32 and Macros.inc Virtual Built-In Rules.
 
 ### 13.6 Post-30 Irvine32 and Macros.inc Virtual Built-In Rules
 
-Irvine32 routines and selected `Macros.inc` conveniences are virtual built-ins provided by the simulator. They do not load host include files, link libraries, expand general MASM macros, or call Windows APIs.
+Irvine32 routines and selected `Macros.inc` conveniences are virtual built-ins provided by the simulator. They do not load host include files, link libraries, expand the general MASM macro system, call Windows APIs, execute native code, or access the host filesystem.
+
+`INCLUDE Irvine32.inc` enables a known virtual Irvine32 namespace. It must not be implemented as host filesystem access and must not imply real MASM include-file loading, object linking, import-library behavior, Windows API execution, native procedure calls, or PE loading.
+
+Recognized Irvine32 names must be classified through the existing Phase 41 - Virtual Irvine32 Symbol Registry or a direct successor to that registry. Do not create a second independent Irvine32 classification table.
+
+Each recognized Irvine32 name must map to one of the Phase 41 categories:
+
+- supported virtual intrinsic now;
+- planned Irvine32 routine later;
+- known but explicitly unsupported in v1;
+- Windows/API/external symbol;
+- unknown symbol.
+
+If the implementation uses internal enum names, those names must map clearly to the Phase 41 categories in comments, documentation, or tests. For example:
+
+- an internal `implemented_virtual` status maps to "supported virtual intrinsic now";
+- an internal `planned_later` status maps to "planned Irvine32 routine later";
+- an internal `unsupported_v1` status maps to "known but explicitly unsupported in v1";
+- an internal `windows_or_external` status maps to "Windows/API/external symbol";
+- an internal `unknown` status maps to "unknown symbol".
+
+Diagnostics for recognized-but-unimplemented Irvine32 routines must be stable and behavior-specific. They must not say:
+
+```text
+unsupported by the current milestone
+not implemented in this milestone
+not supported in this milestone
+unsupported in this phase
+```
+
+If a precise future phase is known, the diagnostic should name both the phase number and the phase title. If no precise phase is assigned, the diagnostic should say that the routine is deferred to later Irvine32 routine phases.
+
+Acceptable diagnostic wording examples:
+
+```text
+WriteString is a recognized Irvine32 routine, but executable Irvine32 output routines are deferred to Phase <N> - <phase title>.
+```
+
+```text
+ReadString is a recognized Irvine32 routine, but Irvine32 input routines are deferred to later Irvine32 routine phases.
+```
+
+```text
+Irvine32 file I/O routines are not supported because simulated programs cannot access the host filesystem.
+```
+
+Diagnostics for recognized Irvine32 routines must not imply any of these behaviors unless a later phase explicitly implements them:
+
+- host include-file loading;
+- Windows API execution;
+- PE loading;
+- object-file linking;
+- import-library behavior;
+- real procedure linkage;
+- host filesystem access;
+- native x86 execution.
 
 The following implementation policies are mandatory:
 
 - `exit`, `Exit`, and `EXIT` are accepted only through the virtual Irvine32 symbol registry and follow the documented case policy;
+- instruction mnemonics, directives, virtual include names, and recognized Irvine32 routine names remain case-insensitive even under `OPTION CASEMAP:NONE`;
+- user-defined symbol lookup remains controlled by the documented `OPTION CASEMAP` policy and must not be conflated with Irvine32 routine-name lookup;
 - output routines validate output limits before appending when their formatted output is known up front;
 - `WriteString` and `DumpMem` use validation-first behavior and append no partial output on memory failure;
 - formatted output routines preserve registers and flags unless a routine contract says otherwise;
 - input routines enter the shared `WAITING_FOR_INPUT` VM state and resume only through the input protocol;
 - invalid numeric input resumes execution with documented flags/register results and does not implicitly re-enter wait;
 - deterministic random routines use the named simulator PRNG and seed policy from the guide.
+
+Unsupported Irvine32 file routines must produce `unsupported-irvine32-file-io` or an equivalent specific diagnostic. They must not attempt host filesystem access.
 
 Selected virtual macros such as `mWrite`, `mWriteLn`, and `mReadString` remain dedicated built-ins. Known but deferred macro names receive `unsupported-macro-invocation`; unknown macro-like syntax is not treated as full MASM macro expansion.
 
@@ -3726,6 +4058,555 @@ Memory-change visualization uses ordered row objects with stable identity. Each 
 
 Overlapping writes are displayed in execution order by default. Grouped views must not reorder rows unless the grouping is explicitly labeled. Failed writes and validation-first failures produce diagnostics but no successful memory-change rows.
 
+
+## 20A. Simulator State, Diagnostics, and Memory Image Policy
+
+This section defines stable simulator policy for startup state, configurable teaching diagnostics, final-state display markers, `.CONST` uninitialized storage, and `.code` memory-image behavior.
+
+The purpose is to keep MASM32 Educational Mode explicit about the difference between:
+
+- deterministic simulator behavior;
+- real MASM/Windows behavior;
+- configurable teaching diagnostics;
+- future compatibility work;
+- explicit non-goals such as native x86 execution, PE loading, object linking, host filesystem access, and Windows API execution.
+
+### 20A.1 Deterministic Startup State
+
+The simulator must remain deterministic by default.
+
+Default startup behavior:
+
+- general-purpose registers start from deterministic known values;
+- modeled flag bits start from deterministic known values;
+- simulated memory bytes are deterministic;
+- `.DATA?`, `?`, and `DUP(?)` storage preserve uninitialized-origin metadata even when their visible byte value is deterministic;
+- repeated runs with the same source, settings, and input produce the same result.
+
+The simulator must not imply that deterministic startup state is the same as arbitrary real-machine process state. Real MASM programs must not rely on arbitrary register or flag startup values unless the operating environment or calling convention explicitly defines those values.
+
+Future randomized startup modes, if provided, must be deterministic pseudo-random modes selected by settings. They must be seedable and reproducible. The same source, same settings, same seed, and same input must produce the same result.
+
+Randomized startup modes must not use host CPU registers, host process memory, unseeded wall-clock randomness, browser-global nondeterminism, or operating-system process state as simulator state.
+
+### 20A.2 Uninitialized-Origin Metadata Is Separate from Visible Bytes
+
+The simulator must distinguish the visible byte value from uninitialized-origin metadata.
+
+A byte may have a deterministic visible value and still be marked as originating from uninitialized storage.
+
+This distinction applies to supported uninitialized storage forms such as:
+
+```asm
+.DATA?
+x DWORD ?
+
+.data
+y DWORD ?
+
+.data
+buf BYTE 16 DUP(?)
+```
+
+When `.CONST` uninitialized storage compatibility is implemented, the same distinction also applies to `.CONST ?` and `.CONST DUP(?)`.
+
+Uninitialized-origin diagnostics must be controlled by the relevant diagnostic policy. They must not weaken mandatory memory safety checks.
+
+### 20A.3 Modular Diagnostic Policy Model
+
+Teaching diagnostics and compatibility notices should use a modular diagnostic policy model.
+
+Common policy states:
+
+```text
+off
+warn
+error
+```
+
+Meanings:
+
+- `off`: do not emit that optional teaching diagnostic or notice.
+- `warn`: emit a non-fatal Simulator Message and continue when no lower-level fatal error occurs.
+- `error`: emit a fatal assembly or runtime diagnostic, depending on the diagnostic family, and stop before the affected operation mutates visible state when the diagnostic is runtime-facing.
+
+A diagnostic policy must not weaken mandatory safety checks.
+
+Mandatory errors that must not be converted to warnings merely by teaching-policy settings include:
+
+- invalid address;
+- invalid byte range;
+- address overflow;
+- invalid region;
+- permission failure;
+- mandatory `.CONST` write protection;
+- parser capacity exhaustion;
+- internal invariant failure;
+- unsupported simulator non-goals such as host include loading, PE loading, object linking, native x86 execution, or Windows API execution.
+
+Diagnostic families that should use the modular policy model include, when implemented:
+
+```text
+uninitialized-read
+undefined-flag-use
+compatibility-notice
+const-uninitialized-storage
+startup-state-notice
+code-image-read
+```
+
+Future diagnostic families should be added through the same policy mechanism rather than one-off parser flags, source-run flags, environment variables, or UI-only checks.
+
+User-visible diagnostics controlled by this model must still satisfy the project diagnostic rules:
+
+- structured diagnostic code;
+- severity/kind;
+- source line when applicable;
+- source column when applicable;
+- byte offset when applicable;
+- span length when applicable;
+- exact rendered Simulator Messages tests for new or changed wording;
+- no Program Console output for simulator diagnostics;
+- no milestone-relative wording such as "unsupported by the current milestone."
+
+### 20A.4 Final Register Display and Unchanged Markers
+
+The final register display may show which canonical register families were left unmodified by the executed program.
+
+A register family is the canonical 32-bit register plus its displayed aliases.
+
+Examples:
+
+```text
+EAX family: EAX, AX, AH, AL
+EBX family: EBX, BX, BH, BL
+ECX family: ECX, CX, CH, CL
+EDX family: EDX, DX, DH, DL
+ESI family: ESI, SI
+EDI family: EDI, DI
+EBP family: EBP, BP
+ESP family: ESP, SP
+EIP family: EIP
+EFLAGS family: EFLAGS
+```
+
+When a canonical register family is unchanged by the executed program, the display may append a compact marker to the canonical parent row only:
+
+```text
+EAX    | 00000000h / u: 0 / s: 0        [unchanged]
+  AX   |     0000h / u: 0 / s: 0
+    AH |       00h / u: 0 / s: 0
+    AL |       00h / u: 0 / s: 0
+```
+
+Rules:
+
+- The marker appears only on the canonical parent row.
+- The marker is not repeated on alias rows.
+- Alias rows inherit the parent-family status visually.
+- If any alias or subpart of a canonical register changes, the parent family is considered changed.
+- If the display cannot preserve alignment in a narrow viewport, the formatter may omit the marker rather than wrapping rows or breaking numeric alignment.
+- The marker must not alter VM state, source-run numeric values, Program Console output, Simulator Messages diagnostics, or memory-change rows.
+
+This is display-only metadata. It is not a new CPU semantic feature.
+
+### 20A.5 `.CONST` Uninitialized Storage
+
+The simulator may accept MASM-compatible uninitialized storage forms in `.CONST` when the implementation guide phase for this compatibility feature is completed.
+
+This section describes planned behavior after the implementation-guide phase for `.CONST` uninitialized storage is completed. It does not retroactively describe current through-Phase-57 behavior.
+
+Through Phase 57 - Signed IDIV, before Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts those forms as compatibility forms. After Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy, declaration-time diagnostics for these forms become configurable according to the documented teaching-diagnostic policy.
+
+Future assistants must not use this section to claim that `.CONST ?` is already supported in a repository whose latest completed runtime/source-run MASM behavior phase is still Phase 57 - Signed IDIV. Current support must be verified against the implementation guide, latest repository state, tests, and milestone evidence.
+
+Supported forms after that phase should include, at minimum:
+
+```asm
+.CONST
+x DWORD ?
+buf BYTE 16 DUP(?)
+```
+
+Semantics:
+
+- storage is allocated in `.CONST`;
+- bytes are deterministic by default;
+- bytes carry uninitialized-origin metadata until overwritten, although normal simulated program writes to `.CONST` remain blocked;
+- the storage remains read-only for simulated program writes;
+- direct and computed writes to the final byte range remain blocked by mandatory `.CONST` protection;
+- reads from the storage may trigger uninitialized-read diagnostics according to the active uninitialized-read policy.
+
+Because `.CONST ?` is suspicious in educational code, the simulator should provide a configurable diagnostic family:
+
+```text
+const-uninitialized-storage
+```
+
+Default policy when implemented:
+
+```text
+warn
+```
+
+The warning must explain that the simulator accepts the declaration for compatibility, initializes bytes deterministically, and preserves uninitialized-origin metadata. The warning must appear in Simulator Messages, not Program Console.
+
+### 20A.6 `.CODE` Memory Access Policy
+
+This section defines the planned v1 `.code` memory-access policy. It is not a statement that `.code` memory-access diagnostics are implemented in the current repository state.
+
+Through Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction, assistants must not claim that `.code` memory-access denial is implemented unless the current repository tests prove it.
+
+Phase 57K - .CODE and MASM Segment Symbol Access Policy owns the policy audit and source-of-truth cleanup for `.code` access behavior.
+
+Phase 57L - .CODE Memory Access Diagnostics owns the runtime/source-run implementation of `.code` read/write denial.
+
+The simulator has a `.code` source section and may have parser, IR, source-location, and execution metadata associated with executable source lines. That does not mean `.code` is user-readable or user-writable simulated program memory.
+
+In MASM32 Educational Mode, `.code` is an internal source/IR execution area, not a modeled PE `.text` byte image and not a region of user-addressable opcode bytes.
+
+Required v1 policy after Phase 57L is implemented and accepted:
+
+```text
+unsupported-code-memory-access
+```
+
+This is the only planned v1 `.code` memory-access policy.
+
+Do not offer, document, or implement a deterministic simulator code-image policy in v1 unless a later reviewed spec/guide revision deliberately changes this section.
+
+All simulated source-level memory accesses whose final byte range overlaps `.code` must fail with a structured diagnostic.
+
+This includes:
+
+- reads wholly inside `.code`;
+- writes wholly inside `.code`;
+- reads that partially overlap `.code`;
+- writes that partially overlap `.code`;
+- direct absolute-address forms, if supported;
+- register-indirect forms;
+- displacement forms;
+- symbol-derived forms, if any future feature can produce them;
+- computed addresses that happen to land in `.code`.
+
+The diagnostic must explain that `.code` memory bytes are not exposed by MASM32 Educational Mode.
+
+The diagnostic must not say or imply that real MASM/PE programs have empty `.text` sections. The issue is simulator scope: this project executes internal IR and does not expose real x86 instruction bytes.
+
+Required behavior for fatal `.code` memory-access diagnostics:
+
+- stop before the instruction consumes a read value;
+- stop before the instruction commits a write;
+- preserve all registers;
+- preserve modeled flags;
+- preserve flag-validity metadata;
+- preserve memory;
+- preserve Program Console output;
+- create no successful memory-change row;
+- emit no `execution-complete` message after the fatal diagnostic.
+
+Diagnostic precedence for `.code` memory-access work must preserve the mandatory Level 1 memory rules from Section 11.9.2 and the protected-region rule introduced by Phase 57-CORR1.
+
+Mandatory lower-level memory failures still take precedence when the simulator cannot classify the access as overlapping a known protected region. Examples include:
+
+- malformed memory operands;
+- ambiguous memory width;
+- unsupported executable QWORD/SQWORD memory width;
+- address arithmetic overflow;
+- final byte ranges plainly outside all VM regions without intersecting a known protected region.
+
+The Phase 57-CORR1 `region-boundary-crossing` rule is also mandatory Level 1 diagnostic behavior. It is not an optional teaching diagnostic.
+
+When a single source-level memory access is not wholly contained in one VM memory region and the active runtime layout metadata proves that the requested final inclusive byte range intersects a known protected region, the diagnostic must be:
+
+```text
+region-boundary-crossing
+```
+
+For current `.CONST` behavior:
+
+- a cross-region read or write whose requested range intersects `.CONST` reports `region-boundary-crossing`;
+- a direct or wholly-contained write overlapping `.CONST` reports `permission-denied`;
+- a wholly-contained read from `.CONST` is allowed unless another mandatory or enabled strict validation rejects it;
+- a cross-region read intersecting `.CONST` must not be described as a general `.CONST` read prohibition.
+
+For future `.code` behavior after Phase 57L implements `.code` memory-access denial:
+
+- a wholly-contained read or write overlapping `.code` reports the `.code` memory-access diagnostic selected by Phase 57L;
+- a cross-region access that intersects `.code` must use `region-boundary-crossing` if runtime layout metadata can identify `.code` as the protected region involved;
+- the rendered message must use the runtime `.code` base address from active layout metadata, not a hardcoded fixed-layout address.
+
+The simulator must not split, stitch, partially perform, or partially diagnose one source-level memory access across independent VM memory regions.
+
+Do not implement any of the following merely to support `.code` memory access:
+
+- real x86 opcode emission;
+- real multi-byte instruction encoding;
+- PE `.text` section layout;
+- object-file generation;
+- linking;
+- relocation records;
+- import tables;
+- disassembly;
+- raw byte emission into `.code`;
+- host loader behavior;
+- native execution.
+
+Future change rule:
+
+```text
+Do not revisit `.code` memory readability or writability unless a later reviewed specification and guide revision deliberately replaces this policy.
+```
+
+### 20A.7 MASM Segment and Group Symbol Policy
+
+MASM and object/linker workflows may expose or use segment and group names such as:
+
+```text
+_TEXT
+_DATA
+_BSS
+CONST
+STACK
+DGROUP
+FLAT
+```
+
+In MASM32 Educational Mode, these names are not user-addressable simulator symbols.
+
+They must not become aliases for internal simulator regions.
+
+They must not be accepted as a way to read `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any other internal VM region.
+
+They must not be accepted as object/linker metadata that implies PE, COFF, OMF, import-library, relocation, or linker behavior.
+
+Examples that must be rejected with targeted diagnostics when recognized:
+
+```asm
+mov eax, OFFSET _TEXT
+mov eax, OFFSET _DATA
+mov eax, OFFSET _BSS
+mov eax, OFFSET CONST
+mov eax, OFFSET STACK
+mov eax, OFFSET DGROUP
+mov eax, OFFSET FLAT
+
+mov eax, DWORD PTR [_TEXT]
+mov eax, DWORD PTR [_DATA]
+mov eax, DWORD PTR [_BSS]
+
+_TEXT SEGMENT
+_TEXT ENDS
+_DATA SEGMENT
+_DATA ENDS
+```
+
+Preferred diagnostic family:
+
+```text
+unsupported-segment-symbol
+```
+
+The diagnostic should explain that the name is a MASM/object/linker segment or group concept and is not exposed as an addressable simulator symbol.
+
+Example diagnostic wording for `_TEXT`:
+
+```text
+`_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.
+```
+
+Example diagnostic wording for `_DATA`:
+
+```text
+`_DATA` is a MASM/object data-segment symbol. Use declared data labels instead; MASM32 Educational Mode does not expose linker segment symbols.
+```
+
+Example diagnostic wording for `DGROUP`:
+
+```text
+`DGROUP` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.
+```
+
+This policy must not block ordinary user-defined symbols merely because their spelling resembles a segment name under `OPTION CASEMAP:NONE`, unless the spelling exactly matches a reserved unsupported segment/group name under the active user-symbol lookup policy.
+
+Ordinary data labels remain supported:
+
+```asm
+.data
+value DWORD 1
+
+.code
+main PROC
+    mov eax, OFFSET value
+main ENDP
+END main
+```
+
+The simulator should recommend declared labels instead of segment/group names when the user appears to be trying to access data.
+
+### 20A.8 Source-Level `NOP` Policy
+
+The simulator may support source-level `nop` instruction forms as internal IR no-op instructions.
+
+`NOP` support is split into two conceptual levels:
+
+1. **Zero-operand `nop`**.
+2. **Explicit-width NOP encoding-operand forms**, such as `nop DWORD PTR [eax]`.
+
+The zero-operand form may be implemented first. Explicit-width encoding-operand forms may be implemented later.
+
+Supporting source-level `nop` means:
+
+- the parser recognizes supported `nop` source forms;
+- the IR may contain a no-op instruction;
+- the executor steps over that IR instruction;
+- the instruction performs no simulated register mutation;
+- the instruction performs no modeled flag mutation;
+- the instruction performs no flag-validity metadata mutation;
+- the instruction performs no memory read;
+- the instruction performs no memory write;
+- the instruction emits no Program Console output;
+- the instruction creates no memory-change row;
+- the instruction continues execution normally;
+- the instruction counts as one executed instruction for execution-limit and future stepping purposes.
+
+Explicit-width NOP encoding-operand forms may resemble memory operands:
+
+```asm
+nop BYTE PTR [eax]
+nop WORD PTR [eax]
+nop DWORD PTR [eax]
+```
+
+When accepted, such operands are **encoding operands only**. They are parsed only to recognize the source-level no-op form. They are not executable memory operands.
+
+For accepted `nop` encoding operands:
+
+- do not evaluate the final effective address at runtime;
+- do not call checked memory read helpers;
+- do not call checked memory write helpers;
+- do not perform planned-read validation;
+- do not perform planned-write validation;
+- do not emit uninitialized-read diagnostics;
+- do not emit declared-object diagnostics;
+- do not emit section-capacity diagnostics;
+- do not emit section-image diagnostics;
+- do not emit `.CONST` permission diagnostics;
+- do not create memory-change rows.
+
+This policy is specific to accepted `nop` encoding operands. It must not be generalized to ordinary memory operands of other instructions.
+
+Supporting source-level `nop` must not imply:
+
+- real x86 opcode emission;
+- real multi-byte NOP byte generation;
+- `.code` byte-image generation;
+- PE `.text` layout;
+- object-file generation;
+- linker behavior;
+- relocation behavior;
+- disassembly;
+- alignment directive behavior;
+- native execution.
+
+If a later phase implements real `.code` byte-image behavior, it must explicitly define whether source-level `nop` forms contribute bytes to that image. Until such a phase exists, `nop` remains an IR-level no-op only.
+
+### 20A.9 Host Include, Library, and MASM32 Path Diagnostics
+
+The simulator must distinguish virtual compatibility includes from host filesystem includes and linker/library directives.
+
+Virtual includes are simulator-defined names, such as `INCLUDE Irvine32.inc` where implemented. They do not read the host filesystem.
+
+Host include paths are outside the browser simulator boundary. Examples include:
+
+```asm
+include \masm32\include\masm32.inc
+include C:\masm32\include\kernel32.inc
+include ..\include\file.inc
+include .\local.inc
+```
+
+The simulator must not attempt to load those paths from the user's machine, browser sandbox, server, project repository, or host filesystem.
+
+`INCLUDELIB` is outside the simulator boundary because it implies object/library linking. Examples include:
+
+```asm
+includelib \masm32\lib\masm32.lib
+includelib \masm32\lib\kernel32.lib
+includelib kernel32.lib
+```
+
+The simulator must not treat `INCLUDELIB` as a future promise of real linker behavior unless the project deliberately changes scope.
+
+Diagnostics for these constructs should be specific and educational. They should explain:
+
+- what construct was recognized;
+- why it is outside the current simulator boundary;
+- whether a virtual include exists for a supported subset;
+- that host filesystem access, object linking, PE loading, and WinAPI execution are not performed.
+
+These diagnostics must be emitted through Simulator Messages, not Program Console.
+
+The lexer must not report repeated low-level `unexpected-character` diagnostics for path separators when a whole unsupported include or library directive can be recognized and diagnosed as a higher-level unsupported construct.
+
+### 20A.10 Unsupported MASM32 Invocation and Flow Diagnostics
+
+The simulator should recognize common MASM32 source constructs well enough to produce useful unsupported-feature diagnostics, even when those constructs are not executable yet.
+
+Common unsupported or future-owned constructs include:
+
+```asm
+invoke StdOut, addr titleMsg
+invoke crt_printf, addr numberFmt, counter
+invoke ExitProcess, 0
+
+.IF eax == 0
+.ELSE
+.ENDIF
+```
+
+Recognition does not imply implementation.
+
+The simulator should classify these constructs using stable diagnostic categories:
+
+- `INVOKE` and invocation-style calls;
+- `ADDR` operands;
+- known MASM32 library routines;
+- known C runtime-style routines such as `crt_printf`;
+- WinAPI/external routines such as `ExitProcess`;
+- high-level MASM flow such as `.IF`, `.ELSE`, `.ENDIF`, `.WHILE`, `.ENDW`, `.REPEAT`, and `.UNTIL`.
+
+Diagnostics should state whether the construct is:
+
+- planned for a later phase;
+- unsupported in v1;
+- outside the simulator boundary;
+- unavailable because linker, WinAPI, PE, stack, procedure, or macro behavior is not implemented.
+
+These diagnostics must not implement the construct. They must not lower high-level flow into labels or branches. They must not execute `INVOKE`, call external routines, or simulate WinAPI.
+
+### 20A.11 Realistic Playground Program Recovery Policy
+
+Users and AI tools often produce normal MASM32/Windows examples that combine many unsupported constructs in one file.
+
+The simulator should recover far enough to produce useful unsupported-feature diagnostics for common MASM32 playground programs without pretending to execute them.
+
+A realistic unsupported program should produce a concise set of structured diagnostics identifying unsupported feature families, such as:
+
+- host include paths;
+- `INCLUDELIB`;
+- `INVOKE`;
+- `ADDR`;
+- WinAPI calls such as `ExitProcess`;
+- MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
+- high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
+- `call` and `ret` before procedure execution is implemented;
+- `cmp` and conditional jumps before control flow is implemented.
+
+The simulator should avoid flooding the user with repeated character-level diagnostics when a more meaningful unsupported-feature diagnostic is possible.
+
+This policy does not require the simulator to implement those features. It requires the simulator to classify and explain them.
+
 ## 21. Error, Warning, and Diagnostic Model
 
 All errors should be structured internally.
@@ -3783,7 +4664,7 @@ over a generic message such as:
 
 A generic `lexer-failed` diagnostic may be retained internally as a summary/status code, but it must not be the only user-visible diagnostic when more specific lexer diagnostics are available.
 
-The parser should eventually support diagnostic recovery for known unsupported constructs. Recovery must be conservative:
+The implementation guide assigns diagnostic recovery for known unsupported constructs to dedicated phases. When those phases are implemented and accepted, recovery must be conservative:
 
 - Recover from known unsupported line-level constructs by skipping to the next line.
 - Recover from known unsupported block constructs by skipping to the matching terminator when the terminator is present; if no terminator is present, emit a structured unterminated-unsupported-block diagnostic and stop recovery for that block.
@@ -3894,6 +4775,8 @@ Diagnostic marker caps, gutter marker caps, and summary diagnostics are mandator
 
 
 ### 21.3 Test Runner Decomposition, Fixture Size, and Timeout-Safe Verification Policy
+
+This section owns the stable project testing policy. The implementation guide owns phase-specific required tests, focused runner group names, milestone-report acceptance criteria, and any phase-local verification checklist.
 
 The project test suite must remain runnable in both local developer environments and constrained assistant/container environments.
 

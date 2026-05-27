@@ -3795,6 +3795,106 @@ static int test_phase52_lea_parse_error_paths(void) {
 }
 
 
+/// Verifies Phase 57-CORR2 compact negative register-displacement parser acceptance.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57corr2_compact_negative_register_displacement_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    mov DWORD PTR [eax-4], 10\n"
+        "    mov DWORD PTR [esi-8], 10\n"
+        "    mov DWORD PTR [ebp-10h], 10\n"
+        "    mov DWORD PTR [ebp-0x10], 10\n"
+        "    mov eax, DWORD PTR [ecx-4]\n"
+        "    mov ax, WORD PTR [edx-2]\n"
+        "    mov al, BYTE PTR [edi-1]\n"
+        "    lea eax, [ebx-4]\n"
+        "    mov DWORD PTR [eax], 10\n"
+        "    mov DWORD PTR [eax+4], 10\n"
+        "    mov DWORD PTR [eax + 4], 10\n"
+        "    mov DWORD PTR [eax - 4], 10\n"
+        "    lea eax, [ebx + 4]\n"
+        "    lea eax, [ebx - 4]\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 57-CORR2 compact negative displacement forms should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57-CORR2 compact negative displacement forms should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 15U, "Phase 57-CORR2 parser fixture should emit fifteen instructions");
+    if (result.instruction_count == 15U) {
+        failures += expect_u32(buffers.instructions[1].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "MOV DWORD PTR [eax-4] should emit register-derived memory destination");
+        failures += expect_u32(buffers.instructions[1].destination.reg, VM_REGISTER_EAX, "MOV DWORD PTR [eax-4] should use EAX base");
+        failures += expect_u32(buffers.instructions[1].destination.immediate, (uint32_t)-4, "MOV DWORD PTR [eax-4] should preserve -4 byte displacement");
+        failures += expect_u32(buffers.instructions[2].destination.reg, VM_REGISTER_ESI, "MOV DWORD PTR [esi-8] should use ESI base");
+        failures += expect_u32(buffers.instructions[2].destination.immediate, (uint32_t)-8, "MOV DWORD PTR [esi-8] should preserve -8 byte displacement");
+        failures += expect_u32(buffers.instructions[3].destination.immediate, (uint32_t)-16, "MOV DWORD PTR [ebp-10h] should preserve -16 byte displacement");
+        failures += expect_u32(buffers.instructions[4].destination.immediate, (uint32_t)-16, "MOV DWORD PTR [ebp-0x10] should preserve -16 byte displacement");
+        failures += expect_u32(buffers.instructions[5].source.kind, VM_IR_OPERAND_MEMORY_REGISTER, "MOV eax, DWORD PTR [ecx-4] should emit register-derived memory source");
+        failures += expect_u32(buffers.instructions[5].source.reg, VM_REGISTER_ECX, "MOV eax, DWORD PTR [ecx-4] should use ECX base");
+        failures += expect_u32(buffers.instructions[5].source.immediate, (uint32_t)-4, "MOV eax, DWORD PTR [ecx-4] should preserve -4 byte displacement");
+        failures += expect_u32(buffers.instructions[6].source.width_bits, 16U, "MOV ax, WORD PTR [edx-2] should preserve WORD width");
+        failures += expect_u32(buffers.instructions[6].source.immediate, (uint32_t)-2, "MOV ax, WORD PTR [edx-2] should preserve -2 byte displacement");
+        failures += expect_u32(buffers.instructions[7].source.width_bits, 8U, "MOV al, BYTE PTR [edi-1] should preserve BYTE width");
+        failures += expect_u32(buffers.instructions[7].source.immediate, (uint32_t)-1, "MOV al, BYTE PTR [edi-1] should preserve -1 byte displacement");
+        failures += expect_u32(buffers.instructions[8].opcode, VM_IR_OPCODE_LEA, "LEA [ebx-4] should emit LEA opcode");
+        failures += expect_u32(buffers.instructions[8].source.reg, VM_REGISTER_EBX, "LEA [ebx-4] should use EBX base");
+        failures += expect_u32(buffers.instructions[8].source.immediate, (uint32_t)-4, "LEA [ebx-4] should preserve -4 byte displacement");
+        failures += expect_u32(buffers.instructions[9].destination.immediate, 0U, "MOV DWORD PTR [eax] should preserve zero displacement");
+        failures += expect_u32(buffers.instructions[10].destination.immediate, 4U, "MOV DWORD PTR [eax+4] should preserve compact positive displacement");
+        failures += expect_u32(buffers.instructions[11].destination.immediate, 4U, "MOV DWORD PTR [eax + 4] should preserve spaced positive displacement");
+        failures += expect_u32(buffers.instructions[12].destination.immediate, (uint32_t)-4, "MOV DWORD PTR [eax - 4] should preserve spaced negative displacement");
+        failures += expect_u32(buffers.instructions[13].source.immediate, 4U, "LEA [ebx + 4] should preserve spaced positive displacement");
+        failures += expect_u32(buffers.instructions[14].source.immediate, (uint32_t)-4, "LEA [ebx - 4] should preserve spaced negative displacement");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR2 does not accept advanced register-derived addressing.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57corr2_compact_negative_register_displacement_rejections(void) {
+    int failures = 0;
+    static const char *const rejected_sources[] = {
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax*4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax * 4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax+ebx]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax + ebx]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax+ebx*4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax + ebx * 4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax-4*2]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax - 4 * 2]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax-(4)]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax - (4)]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax--4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax+-4]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax-]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax+]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax-80000000h]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, DWORD PTR [eax - 80000000h]\nmain ENDP\nEND main\n"
+    };
+    size_t i = 0U;
+
+    for (i = 0U; i < sizeof(rejected_sources) / sizeof(rejected_sources[0]); ++i) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        VmParserStatus status = parse_for_test(rejected_sources[i], &buffers, &result);
+
+        failures += expect_parser_status(status, VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57-CORR2 advanced register-derived address form should remain rejected");
+        if (result.diagnostic_count == 0U) {
+            failures += record_failure("Phase 57-CORR2 rejected address form should produce a parser diagnostic");
+        }
+    }
+
+    return failures;
+}
+
 /// Verifies Phase 53 MUL parser acceptance and IR shapes.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4722,6 +4822,8 @@ int main(void) {
     failures += test_phase50_ror_parse_error_paths();
     failures += test_phase52_lea_parse_to_ir();
     failures += test_phase52_lea_parse_error_paths();
+    failures += test_phase57corr2_compact_negative_register_displacement_parse_to_ir();
+    failures += test_phase57corr2_compact_negative_register_displacement_rejections();
     failures += test_phase53_mul_parse_to_ir();
     failures += test_phase53_mul_parse_error_paths();
     failures += test_phase54_imul_parse_to_ir();

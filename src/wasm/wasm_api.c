@@ -4320,6 +4320,42 @@ static const char *masm32_sim_wasm_format_memory_error_message(
     memory_diagnostic = &diagnostic->memory_diagnostic;
     access_name = masm32_sim_wasm_memory_access_name(memory_diagnostic->access_type);
 
+    if (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING) {
+        uint32_t range_end = memory_diagnostic->address;
+        bool has_range_end = memory_diagnostic->size > 0U && memory_diagnostic->size <= UINT32_MAX - memory_diagnostic->address;
+        if (has_range_end) {
+            range_end = memory_diagnostic->address + memory_diagnostic->size - 1U;
+        }
+
+        if (buffer != NULL && buffer_size > 0U) {
+            if (has_range_end && memory_diagnostic->has_const_overlap) {
+                (void)snprintf(
+                    buffer,
+                    buffer_size,
+                    "Cross-region memory %s at %08Xh for %u byte%s. The memory address range %08Xh..%08Xh crosses/overlaps a protected memory region, .CONST, that starts at %08Xh. This is not allowed; program stopped before access.",
+                    access_name,
+                    (unsigned int)memory_diagnostic->address,
+                    (unsigned int)memory_diagnostic->size,
+                    memory_diagnostic->size == 1U ? "" : "s",
+                    (unsigned int)memory_diagnostic->address,
+                    (unsigned int)range_end,
+                    (unsigned int)memory_diagnostic->const_region_start
+                );
+            } else {
+                (void)snprintf(
+                    buffer,
+                    buffer_size,
+                    "Cross-region memory %s at %08Xh for %u byte%s. The requested memory address range cannot be contained in one simulator memory region.",
+                    access_name,
+                    (unsigned int)memory_diagnostic->address,
+                    (unsigned int)memory_diagnostic->size,
+                    memory_diagnostic->size == 1U ? "" : "s"
+                );
+            }
+        }
+        return memory_status_name;
+    }
+
     if (diagnostic->memory_status == VM_MEMORY_STATUS_INVALID_ADDRESS) {
         if (buffer != NULL && buffer_size > 0U) {
             (void)snprintf(
@@ -4378,7 +4414,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     const char *status_name = vm_exec_status_name(status);
     const char *message_code = status_name != NULL ? status_name : "execution-error";
     const char *message_text = "Execution failed while running the parsed program.";
-    char memory_message[256];
+    char memory_message[512];
     char div_zero_message[384];
     char quotient_overflow_message[384];
     uint32_t line = 0U;

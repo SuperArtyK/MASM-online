@@ -5540,6 +5540,112 @@ static int test_phase52_lea_source_run_error_paths(void) {
 }
 
 
+/// Verifies Phase 57-CORR2 compact negative displacement writes through source-run.
+///
+/// @return Number of failures.
+static int test_phase57corr2_compact_negative_displacement_write_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD 0, 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    add eax, 4\n"
+        "    mov DWORD PTR [eax-4], 10\n"
+        "    mov ebx, x\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57-CORR2 write response should retain runtime Phase 57 metadata");
+    failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement write should execute");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement write should update x and load EBX = 10");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"address\":\"00500000h\"", "compact negative displacement write should resolve memory change to x base");
+    failures += expect_json_contains(json, "\"newHex\":\"0000000Ah\",\"newUnsigned\":10", "compact negative displacement write should record new DWORD value 10");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "compact negative displacement write should complete successfully");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR2 compact negative displacement reads through source-run.
+///
+/// @return Number of failures.
+static int test_phase57corr2_compact_negative_displacement_read_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD 10, 20\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    add eax, 4\n"
+        "    mov ebx, DWORD PTR [eax-4]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57-CORR2 read response should retain runtime Phase 57 metadata");
+    failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement read should execute");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement read should load EBX = 10");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "compact negative displacement read should complete successfully");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR2 compact negative displacement LEA remains address-only.
+///
+/// @return Number of failures.
+static int test_phase57corr2_compact_negative_displacement_lea_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD 0, 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov ebx, OFFSET x\n"
+        "    add ebx, 4\n"
+        "    lea eax, [ebx-4]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57-CORR2 LEA response should retain runtime Phase 57 metadata");
+    failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement LEA should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "compact negative displacement LEA should compute x base address");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "compact negative displacement LEA should not create memory-change rows");
+    failures += expect_json_not_contains(json, "uninitialized-read", "compact negative displacement LEA should not perform a memory read");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "compact negative displacement LEA should complete successfully");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR2 keeps advanced compact addressing rejected through source-run.
+///
+/// @return Number of failures.
+static int test_phase57corr2_compact_negative_displacement_advanced_rejection_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "x DWORD 0, 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    mov ebx, DWORD PTR [eax-4*2]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "advanced compact displacement expression should fail source-run");
+    failures += expect_json_contains(json, "unsupported-scaled-index", "advanced compact displacement expression should use unsupported scaled-index diagnostic");
+    failures += expect_json_not_contains(json, "execution-complete", "advanced compact displacement expression should not execute");
+    failures += expect_json_not_contains(json, "programConsole", "advanced compact displacement expression should not produce Program Console output");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "advanced compact displacement expression should not create memory-change rows");
+
+    return failures;
+}
+
+
 /// Verifies Phase 53 MUL acceptance behavior through source-run JSON.
 ///
 /// @return Number of failures.
@@ -7737,6 +7843,123 @@ static int test_phase51_fixed_and_automatic_layout_smoke_harness(void) {
     return failures;
 }
 
+/// Verifies Phase 57-CORR1 reports `.CONST` context for a cross-region write overlap.
+///
+/// @return Number of failures.
+static int test_phase57corr1_const_cross_region_write_diagnostic_context(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".const\n"
+        "x BYTE 1\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    mov ebx, [eax]\n"
+        "    sub eax, 2\n"
+        "    mov DWORD PTR [eax], 0FFFFFFFFh\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-const-cross-region-write-overlap\n");
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57-CORR1 must not advance runtime/source-run phase metadata");
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 cross-region .CONST write should fail");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "Phase 57-CORR1 cross-region .CONST write should be an execution error");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 57-CORR1 failing write should stop after three completed instructions");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"005FFFFEh\",\"unsigned\":6291454}", "Phase 57-CORR1 EAX should retain completed SUB result");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Phase 57-CORR1 EBX should retain the successful .CONST read value");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 57-CORR1 failing write should not commit memory changes");
+    failures += expect_json_contains(json, "\"code\":\"region-boundary-crossing\"", "Phase 57-CORR1 should use the region-boundary diagnostic code");
+    failures += expect_json_contains(json, "Cross-region memory write at 005FFFFEh for 4 bytes", "Phase 57-CORR1 diagnostic should identify attempted write start and width");
+    failures += expect_json_contains(json, "memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h", "Phase 57-CORR1 diagnostic should explain the protected .CONST crossing");
+    failures += expect_json_contains(json, "program stopped before access", "Phase 57-CORR1 diagnostic should explain that execution stopped before access");
+    failures += expect_json_not_contains(json, "execution-complete", "Phase 57-CORR1 fatal write should not emit execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR1 preserves direct `.CONST` runtime write rejection.
+///
+/// @return Number of failures.
+static int test_phase57corr1_direct_const_write_still_permission_denied(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".const\n"
+        "x BYTE 1\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    mov DWORD PTR [eax], 0FFFFFFFFh\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-direct-const-write-permission\n");
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 direct .CONST write should fail");
+    failures += expect_json_contains(json, "\"code\":\"permission-denied\"", "Phase 57-CORR1 direct .CONST write should preserve permission-denied");
+    failures += expect_json_contains(json, "Memory write at 00600000h for 4 bytes is not permitted in .const.", "Phase 57-CORR1 direct .CONST write should mention read-only .const storage");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 57-CORR1 direct .CONST write should not commit memory changes");
+    failures += expect_json_not_contains(json, "execution-complete", "Phase 57-CORR1 direct .CONST failure should not emit execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR1 does not reclassify cross-region reads as `.CONST` writes.
+///
+/// @return Number of failures.
+static int test_phase57corr1_const_cross_region_read_remains_region_failure(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".const\n"
+        "x BYTE 1\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET x\n"
+        "    sub eax, 2\n"
+        "    mov ebx, DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-const-cross-region-read\n");
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 cross-region read should fail");
+    failures += expect_json_contains(json, "\"code\":\"region-boundary-crossing\"", "Phase 57-CORR1 cross-region read should use the region-boundary diagnostic code");
+    failures += expect_json_contains(json, "Cross-region memory read at 005FFFFEh for 4 bytes", "Phase 57-CORR1 cross-region read should identify attempted read start and width");
+    failures += expect_json_contains(json, "memory address range 005FFFFEh..00600001h crosses/overlaps a protected memory region, .CONST, that starts at 00600000h", "Phase 57-CORR1 cross-region read should explain the protected .CONST crossing");
+    failures += expect_json_not_contains(json, "permission-denied", "Phase 57-CORR1 cross-region read must not become a .CONST permission failure");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 57-CORR1 cross-region read should not commit memory changes");
+
+    return failures;
+}
+
+/// Verifies Phase 57-CORR1 preserves ordinary non-`.CONST` range diagnostics.
+///
+/// @return Number of failures.
+static int test_phase57corr1_non_const_cross_region_write_remains_ordinary_region_failure(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 004FFFFEh\n"
+        "    mov DWORD PTR [eax], 12345678h\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-non-const-cross-region-write\n");
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 non-.CONST cross-region write should fail");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "Phase 57-CORR1 non-.CONST cross-region write should remain a region/range diagnostic");
+    failures += expect_json_contains(json, "Invalid memory write at 004FFFFEh for 4 bytes", "Phase 57-CORR1 non-.CONST cross-region write should identify attempted write start and width");
+    failures += expect_json_not_contains(json, "protected memory region, .CONST", "Phase 57-CORR1 non-.CONST cross-region write should not gain protected .CONST wording");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 57-CORR1 non-.CONST cross-region write should not commit memory changes");
+    failures += expect_json_not_contains(json, "execution-complete", "Phase 57-CORR1 non-.CONST cross-region write should not emit execution-complete");
+
+    return failures;
+}
+
 /// Verifies Phase 51 keeps lower-level .CONST write rejection ahead of object-bound diagnostics.
 ///
 /// @return Number of failures.
@@ -8105,6 +8328,10 @@ int main(void) {
     failures += test_phase52_lea_source_run_program();
     failures += test_phase52_lea_no_memory_diagnostics_source_run();
     failures += test_phase52_lea_source_run_error_paths();
+    failures += test_phase57corr2_compact_negative_displacement_write_source_run();
+    failures += test_phase57corr2_compact_negative_displacement_read_source_run();
+    failures += test_phase57corr2_compact_negative_displacement_lea_source_run();
+    failures += test_phase57corr2_compact_negative_displacement_advanced_rejection_source_run();
     failures += test_phase53_mul_source_run_program();
     failures += test_phase53_mul_memory_source_run_program();
     failures += test_phase53_mul_uninitialized_memory_source_warning();
@@ -8119,6 +8346,10 @@ int main(void) {
     failures += test_phase56_div_source_run_error_paths();
     failures += test_phase57_idiv_source_run_programs();
     failures += test_phase57_idiv_source_run_error_paths();
+    failures += test_phase57corr1_const_cross_region_write_diagnostic_context();
+    failures += test_phase57corr1_direct_const_write_still_permission_denied();
+    failures += test_phase57corr1_const_cross_region_read_remains_region_failure();
+    failures += test_phase57corr1_non_const_cross_region_write_remains_ordinary_region_failure();
     failures += test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled();
     failures += test_phase53a_default_object_spanning_read_has_no_object_diagnostic();
     failures += test_phase53a_object_spanning_read_warning_mode_continues();
