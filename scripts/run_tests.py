@@ -455,7 +455,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Milestone 37")
+    assert_text_contains("README.md", "Phase 57A - README Landing Page Cleanup")
+    assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -659,8 +660,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/web/test_diagnostic_rendering.mjs", "/*\n * @file test_diagnostic_rendering.mjs")
     assert_text_contains("tests/core/diagnostic_json_producer.c", "/*\n * @file diagnostic_json_producer.c")
     assert_text_contains("tests/core/diagnostic_json_producer.c", "masm32_sim_wasm_run_source_json")
-    assert_text_contains("README.md", "Native diagnostic rendering harness")
-    assert_text_contains("README.md", "Milestone 32 memory layout policy infrastructure")
+    assert_text_contains("README.md", "docs/FULL_IMPLEMENTATION_SPEC.md")
+    assert_text_contains("README.md", "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Milestone 32 adds fixed memory-layout policy infrastructure only")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "casemap-policy-changed")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "ambiguous-symbol")
@@ -1009,6 +1010,20 @@ def assert_all_text_contains(path: str, expected_values: Iterable[str]) -> None:
         raise TestFailure(f"{path} is missing expected text: {', '.join(missing)}")
 
 
+def assert_all_text_not_contains(path: str, unexpected_values: Iterable[str]) -> None:
+    """Verify that a file omits every unexpected text fragment.
+
+    Args:
+        path: Repository-relative text file path.
+        unexpected_values: Text fragments that must not appear.
+    """
+
+    text = read_file(path)
+    present = [unexpected for unexpected in unexpected_values if unexpected in text]
+    if present:
+        raise TestFailure(f"{path} contains unexpected text: {', '.join(present)}")
+
+
 def create_arg_parser() -> argparse.ArgumentParser:
     """Create the command-line parser for the test runner.
 
@@ -1347,18 +1362,58 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57_status_labels_documented() -> None:
-    """Verify current docs distinguish repository and runtime phase labels."""
+def assert_phase57a_readme_landing_page_documented() -> None:
+    """Verify Phase 57A README landing-page and status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction",
+        "Phase 57A - README Landing Page Cleanup",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57 - Signed IDIV",
-        "Phase 57-CORR2 is a parser-acceptance corrective milestone.",
+        "Phase 57A is documentation and repository-hygiene work only.",
     ]
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
+
+    assert_all_text_contains(
+        "README.md",
+        [
+            "docs/FULL_IMPLEMENTATION_SPEC.md",
+            "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+            "docs/SUPPORTED_SYNTAX.md",
+            "docs/TESTING_GUIDE.md",
+            "docs/MILESTONE_HISTORY.md",
+            "python3 -m http.server 8000 --directory web",
+            "scripts\\windows\\serve_web.cmd",
+            "python3 scripts/run_tests.py --all",
+            "python3 scripts/run_tests.py --source-run",
+            "./scripts/build_wasm.sh",
+            "scripts\\windows\\build_wasm.cmd",
+        ],
+    )
+    assert_all_text_not_contains(
+        "README.md",
+        [
+            "The repository state includes runtime MASM behavior implemented through",
+            "Milestone 32 memory layout policy infrastructure",
+            "Native diagnostic rendering harness",
+            "## Notes for later milestones",
+            "Visual Studio External Tools setup",
+            "Visual Studio Makefile Project setup",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/MILESTONE_HISTORY.md",
+        [
+            "Phase 57A - README Landing Page Cleanup",
+            "Preserved README milestone summary before Phase 57A",
+            "Preserved current-scope history before Phase 57A",
+            "Milestone 57 signed `idiv` instruction behavior",
+            "Phase 57-CORR2 compact negative register-indirect displacement correction",
+            "Milestone reports, archived repository states, and this history file are historical evidence.",
+            "They do not replace or override the canonical specification and implementation guide.",
+        ],
+    )
 
 
 
@@ -1423,7 +1478,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57_status_labels_documented()
+    assert_phase57a_readme_landing_page_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 
