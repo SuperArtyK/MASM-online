@@ -5,12 +5,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57B - Milestone History and Build Documentation Extraction
+Phase 57D - Existing Diagnostic Policy Migration
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57B is documentation and repository-hygiene work only. Runtime/source-run MASM behavior remains Phase 57 - Signed IDIV.
+Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters while preserving user-visible defaults and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 
 ## Current simulator scope
 

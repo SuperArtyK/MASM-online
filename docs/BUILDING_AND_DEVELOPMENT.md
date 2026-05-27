@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57B - Milestone History and Build Documentation Extraction
+Phase 57D - Existing Diagnostic Policy Migration
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
-Phase 57B is documentation and repository-hygiene work only. It does not change parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, diagnostics, source-run JSON behavior, Program Console output, Simulator Messages output, or runtime/source-run MASM behavior metadata.
+Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters and does not change parser behavior, VM behavior, executor behavior, browser UI behavior, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console output, Simulator Messages output, or runtime/source-run MASM behavior metadata.
 
 ## Repository layout for development
 

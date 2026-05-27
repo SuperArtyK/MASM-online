@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57B:
+Current status at Phase 57D:
 
 Repository/archive milestone:
-Phase 57B - Milestone History and Build Documentation Extraction
+Phase 57D - Existing Diagnostic Policy Migration
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV
 
 Status interpretation:
 
-Phase 57B is documentation and repository-hygiene work only. It preserves and reorganizes milestone history and build/development instructions without adding MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
+Phase 57D is backend diagnostic-policy migration work only. It routes existing configurable diagnostic families through the shared registry or compatibility adapters without adding MASM syntax, parser behavior, VM behavior, executor behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
 
 ## How to use this file
 
@@ -73,6 +73,21 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57-CORR2 corrected compact negative register-indirect displacement parsing, such as `[eax-4]`, without advancing runtime/source-run MASM behavior metadata.
 - Phase 57A rewrote the README into a concise landing page and moved preserved milestone history into this document.
 - Phase 57B extracted long-form build and development guidance into [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md), updated this milestone-history navigation layer, and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+- Phase 57C added a behavior-preserving diagnostic-policy registry skeleton for optional teaching diagnostics and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+- Phase 57D routes existing configurable diagnostic-policy lookup through the registry or compatibility adapters while preserving existing user-visible behavior and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+
+
+## Phase 57D - Existing Diagnostic Policy Migration
+
+Phase 57D migrates existing configurable diagnostic-policy lookup for uninitialized-read diagnostics, undefined-flag-use diagnostics, and compatibility notices through the shared registry or narrow compatibility adapters. It preserves the Phase 53E public setting names and backend enum compatibility, including `strict` as the legacy public name for registry `error` and `on` as the legacy public name for emitted compatibility notices.
+
+Phase 57D does not add new diagnostic families, browser settings, MASM syntax, parser behavior, VM behavior, executor behavior, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata changes. Runtime/source-run MASM behavior remains Phase 57 - Signed IDIV.
+
+## Phase 57C - Diagnostic Policy Registry Design
+
+Phase 57C adds the shared diagnostic-policy registry skeleton for optional teaching diagnostics. The registry defines the common `off`, `warn`, and `error` policy vocabulary and central names for current and reserved policy families: `uninitialized-read`, `undefined-flag-use`, `compatibility-notice`, `const-uninitialized-storage`, `startup-state-notice`, and `code-image-read`.
+
+Phase 57C does not migrate existing diagnostic settings onto the registry and does not add user-visible diagnostic behavior. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata changes.
 
 ## Phase 57B - Milestone History and Build Documentation Extraction
 

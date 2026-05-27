@@ -233,6 +233,8 @@ def run_structure_tests() -> None:
         "src/core/vm_ir.h",
         "src/core/vm_exec.c",
         "src/core/vm_exec.h",
+        "src/core/vm_diagnostic_policy.c",
+        "src/core/vm_diagnostic_policy.h",
         "src/parser/lexer.c",
         "src/parser/lexer.h",
         "src/parser/parser.c",
@@ -259,6 +261,7 @@ def run_structure_tests() -> None:
         "tests/core/test_vm_flags.c",
         "tests/core/test_vm_memory.c",
         "tests/core/test_vm_layout.c",
+        "tests/core/test_diagnostic_policy.c",
         "tests/core/test_vm_exec.c",
         "tests/core/test_lexer.c",
         "tests/core/test_parser.c",
@@ -283,6 +286,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "vm_layout.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_ir.c")
     assert_text_contains("scripts/build_wasm.sh", "vm_exec.c")
+    assert_text_contains("scripts/build_wasm.sh", "vm_diagnostic_policy.c")
     assert_text_contains("scripts/build_wasm.sh", "lexer.c")
     assert_text_contains("scripts/build_wasm.sh", "parser.c")
     assert_text_contains("scripts/build_wasm.sh", "symbols.c")
@@ -303,6 +307,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_layout.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_ir.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "vm_exec.c")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "vm_diagnostic_policy.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "lexer.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "parser.c")
     assert_text_contains("scripts/windows/build_wasm.cmd", "symbols.c")
@@ -356,6 +361,7 @@ def run_structure_tests() -> None:
     assert_text_not_contains("src/core/vm_layout.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_ir.h", "__cplusplus")
     assert_text_not_contains("src/core/vm_exec.h", "__cplusplus")
+    assert_text_not_contains("src/core/vm_diagnostic_policy.h", "__cplusplus")
     assert_text_not_contains("src/parser/lexer.h", "__cplusplus")
     assert_text_not_contains("src/parser/parser.h", "__cplusplus")
     assert_text_not_contains("src/parser/symbols.h", "__cplusplus")
@@ -369,6 +375,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_ir.c", "/*\n * @file vm_ir.c")
     assert_text_contains("src/core/vm_exec.h", "/*\n * @file vm_exec.h")
     assert_text_contains("src/core/vm_exec.c", "/*\n * @file vm_exec.c")
+    assert_text_contains("src/core/vm_diagnostic_policy.h", "/*\n * @file vm_diagnostic_policy.h")
+    assert_text_contains("src/core/vm_diagnostic_policy.c", "/*\n * @file vm_diagnostic_policy.c")
     assert_text_contains("src/parser/lexer.h", "/*\n * @file lexer.h")
     assert_text_contains("src/parser/lexer.c", "/*\n * @file lexer.c")
     assert_text_contains("src/parser/parser.h", "/*\n * @file parser.h")
@@ -396,6 +404,13 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_memory.c", "/// Validates a checked access before bytes")
     assert_text_contains("src/core/vm_cpu.c", "/// Describes how a public register identifier maps")
     assert_text_contains("src/core/vm_cpu.c", "/// Describes the EFLAGS bit represented")
+    assert_text_contains("src/core/vm_diagnostic_policy.h", "/// Identifies one common policy value")
+    assert_text_contains("src/core/vm_diagnostic_policy.h", "VmDiagnosticPolicyFamilyInfo")
+    assert_text_contains("src/core/vm_diagnostic_policy.h", "bool vm_diagnostic_policy_parse_value")
+    assert_text_contains("src/core/vm_diagnostic_policy.h", "bool vm_diagnostic_policy_parse_family")
+    assert_text_contains("src/core/vm_diagnostic_policy.c", "VM_DIAGNOSTIC_POLICY_FAMILY_TABLE")
+    assert_text_contains("tests/core/test_diagnostic_policy.c", "/*\n * @file test_diagnostic_policy.c")
+    assert_text_contains("tests/core/test_diagnostic_policy.c", "Diagnostic policy registry and migration tests passed.")
     assert_text_contains("tests/core/test_vm_flags.c", "/*\n * @file test_vm_flags.c")
     assert_text_contains("tests/core/test_vm_flags.c", "/// Verifies success-path named flag")
     assert_text_contains("tests/core/test_vm_memory.c", "/*\n * @file test_vm_memory.c")
@@ -455,7 +470,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57B - Milestone History and Build Documentation Extraction")
+    assert_text_contains("README.md", "Phase 57D - Existing Diagnostic Policy Migration")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -744,6 +759,7 @@ def run_native_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -763,6 +779,13 @@ def run_native_tests() -> None:
         [
             "tests/core/test_vm_flags.c",
             "src/core/vm_cpu.c",
+        ],
+    )
+    compile_and_run_c_test(
+        "test_diagnostic_policy",
+        [
+            "tests/core/test_diagnostic_policy.c",
+            "src/core/vm_diagnostic_policy.c",
         ],
     )
     compile_and_run_c_test(
@@ -796,6 +819,7 @@ def run_native_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -822,6 +846,7 @@ def run_native_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -840,6 +865,7 @@ def run_native_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -859,6 +885,7 @@ def run_native_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -882,6 +909,7 @@ def run_source_run_tests() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -903,6 +931,7 @@ def build_diagnostic_json_producer() -> None:
             "src/core/vm_layout.c",
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
             "src/parser/lexer.c",
             "src/parser/parser.c",
             "src/parser/symbols.c",
@@ -1367,18 +1396,18 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57b_documentation_extraction_present() -> None:
-    """Verify Phase 57B documentation extraction and current-status requirements."""
+def assert_phase57d_diagnostic_policy_migration_present() -> None:
+    """Verify Phase 57D diagnostic-policy migration and current-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57B - Milestone History and Build Documentation Extraction",
+        "Phase 57D - Existing Diagnostic Policy Migration",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57 - Signed IDIV",
-        "Phase 57B is documentation and repository-hygiene work only.",
+        "Phase 57D is backend diagnostic-policy migration work only.",
     ]
     status_block = """Repository/archive milestone:
-Phase 57B - Milestone History and Build Documentation Extraction
+Phase 57D - Existing Diagnostic Policy Migration
 
 Runtime/source-run MASM behavior phase:
 Phase 57 - Signed IDIV"""
@@ -1421,6 +1450,8 @@ Phase 57 - Signed IDIV"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57D - Existing Diagnostic Policy Migration",
+            "Phase 57C - Diagnostic Policy Registry Design",
             "Phase 57B - Milestone History and Build Documentation Extraction",
             "Concise milestone ledger",
             "Detailed milestone report references",
@@ -1513,7 +1544,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57b_documentation_extraction_present()
+    assert_phase57d_diagnostic_policy_migration_present()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

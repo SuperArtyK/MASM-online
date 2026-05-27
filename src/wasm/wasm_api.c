@@ -19,6 +19,7 @@
 
 #include "../core/masm32_sim_api.h"
 #include "../core/vm_cpu.h"
+#include "../core/vm_diagnostic_policy.h"
 #include "../core/vm_exec.h"
 #include "../core/vm_layout.h"
 #include "../core/vm_memory.h"
@@ -5439,16 +5440,254 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 }
 
+
+/// Returns the registry default value for one implemented diagnostic family.
+///
+/// @param family Diagnostic-policy family to inspect.
+/// @param fallback Fallback used only if registry metadata is internally inconsistent.
+/// @return Current registry default or @p fallback when unavailable.
+static VmDiagnosticPolicyValue masm32_sim_wasm_registry_default_policy_value(
+    VmDiagnosticPolicyFamily family,
+    VmDiagnosticPolicyValue fallback
+) {
+    VmDiagnosticPolicyValue value = fallback;
+
+    if (vm_diagnostic_policy_family_default_value(family, &value)) {
+        return value;
+    }
+
+    return fallback;
+}
+
+/// Maps a registry value for uninitialized-read diagnostics to the legacy backend mode.
+///
+/// @param value Registry policy value for the uninitialized-read family.
+/// @param out_mode Receives the legacy memory-validation mode.
+/// @return true when mapping succeeded.
+static bool masm32_sim_wasm_map_uninitialized_read_policy_value(
+    VmDiagnosticPolicyValue value,
+    Masm32SimWasmMemoryValidationMode *out_mode
+) {
+    if (out_mode == NULL ||
+        !vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, value)) {
+        return false;
+    }
+
+    switch (value) {
+        case VM_DIAGNOSTIC_POLICY_VALUE_OFF:
+            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_WARN:
+            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_ERROR:
+            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Maps a registry value for undefined-flag-use diagnostics to the legacy backend policy.
+///
+/// @param value Registry policy value for the undefined-flag-use family.
+/// @param out_policy Receives the legacy undefined-flag-use policy.
+/// @return true when mapping succeeded.
+static bool masm32_sim_wasm_map_undefined_flag_use_policy_value(
+    VmDiagnosticPolicyValue value,
+    Masm32SimWasmUndefinedFlagUsePolicy *out_policy
+) {
+    if (out_policy == NULL ||
+        !vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE, value)) {
+        return false;
+    }
+
+    switch (value) {
+        case VM_DIAGNOSTIC_POLICY_VALUE_OFF:
+            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_WARN:
+            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_ERROR:
+            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Maps a registry value for compatibility notices to the legacy backend setting.
+///
+/// Compatibility notices render as simulator notices, not warnings. Registry
+/// `warn` means this non-fatal notice family is emitted and execution continues.
+///
+/// @param value Registry policy value for the compatibility-notice family.
+/// @param out_setting Receives the legacy compatibility-notice setting.
+/// @return true when mapping succeeded.
+static bool masm32_sim_wasm_map_compatibility_notice_policy_value(
+    VmDiagnosticPolicyValue value,
+    Masm32SimWasmCompatibilityNoticeSetting *out_setting
+) {
+    if (out_setting == NULL ||
+        !vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE, value)) {
+        return false;
+    }
+
+    switch (value) {
+        case VM_DIAGNOSTIC_POLICY_VALUE_OFF:
+            *out_setting = MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_WARN:
+            *out_setting = MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON;
+            return true;
+        case VM_DIAGNOSTIC_POLICY_VALUE_ERROR:
+            return false;
+        default:
+            return false;
+    }
+}
+
+/// Maps one Phase 53E teaching-diagnostic setting to the central registry vocabulary.
+///
+/// Public Phase 53E settings keep the legacy name `strict`; internally that
+/// setting maps to registry `error` for the selected diagnostic family.
+///
+/// @param family Implemented diagnostic-policy family being configured.
+/// @param setting Legacy Phase 53E teaching diagnostic setting.
+/// @param out_value Receives the central registry policy value.
+/// @return true when mapping succeeded.
+static bool masm32_sim_wasm_map_teaching_setting_to_policy_value(
+    VmDiagnosticPolicyFamily family,
+    Masm32SimWasmTeachingDiagnosticSetting setting,
+    VmDiagnosticPolicyValue *out_value
+) {
+    VmDiagnosticPolicyValue value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+    if (out_value == NULL) {
+        return false;
+    }
+
+    switch (setting) {
+        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF:
+            value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+            break;
+        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN:
+            value = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
+            break;
+        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT:
+            value = VM_DIAGNOSTIC_POLICY_VALUE_ERROR;
+            break;
+        default:
+            return false;
+    }
+
+    if (!vm_diagnostic_policy_family_accepts_value(family, value)) {
+        return false;
+    }
+
+    *out_value = value;
+    return true;
+}
+
+/// Maps one Phase 53E compatibility-notice setting to the central registry vocabulary.
+///
+/// Public Phase 53E settings keep the legacy name `on`; internally that setting
+/// maps to registry `warn` because the notice is non-fatal.
+///
+/// @param setting Legacy Phase 53E compatibility-notice setting.
+/// @param out_value Receives the central registry policy value.
+/// @return true when mapping succeeded.
+static bool masm32_sim_wasm_map_compatibility_setting_to_policy_value(
+    Masm32SimWasmCompatibilityNoticeSetting setting,
+    VmDiagnosticPolicyValue *out_value
+) {
+    VmDiagnosticPolicyValue value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+    if (out_value == NULL) {
+        return false;
+    }
+
+    switch (setting) {
+        case MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF:
+            value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+            break;
+        case MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON:
+            value = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
+            break;
+        default:
+            return false;
+    }
+
+    if (!vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE, value)) {
+        return false;
+    }
+
+    *out_value = value;
+    return true;
+}
+
+/// Returns the default uninitialized-read backend mode from the registry.
+///
+/// @return Legacy backend mode corresponding to the current registry default.
+static Masm32SimWasmMemoryValidationMode masm32_sim_wasm_default_uninitialized_read_mode(void) {
+    Masm32SimWasmMemoryValidationMode mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+    VmDiagnosticPolicyValue value = masm32_sim_wasm_registry_default_policy_value(
+        VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ,
+        VM_DIAGNOSTIC_POLICY_VALUE_WARN
+    );
+
+    if (masm32_sim_wasm_map_uninitialized_read_policy_value(value, &mode)) {
+        return mode;
+    }
+
+    return MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+}
+
+/// Returns the default undefined-flag-use backend policy from the registry.
+///
+/// @return Legacy backend policy corresponding to the current registry default.
+static Masm32SimWasmUndefinedFlagUsePolicy masm32_sim_wasm_default_undefined_flag_use_policy(void) {
+    Masm32SimWasmUndefinedFlagUsePolicy policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+    VmDiagnosticPolicyValue value = masm32_sim_wasm_registry_default_policy_value(
+        VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE,
+        VM_DIAGNOSTIC_POLICY_VALUE_WARN
+    );
+
+    if (masm32_sim_wasm_map_undefined_flag_use_policy_value(value, &policy)) {
+        return policy;
+    }
+
+    return MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+}
+
+/// Returns the default compatibility-notice backend setting from the registry.
+///
+/// @return Legacy backend setting corresponding to the current registry default.
+static Masm32SimWasmCompatibilityNoticeSetting masm32_sim_wasm_default_compatibility_notice_setting(void) {
+    Masm32SimWasmCompatibilityNoticeSetting setting = MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON;
+    VmDiagnosticPolicyValue value = masm32_sim_wasm_registry_default_policy_value(
+        VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE,
+        VM_DIAGNOSTIC_POLICY_VALUE_WARN
+    );
+
+    if (masm32_sim_wasm_map_compatibility_notice_policy_value(value, &setting)) {
+        return setting;
+    }
+
+    return MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON;
+}
+
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), false);
 }
 
 /// Returns whether a Phase 53E memory range setting enum value is accepted.
@@ -5463,25 +5702,6 @@ static bool masm32_sim_wasm_memory_range_setting_is_valid(Masm32SimWasmMemoryRan
         setting == MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_STRICT ||
         setting == MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_WARN ||
         setting == MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_STRICT;
-}
-
-/// Returns whether a Phase 53E teaching diagnostic setting enum value is accepted.
-///
-/// @param setting Teaching diagnostic setting to inspect.
-/// @return true when @p setting is valid.
-static bool masm32_sim_wasm_teaching_diagnostic_setting_is_valid(Masm32SimWasmTeachingDiagnosticSetting setting) {
-    return setting == MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF ||
-        setting == MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN ||
-        setting == MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT;
-}
-
-/// Returns whether a Phase 53E compatibility notice setting enum value is accepted.
-///
-/// @param setting Compatibility notice setting to inspect.
-/// @return true when @p setting is valid.
-static bool masm32_sim_wasm_compatibility_notice_setting_is_valid(Masm32SimWasmCompatibilityNoticeSetting setting) {
-    return setting == MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF ||
-        setting == MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON;
 }
 
 /// Maps a Phase 53E memory range setting to existing backend policies.
@@ -5541,23 +5761,13 @@ static bool masm32_sim_wasm_map_uninitialized_read_setting(
     Masm32SimWasmTeachingDiagnosticSetting setting,
     Masm32SimWasmMemoryValidationMode *out_mode
 ) {
-    if (out_mode == NULL || !masm32_sim_wasm_teaching_diagnostic_setting_is_valid(setting)) {
+    VmDiagnosticPolicyValue value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+    if (!masm32_sim_wasm_map_teaching_setting_to_policy_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, setting, &value)) {
         return false;
     }
 
-    switch (setting) {
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF:
-            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
-            return true;
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN:
-            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
-            return true;
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT:
-            *out_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT;
-            return true;
-        default:
-            return false;
-    }
+    return masm32_sim_wasm_map_uninitialized_read_policy_value(value, out_mode);
 }
 
 /// Maps a Phase 53E undefined-flag-use setting to existing backend policy.
@@ -5569,23 +5779,13 @@ static bool masm32_sim_wasm_map_undefined_flag_use_setting(
     Masm32SimWasmTeachingDiagnosticSetting setting,
     Masm32SimWasmUndefinedFlagUsePolicy *out_policy
 ) {
-    if (out_policy == NULL || !masm32_sim_wasm_teaching_diagnostic_setting_is_valid(setting)) {
+    VmDiagnosticPolicyValue value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+    if (!masm32_sim_wasm_map_teaching_setting_to_policy_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE, setting, &value)) {
         return false;
     }
 
-    switch (setting) {
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF:
-            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
-            return true;
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN:
-            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
-            return true;
-        case MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT:
-            *out_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR;
-            return true;
-        default:
-            return false;
-    }
+    return masm32_sim_wasm_map_undefined_flag_use_policy_value(value, out_policy);
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_settings(
@@ -5601,11 +5801,16 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_settings(
     Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
 
-    if (!masm32_sim_wasm_map_memory_range_setting(memory_range_setting, &object_validation_mode, &capacity_policy, &image_policy) ||
-        !masm32_sim_wasm_map_uninitialized_read_setting(uninitialized_read_setting, &uninitialized_validation_mode) ||
-        !masm32_sim_wasm_map_undefined_flag_use_setting(undefined_flag_use_setting, &flag_use_policy) ||
-        !masm32_sim_wasm_compatibility_notice_setting_is_valid(compatibility_notice_setting)) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+    {
+        VmDiagnosticPolicyValue compatibility_notice_value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+        if (!masm32_sim_wasm_map_memory_range_setting(memory_range_setting, &object_validation_mode, &capacity_policy, &image_policy) ||
+            !masm32_sim_wasm_map_uninitialized_read_setting(uninitialized_read_setting, &uninitialized_validation_mode) ||
+            !masm32_sim_wasm_map_undefined_flag_use_setting(undefined_flag_use_setting, &flag_use_policy) ||
+            !masm32_sim_wasm_map_compatibility_setting_to_policy_value(compatibility_notice_setting, &compatibility_notice_value) ||
+            !masm32_sim_wasm_map_compatibility_notice_policy_value(compatibility_notice_value, &compatibility_notice_setting)) {
+            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
+        }
     }
 
     return masm32_sim_wasm_run_source_json_internal(
@@ -5635,7 +5840,7 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
@@ -5647,7 +5852,7 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
@@ -5665,12 +5870,12 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
         VM_LAYOUT_MODE_FIXED,
         NULL,
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
-        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS,
+        masm32_sim_wasm_default_uninitialized_read_mode(),
         MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
         MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
         MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
         policy,
-        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        masm32_sim_wasm_default_compatibility_notice_setting(),
         false
     );
 }
@@ -5718,8 +5923,8 @@ const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
         capacity_policy,
         image_policy,
         MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
-        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN,
-        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        masm32_sim_wasm_default_undefined_flag_use_policy(),
+        masm32_sim_wasm_default_compatibility_notice_setting(),
         false
     );
 }
@@ -5746,8 +5951,8 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_va
         capacity_policy,
         image_policy,
         MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
-        MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN,
-        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        masm32_sim_wasm_default_undefined_flag_use_policy(),
+        masm32_sim_wasm_default_compatibility_notice_setting(),
         false
     );
 }
@@ -5764,11 +5969,11 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, masm32_sim_wasm_default_compatibility_notice_setting(), true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

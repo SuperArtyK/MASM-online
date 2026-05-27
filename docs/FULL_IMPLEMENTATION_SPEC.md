@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for the Phase 57-CORR2 compact negative register-indirect displacement correction and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -4156,6 +4156,8 @@ code-image-read
 ```
 
 Future diagnostic families should be added through the same policy mechanism rather than one-off parser flags, source-run flags, environment variables, or UI-only checks.
+
+Phase 57C introduces the behavior-preserving C99 registry skeleton for this model. Phase 57D routes existing configurable families through the registry where practical while preserving legacy public setting names through compatibility adapters. Reserved families in the registry are names only; they do not make their future diagnostics active behavior.
 
 User-visible diagnostics controlled by this model must still satisfy the project diagnostic rules:
 

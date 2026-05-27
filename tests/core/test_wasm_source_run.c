@@ -7573,6 +7573,67 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57D policy migration preserves independent family selection.
+///
+/// @return Number of failures.
+static int test_phase57d_ui_policy_families_remain_independent(void) {
+    const char *source =
+        ".686\n"
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "    stc\n"
+        "    mov al, 1\n"
+        "    shl al, 8\n"
+        "    mov ebx, 0\n"
+        "    adc ebx, 0\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 57D uninitialized-read off case should execute successfully");
+    failures += expect_json_not_contains(json, "uninitialized-read", "Uninitialized-read off should not suppress other policy families");
+    failures += expect_json_contains(json, "undefined-flag-use", "Undefined-flag-use warn should remain active when uninitialized reads are off");
+    failures += expect_json_not_contains(json, "compatibility-no-op", "Compatibility-notice off should suppress compatibility notices only");
+    failures += expect_json_contains(json, "execution-complete", "Independent warning families should still allow completion");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_OFF,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF
+    );
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 57D undefined-flag-use off case should execute successfully");
+    failures += expect_json_contains(json, "uninitialized-read", "Uninitialized-read warn should remain active when undefined-flag-use is off");
+    failures += expect_json_contains(json, "undefined-shift-flag", "Producer warning should remain active when undefined-flag-use is off");
+    failures += expect_json_not_contains(json, "undefined-flag-use", "Undefined-flag-use off should suppress only consumer diagnostics");
+    failures += expect_json_not_contains(json, "compatibility-no-op", "Compatibility-notice off should remain independent");
+
+    json = masm32_sim_wasm_run_source_json_with_ui_settings(
+        source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF
+    );
+    failures += expect_json_contains(json, "uninitialized-read", "Compatibility-notice off should not suppress uninitialized-read warnings");
+    failures += expect_json_contains(json, "undefined-flag-use", "Compatibility-notice off should not suppress undefined-flag-use warnings");
+    failures += expect_json_not_contains(json, "compatibility-no-op", "Compatibility-notice off should suppress only compatibility notices");
+
+    return failures;
+}
+
 /// Verifies invalid Phase 53E C API setting values are rejected.
 ///
 /// @return Number of failures.
@@ -8377,6 +8438,7 @@ int main(void) {
     failures += test_phase53d_active_semantics_do_not_emit_compatibility_notices();
     failures += test_phase53d_notice_plus_error_still_blocks_execution();
     failures += test_phase53e_ui_settings_route_to_existing_policies();
+    failures += test_phase57d_ui_policy_families_remain_independent();
     failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();

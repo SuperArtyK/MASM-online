@@ -21,6 +21,7 @@ emcc \
   "${ROOT_DIR}/src/core/vm_layout.c" \
   "${ROOT_DIR}/src/core/vm_ir.c" \
   "${ROOT_DIR}/src/core/vm_exec.c" \
+  "${ROOT_DIR}/src/core/vm_diagnostic_policy.c" \
   "${ROOT_DIR}/src/parser/lexer.c" \
   "${ROOT_DIR}/src/parser/parser.c" \
   "${ROOT_DIR}/src/parser/symbols.c" \
