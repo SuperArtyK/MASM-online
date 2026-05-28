@@ -3,9 +3,9 @@
  * @brief Browser setting normalization for the MASM32 educational simulator UI.
  *
  * Phase 53E exposes already-implemented backend validation and teaching
- * diagnostic policies through structured browser settings. Phase 57F adds
- * test/protocol-facing startup register/flag settings without adding browser
- * UI controls. This module keeps the accepted string values, defaults, and
+ * diagnostic policies through structured browser settings. Phases 57F and 57G
+ * add test/protocol-facing startup settings without adding browser UI controls.
+ * This module keeps the accepted string values, defaults, and
  * Wasm argument mapping in one place so the main thread, worker protocol,
  * and Node tests use the same rules.
  */
@@ -42,16 +42,22 @@ export const STARTUP_REGISTER_FLAG_ZERO = "zero";
 /** Phase 57F deterministic seeded register/flag startup option. */
 export const STARTUP_REGISTER_FLAG_SEEDED_RANDOM = "seeded-random";
 
-/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, startupStateSeed: number}} DiagnosticSettings */
-/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, startupStateSeed: number}} BackendDiagnosticSettings */
+/** Default uninitialized-storage visible-byte zero startup option. */
+export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO = "zero";
+/** Phase 57G deterministic seeded uninitialized-storage visible-byte startup option. */
+export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM = "seeded-random";
 
-/** Default browser diagnostic and Phase 57F startup settings. */
+/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number}} DiagnosticSettings */
+/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number}} BackendDiagnosticSettings */
+
+/** Default browser diagnostic and Phase 57F/57G startup settings. */
 export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
   memoryRange: MEMORY_RANGE_REGION_ONLY,
   uninitializedReads: TEACHING_DIAGNOSTIC_WARN,
   undefinedFlagUse: TEACHING_DIAGNOSTIC_WARN,
   compatibilityNotices: COMPATIBILITY_NOTICES_ON,
   startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+  uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
   startupStateSeed: 0
 });
 
@@ -85,6 +91,12 @@ export const STARTUP_REGISTER_FLAG_MODE_VALUES = Object.freeze([
   STARTUP_REGISTER_FLAG_SEEDED_RANDOM
 ]);
 
+/** Accepted Phase 57G uninitialized-storage visible-byte startup setting values. */
+export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE_VALUES = Object.freeze([
+  UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+  UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM
+]);
+
 /** Phase 53E backend enum values for memory range validation. */
 const BACKEND_MEMORY_RANGE = Object.freeze({
   [MEMORY_RANGE_REGION_ONLY]: 0,
@@ -113,6 +125,12 @@ const BACKEND_COMPATIBILITY_NOTICES = Object.freeze({
 const BACKEND_STARTUP_REGISTER_FLAG_MODE = Object.freeze({
   [STARTUP_REGISTER_FLAG_ZERO]: 0,
   [STARTUP_REGISTER_FLAG_SEEDED_RANDOM]: 1
+});
+
+/** Phase 57G backend enum values for uninitialized-storage visible bytes. */
+const BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE = Object.freeze({
+  [UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO]: 0,
+  [UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM]: 1
 });
 
 /**
@@ -230,6 +248,7 @@ export function readDiagnosticSettingsFromControls(
     undefinedFlagUse: undefinedFlagUseControl.value || defaults.undefinedFlagUse,
     compatibilityNotices: compatibilityNoticesControl.value || defaults.compatibilityNotices,
     startupRegisterFlagMode: defaults.startupRegisterFlagMode,
+    uninitializedStorageVisibleByteMode: defaults.uninitializedStorageVisibleByteMode,
     startupStateSeed: defaults.startupStateSeed
   };
 }
@@ -237,7 +256,7 @@ export function readDiagnosticSettingsFromControls(
 /**
  * Normalizes optional browser diagnostic settings.
  *
- * Missing settings use Phase 53E diagnostic defaults and Phase 57F startup
+ * Missing settings use Phase 53E diagnostic defaults and Phase 57F/57G startup
  * defaults. Invalid values produce a structured UI diagnostic intended for
  * Simulator Messages.
  *
@@ -281,6 +300,14 @@ export function normalizeDiagnosticSettings(settings) {
     };
   }
 
+  const uninitializedStorageVisibleByteMode = normalizeField(source, "uninitializedStorageVisibleByteMode", DEFAULT_DIAGNOSTIC_SETTINGS.uninitializedStorageVisibleByteMode, UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE_VALUES);
+  if (!uninitializedStorageVisibleByteMode.ok) {
+    return {
+      ok: false,
+      diagnostic: createInvalidStartupSettingDiagnostic("uninitializedStorageVisibleByteMode", source.uninitializedStorageVisibleByteMode, UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE_VALUES)
+    };
+  }
+
   const startupStateSeed = normalizeStartupStateSeed(source);
   if (!startupStateSeed.ok) {
     return startupStateSeed;
@@ -292,6 +319,7 @@ export function normalizeDiagnosticSettings(settings) {
     undefinedFlagUse: undefinedFlagUse.value,
     compatibilityNotices: compatibilityNotices.value,
     startupRegisterFlagMode: startupRegisterFlagMode.value,
+    uninitializedStorageVisibleByteMode: uninitializedStorageVisibleByteMode.value,
     startupStateSeed: startupStateSeed.value
   };
 
@@ -303,7 +331,7 @@ export function normalizeDiagnosticSettings(settings) {
 }
 
 /**
- * Converts normalized settings to Phase 53E diagnostic and Phase 57F startup Wasm enum arguments.
+ * Converts normalized settings to Phase 53E diagnostic and Phase 57F/57G startup Wasm enum arguments.
  *
  * @param {DiagnosticSettings} settings Normalized diagnostic settings.
  * @returns {BackendDiagnosticSettings} Integer enum values passed to the C/Wasm export.
@@ -320,6 +348,7 @@ export function diagnosticSettingsToBackendArguments(settings) {
     undefinedFlagUse: BACKEND_TEACHING_DIAGNOSTIC[normalized.undefinedFlagUse],
     compatibilityNotices: BACKEND_COMPATIBILITY_NOTICES[normalized.compatibilityNotices],
     startupRegisterFlagMode: BACKEND_STARTUP_REGISTER_FLAG_MODE[normalized.startupRegisterFlagMode],
+    uninitializedStorageVisibleByteMode: BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE[normalized.uninitializedStorageVisibleByteMode],
     startupStateSeed: normalized.startupStateSeed >>> 0
   };
 }

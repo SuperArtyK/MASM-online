@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57F:
+Current status at Phase 57G:
 
 Repository/archive milestone:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
 Status interpretation:
 
-Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags through source-run/test-facing settings. It preserves default zero startup, memory bytes, uninitialized-origin metadata, Program Console behavior, parser behavior, VM instruction behavior, executor behavior, and browser UI controls.
+Phase 57G adds opt-in deterministic seeded startup for visible bytes in uninitialized-origin storage through source-run/test-facing settings. Phase 57F seeded register/flag startup remains available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, initialized `.data` and `.CONST` bytes are not randomized, Program Console behavior is unchanged, parser and instruction behavior are unchanged, and no browser UI controls are added.
 
 ## How to use this file
 
@@ -76,8 +76,15 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57C added a behavior-preserving diagnostic-policy registry skeleton for optional teaching diagnostics and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57D routes existing configurable diagnostic-policy lookup through the registry or compatibility adapters while preserving existing user-visible behavior and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57E activates and documents the non-fatal startup-state notice while preserving deterministic startup values and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
-- Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags while preserving memory bytes, uninitialized-origin metadata, default zero startup, and browser UI controls.
+- Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags while preserving memory bytes, uninitialized-origin metadata, default zero startup, and existing browser UI behavior without adding browser UI controls.
+- Phase 57G adds opt-in deterministic seeded visible bytes for uninitialized-origin storage while preserving metadata, default zero startup, initialized data bytes, and existing browser UI behavior without adding browser UI controls.
 
+
+## Phase 57G - Seeded Random Uninitialized Storage Mode
+
+Phase 57G adds a source-run/test-facing `uninitialized_storage_visible_byte_mode` setting with `zero` and `seeded-random` modes. The default zero mode preserves prior visible zero bytes for `.DATA?`, `?`, and `DUP(?)`. The seeded mode initializes only visible bytes that still carry uninitialized-origin metadata from `startup_state_seed`, while preserving that metadata so uninitialized-read diagnostics still report code-quality issues.
+
+Phase 57G does not randomize initialized `.data` or `.CONST` bytes, does not accept `.CONST ?`, does not add browser UI controls, and does not change MASM parser or instruction semantics.
 
 ## Phase 57F - Seeded Random Register and Flag Startup Mode
 

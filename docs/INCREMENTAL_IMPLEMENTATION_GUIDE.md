@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
 
 ## 1. Purpose
@@ -11038,11 +11038,11 @@ Internal enum names may differ, but the public/test-facing setting names, source
 
 The startup settings use three independent axes across Phase 57F and Phase 57G:
 
-- `startup_register_flag_mode`: owned by this phase; controls only general-purpose register and modeled-flag startup values.
-- `uninitialized_storage_visible_byte_mode`: not implemented by this phase; owned by Phase 57G - Seeded Random Uninitialized Storage Mode.
+- `startup_register_flag_mode`: owned by Phase 57F; controls only general-purpose register and modeled-flag startup values.
+- `uninitialized_storage_visible_byte_mode`: owned by Phase 57G - Seeded Random Uninitialized Storage Mode; controls only visible bytes of uninitialized-origin storage.
 - `startup_state_seed`: shared deterministic seed input; it does not by itself choose which startup categories are randomized.
 
-Future Phase 57G - Seeded Random Uninitialized Storage Mode adds an independent setting for visible bytes of uninitialized-origin storage. Do not merge that future memory setting into `startup_register_flag_mode`.
+Phase 57G intentionally adds the uninitialized-storage setting as a separate axis. Do not merge that memory setting into `startup_register_flag_mode`.
 
 ### Required behavior
 
@@ -11349,7 +11349,7 @@ Add formatter tests for:
 
 Accept `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage.
 
-Through Phase 57F - Seeded Random Register and Flag Startup Mode, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts these forms; Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is the first phase that makes declaration diagnostics for these forms configurable.
+Through Phase 57G - Seeded Random Uninitialized Storage Mode, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts these forms; Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is the first phase that makes declaration diagnostics for these forms configurable.
 
 This phase implements compatibility acceptance only. It does not add the configurable warning/error policy; that belongs to Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy.
 

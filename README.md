@@ -5,16 +5,16 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
-Phase 57F adds an opt-in deterministic seeded startup mode for general-purpose registers and modeled flags through source-run/test-facing seeded register/flag startup settings. Default browser/source-run execution still starts registers and modeled flags at zero, uninitialized storage visible bytes remain zero-filled with uninitialized-origin metadata preserved, and the `startup-state-notice` remains a Simulator Messages-only notice. The instruction subset remains anchored by Phase 57 - Signed IDIV, with Phase 57F adding startup configuration rather than new MASM syntax.
+Phase 57G adds an opt-in deterministic seeded startup mode for visible bytes in uninitialized-origin storage through source-run/test-facing seeded uninitialized-storage visible-byte settings. Phase 57F seeded register/flag startup remains available as a separate setting axis. Default browser/source-run execution still starts registers, modeled flags, and uninitialized storage visible bytes at zero, while preserving uninitialized-origin metadata and the Simulator Messages-only `startup-state-notice`. The instruction subset remains anchored by Phase 57 - Signed IDIV; Phase 57G adds startup configuration rather than new MASM syntax.
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, the default startup-state notice, opt-in seeded register/flag startup for tests/configuration, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, the default startup-state notice, opt-in seeded register/flag startup and opt-in seeded uninitialized-storage visible bytes for tests/configuration, and the virtual Irvine32 `exit` terminator.
 
 For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
 

@@ -387,6 +387,33 @@ static int diagnostic_json_producer_get_startup_register_flag_mode(Masm32SimWasm
     return 0;
 }
 
+/// Returns the requested Phase 57G uninitialized-storage visible-byte startup mode.
+///
+/// @param out_mode Receives the selected uninitialized-storage visible-byte mode.
+/// @return Nonzero when MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE selects a setting.
+static int diagnostic_json_producer_get_uninitialized_storage_visible_byte_mode(Masm32SimWasmUninitializedStorageVisibleByteMode *out_mode) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE");
+
+    if (out_mode == NULL) {
+        return 0;
+    }
+
+    *out_mode = MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "zero") == 0) {
+        *out_mode = MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO;
+        return 1;
+    }
+    if (strcmp(mode, "seeded-random") == 0) {
+        *out_mode = MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -451,8 +478,10 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
     Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
     Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO;
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode = MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO;
     uint32_t startup_state_seed = 0U;
     int has_startup_register_flag_mode = 0;
+    int has_uninitialized_storage_visible_byte_mode = 0;
     int has_startup_state_seed = 0;
     int has_memory_validation = 0;
     int has_section_capacity_validation = 0;
@@ -466,17 +495,19 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     has_section_capacity_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION", &capacity_policy);
     has_section_image_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION", &image_policy);
     has_startup_register_flag_mode = diagnostic_json_producer_get_startup_register_flag_mode(&startup_register_flag_mode);
+    has_uninitialized_storage_visible_byte_mode = diagnostic_json_producer_get_uninitialized_storage_visible_byte_mode(&uninitialized_storage_visible_byte_mode);
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_STARTUP_STATE_SEED", &startup_state_seed, &has_startup_state_seed) != 0) {
         return 1;
     }
 
-    if (has_startup_register_flag_mode || has_startup_state_seed) {
+    if (has_startup_register_flag_mode || has_uninitialized_storage_visible_byte_mode || has_startup_state_seed) {
         if (!diagnostic_json_producer_get_startup_state_notice_setting(&startup_state_notice_setting)) {
             startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
         }
-        json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        json = masm32_sim_wasm_run_source_json_with_startup_modes(
             source,
             startup_register_flag_mode,
+            uninitialized_storage_visible_byte_mode,
             startup_state_seed,
             startup_state_notice_setting
         );

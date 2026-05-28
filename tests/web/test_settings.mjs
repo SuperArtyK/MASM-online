@@ -3,7 +3,7 @@
  * @brief Unit tests for diagnostic and startup setting normalization.
  *
  * These tests cover browser-side serialization and mapping of UI settings to
- * the existing C/Wasm diagnostic-policy enums and Phase 57F startup settings
+ * the existing C/Wasm diagnostic-policy enums and Phase 57F/57G startup settings
  * without requiring DOM automation.
  */
 
@@ -23,6 +23,8 @@ import {
   TEACHING_DIAGNOSTIC_WARN,
   STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
   STARTUP_REGISTER_FLAG_ZERO,
+  UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+  UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
   defaultDiagnosticSettings,
   diagnosticSettingsToBackendArguments,
   normalizeDiagnosticSettings,
@@ -41,13 +43,14 @@ function test(name, body) {
   console.log(`PASS ${name}`);
 }
 
-test("defaults match Phase 57F teaching and startup profile", () => {
+test("defaults match Phase 57G teaching and startup profile", () => {
   assert.deepEqual(defaultDiagnosticSettings(), {
     memoryRange: MEMORY_RANGE_REGION_ONLY,
     uninitializedReads: TEACHING_DIAGNOSTIC_WARN,
     undefinedFlagUse: TEACHING_DIAGNOSTIC_WARN,
     compatibilityNotices: COMPATIBILITY_NOTICES_ON,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0
   });
 
@@ -60,6 +63,7 @@ test("defaults match Phase 57F teaching and startup profile", () => {
     undefinedFlagUse: 1,
     compatibilityNotices: 1,
     startupRegisterFlagMode: 0,
+    uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0
   });
 });
@@ -77,6 +81,7 @@ test("partial settings fill missing values from defaults", () => {
     undefinedFlagUse: TEACHING_DIAGNOSTIC_WARN,
     compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0
   });
   assert.deepEqual(normalized.backendSettings, {
@@ -85,6 +90,7 @@ test("partial settings fill missing values from defaults", () => {
     undefinedFlagUse: 1,
     compatibilityNotices: 0,
     startupRegisterFlagMode: 0,
+    uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0
   });
 });
@@ -112,6 +118,7 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       undefinedFlagUse: 1,
       compatibilityNotices: 1,
       startupRegisterFlagMode: 0,
+      uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0
     });
   }
@@ -136,21 +143,25 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       undefinedFlagUse: expectedUndefinedFlagUse,
       compatibilityNotices: expectedCompatibility,
       startupRegisterFlagMode: 0,
+      uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0
     });
   }
 });
 
-test("Phase 57F seeded startup settings map to backend enum values", () => {
+test("Phase 57F and Phase 57G seeded startup settings map to backend enum values", () => {
   const normalized = normalizeDiagnosticSettings({
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+    uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
     startupStateSeed: "4294967295"
   });
 
   assert.equal(normalized.ok, true);
   assert.equal(normalized.settings.startupRegisterFlagMode, STARTUP_REGISTER_FLAG_SEEDED_RANDOM);
+  assert.equal(normalized.settings.uninitializedStorageVisibleByteMode, UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM);
   assert.equal(normalized.settings.startupStateSeed, 4294967295);
   assert.equal(normalized.backendSettings.startupRegisterFlagMode, 1);
+  assert.equal(normalized.backendSettings.uninitializedStorageVisibleByteMode, 1);
   assert.equal(normalized.backendSettings.startupStateSeed, 4294967295);
 });
 
@@ -160,6 +171,14 @@ test("invalid Phase 57F startup mode returns startup ui-error diagnostic", () =>
   assert.equal(normalized.diagnostic.kind, "ui-error");
   assert.equal(normalized.diagnostic.code, "invalid-startup-setting");
   assert.equal(normalized.diagnostic.setting, "startupRegisterFlagMode");
+});
+
+test("invalid Phase 57G uninitialized-storage startup mode returns startup ui-error diagnostic", () => {
+  const normalized = normalizeDiagnosticSettings({ uninitializedStorageVisibleByteMode: "fresh-random" });
+  assert.equal(normalized.ok, false);
+  assert.equal(normalized.diagnostic.kind, "ui-error");
+  assert.equal(normalized.diagnostic.code, "invalid-startup-setting");
+  assert.equal(normalized.diagnostic.setting, "uninitializedStorageVisibleByteMode");
 });
 
 test("invalid Phase 57F startup seed returns startup ui-error diagnostic", () => {
@@ -208,6 +227,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     undefinedFlagUse: TEACHING_DIAGNOSTIC_OFF,
     compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
@@ -216,6 +236,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     undefinedFlagUse: 0,
     compatibilityNotices: 0,
     startupRegisterFlagMode: 0,
+    uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0
   });
 });

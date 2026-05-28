@@ -42,16 +42,35 @@ function createRunSourceFunction(moduleInstance) {
       ...defaultBackendSettings,
       ...(backendSettings || {})
     };
+    const hasStartupStorageSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings === "function";
     const hasStartupSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_and_startup_settings === "function";
     const hasUiSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_settings === "function";
     const usesNonDefaultDiagnosticSettings = settings.memoryRange !== defaultBackendSettings.memoryRange ||
       settings.uninitializedReads !== defaultBackendSettings.uninitializedReads ||
       settings.undefinedFlagUse !== defaultBackendSettings.undefinedFlagUse ||
       settings.compatibilityNotices !== defaultBackendSettings.compatibilityNotices;
-    const usesNonDefaultStartupSettings = settings.startupRegisterFlagMode !== defaultBackendSettings.startupRegisterFlagMode ||
+    const usesNonDefaultRegisterFlagStartupSettings = settings.startupRegisterFlagMode !== defaultBackendSettings.startupRegisterFlagMode ||
       settings.startupStateSeed !== defaultBackendSettings.startupStateSeed;
+    const usesNonDefaultUninitializedStorageStartupSettings = settings.uninitializedStorageVisibleByteMode !== defaultBackendSettings.uninitializedStorageVisibleByteMode;
+    const usesNonDefaultStartupSettings = usesNonDefaultRegisterFlagStartupSettings || usesNonDefaultUninitializedStorageStartupSettings;
 
-    if (!hasStartupSettingsExport && usesNonDefaultStartupSettings) {
+    if (!hasStartupStorageSettingsExport && usesNonDefaultUninitializedStorageStartupSettings) {
+      return {
+        ok: false,
+        status: "ui-error",
+        simulatorMessages: [
+          {
+            kind: "ui-error",
+            code: "stale-wasm-artifact",
+            message: "The loaded Wasm artifact does not expose Phase 57G uninitialized-storage startup settings. Rebuild web/dist with the Emscripten build script."
+          }
+        ],
+        registers: {},
+        memoryChanges: []
+      };
+    }
+
+    if (!hasStartupSettingsExport && !hasStartupStorageSettingsExport && usesNonDefaultRegisterFlagStartupSettings) {
       return {
         ok: false,
         status: "ui-error",
@@ -67,7 +86,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasStartupSettingsExport && !hasUiSettingsExport && usesNonDefaultDiagnosticSettings) {
+    if (!hasStartupStorageSettingsExport && !hasStartupSettingsExport && !hasUiSettingsExport && usesNonDefaultDiagnosticSettings) {
       return {
         ok: false,
         status: "ui-error",
@@ -83,17 +102,21 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    const exportName = hasStartupSettingsExport
-      ? "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
-      : hasUiSettingsExport
-        ? "masm32_sim_wasm_run_source_json_with_ui_settings"
-        : "masm32_sim_wasm_run_source_json";
-    const argTypes = exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
-      ? ["string", "number", "number", "number", "number", "number", "number"]
-      : exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
-        ? ["string", "number", "number", "number", "number"]
-        : ["string"];
-    const args = exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
+    const exportName = hasStartupStorageSettingsExport
+      ? "masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings"
+      : hasStartupSettingsExport
+        ? "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
+        : hasUiSettingsExport
+          ? "masm32_sim_wasm_run_source_json_with_ui_settings"
+          : "masm32_sim_wasm_run_source_json";
+    const argTypes = exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings"
+      ? ["string", "number", "number", "number", "number", "number", "number", "number"]
+      : exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
+        ? ["string", "number", "number", "number", "number", "number", "number"]
+        : exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
+          ? ["string", "number", "number", "number", "number"]
+          : ["string"];
+    const args = exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings"
       ? [
           source,
           settings.memoryRange,
@@ -101,9 +124,20 @@ function createRunSourceFunction(moduleInstance) {
           settings.undefinedFlagUse,
           settings.compatibilityNotices,
           settings.startupRegisterFlagMode,
+          settings.uninitializedStorageVisibleByteMode,
           settings.startupStateSeed
         ]
-      : exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
+      : exportName === "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings"
+        ? [
+            source,
+            settings.memoryRange,
+            settings.uninitializedReads,
+            settings.undefinedFlagUse,
+            settings.compatibilityNotices,
+            settings.startupRegisterFlagMode,
+            settings.startupStateSeed
+          ]
+        : exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
         ? [
             source,
             settings.memoryRange,

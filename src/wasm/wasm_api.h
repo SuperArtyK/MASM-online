@@ -66,6 +66,14 @@ typedef enum Masm32SimWasmStartupRegisterFlagMode {
     MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM
 } Masm32SimWasmStartupRegisterFlagMode;
 
+/// Selects the Phase 57G visible-byte startup behavior for uninitialized-origin storage.
+typedef enum Masm32SimWasmUninitializedStorageVisibleByteMode {
+    /// Preserve deterministic zero visible bytes for `.DATA?`, `?`, and `DUP(?)` storage.
+    MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO = 0,
+    /// Initialize uninitialized-origin visible bytes from startup_state_seed while preserving metadata.
+    MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM
+} Masm32SimWasmUninitializedStorageVisibleByteMode;
+
 /// Selects whether the Phase 57E startup-state notice is emitted.
 typedef enum Masm32SimWasmStartupStateNoticeSetting {
     /// Suppress the deterministic startup-state notice while preserving startup values.
@@ -157,11 +165,12 @@ const char *masm32_sim_wasm_run_source_json_with_ui_settings(
 );
 
 
-/// Parses and executes source using Phase 53E diagnostics plus Phase 57F startup settings.
+/// Parses and executes source using diagnostics plus Phase 57F startup settings.
 ///
-/// This browser/test-facing export keeps diagnostic settings and startup
-/// register/flag settings separate. It does not add browser UI controls by
-/// itself; it only exposes the runtime setting path for workers and tests.
+/// This compatibility export preserves the Phase 57F browser/test-facing
+/// signature. Phase 57G callers that need explicit uninitialized-storage
+/// visible-byte settings must use
+/// @ref masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings.
 ///
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @param memory_range_setting Browser memory range validation selection.
@@ -178,6 +187,32 @@ const char *masm32_sim_wasm_run_source_json_with_ui_and_startup_settings(
     Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
     Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
     Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed
+);
+
+/// Parses and executes source using Phase 57G explicit startup storage settings.
+///
+/// This export has a Phase 57G-specific name so the browser worker can detect
+/// stale Phase 57F Wasm artifacts before sending non-default uninitialized
+/// storage visible-byte settings.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Phase 57G uninitialized-storage visible-byte mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
     uint32_t startup_state_seed
 );
 
@@ -297,6 +332,9 @@ const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
 
 /// Parses and executes source with explicit Phase 57F startup register/flag settings.
 ///
+/// This compatibility helper preserves Phase 57F tests and callers while using
+/// the Phase 57G default zero visible-byte mode for uninitialized storage.
+///
 /// @param source Null-terminated MASM-like source text to parse and execute.
 /// @param startup_register_flag_mode Register/flag startup mode to apply.
 /// @param startup_state_seed Deterministic startup-state seed.
@@ -305,6 +343,22 @@ const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
 const char *masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
     const char *source,
     Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed,
+    Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting
+);
+
+/// Parses and executes source with explicit Phase 57F and Phase 57G startup modes.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param startup_register_flag_mode Register/flag startup mode to apply.
+/// @param uninitialized_storage_visible_byte_mode Uninitialized-storage visible-byte startup mode to apply.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param startup_state_notice_setting Whether startup-state notices are emitted.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_startup_modes(
+    const char *source,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
     uint32_t startup_state_seed,
     Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting
 );

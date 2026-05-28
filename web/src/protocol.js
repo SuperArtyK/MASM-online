@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 57;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "F";
+export const IMPLEMENTED_PHASE_SUFFIX = "G";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 57F - Seeded Random Register and Flag Startup Mode";
+export const IMPLEMENTED_PHASE_NAME = "Phase 57G - Seeded Random Uninitialized Storage Mode";
 
 /**
  * Creates the initial worker readiness response.

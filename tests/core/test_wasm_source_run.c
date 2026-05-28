@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57 signed IDIV.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57G startup storage mode.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -19,8 +19,14 @@
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
-/// Exact Phase 57F seeded startup notice wording expected in source-run JSON.
+/// Exact Phase 57F seeded register/flag startup notice wording expected in source-run JSON.
 #define TEST_SEEDED_STARTUP_NOTICE_TEXT "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+
+/// Exact Phase 57G seeded uninitialized-storage startup notice wording expected in source-run JSON.
+#define TEST_SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator starts registers and modeled flags at 0. Visible bytes for uninitialized storage were initialized from the configured deterministic seed, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+
+/// Exact notice wording expected when both Phase 57F and Phase 57G seeded startup axes are enabled.
+#define TEST_SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator started general-purpose registers, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// Records a source-run test failure.
 ///
@@ -7763,10 +7769,10 @@ static int test_phase57e_invalid_startup_state_notice_setting(void) {
     return failures;
 }
 
-/// Verifies Phase 57F status metadata is emitted by source-run JSON.
+/// Verifies Phase 57G status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
-static int test_phase57f_source_run_phase_metadata(void) {
+static int test_phase57g_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -7774,9 +7780,9 @@ static int test_phase57f_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "Phase 57F should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"F\"", "Phase 57F should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57F - Seeded Random Register and Flag Startup Mode\"", "Phase 57F should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57G should preserve numeric phase compatibility");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"G\"", "Phase 57G should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57G - Seeded Random Uninitialized Storage Mode\"", "Phase 57G should report the runtime phase name");
 
     return failures;
 }
@@ -7943,6 +7949,344 @@ static int test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origi
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Seeded startup should preserve initialized .CONST bytes");
     failures += expect_json_contains(json, "uninitialized-read", "Seeded startup should preserve uninitialized-origin diagnostics");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "Seeded startup alone should not create memory-change rows");
+
+    return failures;
+}
+
+
+/// Verifies Phase 57G zero uninitialized-storage mode preserves visible zero bytes.
+///
+/// @return Number of failures.
+static int test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".DATA?\n"
+        "q DWORD ?\n"
+        ".data\n"
+        "x DWORD ?\n"
+        "arr BYTE 4 DUP(?)\n"
+        "y DWORD 5\n"
+        ".CONST\n"
+        "c DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, q\n"
+        "    mov ebx, x\n"
+        "    mov ecx, DWORD PTR arr\n"
+        "    mov edx, y\n"
+        "    mov esi, c\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        4294967295U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Zero uninitialized-storage mode should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Zero mode should keep .DATA? visible bytes zero-filled");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Zero mode should keep scalar ? visible bytes zero-filled");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Zero mode should keep DUP(?) visible bytes zero-filled");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Zero mode should preserve initialized .data bytes");
+    failures += expect_json_contains(json, "\"ESI\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Zero mode should preserve initialized .CONST bytes");
+    failures += expect_json_contains(json, "uninitialized-read", "Zero mode should preserve uninitialized-origin diagnostics");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Startup initialization should not create memory-change rows");
+
+    return failures;
+}
+
+/// Verifies Phase 57G seeded mode randomizes only uninitialized-origin visible bytes.
+///
+/// @return Number of failures.
+static int test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitialized_bytes(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".DATA?\n"
+        "q DWORD ?\n"
+        ".data\n"
+        "x DWORD ?\n"
+        "arr BYTE 4 DUP(?)\n"
+        "y DWORD 5\n"
+        ".CONST\n"
+        "c DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, q\n"
+        "    mov ebx, x\n"
+        "    mov ecx, DWORD PTR arr\n"
+        "    mov edx, y\n"
+        "    mov esi, c\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Seeded uninitialized-storage mode should execute");
+    failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded mode should change .DATA? visible bytes for this fixture seed");
+    failures += expect_json_not_contains(json, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded mode should change DUP(?) visible bytes for this fixture seed");
+    failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Seeded mode should preserve initialized .data bytes");
+    failures += expect_json_contains(json, "\"ESI\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Seeded mode should preserve initialized .CONST bytes");
+    failures += expect_json_contains(json, "uninitialized-read", "Seeded mode should preserve uninitialized-origin diagnostics");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Seeded startup should not create memory-change rows");
+
+    return failures;
+}
+
+/// Verifies Phase 57G seeded uninitialized-storage mode is deterministic for the same seed.
+///
+/// @return Number of failures.
+static int test_phase57g_seeded_uninitialized_storage_is_deterministic(void) {
+    char first_copy[4096];
+    char second_copy[4096];
+    int failures = 0;
+    const char *source =
+        ".DATA?\n"
+        "q DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, q\n"
+        "END main\n";
+
+    copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
+        source,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        987654321U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+    copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
+        source,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        987654321U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+
+    if (strcmp(first_copy, second_copy) != 0) {
+        failures += record_failure("same Phase 57G seed should produce identical source-run JSON for uninitialized storage");
+    }
+    failures += expect_json_contains(first_copy, "\"ok\":true", "Seeded uninitialized-storage deterministic fixture should execute");
+    failures += expect_json_not_contains(first_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded uninitialized-storage deterministic fixture should expose nonzero bytes for this seed");
+
+    return failures;
+}
+
+/// Verifies different Phase 57G seeds affect uninitialized-origin visible bytes.
+///
+/// @return Number of failures.
+static int test_phase57g_different_seeds_change_uninitialized_storage(void) {
+    char first_copy[4096];
+    char second_copy[4096];
+    const char *source =
+        ".DATA?\n"
+        "q DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, q\n"
+        "END main\n";
+
+    copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
+        source,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        1U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+    copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
+        source,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        2U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+
+    if (strcmp(first_copy, second_copy) == 0) {
+        return record_failure("different Phase 57G seeds should produce different source-run JSON for uninitialized storage");
+    }
+
+    return 0;
+}
+
+/// Verifies Phase 57G seeded mode preserves warnings for every current uninitialized storage form.
+///
+/// @return Number of failures.
+static int test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".DATA?\n"
+        "q DWORD ?\n"
+        ".data\n"
+        "x DWORD ?\n"
+        "arr BYTE 4 DUP(?)\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, q\n"
+        "    mov ebx, x\n"
+        "    mov ecx, DWORD PTR arr\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Seeded uninitialized-storage metadata fixture should execute");
+    failures += expect_json_contains(json, "from q + 0; 4 of those bytes still originated from uninitialized storage", ".DATA? bytes should keep uninitialized-origin diagnostics after seeded visible-byte startup");
+    failures += expect_json_contains(json, "from x + 0; 4 of those bytes still originated from uninitialized storage", "Scalar ? bytes should keep uninitialized-origin diagnostics after seeded visible-byte startup");
+    failures += expect_json_contains(json, "from arr + 0; 4 of those bytes still originated from uninitialized storage", "DUP(?) bytes should keep uninitialized-origin diagnostics after seeded visible-byte startup");
+    failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".DATA? visible bytes should be seeded for this fixture seed");
+    failures += expect_json_not_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Scalar ? visible bytes should be seeded for this fixture seed");
+    failures += expect_json_not_contains(json, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "DUP(?) visible bytes should be seeded for this fixture seed");
+
+    return failures;
+}
+
+/// Verifies Phase 57G startup axes remain orthogonal.
+///
+/// @return Number of failures.
+static int test_phase57g_startup_axes_are_orthogonal(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Orthogonal startup-axis fixture should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded register startup must not imply seeded uninitialized-storage bytes");
+    failures += expect_json_not_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded register startup should still affect untouched EBX for this seed");
+
+    return failures;
+}
+
+/// Verifies Phase 57G combined seeded axes affect both registers and uninitialized storage.
+///
+/// @return Number of failures.
+static int test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Combined seeded startup fixture should execute");
+    failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Combined seeded mode should seed the uninitialized storage value loaded into EAX");
+    failures += expect_json_not_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Combined seeded mode should seed untouched EBX through the register/flag axis");
+    failures += expect_json_contains(json, "uninitialized-read", "Combined seeded mode should preserve uninitialized-read diagnostics");
+
+    return failures;
+}
+
+/// Verifies Phase 57G seeded storage preserves strict uninitialized-read stops.
+///
+/// @return Number of failures.
+static int test_phase57g_seeded_uninitialized_storage_strict_read_stops(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        123U
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Strict uninitialized-read mode should stop seeded storage read");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "Strict uninitialized-read mode should produce source-run execution-error status");
+    failures += expect_json_contains(json, "uninitialized-read", "Strict seeded storage read should preserve uninitialized-origin diagnostic");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Strict read should stop before mutating EAX");
+    failures += expect_json_not_contains(json, "execution-complete", "Strict read should not emit execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 57G seeded storage emits a mode-accurate startup notice.
+///
+/// @return Number of failures.
+static int test_phase57g_seeded_uninitialized_storage_notice_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        0U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Seeded uninitialized storage should emit a Simulator Messages notice when enabled");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Seeded uninitialized storage notice should use the startup diagnostic code");
+    failures += expect_json_contains(json, TEST_SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT, "Seeded uninitialized storage notice should use exact Phase 57G wording");
+    failures += expect_json_not_contains(json, "Program Console", "Seeded uninitialized storage notice should not write Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57G notice wording when both seeded startup axes are enabled.
+///
+/// @return Number of failures.
+static int test_phase57g_combined_seeded_startup_notice_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        0U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, TEST_SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT, "Combined seeded startup notice should use exact wording");
+    failures += expect_json_contains_once(json, "startup-state-notice", "Combined seeded startup should emit one startup notice");
+
+    return failures;
+}
+
+/// Verifies Phase 57G rejects invalid uninitialized-storage visible-byte modes.
+///
+/// @return Number of failures.
+static int test_phase57g_invalid_uninitialized_storage_mode(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        (Masm32SimWasmUninitializedStorageVisibleByteMode)99,
+        0U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Invalid uninitialized-storage visible-byte mode should fail");
+    failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid uninitialized-storage visible-byte mode should report invalid argument");
+    failures += expect_json_contains(json, "\"code\":\"invalid-startup-setting\"", "Invalid uninitialized-storage visible-byte mode should use startup-setting diagnostic code");
+    failures += expect_json_contains(json, "uninitialized_storage_visible_byte_mode", "Invalid uninitialized-storage visible-byte mode should name the setting");
+    failures += expect_json_not_contains(json, "execution-complete", "Invalid uninitialized-storage visible-byte mode should not complete execution");
 
     return failures;
 }
@@ -8757,13 +9101,24 @@ int main(void) {
     failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
     failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
     failures += test_phase57e_invalid_startup_state_notice_setting();
-    failures += test_phase57f_source_run_phase_metadata();
+    failures += test_phase57g_source_run_phase_metadata();
     failures += test_phase57f_zero_mode_seed_does_not_randomize();
     failures += test_phase57f_seeded_startup_is_deterministic();
     failures += test_phase57f_different_seeds_change_startup_state();
     failures += test_phase57f_seeded_startup_notice_source_run();
     failures += test_phase57f_invalid_startup_register_flag_mode();
     failures += test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin();
+    failures += test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes();
+    failures += test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitialized_bytes();
+    failures += test_phase57g_seeded_uninitialized_storage_is_deterministic();
+    failures += test_phase57g_different_seeds_change_uninitialized_storage();
+    failures += test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class();
+    failures += test_phase57g_startup_axes_are_orthogonal();
+    failures += test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage();
+    failures += test_phase57g_seeded_uninitialized_storage_strict_read_stops();
+    failures += test_phase57g_seeded_uninitialized_storage_notice_source_run();
+    failures += test_phase57g_combined_seeded_startup_notice_source_run();
+    failures += test_phase57g_invalid_uninitialized_storage_mode();
     failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();
@@ -8784,6 +9139,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57F seeded startup coverage passed.");
+    puts("Source execution tests through Phase 57G seeded uninitialized-storage startup coverage passed.");
     return 0;
 }

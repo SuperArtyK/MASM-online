@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57F - Seeded Random Register and Flag Startup Mode
+Phase 57G - Seeded Random Uninitialized Storage Mode
 
-Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags through source-run/test-facing settings. It preserves default zero startup, leaves memory and uninitialized-origin metadata unchanged, emits the `startup-state-notice` only through Simulator Messages, and does not add browser UI controls.
+Phase 57G adds opt-in deterministic seeded startup for visible bytes in uninitialized-origin storage through source-run/test-facing seeded uninitialized-storage visible-byte settings. Phase 57F seeded register/flag startup remains available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
 
 ## Repository layout for development
 
@@ -210,7 +210,7 @@ main ENDP
 END main
 ```
 
-The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57F - Seeded Random Register and Flag Startup Mode. Phase 57F adds source-run/test-facing seeded register/flag startup settings but does not add browser UI controls.
+The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57G - Seeded Random Uninitialized Storage Mode. Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings and preserves Phase 57F seeded register/flag startup settings. It does not add browser UI controls.
 
 ## Missing `emcc` troubleshooting
 

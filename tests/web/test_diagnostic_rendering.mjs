@@ -57,11 +57,23 @@ const STARTUP_STATE_NOTICE_TEXT = "The simulator starts registers and modeled fl
 /** Exact Phase 57F seeded startup notice text. */
 const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
+/** Exact Phase 57G seeded uninitialized-storage startup notice text. */
+const SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts registers and modeled flags at 0. Visible bytes for uninitialized storage were initialized from the configured deterministic seed, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+
+/** Exact notice text when both seeded startup axes are enabled. */
+const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator started general-purpose registers, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+
 /** Exact rendered zero-startup notice line. */
 const STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${STARTUP_STATE_NOTICE_TEXT}`;
 
 /** Exact rendered Phase 57F seeded startup notice line. */
 const SEEDED_STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${SEEDED_STARTUP_STATE_NOTICE_TEXT}`;
+
+/** Exact rendered Phase 57G seeded uninitialized-storage startup notice line. */
+const SEEDED_UNINITIALIZED_STORAGE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT}`;
+
+/** Exact rendered combined seeded startup notice line. */
+const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT}`;
 
 /** Environment variables that control the native diagnostic producer. */
 const PRODUCER_CONTROL_ENV_KEYS = [
@@ -78,6 +90,7 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE",
   "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE",
   "MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE",
+  "MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE",
   "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED"
 ];
 
@@ -192,6 +205,17 @@ function runFixtureExpectFailure(name, source, extraEnv = {}) {
   const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: buildChildEnv(extraEnv) });
   assert.notEqual(result.status, 0, `producer unexpectedly succeeded for ${name}: ${result.stdout}`);
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
+}
+
+/**
+ * Normalizes process output line endings so exact stderr assertions remain
+ * stable across Unix-like shells and Windows CRT text output.
+ *
+ * @param {string} text Process output text.
+ * @returns {string} Text with CRLF and CR line endings normalized to LF.
+ */
+function normalizeProcessOutput(text) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 /**
@@ -1554,6 +1578,56 @@ test("renders Phase 57F seeded startup-state notice exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
 });
 
+test("renders Phase 57G seeded uninitialized-storage startup-state notice exactly", () => {
+  const name = "phase57gSeededUninitializedStorageNotice";
+  const source = fixtureSource("success");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE: "seeded-random",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_SEED: "123",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_UNINITIALIZED_STORAGE_NOTICE_RENDERED}
+[info] execution-complete: Execution completed successfully.`);
+});
+
+test("renders combined Phase 57F and Phase 57G seeded startup-state notice exactly", () => {
+  const name = "phase57gCombinedSeededStartupNotice";
+  const source = fixtureSource("success");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE: "seeded-random",
+    MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE: "seeded-random",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_SEED: "123",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_RENDERED}
+[info] execution-complete: Execution completed successfully.`);
+});
+
+
+test("renders Phase 57G invalid uninitialized-storage startup setting ui-error exactly", () => {
+  const rendered = formatSimulatorMessages([
+    {
+      kind: "ui-error",
+      code: "invalid-startup-setting",
+      message: "Invalid startup setting 'uninitializedStorageVisibleByteMode'. Accepted values: zero, seeded-random."
+    }
+  ]);
+
+  assert.equal(rendered, "[ui-error] invalid-startup-setting: Invalid startup setting 'uninitializedStorageVisibleByteMode'. Accepted values: zero, seeded-random.");
+});
+
 test("rejects Phase 57F startup-state seed values outside uint32 range", () => {
   const name = "phase57fStartupStateSeedOverflow";
   const source = fixtureSource("success");
@@ -1562,7 +1636,7 @@ test("rejects Phase 57F startup-state seed values outside uint32 range", () => {
     MASM32_DIAGNOSTIC_STARTUP_STATE_SEED: "4294967296"
   });
   assert.equal(result.stdout, "", `producer stdout must be empty for ${name}`);
-  assert.equal(result.stderr, "diagnostic_json_producer: invalid unsigned environment value\n");
+  assert.equal(normalizeProcessOutput(result.stderr), "diagnostic_json_producer: invalid unsigned environment value\n");
 });
 
 test("renders Phase 57E startup-state notice opt-out exactly", () => {

@@ -13,6 +13,7 @@ import {
   MEMORY_RANGE_DECLARED_OBJECT_WARN,
   STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
   TEACHING_DIAGNOSTIC_OFF,
+  UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
   TEACHING_DIAGNOSTIC_STRICT
 } from "../../web/src/settings.js";
 
@@ -30,8 +31,8 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 57);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "F");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57F - Seeded Random Register and Flag Startup Mode");
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "G");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57G - Seeded Random Uninitialized Storage Mode");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,8 +43,8 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       },
       wasmTestValue: 32,
       phase: 57,
-      phaseSuffix: "F",
-      phaseName: "Phase 57F - Seeded Random Register and Flag Startup Mode"
+      phaseSuffix: "G",
+      phaseName: "Phase 57G - Seeded Random Uninitialized Storage Mode"
     }
   });
 });
@@ -60,8 +61,8 @@ test("ready message supports not-built wasm status", () => {
       },
       wasmTestValue: null,
       phase: 57,
-      phaseSuffix: "F",
-      phaseName: "Phase 57F - Seeded Random Register and Flag Startup Mode"
+      phaseSuffix: "G",
+      phaseName: "Phase 57G - Seeded Random Uninitialized Storage Mode"
     }
   });
 });
@@ -96,6 +97,7 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           undefinedFlagUse: 1,
           compatibilityNotices: 1,
           startupRegisterFlagMode: 0,
+          uninitializedStorageVisibleByteMode: 0,
           startupStateSeed: 0
         });
         return {
@@ -144,6 +146,7 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
           undefinedFlagUse: 2,
           compatibilityNotices: 0,
           startupRegisterFlagMode: 0,
+          uninitializedStorageVisibleByteMode: 0,
           startupStateSeed: 0
         });
         return { ok: true, simulatorMessages: [] };
@@ -176,6 +179,40 @@ test("RUN_SOURCE dispatches Phase 57F startup settings to runtime", () => {
           undefinedFlagUse: 1,
           compatibilityNotices: 1,
           startupRegisterFlagMode: 1,
+          uninitializedStorageVisibleByteMode: 0,
+          startupStateSeed: 123456789
+        });
+        return { ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, true);
+});
+
+test("RUN_SOURCE dispatches Phase 57G uninitialized-storage startup settings to runtime", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".DATA?\nx DWORD ?\n.code\nmain PROC\n    mov eax, x\nEND main\n",
+        diagnosticSettings: {
+          uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+          startupStateSeed: 123456789
+        }
+      }
+    },
+    {
+      runSource(source, backendSettings) {
+        assert.equal(source.includes("mov eax, x"), true);
+        assert.deepEqual(backendSettings, {
+          memoryRange: 0,
+          uninitializedReads: 1,
+          undefinedFlagUse: 1,
+          compatibilityNotices: 1,
+          startupRegisterFlagMode: 0,
+          uninitializedStorageVisibleByteMode: 1,
           startupStateSeed: 123456789
         });
         return { ok: true, simulatorMessages: [] };
@@ -258,12 +295,12 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57F - Seeded Random Register and Flag Startup Mode. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57G - Seeded Random Uninitialized Storage Mode. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 
-test("RUN_SOURCE marks Phase 57 artifacts without Phase 57F suffix as stale", () => {
+test("RUN_SOURCE marks Phase 57 artifacts without Phase 57G suffix as stale", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
