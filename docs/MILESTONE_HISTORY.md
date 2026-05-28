@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57G:
+Current status at Phase 57I:
 
 Repository/archive milestone:
-Phase 57G - Seeded Random Uninitialized Storage Mode
+Phase 57I - .CONST Uninitialized Storage Acceptance
 
 Runtime/source-run MASM behavior phase:
-Phase 57G - Seeded Random Uninitialized Storage Mode
+Phase 57I - .CONST Uninitialized Storage Acceptance
 
 Status interpretation:
 
-Phase 57G adds opt-in deterministic seeded startup for visible bytes in uninitialized-origin storage through source-run/test-facing settings. Phase 57F seeded register/flag startup remains available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, initialized `.data` and `.CONST` bytes are not randomized, Program Console behavior is unchanged, parser and instruction behavior are unchanged, and no browser UI controls are added.
+Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. It advances runtime/source-run MASM behavior metadata because accepted source behavior changed. Existing `.CONST` write protection, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -78,7 +78,19 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57E activates and documents the non-fatal startup-state notice while preserving deterministic startup values and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags while preserving memory bytes, uninitialized-origin metadata, default zero startup, and existing browser UI behavior without adding browser UI controls.
 - Phase 57G adds opt-in deterministic seeded visible bytes for uninitialized-origin storage while preserving metadata, default zero startup, initialized data bytes, and existing browser UI behavior without adding browser UI controls.
+- Phase 57H adds final-register `[unchanged]` display markers for canonical register families that the executed program did not write, while keeping runtime/source-run MASM behavior metadata at Phase 57G.
+- Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` as read-only uninitialized-origin storage, advances runtime/source-run MASM behavior metadata to Phase 57I, and leaves Phase 57J to add future configurable declaration diagnostics.
 
+
+## Phase 57I - .CONST Uninitialized Storage Acceptance
+
+Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as compatibility forms. The allocated bytes live in the `.CONST` region, remain read-only for simulated program writes, retain uninitialized-origin metadata, and participate in existing uninitialized-read diagnostics and seeded uninitialized-storage visible-byte mode. Phase 57J owns the future configurable declaration diagnostic policy for this suspicious teaching pattern.
+
+## Phase 57H - Register Unchanged Display Markers
+
+Phase 57H appends `[unchanged]` to final-register canonical parent rows when no part of that register family was written by the executed program. Alias rows remain clean and inherit parent-family status visually. Same-value writes such as `mov eax, 0` count as changed because the implementation uses explicit register-family write metadata instead of value-equality inference.
+
+Phase 57H is display-formatting work only. It does not add MASM syntax, parser behavior, VM instruction semantics, diagnostic codes, rendered Simulator Messages wording, Program Console output, browser settings UI, or runtime/source-run MASM behavior phase advancement.
 
 ## Phase 57G - Seeded Random Uninitialized Storage Mode
 

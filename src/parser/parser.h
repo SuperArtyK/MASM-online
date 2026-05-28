@@ -266,6 +266,15 @@ typedef struct VmParserConfig {
     uint8_t *data_initialized_mask;
     /// Number of bytes available in @ref data_initialized_mask.
     size_t data_initialized_mask_capacity;
+    /// Optional caller-owned per-byte initialization mask for .CONST bytes.
+    ///
+    /// A value of 1 means the byte is initialized by an explicit initializer.
+    /// A value of 0 means the byte originated from Phase 57I accepted `.CONST ?`
+    /// or `.CONST DUP(?)` storage. NULL disables `.CONST` uninitialized-origin
+    /// metadata emission while still allowing deterministic visible bytes.
+    uint8_t *const_initialized_mask;
+    /// Number of bytes available in @ref const_initialized_mask.
+    size_t const_initialized_mask_capacity;
     /// Caller-owned .CONST image bytes laid out from VM_MEMORY_DEFAULT_CONST_BASE.
     uint8_t *const_image;
     /// Number of bytes available in @ref const_image.

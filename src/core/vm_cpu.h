@@ -134,6 +134,8 @@ typedef struct VmCpu {
     uint32_t eflags;
     /// Validity and undefined-origin metadata for currently modeled flags.
     VmFlagValidityMetadata flag_validity[VM_FLAG_COUNT];
+    /// Bitset of canonical register families written after startup initialization.
+    uint32_t written_register_families;
 } VmCpu;
 
 /// Initializes all canonical CPU registers to zero.
@@ -176,6 +178,26 @@ bool vm_cpu_read_register(const VmCpu *cpu, VmRegister reg, uint32_t *out_value)
 /// @param value Value to write. The value is masked to the register width.
 /// @return true when the write succeeds; false for a NULL CPU pointer or invalid register.
 bool vm_cpu_write_register(VmCpu *cpu, VmRegister reg, uint32_t value);
+
+/// Clears register-family write-tracking metadata without changing register values.
+///
+/// This helper is used after startup initialization so display-only unchanged
+/// markers describe writes performed by the executed program rather than VM
+/// setup.
+///
+/// @param cpu CPU state to mutate. A NULL pointer is ignored.
+void vm_cpu_clear_register_write_tracking(VmCpu *cpu);
+
+/// Reports whether the canonical family containing one register was written.
+///
+/// Register aliases map to their canonical parent family. For example, AL, AH,
+/// AX, and EAX all query the EAX family.
+///
+/// @param cpu CPU state to inspect.
+/// @param reg Canonical register or alias whose family should be queried.
+/// @param out_was_written Receives true when the family has been written.
+/// @return true when the query succeeds; false for NULL pointers or invalid registers.
+bool vm_cpu_register_family_was_written(const VmCpu *cpu, VmRegister reg, bool *out_was_written);
 
 /// Returns the width, in bits, of a canonical register or alias.
 ///

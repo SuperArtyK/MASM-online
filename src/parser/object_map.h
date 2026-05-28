@@ -159,19 +159,20 @@ VmObjectMapStatus vm_object_map_build_from_symbols_with_layout(
     size_t *out_entry_count
 );
 
-/// Builds declared-object entries from symbols plus a section-offset initialization mask.
+/// Builds declared-object entries from symbols plus section-offset initialization masks.
 ///
-/// The mask is indexed from the selected `.data`/`.DATA?` region base. A mask
-/// byte of 1 means the corresponding storage byte is initialized; 0 means it
-/// originated from `?` or `.DATA?` and remains uninitialized-origin. `.CONST`
-/// entries are always counted as initialized because they must have explicit
-/// initializers.
+/// The masks are indexed from the selected `.data`/`.DATA?` and `.CONST`
+/// region bases. A mask byte of 1 means the corresponding storage byte is
+/// initialized; 0 means it originated from accepted `?` or `DUP(?)` storage and
+/// remains uninitialized-origin.
 ///
 /// @param symbols Parser-emitted data symbols to convert.
 /// @param symbol_count Number of valid symbols in @p symbols.
 /// @param selected_policy Selected runtime layout policy; NULL uses the fixed default policy.
 /// @param data_initialized_mask Optional `.data`/`.DATA?` initialization mask.
 /// @param data_initialized_mask_size Number of bytes available in @p data_initialized_mask.
+/// @param const_initialized_mask Optional `.CONST` initialization mask.
+/// @param const_initialized_mask_size Number of bytes available in @p const_initialized_mask.
 /// @param entries Caller-owned output entry buffer.
 /// @param entry_capacity Number of entries available in @p entries.
 /// @param out_entry_count Receives the number of object entries written.
@@ -182,6 +183,8 @@ VmObjectMapStatus vm_object_map_build_from_symbols_with_initialization_mask(
     const VmLayoutPolicy *selected_policy,
     const uint8_t *data_initialized_mask,
     size_t data_initialized_mask_size,
+    const uint8_t *const_initialized_mask,
+    size_t const_initialized_mask_size,
     VmObjectMapEntry *entries,
     size_t entry_capacity,
     size_t *out_entry_count

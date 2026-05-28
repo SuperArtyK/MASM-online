@@ -58,6 +58,8 @@ typedef struct DataSectionTestBuffers {
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Emitted .CONST image bytes.
     uint8_t const_image[TEST_CONST_IMAGE_CAPACITY];
+    /// Per-byte initialized-state mask for emitted .CONST image bytes.
+    uint8_t const_initialized_mask[TEST_CONST_IMAGE_CAPACITY];
     /// Null-terminated source-text copies used by emitted IR.
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
 } DataSectionTestBuffers;
@@ -227,6 +229,8 @@ static VmParserStatus parse_for_test(const char *source, DataSectionTestBuffers 
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
     config.const_image_capacity = TEST_CONST_IMAGE_CAPACITY;
+    config.const_initialized_mask = buffers->const_initialized_mask;
+    config.const_initialized_mask_capacity = TEST_CONST_IMAGE_CAPACITY;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
@@ -1968,8 +1972,14 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
 static int test_additional_data_sections_layout_and_const_protection(void) {
     DataSectionTestBuffers buffers;
     DataSectionTestBuffers scalar_buffers;
+    DataSectionTestBuffers const_uninitialized_buffers;
+    DataSectionTestBuffers malformed_const_buffers;
+    DataSectionTestBuffers unsupported_const_buffers;
     VmParserResult result;
     VmParserResult scalar_result;
+    VmParserResult const_uninitialized_result;
+    VmParserResult malformed_const_result;
+    VmParserResult unsupported_const_result;
     Vm vm;
     VmExecStatus exec_status = VM_EXEC_STATUS_OK;
     uint32_t eax = 0U;
@@ -2023,6 +2033,49 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     failures += expect_u32(buffers.data_image[16], 1U, ".data bytes should follow .DATA? bytes");
     failures += expect_u32(buffers.const_image[0], 10U, ".CONST bytes should be initialized");
     failures += expect_u32(buffers.symbols[2].address, VM_MEMORY_DEFAULT_CONST_BASE, ".CONST symbol should use const region base");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "x DWORD ?\n"
+        "buf BYTE 16 DUP(?)\n"
+        "words WORD 4 DUP(?)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &const_uninitialized_buffers,
+        &const_uninitialized_result), VM_PARSER_STATUS_OK, "Phase 57I .CONST ? and DUP(?) storage should parse");
+    failures += expect_size(const_uninitialized_result.symbol_count, 3U, "Phase 57I .CONST source should emit three symbols");
+    failures += expect_size(const_uninitialized_result.const_size, 28U, "Phase 57I .CONST uninitialized storage should occupy expected bytes");
+    failures += expect_u32((uint32_t)const_uninitialized_buffers.symbols[0].section, (uint32_t)VM_SYMBOL_SECTION_CONST, ".CONST ? symbol should be in .CONST");
+    failures += expect_u32(const_uninitialized_buffers.symbols[0].has_uninitialized_storage ? 1U : 0U, 1U, ".CONST ? symbol should retain uninitialized-origin metadata");
+    failures += expect_u32(const_uninitialized_buffers.symbols[1].element_count, 16U, ".CONST BYTE DUP(?) should count elements");
+    failures += expect_u32(const_uninitialized_buffers.symbols[2].element_count, 4U, ".CONST WORD DUP(?) should count elements");
+    failures += expect_u8(const_uninitialized_buffers.const_image[0], 0U, ".CONST ? visible bytes should default to zero");
+    failures += expect_u8(const_uninitialized_buffers.const_initialized_mask[0], 0U, ".CONST ? mask should mark uninitialized-origin bytes");
+    failures += expect_u8(const_uninitialized_buffers.const_initialized_mask[27], 0U, ".CONST DUP(?) mask should mark final byte uninitialized-origin");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "bad BYTE 0 DUP(?)\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &malformed_const_buffers,
+        &malformed_const_result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57I malformed .CONST DUP(?) should still be rejected");
+    failures += expect_parser_diagnostic_code(malformed_const_buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_DUP, "Malformed .CONST DUP(?) diagnostic should remain invalid-dup");
+
+    failures += expect_parser_status(parse_for_test(
+        ".CONST\n"
+        "bad SBYTE 128\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &unsupported_const_buffers,
+        &unsupported_const_result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57I unsupported .CONST initializer values should still be rejected");
+    failures += expect_parser_diagnostic_code(unsupported_const_buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "Unsupported .CONST initializer diagnostic should remain number-out-of-range");
 
     failures += expect_parser_status(parse_for_test(
         ".DATA?\n"
@@ -2197,13 +2250,21 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     const_uninitialized_json = masm32_sim_wasm_run_source_json(
         ".CONST\n"
         "limit DWORD ?\n"
+        "buf BYTE 4 DUP(?)\n"
+        "words WORD 2 DUP(?)\n"
         ".code\n"
         "main PROC\n"
+        "    mov eax, limit\n"
+        "    mov bl, buf\n"
+        "    mov cx, words\n"
         "main ENDP\n"
         "END main\n"
     );
-    failures += expect_json_contains(const_uninitialized_json, "\"ok\":false", ".CONST uninitialized storage should be rejected");
-    failures += expect_json_contains(const_uninitialized_json, ".CONST declarations require initialized values", ".CONST ? rejection should explain initialized requirement");
+    failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"I\"", ".CONST uninitialized source-run should report Phase 57I");
+    failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
+    failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
+    failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");
 
     return failures;
 }

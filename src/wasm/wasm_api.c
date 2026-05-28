@@ -70,11 +70,11 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 57U
 
-/// Suffix for the current Phase 57G runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "G"
+/// Suffix for the current Phase 57I runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "I"
 
-/// Full name of the current Phase 57G runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57G - Seeded Random Uninitialized Storage Mode"
+/// Full name of the current Phase 57I runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57I - .CONST Uninitialized Storage Acceptance"
 
 /// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
@@ -362,6 +362,10 @@ typedef struct Masm32SimWasmRunStorage {
     size_t data_initialized_mask_size;
     /// Constant image bytes emitted by the parser for `.CONST`.
     uint8_t const_image[MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES];
+    /// Per-byte initialization mask for `.CONST` bytes.
+    uint8_t const_initialized_mask[MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES];
+    /// Number of `.CONST` bytes covered by @ref const_initialized_mask.
+    size_t const_initialized_mask_size;
     /// Symbol-aware memory changes collected during execution.
     Masm32SimSymbolicMemoryChange memory_changes[MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES];
     /// Number of valid entries in @ref memory_changes.
@@ -468,35 +472,82 @@ static uint32_t masm32_sim_wasm_seeded_startup_next_u32(uint32_t *state) {
     return value;
 }
 
-/// Applies Phase 57G seeded visible bytes to uninitialized-origin `.data` storage.
+/// Applies seeded visible bytes to one uninitialized-origin section image.
 ///
 /// The initialization mask remains unchanged: only bytes whose mask value is 0
 /// receive deterministic seeded visible values. Initialized bytes keep their
-/// parser-encoded values, and `.CONST` bytes are not inspected by this helper.
+/// parser-encoded values.
 ///
-/// @param storage Source-run storage containing data image and initialization mask.
+/// @param image Section image bytes to mutate.
+/// @param image_capacity Number of bytes available in @p image.
+/// @param initialized_mask Per-byte initialized-state mask.
+/// @param mask_size Number of bytes covered by @p initialized_mask.
+/// @param state Mutable deterministic startup stream state.
+/// @param value Cached 32-bit stream value.
+/// @param byte_index Next byte index within @p value.
+static void masm32_sim_wasm_seed_uninitialized_storage_image(
+    uint8_t *image,
+    size_t image_capacity,
+    const uint8_t *initialized_mask,
+    size_t mask_size,
+    uint32_t *state,
+    uint32_t *value,
+    uint8_t *byte_index
+) {
+    size_t index = 0U;
+
+    if (image == NULL || initialized_mask == NULL || state == NULL || value == NULL || byte_index == NULL) {
+        return;
+    }
+
+    for (index = 0U; index < mask_size && index < image_capacity; index += 1U) {
+        if (initialized_mask[index] != MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
+            continue;
+        }
+        if (*byte_index >= 4U) {
+            *value = masm32_sim_wasm_seeded_startup_next_u32(state);
+            *byte_index = 0U;
+        }
+        image[index] = (uint8_t)((*value >> (8U * (*byte_index))) & 0xFFU);
+        *byte_index = (uint8_t)(*byte_index + 1U);
+    }
+}
+
+/// Applies Phase 57G/57I seeded visible bytes to uninitialized-origin storage.
+///
+/// Phase 57G introduced seeded visible bytes for `.data`/`.DATA?`
+/// uninitialized-origin storage. Phase 57I extends the same stream to accepted
+/// `.CONST ?` and `.CONST DUP(?)` bytes while preserving read-only protection.
+///
+/// @param storage Source-run storage containing section images and initialization masks.
 /// @param seed Deterministic startup-state seed.
 static void masm32_sim_wasm_seed_uninitialized_storage_visible_bytes(Masm32SimWasmRunStorage *storage, uint32_t seed) {
     uint32_t state = seed;
     uint32_t value = 0U;
     uint8_t byte_index = 4U;
-    size_t index = 0U;
 
     if (storage == NULL) {
         return;
     }
 
-    for (index = 0U; index < storage->data_initialized_mask_size && index < (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES; index += 1U) {
-        if (storage->data_initialized_mask[index] != MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
-            continue;
-        }
-        if (byte_index >= 4U) {
-            value = masm32_sim_wasm_seeded_startup_next_u32(&state);
-            byte_index = 0U;
-        }
-        storage->data_image[index] = (uint8_t)((value >> (8U * byte_index)) & 0xFFU);
-        byte_index += 1U;
-    }
+    masm32_sim_wasm_seed_uninitialized_storage_image(
+        storage->data_image,
+        (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES,
+        storage->data_initialized_mask,
+        storage->data_initialized_mask_size,
+        &state,
+        &value,
+        &byte_index
+    );
+    masm32_sim_wasm_seed_uninitialized_storage_image(
+        storage->const_image,
+        (size_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES,
+        storage->const_initialized_mask,
+        storage->const_initialized_mask_size,
+        &state,
+        &value,
+        &byte_index
+    );
 }
 
 /// Returns the startup-state notice message for Phase 57F and Phase 57G startup modes.
@@ -822,6 +873,57 @@ static bool masm32_sim_json_append_registers(Masm32SimJsonWriter *writer, const 
 
     for (index = 0U; index < sizeof(registers) / sizeof(registers[0]); index += 1U) {
         if (!masm32_sim_json_append_register(writer, cpu, registers[index], index == 0U)) {
+            return false;
+        }
+    }
+
+    return masm32_sim_json_append(writer, "}");
+}
+
+
+/// Appends register-family write metadata used by final-register display markers.
+///
+/// @param writer Writer to mutate.
+/// @param cpu CPU state to inspect.
+/// @return true when the metadata object fit without overflowing the buffer.
+static bool masm32_sim_json_append_register_write_metadata(Masm32SimJsonWriter *writer, const VmCpu *cpu) {
+    static const VmRegister registers[] = {
+        VM_REGISTER_EAX,
+        VM_REGISTER_EBX,
+        VM_REGISTER_ECX,
+        VM_REGISTER_EDX,
+        VM_REGISTER_ESI,
+        VM_REGISTER_EDI,
+        VM_REGISTER_EBP,
+        VM_REGISTER_ESP,
+        VM_REGISTER_EIP,
+        VM_REGISTER_EFLAGS
+    };
+    size_t index = 0U;
+
+    if (writer == NULL || cpu == NULL) {
+        return false;
+    }
+
+    if (!masm32_sim_json_append(writer, "\"registerWrites\":{")) {
+        return false;
+    }
+
+    for (index = 0U; index < sizeof(registers) / sizeof(registers[0]); index += 1U) {
+        bool was_written = false;
+        const char *name = vm_cpu_register_name(registers[index]);
+
+        if (name == NULL || !vm_cpu_register_family_was_written(cpu, registers[index], &was_written)) {
+            return false;
+        }
+
+        if (index != 0U && !masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, name)) {
+            return false;
+        }
+        if (!masm32_sim_json_append(writer, ":%s", was_written ? "true" : "false")) {
             return false;
         }
     }
@@ -2886,9 +2988,42 @@ static bool masm32_sim_wasm_rotate_has_undefined_modeled_flags(
     return true;
 }
 
+/// Counts uninitialized-origin bytes in one section mask.
+///
+/// @param mask Per-byte initialized-state mask for the section.
+/// @param mask_size Number of bytes available in @p mask.
+/// @param offset Offset of the read start within the section.
+/// @param size_bytes Number of bytes requested by the read.
+/// @return Number of tracked bytes that remain uninitialized-origin.
+static uint32_t masm32_sim_wasm_count_uninitialized_bytes_in_mask(
+    const uint8_t *mask,
+    size_t mask_size,
+    uint32_t offset,
+    uint32_t size_bytes
+) {
+    uint32_t index = 0U;
+    uint32_t uninitialized_count = 0U;
+    uint32_t tracked_size_bytes = size_bytes;
+
+    if (mask == NULL || size_bytes == 0U || offset >= mask_size) {
+        return 0U;
+    }
+    if ((uint64_t)offset + (uint64_t)tracked_size_bytes > (uint64_t)mask_size) {
+        tracked_size_bytes = (uint32_t)(mask_size - (size_t)offset);
+    }
+
+    for (index = 0U; index < tracked_size_bytes; index += 1U) {
+        if (mask[(size_t)offset + (size_t)index] == MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
+            uninitialized_count += 1U;
+        }
+    }
+
+    return uninitialized_count;
+}
+
 /// Counts bytes in a planned read that are still marked uninitialized-origin.
 ///
-/// @param storage Source-run storage containing the initialization mask.
+/// @param storage Source-run storage containing initialization masks.
 /// @param address Effective simulated read address.
 /// @param size_bytes Number of bytes in the read range.
 /// @param layout_policy Selected layout policy, or NULL for the fixed default.
@@ -2902,8 +3037,8 @@ static uint32_t masm32_sim_wasm_count_uninitialized_read_bytes(
     VmLayoutPolicy default_policy;
     const VmLayoutPolicy *effective_policy = layout_policy;
     const VmLayoutRegionPolicy *data_region = NULL;
+    const VmLayoutRegionPolicy *const_region = NULL;
     uint32_t offset = 0U;
-    uint32_t index = 0U;
 
     if (storage == NULL || size_bytes == 0U) {
         return 0U;
@@ -2914,30 +3049,28 @@ static uint32_t masm32_sim_wasm_count_uninitialized_read_bytes(
     }
 
     data_region = &effective_policy->regions[VM_LAYOUT_REGION_DATA];
-    if (address < data_region->base || address >= data_region->limit) {
-        return 0U;
+    if (address >= data_region->base && address < data_region->limit) {
+        offset = address - data_region->base;
+        return masm32_sim_wasm_count_uninitialized_bytes_in_mask(
+            storage->data_initialized_mask,
+            storage->data_initialized_mask_size,
+            offset,
+            size_bytes
+        );
     }
-    offset = address - data_region->base;
-    if (offset >= storage->data_initialized_mask_size) {
-        return 0U;
+
+    const_region = &effective_policy->regions[VM_LAYOUT_REGION_CONST];
+    if (address >= const_region->base && address < const_region->limit) {
+        offset = address - const_region->base;
+        return masm32_sim_wasm_count_uninitialized_bytes_in_mask(
+            storage->const_initialized_mask,
+            storage->const_initialized_mask_size,
+            offset,
+            size_bytes
+        );
     }
 
-    {
-        uint32_t uninitialized_count = 0U;
-        uint32_t tracked_size_bytes = size_bytes;
-
-        if ((uint64_t)offset + (uint64_t)tracked_size_bytes > (uint64_t)storage->data_initialized_mask_size) {
-            tracked_size_bytes = storage->data_initialized_mask_size - offset;
-        }
-
-        for (index = 0U; index < tracked_size_bytes; index += 1U) {
-            if (storage->data_initialized_mask[(size_t)offset + (size_t)index] == MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED) {
-                uninitialized_count += 1U;
-            }
-        }
-
-        return uninitialized_count;
-    }
+    return 0U;
 }
 
 /// Fills one uninitialized-read diagnostic from a planned read.
@@ -4714,13 +4847,24 @@ static bool masm32_sim_json_append_layout_metadata(Masm32SimJsonWriter *writer, 
 ///
 /// @param writer Writer to mutate.
 /// @param storage Source-run storage containing object entries and byte masks.
+/// @param layout_policy Selected layout policy, or NULL for the fixed default.
 /// @return true when the metadata was omitted or appended successfully.
-static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *writer, const Masm32SimWasmRunStorage *storage) {
+static bool masm32_sim_json_append_uninitialized_metadata(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage,
+    const VmLayoutPolicy *layout_policy
+) {
     size_t index = 0U;
     bool has_object = false;
+    VmLayoutPolicy default_policy;
+    const VmLayoutPolicy *effective_policy = layout_policy;
 
     if (writer == NULL || storage == NULL) {
         return false;
+    }
+    if (effective_policy == NULL) {
+        default_policy = vm_layout_default_policy();
+        effective_policy = &default_policy;
     }
 
     if (!masm32_sim_json_append(writer, ",\"uninitializedOrigin\":{\"tracked\":true,\"objects\":[")) {
@@ -4729,17 +4873,27 @@ static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *w
 
     for (index = 0U; index < storage->object_map_entry_count; index += 1U) {
         const VmObjectMapEntry *object = &storage->object_map_entries[index];
+        const uint8_t *mask = NULL;
+        size_t mask_size = 0U;
+        uint32_t mask_base = 0U;
+        uint32_t mask_offset = 0U;
         uint32_t byte_index = 0U;
-        uint32_t data_offset = 0U;
 
         if (object->section == VM_SYMBOL_SECTION_CONST) {
+            mask = storage->const_initialized_mask;
+            mask_size = storage->const_initialized_mask_size;
+            mask_base = effective_policy->regions[VM_LAYOUT_REGION_CONST].base;
+        } else {
+            mask = storage->data_initialized_mask;
+            mask_size = storage->data_initialized_mask_size;
+            mask_base = effective_policy->regions[VM_LAYOUT_REGION_DATA].base;
+        }
+
+        if (mask == NULL || object->base_address < mask_base) {
             continue;
         }
-        if (object->base_address < VM_MEMORY_DEFAULT_DATA_BASE) {
-            continue;
-        }
-        data_offset = object->base_address - VM_MEMORY_DEFAULT_DATA_BASE;
-        if ((uint64_t)data_offset + (uint64_t)object->size_bytes > (uint64_t)storage->data_initialized_mask_size) {
+        mask_offset = object->base_address - mask_base;
+        if ((uint64_t)mask_offset + (uint64_t)object->size_bytes > (uint64_t)mask_size) {
             continue;
         }
 
@@ -4752,7 +4906,7 @@ static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *w
             uint32_t initialized_count = 0U;
             uint32_t uninitialized_count = 0U;
             for (byte_index = 0U; byte_index < object->size_bytes; byte_index += 1U) {
-                if (storage->data_initialized_mask[(size_t)data_offset + (size_t)byte_index] != 0U) {
+                if (mask[(size_t)mask_offset + (size_t)byte_index] != 0U) {
                     initialized_count += 1U;
                 }
             }
@@ -4774,7 +4928,7 @@ static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *w
                 if (!masm32_sim_json_append(
                         writer,
                         "%c",
-                        storage->data_initialized_mask[(size_t)data_offset + (size_t)byte_index] != 0U ? '1' : '0'
+                        mask[(size_t)mask_offset + (size_t)byte_index] != 0U ? '1' : '0'
                     )) {
                     return false;
                 }
@@ -4785,6 +4939,7 @@ static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *w
             return false;
         }
     }
+
 
     return masm32_sim_json_append(writer, "]}");
 }
@@ -4850,11 +5005,13 @@ static const char *masm32_sim_wasm_build_run_json(
     if (vm != NULL) {
         (void)masm32_sim_json_append_registers(&writer, &vm->cpu);
         (void)masm32_sim_json_append(&writer, ",");
+        (void)masm32_sim_json_append_register_write_metadata(&writer, &vm->cpu);
+        (void)masm32_sim_json_append(&writer, ",");
     }
 
     (void)masm32_sim_json_append_memory_changes(&writer, storage);
     if (include_uninitialized_metadata) {
-        (void)masm32_sim_json_append_uninitialized_metadata(&writer, storage);
+        (void)masm32_sim_json_append_uninitialized_metadata(&writer, storage, layout_policy);
     }
     (void)masm32_sim_json_append(&writer, ",");
 
@@ -5398,6 +5555,8 @@ static bool masm32_sim_wasm_build_declared_object_map(
         runtime_policy,
         storage->data_initialized_mask,
         storage->data_initialized_mask_size,
+        storage->const_initialized_mask,
+        storage->const_initialized_mask_size,
         storage->object_map_entries,
         (size_t)MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES,
         &storage->object_map_entry_count
@@ -5504,12 +5663,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     config.data_initialized_mask_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
     config.const_image = g_masm32_sim_wasm_run_storage.const_image;
     config.const_image_capacity = (size_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES;
+    config.const_initialized_mask = g_masm32_sim_wasm_run_storage.const_initialized_mask;
+    config.const_initialized_mask_capacity = (size_t)MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES;
     config.diagnostics = g_masm32_sim_wasm_run_storage.parser_diagnostics;
     config.diagnostic_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PARSER_DIAGNOSTICS;
     config.suppress_compatibility_notices = compatibility_notice_setting == MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF;
 
     parser_status = vm_parser_parse_program(&config, &parser_result);
     g_masm32_sim_wasm_run_storage.data_initialized_mask_size = parser_result.data_size;
+    g_masm32_sim_wasm_run_storage.const_initialized_mask_size = parser_result.const_size;
     g_masm32_sim_wasm_run_storage.data_section_image_size = (uint32_t)parser_result.data_size;
     g_masm32_sim_wasm_run_storage.const_section_image_size = (uint32_t)parser_result.const_size;
     if ((parser_status != VM_PARSER_STATUS_OK && parser_status != VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS) ||

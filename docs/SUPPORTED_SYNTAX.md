@@ -1,20 +1,20 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57G - Seeded Random Uninitialized Storage Mode
+Phase 57I - .CONST Uninitialized Storage Acceptance
 
 Runtime/source-run MASM behavior phase:
-Phase 57G - Seeded Random Uninitialized Storage Mode
+Phase 57I - .CONST Uninitialized Storage Acceptance
 
-Phase 57G adds opt-in deterministic seeded startup for visible bytes in uninitialized-origin storage while preserving uninitialized-origin metadata, Program Console output, initialized `.data` bytes, initialized `.CONST` bytes, and existing instruction semantics. Phase 57F remains the accepted seeded register/flag startup milestone, Phase 57E remains the accepted startup-state notice and zero-default documentation milestone, Phase 57D remains the accepted existing diagnostic-policy migration, Phase 57C remains the accepted diagnostic-policy registry design, Phase 57B remains the accepted milestone-history and build-documentation extraction, Phase 57A remains the accepted README landing-page cleanup, Phase 57-CORR2 remains the accepted compact negative register-indirect displacement parser correction, and Phase 57-CORR1 remains the accepted diagnostic-context clarification for fatal `region-boundary-crossing` Simulator Messages on cross-region reads and writes whose requested final byte range intersects protected `.CONST` storage.
+Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. Reads are allowed when the final address/range is valid, writes remain blocked by existing `.CONST` protection, and the existing uninitialized-read diagnostic policy applies when those bytes are read. Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, Phase 57F seeded register/flag startup, Phase 57E startup-state notices, Phase 57D diagnostic-policy migration, Phase 57C diagnostic-policy registry design, Phase 57B documentation extraction, Phase 57A README cleanup, Phase 57-CORR2 compact negative register-indirect displacement parsing, and Phase 57-CORR1 protected-region diagnostic clarification remain accepted behavior.
 
-This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV. The current runtime/source-run MASM behavior phase is Phase 57G - Seeded Random Uninitialized Storage Mode because Phase 57G adds source-run/test-facing startup configuration for uninitialized-origin storage visible bytes without adding MASM syntax or instruction semantics. This reference also includes Phase 57F seeded register/flag startup, Milestone 52A display formatting, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV. The current runtime/source-run MASM behavior phase is Phase 57I - .CONST Uninitialized Storage Acceptance because Phase 57I changes accepted source declarations while leaving the instruction subset anchored by Phase 57 - Signed IDIV. This reference also includes Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage settings, Phase 57F seeded register/flag startup, Milestone 52A display formatting, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 Historical infrastructure note: Milestone 32 adds fixed memory-layout policy infrastructure only; later layout, diagnostic, and startup settings build on that infrastructure without changing the current instruction subset unless their phase explicitly says so.
 
-### Phase 57F and Phase 57G startup modes
+### Phase 57F, Phase 57G, and Phase 57I startup/data modes
 
-Repository/archive milestone and runtime/source-run MASM behavior phase Phase 57G expose independent source-run/test-facing startup settings:
+Runtime/source-run MASM behavior phase Phase 57I preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
 
 ```text
 startup_register_flag_mode = zero | seeded-random
@@ -26,9 +26,9 @@ Default successful browser/source-run execution keeps the deterministic zero-sta
 
 When `startup_register_flag_mode` is `seeded-random`, the simulator initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the currently modeled flags CF, ZF, SF, and OF from a deterministic pseudo-random stream derived from `startup_state_seed`. EIP remains zero, unmodeled EFLAGS bits remain zero, and modeled flag-validity metadata remains valid.
 
-When `uninitialized_storage_visible_byte_mode` is `seeded-random`, the simulator initializes only visible bytes of storage that still carry uninitialized-origin metadata, including `.DATA?`, scalar `?`, and `DUP(?)` storage. The same source, settings, seed, and input produce the same visible bytes. Different seeds are expected to produce at least one different byte in targeted fixtures.
+When `uninitialized_storage_visible_byte_mode` is `seeded-random`, the simulator initializes only visible bytes of storage that still carry uninitialized-origin metadata, including `.DATA?`, scalar `?`, `DUP(?)`, and Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` storage. The same source, settings, seed, and input produce the same visible bytes. Different seeds are expected to produce at least one different byte in targeted fixtures.
 
-Initialized `.data` and initialized `.CONST` bytes are not randomized. Uninitialized-origin metadata remains preserved, so reads from randomized uninitialized-origin bytes still emit uninitialized-read diagnostics according to the selected policy. `.CONST ?` and `.CONST DUP(?)` remain rejected until Phase 57I - .CONST Uninitialized Storage Acceptance.
+Initialized `.data` and initialized `.CONST` bytes are not randomized. Uninitialized-origin metadata remains preserved, so reads from randomized uninitialized-origin bytes still emit uninitialized-read diagnostics according to the selected policy. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only even when seeded visible bytes are enabled.
 
 ### Phase 57-CORR1 memory diagnostic clarification
 

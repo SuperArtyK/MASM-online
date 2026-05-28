@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -396,10 +396,9 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 
 `.CONST` behavior is mandatory and phase-sensitive:
 
-- Through Phase 57G - Seeded Random Uninitialized Storage Mode, `.CONST` accepts initialized read-only storage only.
-- In the current through-Phase-57G implementation state, `.CONST` declarations using `?` or `DUP(?)` are rejected.
-- Uninitialized-origin storage is represented by the currently implemented non-`.CONST` declaration forms that already accept `?` or `DUP(?)`, especially `.DATA?`.
-- Phase 57I - .CONST Uninitialized Storage Acceptance deliberately changes this compatibility rule. After Phase 57I is implemented, tested, and accepted, `.CONST ?` and `.CONST DUP(?)` are accepted as read-only `.CONST` storage with deterministic visible bytes and preserved uninitialized-origin metadata.
+- Phase 57I - .CONST Uninitialized Storage Acceptance accepts `.CONST ?` and `.CONST DUP(?)` as read-only `.CONST` storage with deterministic visible bytes and preserved uninitialized-origin metadata.
+- `.CONST` declarations using explicit initialized values remain accepted as initialized read-only storage.
+- Uninitialized-origin storage includes `.DATA?`, compatible `.data` `?` / `DUP(?)` declarations, and Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` declarations.
 - Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns configurable declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`.
 - `.CONST` creates read-only storage in every implementation state.
 - `.CONST` must be protected by final effective address range, not only by symbol metadata.
@@ -4216,13 +4215,9 @@ This is display-only metadata. It is not a new CPU semantic feature.
 
 The simulator may accept MASM-compatible uninitialized storage forms in `.CONST` when the implementation guide phase for this compatibility feature is completed.
 
-This section describes planned behavior after the implementation-guide phase for `.CONST` uninitialized storage is completed. It does not retroactively describe current through-Phase-57G behavior.
+Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted. `.CONST ?` and `.CONST DUP(?)` are now accepted compatibility forms. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns future configurable declaration diagnostics for these forms.
 
-Through Phase 57G - Seeded Random Uninitialized Storage Mode, before Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts those forms as compatibility forms. After Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy, declaration-time diagnostics for these forms become configurable according to the documented teaching-diagnostic policy.
-
-Future assistants must not use this section to claim that `.CONST ?` is already supported merely because the repository has advanced past Phase 57 - Signed IDIV. Through Phase 57G - Seeded Random Uninitialized Storage Mode, `.CONST ?` remains unsupported. Current support must be verified against the implementation guide, latest repository state, tests, and milestone evidence.
-
-Supported forms after that phase should include, at minimum:
+Supported forms include, at minimum:
 
 ```asm
 .CONST
@@ -4239,7 +4234,7 @@ Semantics:
 - direct and computed writes to the final byte range remain blocked by mandatory `.CONST` protection;
 - reads from the storage may trigger uninitialized-read diagnostics according to the active uninitialized-read policy.
 
-Because `.CONST ?` is suspicious in educational code, the simulator should provide a configurable diagnostic family:
+Because `.CONST ?` is suspicious in educational code, Phase 57J should provide a configurable diagnostic family:
 
 ```text
 const-uninitialized-storage

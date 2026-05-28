@@ -143,6 +143,38 @@ static bool vm_cpu_flag_has_validity_slot(VmFlag flag) {
     return flag_index >= 0 && flag_index < (int)VM_FLAG_COUNT;
 }
 
+/// Returns the register-family write-tracking bit for one canonical storage field.
+///
+/// @param storage Canonical storage field to map.
+/// @param out_bit Receives the family bit on success.
+/// @return true when @p storage maps to a supported tracked family.
+static bool vm_cpu_register_family_bit_for_storage(VmCpuStorageRegister storage, uint32_t *out_bit) {
+    int storage_index = (int)storage;
+
+    if (out_bit == NULL || storage_index < 0 || storage_index >= 32) {
+        return false;
+    }
+
+    *out_bit = (uint32_t)1U << (unsigned int)storage_index;
+    return true;
+}
+
+/// Marks one canonical register family as written by the executed program.
+///
+/// @param cpu CPU state to mutate.
+/// @param storage Canonical storage family to mark.
+/// @return true when the family was marked; false for invalid arguments.
+static bool vm_cpu_mark_register_family_written(VmCpu *cpu, VmCpuStorageRegister storage) {
+    uint32_t family_bit = 0U;
+
+    if (cpu == NULL || !vm_cpu_register_family_bit_for_storage(storage, &family_bit)) {
+        return false;
+    }
+
+    cpu->written_register_families |= family_bit;
+    return true;
+}
+
 /// Clears undefined-origin metadata for one validity slot and marks it valid.
 ///
 /// @param metadata Metadata slot to mutate.
@@ -380,6 +412,7 @@ void vm_cpu_init(VmCpu *cpu) {
     cpu->eip = 0U;
     cpu->eflags = 0U;
     vm_cpu_mark_all_flags_valid(cpu);
+    vm_cpu_clear_register_write_tracking(cpu);
 }
 
 
@@ -407,6 +440,7 @@ void vm_cpu_init_seeded_registers_and_flags(VmCpu *cpu, uint32_t seed) {
     }
 
     vm_cpu_mark_all_flags_valid(cpu);
+    vm_cpu_clear_register_write_tracking(cpu);
 }
 
 bool vm_cpu_read_register(const VmCpu *cpu, VmRegister reg, uint32_t *out_value) {
@@ -471,6 +505,34 @@ bool vm_cpu_write_register(VmCpu *cpu, VmRegister reg, uint32_t value) {
         vm_cpu_mark_all_flags_valid(cpu);
     }
 
+    return vm_cpu_mark_register_family_written(cpu, metadata->storage);
+}
+
+void vm_cpu_clear_register_write_tracking(VmCpu *cpu) {
+    if (cpu == NULL) {
+        return;
+    }
+
+    cpu->written_register_families = 0U;
+}
+
+bool vm_cpu_register_family_was_written(const VmCpu *cpu, VmRegister reg, bool *out_was_written) {
+    const VmCpuRegisterMetadata *metadata = NULL;
+    uint32_t family_bit = 0U;
+
+    if (cpu == NULL || out_was_written == NULL) {
+        return false;
+    }
+
+    if (!vm_cpu_get_register_metadata(reg, &metadata)) {
+        return false;
+    }
+
+    if (!vm_cpu_register_family_bit_for_storage(metadata->storage, &family_bit)) {
+        return false;
+    }
+
+    *out_was_written = (cpu->written_register_families & family_bit) != 0U;
     return true;
 }
 
@@ -536,7 +598,7 @@ bool vm_cpu_write_flag(VmCpu *cpu, VmFlag flag, bool is_set) {
         cpu->eflags &= ~metadata->mask;
     }
 
-    return vm_cpu_mark_flag_valid(cpu, flag);
+    return vm_cpu_mark_flag_valid(cpu, flag) && vm_cpu_mark_register_family_written(cpu, VM_CPU_STORAGE_EFLAGS);
 }
 
 bool vm_cpu_set_flag(VmCpu *cpu, VmFlag flag) {

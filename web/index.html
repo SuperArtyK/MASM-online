@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the Phase 57G source-run UI shell: source editing, Run button,
-  final register display, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
-  execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, and compatibility notice policies. Phase 57G startup storage randomization is source-run/protocol-facing and does not add browser UI controls.
+  This page provides the Phase 57I source-run UI shell: source editing, Run button,
+  final register display with unchanged parent-row markers, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and
+  execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, and compatibility notice policies. Phase 57G startup storage randomization remains source-run/protocol-facing and does not add browser UI controls.
 -->
 <html lang="en">
   <head>
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Phase 57G: signed IDIV remains the current instruction subset; the runtime also supports opt-in seeded register/flag startup and seeded uninitialized-storage visible bytes through source-run settings.</p>
+        <p class="muted">Phase 57I: signed IDIV remains the current instruction subset; .CONST now accepts read-only ? and DUP(?) storage, final registers mark untouched parent families with [unchanged], and source-run settings support opt-in seeded register/flag startup plus seeded uninitialized-storage visible bytes.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57G startup storage mode.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57I .CONST uninitialized storage acceptance.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -7769,6 +7769,120 @@ static int test_phase57e_invalid_startup_state_notice_setting(void) {
     return failures;
 }
 
+/// Verifies Phase 57H reports no program register-family writes for a no-instruction run.
+///
+/// @return Number of failures.
+static int test_phase57h_register_write_metadata_no_register_writes(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":false", "No-instruction run should report EAX family as unwritten");
+    failures += expect_json_contains(json, "\"EBX\":false", "No-instruction run should report EBX family as unwritten");
+    failures += expect_json_contains(json, "\"ECX\":false", "No-instruction run should report ECX family as unwritten");
+    failures += expect_json_contains(json, "\"EDX\":false", "No-instruction run should report EDX family as unwritten");
+    failures += expect_json_contains(json, "\"ESI\":false", "No-instruction run should report ESI family as unwritten");
+    failures += expect_json_contains(json, "\"EDI\":false", "No-instruction run should report EDI family as unwritten");
+    failures += expect_json_contains(json, "\"EBP\":false", "No-instruction run should report EBP family as unwritten");
+    failures += expect_json_contains(json, "\"ESP\":false", "No-instruction run should report ESP family as unwritten");
+    failures += expect_json_contains(json, "\"EIP\":false", "No-instruction run should report EIP family as unwritten");
+    failures += expect_json_contains(json, "\"EFLAGS\":false", "No-instruction run should report EFLAGS family as unwritten");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Phase 57H metadata should not remove the startup-state notice");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 57H metadata should not remove execution-complete messages");
+    failures += expect_json_not_contains(json, "programConsole", "Phase 57H metadata should not add Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57H write tracking treats same-value parent writes as changed.
+///
+/// @return Number of failures.
+static int test_phase57h_register_write_metadata_same_value_parent_write(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Same-value MOV should leave EAX final value at zero");
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "Same-value MOV should mark EAX family as written");
+    failures += expect_json_contains(json, "\"EBX\":false", "Unwritten EBX family should remain marked false");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Same-value write metadata should preserve startup-state notice output");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Same-value write metadata should preserve execution-complete output");
+    failures += expect_json_not_contains(json, "programConsole", "Same-value write metadata should not add Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57H write tracking maps alias writes to canonical families.
+///
+/// @return Number of failures.
+static int test_phase57h_register_write_metadata_alias_writes(void) {
+    int failures = 0;
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov ax, 0\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AX write should mark EAX family as written");
+
+    json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov ah, 0\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AH write should mark EAX family as written");
+
+    json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov al, 0\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AL write should mark EAX family as written");
+
+    json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov si, 0\n"
+        "    mov sp, 0\n"
+        "END main\n"
+    );
+    failures += expect_json_contains(json, "\"ESI\":true", "SI write should mark ESI family as written");
+    failures += expect_json_contains(json, "\"ESP\":true", "SP write should mark ESP family as written");
+    failures += expect_json_contains(json, "\"EAX\":false", "Alias writes to SI/SP should not mark EAX");
+
+    return failures;
+}
+
+/// Verifies Phase 57H startup initialization does not count as a program write.
+///
+/// @return Number of failures.
+static int test_phase57h_seeded_startup_not_counted_as_program_write(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        123456789U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":false", "Seeded startup should not mark EAX as program-written");
+    failures += expect_json_contains(json, "\"EFLAGS\":false", "Seeded startup should not mark EFLAGS as program-written");
+    failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup fixture should still prove final values are not value-equality markers");
+
+    return failures;
+}
+
 /// Verifies Phase 57G status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
@@ -7780,9 +7894,9 @@ static int test_phase57g_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "Phase 57G should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"G\"", "Phase 57G should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57G - Seeded Random Uninitialized Storage Mode\"", "Phase 57G should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"I\"", "Phase 57I should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57I - .CONST Uninitialized Storage Acceptance\"", "Phase 57I should report the runtime phase name");
 
     return failures;
 }
@@ -8138,6 +8252,114 @@ static int test_phase57g_seeded_uninitialized_storage_preserves_each_origin_clas
     failures += expect_json_not_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".DATA? visible bytes should be seeded for this fixture seed");
     failures += expect_json_not_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Scalar ? visible bytes should be seeded for this fixture seed");
     failures += expect_json_not_contains(json, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "DUP(?) visible bytes should be seeded for this fixture seed");
+
+    return failures;
+}
+
+/// Verifies Phase 57I accepts `.CONST ?` as read-only uninitialized-origin storage.
+///
+/// @return Number of failures.
+static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void) {
+    char zero_copy[TEST_JSON_COPY_CAPACITY];
+    char seeded_copy[TEST_JSON_COPY_CAPACITY];
+    char direct_write_copy[TEST_JSON_COPY_CAPACITY];
+    char computed_write_copy[TEST_JSON_COPY_CAPACITY];
+    char strict_read_copy[TEST_JSON_COPY_CAPACITY];
+    const char *zero_json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        "buf BYTE 4 DUP(?)\n"
+        "ready DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, limit\n"
+        "    mov ebx, DWORD PTR buf\n"
+        "    mov ecx, ready\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
+    );
+    const char *seeded_json = NULL;
+    const char *direct_write_json = NULL;
+    const char *computed_write_json = NULL;
+    const char *strict_read_json = NULL;
+    copy_source_run_json(zero_copy, sizeof(zero_copy), zero_json);
+    seeded_json = masm32_sim_wasm_run_source_json_with_startup_modes(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        "ready DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, limit\n"
+        "    mov ebx, ready\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    copy_source_run_json(seeded_copy, sizeof(seeded_copy), seeded_json);
+    direct_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov limit, 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    copy_source_run_json(direct_write_copy, sizeof(direct_write_copy), direct_write_json);
+    computed_write_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    mov DWORD PTR [eax], 1\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    copy_source_run_json(computed_write_copy, sizeof(computed_write_copy), computed_write_json);
+    strict_read_json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".CONST\n"
+        "limit DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1234h\n"
+        "    mov ebx, limit\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
+    );
+    copy_source_run_json(strict_read_copy, sizeof(strict_read_copy), strict_read_json);
+    int failures = 0;
+
+    failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"I\"", "Phase 57I .CONST ? fixture should report runtime suffix I");
+    failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
+    failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
+    failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
+    failures += expect_json_contains(zero_copy, "from limit + 0; 4 of those bytes still originated from uninitialized storage", ".CONST ? read should emit existing uninitialized-read warning");
+    failures += expect_json_contains(zero_copy, "from buf + 0; 4 of those bytes still originated from uninitialized storage", ".CONST DUP(?) read should emit existing uninitialized-read warning");
+    failures += expect_json_contains(zero_copy, "\"symbol\":\"limit\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", ".CONST ? should expose uninitialized-origin metadata in test-only JSON");
+    failures += expect_json_contains(zero_copy, "\"symbol\":\"ready\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "Initialized .CONST should expose initialized metadata");
+    failures += expect_json_contains(seeded_copy, "\"ok\":true", "Phase 57I seeded .CONST ? fixture should execute");
+    failures += expect_json_not_contains(seeded_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded uninitialized-storage mode should affect .CONST ? visible bytes");
+    failures += expect_json_contains(seeded_copy, "\"EBX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Seeded mode should not affect initialized .CONST bytes");
+    failures += expect_json_contains(seeded_copy, "from limit + 0; 4 of those bytes still originated from uninitialized storage", "Seeded .CONST ? read should preserve uninitialized-origin diagnostics");
+    failures += expect_json_contains(direct_write_copy, "\"ok\":false", "Direct write to .CONST ? should fail");
+    failures += expect_json_contains(direct_write_copy, "\"status\":\"parse-error\"", "Direct write to .CONST ? should fail during parsing when static detection applies");
+    failures += expect_json_contains(direct_write_copy, "\"code\":\"const-write\"", "Direct write to .CONST ? should use existing const-write diagnostic");
+    failures += expect_json_not_contains(direct_write_copy, "const-uninitialized-storage", "Phase 57I direct write should not activate Phase 57J diagnostic family");
+    failures += expect_json_contains(computed_write_copy, "\"ok\":false", "Computed write to .CONST ? should fail");
+    failures += expect_json_contains(computed_write_copy, "\"status\":\"execution-error\"", "Computed write to .CONST ? should fail at runtime");
+    failures += expect_json_contains(computed_write_copy, "\"code\":\"permission-denied\"", "Computed write to .CONST ? should use existing permission diagnostic");
+    failures += expect_json_contains(computed_write_copy, "\"memoryChanges\":[]", "Failed computed write to .CONST ? should not commit memory changes");
+    failures += expect_json_not_contains(computed_write_copy, "uninitialized-read", "Computed write to .CONST ? should not be reclassified as an uninitialized read");
+    failures += expect_json_contains(strict_read_copy, "\"ok\":false", "Strict .CONST ? read should stop execution");
+    failures += expect_json_contains(strict_read_copy, "\"code\":\"uninitialized-read\"", "Strict .CONST ? read should use existing uninitialized-read diagnostic");
+    failures += expect_json_contains(strict_read_copy, "\"EAX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "Strict .CONST ? read should preserve prior completed instruction state");
+    failures += expect_json_contains(strict_read_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Strict .CONST ? read should stop before mutating consumer register");
+    failures += expect_json_not_contains(strict_read_copy, "execution-complete", "Strict .CONST ? read should not emit execution-complete");
 
     return failures;
 }
@@ -9101,6 +9323,10 @@ int main(void) {
     failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
     failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
     failures += test_phase57e_invalid_startup_state_notice_setting();
+    failures += test_phase57h_register_write_metadata_no_register_writes();
+    failures += test_phase57h_register_write_metadata_same_value_parent_write();
+    failures += test_phase57h_register_write_metadata_alias_writes();
+    failures += test_phase57h_seeded_startup_not_counted_as_program_write();
     failures += test_phase57g_source_run_phase_metadata();
     failures += test_phase57f_zero_mode_seed_does_not_randomize();
     failures += test_phase57f_seeded_startup_is_deterministic();
@@ -9113,6 +9339,7 @@ int main(void) {
     failures += test_phase57g_seeded_uninitialized_storage_is_deterministic();
     failures += test_phase57g_different_seeds_change_uninitialized_storage();
     failures += test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class();
+    failures += test_phase57i_const_uninitialized_storage_acceptance_source_run();
     failures += test_phase57g_startup_axes_are_orthogonal();
     failures += test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage();
     failures += test_phase57g_seeded_uninitialized_storage_strict_read_stops();
@@ -9139,6 +9366,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57G seeded uninitialized-storage startup coverage passed.");
+    puts("Source execution tests through Phase 57I .CONST uninitialized storage acceptance coverage passed.");
     return 0;
 }

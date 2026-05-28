@@ -2041,7 +2041,7 @@ static bool vm_parser_data_has_capacity(VmParserState *state, const VmLexerToken
     return true;
 }
 
-/// Returns the active .data/.DATA? initialization mask, if one was configured.
+/// Returns the active data-like initialization mask, if one was configured.
 ///
 /// @param state Parser state to inspect.
 /// @param out_mask Receives the mask pointer, or NULL when tracking is disabled.
@@ -2057,7 +2057,14 @@ static bool vm_parser_get_active_data_initialized_mask(VmParserState *state, uin
     if (state == NULL || state->config == NULL || out_mask == NULL || out_capacity == NULL) {
         return false;
     }
-    if (state->section == VM_PARSER_SECTION_CONST || state->config->data_initialized_mask == NULL) {
+    if (state->section == VM_PARSER_SECTION_CONST) {
+        if (state->config->const_initialized_mask != NULL) {
+            *out_mask = state->config->const_initialized_mask;
+            *out_capacity = state->config->const_initialized_mask_capacity;
+        }
+        return true;
+    }
+    if (state->config->data_initialized_mask == NULL) {
         return true;
     }
 
@@ -3014,12 +3021,6 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
-    if (symbol_section == VM_SYMBOL_SECTION_CONST && has_uninitialized) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, name_token, ".CONST declarations require initialized values, not ?.");
-        vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
-        return false;
-    }
-
     if (symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED && !all_initializers_uninitialized) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_DATA_INITIALIZER, name_token, ".DATA? declarations must use ? or DUP(?) uninitialized storage.");
         vm_parser_restore_active_data_offset(state, start_offset, start_data_size);
@@ -3044,7 +3045,8 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     symbol.size_bytes = vm_parser_active_data_offset(state) - start_offset;
     symbol.element_count = total_elements;
     symbol.has_uninitialized_initializer = has_uninitialized;
-    symbol.has_uninitialized_storage = symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED;
+    symbol.has_uninitialized_storage = symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED ||
+        (symbol_section == VM_SYMBOL_SECTION_CONST && has_uninitialized);
     state->config->symbols[state->result->symbol_count] = symbol;
     state->result->symbol_count += 1U;
 
@@ -7277,7 +7279,9 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->source_text_storage == NULL && config->source_text_capacity > 0U) ||
         (config->symbols == NULL && config->symbol_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
+        (config->data_initialized_mask == NULL && config->data_initialized_mask_capacity > 0U) ||
         (config->const_image == NULL && config->const_image_capacity > 0U) ||
+        (config->const_initialized_mask == NULL && config->const_initialized_mask_capacity > 0U) ||
         (config->diagnostics == NULL && config->diagnostic_capacity > 0U)) {
         vm_parser_init_result(out_result, VM_PARSER_STATUS_INVALID_ARGUMENT);
         return false;
@@ -7309,6 +7313,12 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
     if (config->const_image != NULL && config->const_image_capacity > 0U) {
         memset(config->const_image, 0, config->const_image_capacity);
+    }
+    if (config->data_initialized_mask != NULL && config->data_initialized_mask_capacity > 0U) {
+        memset(config->data_initialized_mask, 0, config->data_initialized_mask_capacity);
+    }
+    if (config->const_initialized_mask != NULL && config->const_initialized_mask_capacity > 0U) {
+        memset(config->const_initialized_mask, 0, config->const_initialized_mask_capacity);
     }
 
     lexer_status = vm_lexer_tokenize(

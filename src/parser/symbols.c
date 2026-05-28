@@ -29,7 +29,7 @@ bool vm_symbol_is_read_only(const VmSymbol *symbol) {
     return symbol != NULL && symbol->section == VM_SYMBOL_SECTION_CONST;
 }
 
-/// Returns whether a symbol originated in deterministic `.DATA?` storage.
+/// Returns whether a symbol originated in accepted uninitialized-origin storage.
 bool vm_symbol_is_uninitialized_storage(const VmSymbol *symbol) {
     return symbol != NULL && symbol->has_uninitialized_storage;
 }

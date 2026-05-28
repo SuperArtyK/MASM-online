@@ -60,10 +60,11 @@ function formatWorkerMessage(message) {
 function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChanges) {
   const messages = Array.isArray(payload.simulatorMessages) ? payload.simulatorMessages : [];
   const registers = payload.registers && typeof payload.registers === "object" ? payload.registers : undefined;
+  const registerWrites = payload.registerWrites && typeof payload.registerWrites === "object" ? payload.registerWrites : undefined;
   const changes = Array.isArray(payload.memoryChanges) ? payload.memoryChanges : [];
 
   setPanelText(simulatorMessages, formatSimulatorMessages(messages));
-  setPanelText(finalRegisters, formatRegisters(registers));
+  setPanelText(finalRegisters, formatRegisters(registers, registerWrites));
   setPanelText(memoryChanges, formatMemoryChanges(changes));
 }
 

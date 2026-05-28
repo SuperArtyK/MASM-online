@@ -2869,6 +2869,43 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
+test("renders Phase 57I CONST uninitialized-read warning exactly", () => {
+  const name = "phase57iConstUninitializedRead";
+  const source = `.CONST
+limit DWORD ?
+.code
+main PROC
+    mov eax, limit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixtureFile(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      sourceLocation: { line: 5, column: null, byteOffset: null, spanLength: null },
+      symbolName: "limit",
+      accessStartAddress: "00600000h",
+      accessEndAddress: "00600003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
 test("renders ROR undefined modeled flag warning exactly", () => {
   const name = "rorUndefinedWarning";
   const source = fixtureSource(name);

@@ -66,6 +66,8 @@ typedef struct ObjectMapTestBuffers {
     uint8_t data_initialized_mask[TEST_OBJECT_DATA_BYTES];
     /// Read-only const image.
     uint8_t const_image[TEST_OBJECT_CONST_BYTES];
+    /// Per-byte initialized-state mask for read-only const image bytes.
+    uint8_t const_initialized_mask[TEST_OBJECT_CONST_BYTES];
 } ObjectMapTestBuffers;
 
 /// Reports an expectation failure and returns one failure count when false.
@@ -172,6 +174,8 @@ static VmParserStatus parse_for_object_map_test(const char *source, ObjectMapTes
     config.data_initialized_mask_capacity = TEST_OBJECT_DATA_BYTES;
     config.const_image = buffers->const_image;
     config.const_image_capacity = TEST_OBJECT_CONST_BYTES;
+    config.const_initialized_mask = buffers->const_initialized_mask;
+    config.const_initialized_mask_capacity = TEST_OBJECT_CONST_BYTES;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_OBJECT_DIAGNOSTICS;
 
@@ -209,6 +213,8 @@ static int build_tracked_object_map(const char *source, ObjectMapTestBuffers *bu
         NULL,
         buffers->data_initialized_mask,
         out_result->data_size,
+        buffers->const_initialized_mask,
+        out_result->const_size,
         buffers->objects,
         TEST_OBJECTS,
         out_count
@@ -631,6 +637,8 @@ static int test_object_map_uses_selected_layout_bases(void) {
             &randomized_policy,
             buffers.data_initialized_mask,
             result.data_size,
+            buffers.const_initialized_mask,
+            result.const_size,
             randomized_tracked_objects,
             TEST_OBJECTS,
             &randomized_tracked_count

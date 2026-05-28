@@ -57,6 +57,8 @@ typedef struct ParserTestBuffers {
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Constant image emitted from optional .CONST declarations.
     uint8_t const_image[TEST_CONST_IMAGE_CAPACITY];
+    /// Per-byte initialized-state mask for optional .CONST declarations.
+    uint8_t const_initialized_mask[TEST_CONST_IMAGE_CAPACITY];
 } ParserTestBuffers;
 
 /// Records a parser test failure.
@@ -221,6 +223,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
     config.const_image_capacity = TEST_CONST_IMAGE_CAPACITY;
+    config.const_initialized_mask = buffers->const_initialized_mask;
+    config.const_initialized_mask_capacity = TEST_CONST_IMAGE_CAPACITY;
     config.diagnostics = buffers->diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 

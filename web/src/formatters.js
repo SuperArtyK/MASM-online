@@ -10,6 +10,7 @@
 
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
+/** @typedef {Record<string, boolean>} RegisterWriteMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
@@ -60,6 +61,16 @@ const ALIGNED_UNSIGNED_COLUMN_WIDTH = 10;
 
 /** Width of the signed decimal column in aligned integer display rows. */
 const ALIGNED_SIGNED_COLUMN_WIDTH = 11;
+
+/** Compact marker appended to canonical parent rows for untouched register families. */
+const REGISTER_UNCHANGED_MARKER = "[unchanged]";
+
+/** Extra spacing before the unchanged marker so wide signed values stay readable. */
+const REGISTER_UNCHANGED_MARKER_SPACING = "     ";
+
+/** Width of the aligned value column before optional register display markers. */
+const ALIGNED_REGISTER_VALUE_COLUMN_WIDTH =
+  ALIGNED_HEX_COLUMN_WIDTH + 6 + ALIGNED_UNSIGNED_COLUMN_WIDTH + 6 + ALIGNED_SIGNED_COLUMN_WIDTH;
 
 
 /** Valid display widths for Phase 52A signed integer formatting. */
@@ -238,6 +249,20 @@ function formatLegacyUnsignedDisplay(hex, unsigned) {
 }
 
 /**
+ * Formats one legacy hex/unsigned value inside the aligned register value column.
+ *
+ * This preserves the EFLAGS hex/unsigned-only display shape while keeping
+ * optional parent-row markers aligned with regular signed register rows.
+ *
+ * @param {string | undefined} hex Hexadecimal display text.
+ * @param {number | undefined} unsigned Unsigned decimal value.
+ * @returns {string} Legacy value display padded to the register value width.
+ */
+function formatAlignedLegacyUnsignedDisplay(hex, unsigned) {
+  return formatLegacyUnsignedDisplay(hex, unsigned).padEnd(ALIGNED_REGISTER_VALUE_COLUMN_WIDTH, " ");
+}
+
+/**
  * Formats one value object using signed display when the width is known.
  *
  * @param {{hex?: string, unsigned?: number}} value Integer value object.
@@ -297,8 +322,29 @@ function deriveRegisterAliasValue(sourceValue, widthBits, shiftBits = 0) {
  */
 export function formatRegisterLine(name, value, widthBits, signedDisplay = true, hexPlacement) {
   const display = signedDisplay ? formatAlignedIntegerDisplay(value, widthBits, hexPlacement) : null;
-  const fallback = formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
+  const fallback = Number.isInteger(widthBits)
+    ? formatAlignedLegacyUnsignedDisplay(value && value.hex, value && value.unsigned)
+    : formatLegacyUnsignedDisplay(value && value.hex, value && value.unsigned);
   return `${name.padEnd(REGISTER_NAME_COLUMN_WIDTH, " ")}| ${display || fallback}`;
+}
+
+/**
+ * Returns whether one canonical register row should show the unchanged marker.
+ *
+ * The formatter consumes explicit write-tracking metadata. It deliberately does
+ * not infer unchanged status by comparing final values with startup values,
+ * because same-value writes such as `mov eax, 0` must count as changed.
+ *
+ * @param {{name: string, source: string, indentLevel?: number}} row Register row descriptor.
+ * @param {RegisterWriteMap | undefined} registerWrites Register-family write metadata.
+ * @returns {boolean} true when the parent row should show `[unchanged]`.
+ */
+function shouldShowRegisterUnchangedMarker(row, registerWrites) {
+  if (!registerWrites || row.name !== row.source || (row.indentLevel || 0) !== 0) {
+    return false;
+  }
+
+  return Object.prototype.hasOwnProperty.call(registerWrites, row.source) && registerWrites[row.source] === false;
 }
 
 /**
@@ -316,9 +362,10 @@ function formatRegisterDisplayName(name, indentLevel = 0) {
  * Formats final registers returned by the worker, including supported aliases.
  *
  * @param {RegisterMap | undefined} registers Register map.
+ * @param {RegisterWriteMap | undefined} registerWrites Register-family write metadata.
  * @returns {string} Human-readable register table.
  */
-export function formatRegisters(registers) {
+export function formatRegisters(registers, registerWrites) {
   if (!registers) {
     return "No register state available.";
   }
@@ -345,7 +392,8 @@ export function formatRegisters(registers) {
       previousGroup = row.group;
 
       const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
-      lines.push(formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement));
+      const line = formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement);
+      lines.push(shouldShowRegisterUnchangedMarker(row, registerWrites) ? `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}` : line);
     });
 
   return lines.join("\n");

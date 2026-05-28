@@ -93,7 +93,7 @@ typedef struct VmSymbol {
     size_t source_span_length;
     /// Whether any initializer used MASM's uninitialized marker `?`.
     bool has_uninitialized_initializer;
-    /// Whether storage came from `.DATA?` and was originally uninitialized.
+    /// Whether storage came from a currently accepted uninitialized-origin section form.
     bool has_uninitialized_storage;
 } VmSymbol;
 

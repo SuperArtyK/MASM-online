@@ -45,6 +45,28 @@ static int expect_register_value(const VmCpu *cpu, VmRegister reg, uint32_t expe
     return 0;
 }
 
+/// Verifies register-family write-tracking state.
+///
+/// @param cpu CPU state to inspect.
+/// @param reg Register or alias whose family should be queried.
+/// @param expected Expected write-tracking state.
+/// @param message Failure message when state differs.
+/// @return Zero on success, otherwise one failure.
+static int expect_register_family_written(const VmCpu *cpu, VmRegister reg, bool expected, const char *message) {
+    bool actual = false;
+
+    if (!vm_cpu_register_family_was_written(cpu, reg, &actual)) {
+        return record_failure("register write-tracking query should succeed");
+    }
+
+    if (actual != expected) {
+        fprintf(stderr, "FAIL: %s: expected %d, got %d\n", message, expected ? 1 : 0, actual ? 1 : 0);
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Verifies that a register has the expected metadata.
 ///
 /// @param reg Register identifier to inspect.
@@ -473,6 +495,50 @@ static int test_seeded_register_flag_startup_changes_by_seed(void) {
     return 0;
 }
 
+
+/// Verifies Phase 57H register-family write tracking for canonical and alias writes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_register_family_write_tracking(void) {
+    int failures = 0;
+    VmCpu cpu;
+
+    vm_cpu_init(&cpu);
+
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EAX, false, "EAX should start unwritten");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EFLAGS, false, "EFLAGS should start unwritten");
+
+    failures += !vm_cpu_write_register(&cpu, VM_REGISTER_AL, 0U) ? record_failure("same-value AL write should succeed") : 0;
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EAX, true, "AL write should mark EAX family written");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_AX, true, "AX query should see EAX family written");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EBX, false, "EBX should remain unwritten");
+
+    failures += !vm_cpu_write_flag(&cpu, VM_FLAG_ZF, true) ? record_failure("flag write should succeed") : 0;
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EFLAGS, true, "flag write should mark EFLAGS family written");
+
+    vm_cpu_clear_register_write_tracking(&cpu);
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EAX, false, "clear should reset EAX family tracking");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EFLAGS, false, "clear should reset EFLAGS family tracking");
+
+    return failures;
+}
+
+/// Verifies startup initialization is excluded from Phase 57H write tracking.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_startup_initialization_clears_write_tracking(void) {
+    int failures = 0;
+    VmCpu cpu;
+
+    vm_cpu_init_seeded_registers_and_flags(&cpu, 123456789U);
+
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EAX, false, "seeded EAX startup should not count as program write");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_ESP, false, "seeded ESP startup should not count as program write");
+    failures += expect_register_family_written(&cpu, VM_REGISTER_EFLAGS, false, "seeded flag startup should not count as program write");
+
+    return failures;
+}
+
 /// Verifies invalid and NULL argument handling.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -530,6 +596,8 @@ int main(void) {
     failures += test_flag_validity_metadata_helpers();
     failures += test_seeded_register_flag_startup_is_deterministic();
     failures += test_seeded_register_flag_startup_changes_by_seed();
+    failures += test_register_family_write_tracking();
+    failures += test_startup_initialization_clears_write_tracking();
     failures += test_invalid_input_handling();
 
     if (failures != 0) {

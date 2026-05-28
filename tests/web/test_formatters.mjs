@@ -29,6 +29,19 @@ function test(name, body) {
   console.log(`PASS ${name}`);
 }
 
+/**
+ * Returns one formatted register-display line by register row name.
+ *
+ * @param {string} formatted Full formatted register table.
+ * @param {string} rowPrefix Expected line prefix, including indentation.
+ * @returns {string} Matching line.
+ */
+function findRegisterLine(formatted, rowPrefix) {
+  const line = formatted.split("\n").find((candidate) => candidate.startsWith(rowPrefix));
+  assert.notEqual(line, undefined, `missing register line ${rowPrefix}`);
+  return line;
+}
+
 test("formats Phase 52A signed integer boundary values", () => {
   assert.equal(formatIntegerDisplay({ hex: "00h", unsigned: 0 }, 8), "00h / u:0 / s:0");
   assert.equal(formatIntegerDisplay({ hex: "01h", unsigned: 1 }, 8), "01h / u:1 / s:1");
@@ -84,8 +97,90 @@ test("formats canonical registers and aliases in stable order", () => {
     "    BH |     00h   / u: 0          / s:  0         ",
     "    BL |       03h / u: 3          / s:  3         ",
     "",
-    "EFLAGS | 00000040h / 64"
+    "EFLAGS | 00000040h / 64                            "
   ].join("\n"));
+});
+
+
+test("formats unchanged markers on canonical parent rows only", () => {
+  const registers = {
+    EAX: { hex: "00000000h", unsigned: 0 },
+    EBX: { hex: "00000000h", unsigned: 0 },
+    ECX: { hex: "00000000h", unsigned: 0 },
+    EDX: { hex: "00000000h", unsigned: 0 },
+    ESI: { hex: "00000000h", unsigned: 0 },
+    EDI: { hex: "00000000h", unsigned: 0 },
+    EBP: { hex: "00000000h", unsigned: 0 },
+    ESP: { hex: "00000000h", unsigned: 0 },
+    EIP: { hex: "00000000h", unsigned: 0 },
+    EFLAGS: { hex: "00000000h", unsigned: 0 }
+  };
+  const registerWrites = {
+    EAX: false,
+    EBX: false,
+    ECX: false,
+    EDX: false,
+    ESI: false,
+    EDI: false,
+    EBP: false,
+    ESP: false,
+    EIP: false,
+    EFLAGS: false
+  };
+  const formatted = formatRegisters(registers, registerWrites);
+
+  ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"].forEach((name) => {
+    assert.match(findRegisterLine(formatted, name), /\[unchanged\]$/);
+  });
+  ["  AX", "    AH", "    AL", "  BX", "    BH", "    BL", "  CX", "    CH", "    CL", "  DX", "    DH", "    DL", "  SI", "  DI", "  BP", "  SP"].forEach((name) => {
+    assert.doesNotMatch(findRegisterLine(formatted, name), /\[unchanged\]/);
+  });
+});
+
+
+
+test("aligns EFLAGS and adds readable marker spacing for wide values", () => {
+  const formatted = formatRegisters({
+    EAX: { hex: "80000000h", unsigned: 2147483648 },
+    EFLAGS: { hex: "80000000h", unsigned: 2147483648 }
+  }, {
+    EAX: false,
+    EFLAGS: false
+  });
+
+  assert.equal(
+    findRegisterLine(formatted, "EAX"),
+    "EAX    | 80000000h / u: 2147483648 / s: -2147483648     [unchanged]"
+  );
+  assert.equal(
+    findRegisterLine(formatted, "EFLAGS"),
+    "EFLAGS | 80000000h / 2147483648                         [unchanged]"
+  );
+});
+
+test("omits unchanged marker for parent and alias register-family writes", () => {
+  const registers = {
+    EAX: { hex: "00000000h", unsigned: 0 },
+    ESI: { hex: "00000000h", unsigned: 0 },
+    ESP: { hex: "00000000h", unsigned: 0 }
+  };
+  const formatted = formatRegisters(registers, { EAX: true, ESI: true, ESP: true });
+
+  assert.doesNotMatch(findRegisterLine(formatted, "EAX"), /\[unchanged\]/);
+  assert.doesNotMatch(findRegisterLine(formatted, "ESI"), /\[unchanged\]/);
+  assert.doesNotMatch(findRegisterLine(formatted, "ESP"), /\[unchanged\]/);
+  assert.doesNotMatch(formatted, /^  AX.*\[unchanged\]$/m);
+  assert.doesNotMatch(formatted, /^  SI.*\[unchanged\]$/m);
+  assert.doesNotMatch(formatted, /^  SP.*\[unchanged\]$/m);
+});
+
+test("keeps legacy register formatting when write metadata is absent", () => {
+  const formatted = formatRegisters({
+    EAX: { hex: "00000000h", unsigned: 0 }
+  });
+
+  assert.doesNotMatch(formatted, /\[unchanged\]/);
+  assert.equal(findRegisterLine(formatted, "EAX"), "EAX    | 00000000h / u: 0          / s:  0         ");
 });
 
 test("separates independent register groups with blank lines", () => {
