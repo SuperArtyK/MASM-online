@@ -141,6 +141,19 @@ typedef struct VmCpu {
 /// @param cpu CPU state to initialize. A NULL pointer is ignored.
 void vm_cpu_init(VmCpu *cpu);
 
+
+/// Initializes general-purpose registers and modeled flags from a deterministic seed.
+///
+/// This helper implements the Phase 57F register/flag startup policy. It
+/// initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the currently
+/// modeled flag bits from a portable deterministic pseudo-random stream. EIP
+/// remains zero, unmodeled EFLAGS bits remain zero, and flag-validity metadata
+/// remains architecturally valid.
+///
+/// @param cpu CPU state to initialize. A NULL pointer is ignored.
+/// @param seed Deterministic startup-state seed.
+void vm_cpu_init_seeded_registers_and_flags(VmCpu *cpu, uint32_t seed);
+
 /// Reads a canonical register or alias value from CPU state.
 ///
 /// Alias reads return only the visible alias bits. For example, reading AL

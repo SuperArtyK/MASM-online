@@ -15,8 +15,14 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{source: string, diagnosticSettings?: unknown}} RunSourcePayload */
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
-/** Latest user-visible MASM source-run phase announced through worker readiness. */
+/** Latest numeric MASM source-run phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE = 57;
+
+/** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
+export const IMPLEMENTED_PHASE_SUFFIX = "F";
+
+/** Full latest runtime/source-run behavior phase name announced through worker readiness. */
+export const IMPLEMENTED_PHASE_NAME = "Phase 57F - Seeded Random Register and Flag Startup Mode";
 
 /**
  * Creates the initial worker readiness response.
@@ -30,7 +36,9 @@ export function createReadyMessage(wasmLoadInfo) {
     payload: {
       wasm: wasmLoadInfo,
       wasmTestValue: wasmLoadInfo.testValue,
-      phase: IMPLEMENTED_PHASE
+      phase: IMPLEMENTED_PHASE,
+      phaseSuffix: IMPLEMENTED_PHASE_SUFFIX,
+      phaseName: IMPLEMENTED_PHASE_NAME
     }
   };
 }
@@ -112,14 +120,26 @@ function addStaleWasmDiagnosticIfNeeded(runResult) {
     return runResult;
   }
 
-  if (typeof runResult.phase !== "number" || runResult.phase >= IMPLEMENTED_PHASE) {
+  const reportedPhase = typeof runResult.phase === "number" ? runResult.phase : null;
+  const reportedSuffix = typeof runResult.phaseSuffix === "string" ? runResult.phaseSuffix : "";
+  if (reportedPhase === null) {
     return runResult;
   }
 
+  const isCurrentPhase = reportedPhase === IMPLEMENTED_PHASE && reportedSuffix === IMPLEMENTED_PHASE_SUFFIX;
+  const isNewerNumericPhase = reportedPhase > IMPLEMENTED_PHASE;
+
+  if (isCurrentPhase || isNewerNumericPhase) {
+    return runResult;
+  }
+
+  const reportedLabel = reportedPhase === null
+    ? "unknown"
+    : `Phase ${reportedPhase}${reportedSuffix}`;
   const diagnostic = {
     kind: "internal-simulator-error",
     code: "stale-wasm-artifact",
-    message: `The loaded Wasm artifact reports runtime/source-run MASM behavior phase ${runResult.phase}, but the UI/source files expect runtime/source-run MASM behavior phase ${IMPLEMENTED_PHASE}. Rebuild web/dist with the Emscripten build script.`
+    message: `The loaded Wasm artifact reports runtime/source-run MASM behavior ${reportedLabel}, but the UI/source files expect ${IMPLEMENTED_PHASE_NAME}. Rebuild web/dist with the Emscripten build script.`
   };
 
   const messages = Array.isArray(runResult.simulatorMessages) ? runResult.simulatorMessages : [];

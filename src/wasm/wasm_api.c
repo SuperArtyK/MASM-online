@@ -67,11 +67,23 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Stable Phase 57E diagnostic code for deterministic startup-state notices.
+/// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 57U
+
+/// Suffix for the current Phase 57F runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "F"
+
+/// Full name of the current Phase 57F runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57F - Seeded Random Register and Flag Startup Mode"
+
+/// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
 
-/// Stable Phase 57E user-facing startup-state notice text.
-#define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_MESSAGE "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+/// User-facing startup-state notice text for deterministic zero startup mode.
+#define MASM32_SIM_WASM_STARTUP_STATE_ZERO_NOTICE_MESSAGE "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+
+/// User-facing startup-state notice text for Phase 57F seeded register/flag startup mode.
+#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_NOTICE_MESSAGE "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// Maximum .data/.DATA? bytes laid out by the source-run API.
 #define MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES VM_MEMORY_DEFAULT_DATA_SIZE
@@ -408,6 +420,27 @@ static char g_masm32_sim_wasm_run_json[MASM32_SIM_WASM_RUN_JSON_BYTES];
 /// Static parse-and-run storage reused by each single-threaded worker request.
 static Masm32SimWasmRunStorage g_masm32_sim_wasm_run_storage;
 
+/// Returns whether a Phase 57F startup register/flag mode enum value is accepted.
+///
+/// @param mode Startup mode value to inspect.
+/// @return true when @p mode is valid.
+static bool masm32_sim_wasm_startup_register_flag_mode_is_valid(Masm32SimWasmStartupRegisterFlagMode mode) {
+    return mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO ||
+        mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM;
+}
+
+/// Returns the startup-state notice message for one Phase 57F startup mode.
+///
+/// @param mode Startup mode associated with the successful run.
+/// @return Stable user-facing notice text.
+static const char *masm32_sim_wasm_startup_state_notice_message(Masm32SimWasmStartupRegisterFlagMode mode) {
+    if (mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM) {
+        return MASM32_SIM_WASM_STARTUP_STATE_SEEDED_NOTICE_MESSAGE;
+    }
+
+    return MASM32_SIM_WASM_STARTUP_STATE_ZERO_NOTICE_MESSAGE;
+}
+
 /// Appends formatted text to a JSON writer.
 ///
 /// @param writer Writer to mutate.
@@ -595,6 +628,59 @@ static bool masm32_sim_json_append_message(
     uint32_t column
 ) {
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
+}
+
+/// Builds a renderable invalid startup-setting JSON result.
+///
+/// @param setting_name Setting key that failed validation.
+/// @param message Human-readable setting diagnostic message.
+/// @param accepted_values Human-readable accepted value list.
+/// @return Pointer to the static JSON response buffer.
+static const char *masm32_sim_wasm_build_invalid_startup_setting_json(
+    const char *setting_name,
+    const char *message,
+    const char *accepted_values
+) {
+    Masm32SimJsonWriter writer;
+
+    memset(g_masm32_sim_wasm_run_json, 0, sizeof(g_masm32_sim_wasm_run_json));
+    writer.buffer = g_masm32_sim_wasm_run_json;
+    writer.capacity = sizeof(g_masm32_sim_wasm_run_json);
+    writer.length = 0U;
+    writer.overflowed = false;
+
+    (void)masm32_sim_json_append(
+        &writer,
+        "{\"phase\":%u,\"phaseSuffix\":",
+        (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER
+    );
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX);
+    (void)masm32_sim_json_append(&writer, ",\"phaseName\":");
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_NAME);
+    (void)masm32_sim_json_append(
+        &writer,
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"memoryChanges\":[],\"simulatorMessages\":["
+    );
+    (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-startup-setting", message, 0U, 0U);
+    (void)masm32_sim_json_append(&writer, "],\"invalidSetting\":{");
+    (void)masm32_sim_json_append(&writer, "\"setting\":");
+    (void)masm32_sim_json_append_string(&writer, setting_name);
+    (void)masm32_sim_json_append(&writer, ",\"acceptedValues\":");
+    (void)masm32_sim_json_append_string(&writer, accepted_values);
+    (void)masm32_sim_json_append(&writer, "}}");
+
+    if (writer.overflowed) {
+        snprintf(
+            g_masm32_sim_wasm_run_json,
+            sizeof(g_masm32_sim_wasm_run_json),
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
+            MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
+            MASM32_SIM_WASM_RUNTIME_PHASE_NAME
+        );
+    }
+
+    return g_masm32_sim_wasm_run_json;
 }
 
 /// Appends the canonical 32-bit register object used by the UI.
@@ -4631,7 +4717,8 @@ static bool masm32_sim_json_append_uninitialized_metadata(Masm32SimJsonWriter *w
 /// @param layout_policy Optional selected randomized layout policy to serialize.
 /// @param layout_message Optional layout failure message to serialize.
 /// @param include_uninitialized_metadata Whether to append test-only Phase 39 metadata.
-/// @param emit_startup_state_notice Whether successful runs should include the Phase 57E startup notice.
+/// @param emit_startup_state_notice Whether successful runs should include a startup-state notice.
+/// @param startup_register_flag_mode Startup register/flag mode used for notice text.
 /// @return Pointer to the static JSON response buffer.
 static const char *masm32_sim_wasm_build_run_json(
     Masm32SimWasmRunOutcome outcome,
@@ -4643,7 +4730,8 @@ static const char *masm32_sim_wasm_build_run_json(
     const VmLayoutPolicy *layout_policy,
     const Masm32SimWasmLayoutMessage *layout_message,
     bool include_uninitialized_metadata,
-    bool emit_startup_state_notice
+    bool emit_startup_state_notice,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode
 ) {
     Masm32SimJsonWriter writer;
     uint64_t instruction_count = vm != NULL ? vm->instruction_count : 0U;
@@ -4655,7 +4743,15 @@ static const char *masm32_sim_wasm_build_run_json(
     writer.length = 0U;
     writer.overflowed = false;
 
-    (void)masm32_sim_json_append(&writer, "{\"phase\":57,\"ok\":%s,\"status\":", ok ? "true" : "false");
+    (void)masm32_sim_json_append(
+        &writer,
+        "{\"phase\":%u,\"phaseSuffix\":",
+        (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER
+    );
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX);
+    (void)masm32_sim_json_append(&writer, ",\"phaseName\":");
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_NAME);
+    (void)masm32_sim_json_append(&writer, ",\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
@@ -4698,7 +4794,7 @@ static const char *masm32_sim_wasm_build_run_json(
                 &writer,
                 "simulator-notice",
                 MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE,
-                MASM32_SIM_WASM_STARTUP_STATE_NOTICE_MESSAGE,
+                masm32_sim_wasm_startup_state_notice_message(startup_register_flag_mode),
                 0U,
                 0U
             );
@@ -4760,7 +4856,7 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":57,\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":57,\"phaseSuffix\":\"F\",\"phaseName\":\"Phase 57F - Seeded Random Register and Flag Startup Mode\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
         );
     }
 
@@ -5237,7 +5333,9 @@ static bool masm32_sim_wasm_build_declared_object_map(
 /// @param shift_mode Shift undefined modeled-flag validation behavior.
 /// @param flag_use_policy Undefined flag-use consumer policy.
 /// @param compatibility_notice_setting Whether parser compatibility notices are emitted.
-/// @param startup_state_notice_setting Whether Phase 57E startup-state notices are emitted.
+/// @param startup_state_notice_setting Whether startup-state notices are emitted.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param startup_state_seed Deterministic Phase 57F startup seed.
 /// @param include_uninitialized_metadata Whether to include test-only initialization metadata.
 /// @return Pointer to the static JSON result buffer.
 static const char *masm32_sim_wasm_run_source_json_internal(
@@ -5252,6 +5350,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy,
     Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
     Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed,
     bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
@@ -5269,8 +5369,16 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     bool use_policy_layout = requested_layout_mode != VM_LAYOUT_MODE_FIXED;
     bool use_randomized_layout = requested_layout_mode == VM_LAYOUT_MODE_SEEDED_RANDOMIZED || requested_layout_mode == VM_LAYOUT_MODE_FRESH_RANDOMIZED;
 
+    if (!masm32_sim_wasm_startup_register_flag_mode_is_valid(startup_register_flag_mode)) {
+        return masm32_sim_wasm_build_invalid_startup_setting_json(
+            "startup_register_flag_mode",
+            "Invalid startup setting 'startup_register_flag_mode'. Accepted values: zero, seeded-random.",
+            "zero, seeded-random"
+        );
+    }
+
     if (source == NULL) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
     }
 
     memset(&g_masm32_sim_wasm_run_storage, 0, sizeof(g_masm32_sim_wasm_run_storage));
@@ -5321,7 +5429,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             NULL,
             NULL,
             include_uninitialized_metadata,
-            startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+            startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON,
+            startup_register_flag_mode
         );
     }
 
@@ -5347,12 +5456,13 @@ static const char *masm32_sim_wasm_run_source_json_internal(
                 NULL,
                 &layout_message,
                 include_uninitialized_metadata,
-                startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+                startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON,
+                startup_register_flag_mode
             );
         }
 
         if (use_randomized_layout && !masm32_sim_wasm_relocate_parser_output(&parser_result, &g_masm32_sim_wasm_run_storage, &selected_policy)) {
-            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         }
 
         runtime_policy = &selected_policy;
@@ -5362,26 +5472,26 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
     }
     vm_initialized = true;
 
     if (!masm32_sim_wasm_build_declared_object_map(&parser_result, &g_masm32_sim_wasm_run_storage, runtime_policy)) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_INVALID_ARGUMENT, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_DATA, g_masm32_sim_wasm_run_storage.data_image, (uint32_t)parser_result.data_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         vm_deinit(&vm);
         return json;
     }
 
     exec_status = masm32_sim_wasm_load_section_image(&vm, VM_MEMORY_REGION_CONST, g_masm32_sim_wasm_run_storage.const_image, (uint32_t)parser_result.const_size);
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         vm_deinit(&vm);
         return json;
     }
@@ -5389,6 +5499,10 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     vm_memory_clear_changes(&vm.memory);
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
+    if (exec_status == VM_EXEC_STATUS_OK && startup_register_flag_mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM) {
+        vm_cpu_init_seeded_registers_and_flags(&vm.cpu, startup_state_seed);
+    }
+
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
         exec_status = masm32_sim_wasm_validate_section_accesses_before_step(
             &g_masm32_sim_wasm_run_storage,
@@ -5450,7 +5564,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     if (exec_status != VM_EXEC_STATUS_OK) {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -5458,7 +5572,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     {
-        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON);
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_OK, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, VM_EXEC_STATUS_OK, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode);
         if (vm_initialized) {
             vm_deinit(&vm);
         }
@@ -5753,15 +5867,15 @@ static Masm32SimWasmStartupStateNoticeSetting masm32_sim_wasm_default_startup_st
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_startup_state_notice_setting(), false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, false);
 }
 
 /// Returns whether a Phase 53E memory range setting enum value is accepted.
@@ -5869,6 +5983,26 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_settings(
     Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
     Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting
 ) {
+    return masm32_sim_wasm_run_source_json_with_ui_and_startup_settings(
+        source,
+        memory_range_setting,
+        uninitialized_read_setting,
+        undefined_flag_use_setting,
+        compatibility_notice_setting,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        0U
+    );
+}
+
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_and_startup_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed
+) {
     Masm32SimWasmMemoryValidationMode object_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
     Masm32SimWasmMemoryValidationMode uninitialized_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
     Masm32SimWasmSectionValidationPolicy capacity_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
@@ -5883,7 +6017,19 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_settings(
             !masm32_sim_wasm_map_undefined_flag_use_setting(undefined_flag_use_setting, &flag_use_policy) ||
             !masm32_sim_wasm_map_compatibility_setting_to_policy_value(compatibility_notice_setting, &compatibility_notice_value) ||
             !masm32_sim_wasm_map_compatibility_notice_policy_value(compatibility_notice_value, &compatibility_notice_setting)) {
-            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+            return masm32_sim_wasm_build_run_json(
+                MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                VM_EXEC_STATUS_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                false,
+                false,
+                MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO
+            );
         }
     }
 
@@ -5899,6 +6045,8 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_settings(
         flag_use_policy,
         compatibility_notice_setting,
         masm32_sim_wasm_default_startup_state_notice_setting(),
+        startup_register_flag_mode,
+        startup_state_seed,
         false
     );
 }
@@ -5917,11 +6065,11 @@ const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
             value = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
             break;
         default:
-            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+            return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
     if (!vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, value)) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
     return masm32_sim_wasm_run_source_json_internal(
@@ -5936,6 +6084,32 @@ const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
         masm32_sim_wasm_default_undefined_flag_use_policy(),
         masm32_sim_wasm_default_compatibility_notice_setting(),
         setting,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        0U,
+        false
+    );
+}
+
+const char *masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+    const char *source,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed,
+    Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting
+) {
+    return masm32_sim_wasm_run_source_json_internal(
+        source,
+        VM_LAYOUT_MODE_FIXED,
+        NULL,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
+        masm32_sim_wasm_default_uninitialized_read_mode(),
+        MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
+        MASM32_SIM_WASM_SECTION_VALIDATION_OFF,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        masm32_sim_wasm_default_undefined_flag_use_policy(),
+        masm32_sim_wasm_default_compatibility_notice_setting(),
+        startup_state_notice_setting,
+        startup_register_flag_mode,
+        startup_state_seed,
         false
     );
 }
@@ -5949,10 +6123,10 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
@@ -5961,10 +6135,10 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
 ) {
     if (shift_mode != MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS &&
         shift_mode != MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
@@ -5974,7 +6148,7 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
     if (policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF &&
         policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN &&
         policy != MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
     return masm32_sim_wasm_run_source_json_internal(
@@ -5989,6 +6163,8 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
         policy,
         masm32_sim_wasm_default_compatibility_notice_setting(),
         MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        0U,
         false
     );
 }
@@ -6024,7 +6200,7 @@ const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
     if (!masm32_sim_wasm_memory_validation_mode_is_valid(validation_mode) ||
         !masm32_sim_wasm_section_validation_policy_is_valid(capacity_policy) ||
         !masm32_sim_wasm_section_validation_policy_is_valid(image_policy)) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
     return masm32_sim_wasm_run_source_json_internal(
@@ -6039,6 +6215,8 @@ const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
         masm32_sim_wasm_default_undefined_flag_use_policy(),
         masm32_sim_wasm_default_compatibility_notice_setting(),
         MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        0U,
         false
     );
 }
@@ -6053,7 +6231,7 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_va
     if (!masm32_sim_wasm_memory_validation_mode_is_valid(validation_mode) ||
         !masm32_sim_wasm_section_validation_policy_is_valid(capacity_policy) ||
         !masm32_sim_wasm_section_validation_policy_is_valid(image_policy)) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
     return masm32_sim_wasm_run_source_json_internal(
@@ -6068,6 +6246,8 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_va
         masm32_sim_wasm_default_undefined_flag_use_policy(),
         masm32_sim_wasm_default_compatibility_notice_setting(),
         MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        0U,
         false
     );
 }
@@ -6081,14 +6261,14 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS &&
         validation_mode != MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT) {
-        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true, false);
+        return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, masm32_sim_wasm_default_compatibility_notice_setting(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, 0U, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

@@ -51,11 +51,17 @@ function resolveProducerPath() {
 /** Native producer path used by this harness; override for direct local runs. */
 const PRODUCER_PATH = resolveProducerPath();
 
-/** Exact Phase 57E startup-state notice text. */
+/** Exact zero-startup notice text. */
 const STARTUP_STATE_NOTICE_TEXT = "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
-/** Exact rendered Phase 57E startup-state notice line. */
+/** Exact Phase 57F seeded startup notice text. */
+const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+
+/** Exact rendered zero-startup notice line. */
 const STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${STARTUP_STATE_NOTICE_TEXT}`;
+
+/** Exact rendered Phase 57F seeded startup notice line. */
+const SEEDED_STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${SEEDED_STARTUP_STATE_NOTICE_TEXT}`;
 
 /** Environment variables that control the native diagnostic producer. */
 const PRODUCER_CONTROL_ENV_KEYS = [
@@ -70,7 +76,9 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION",
   "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
   "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE",
-  "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE"
+  "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE",
+  "MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE",
+  "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED"
 ];
 
 /**
@@ -170,6 +178,20 @@ function runFixture(name, source, extraEnv = {}) {
   const json = JSON.parse(rawJson);
   const rendered = formatSimulatorMessages(json.simulatorMessages);
   return { json, rawJson, rendered };
+}
+
+/**
+ * Executes the native diagnostic JSON producer and expects utility failure.
+ *
+ * @param {string} name Fixture name used in failure output.
+ * @param {string} source MASM-like source text to pass on stdin.
+ * @param {Record<string, string>} [extraEnv] Additional environment variables for the producer.
+ * @returns {{stdout: string, stderr: string, status: number | null}} Producer process result summary.
+ */
+function runFixtureExpectFailure(name, source, extraEnv = {}) {
+  const result = spawnSync(PRODUCER_PATH, { input: source, encoding: "utf8", env: buildChildEnv(extraEnv) });
+  assert.notEqual(result.status, 0, `producer unexpectedly succeeded for ${name}: ${result.stdout}`);
+  return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
 /**
@@ -1508,6 +1530,39 @@ test("renders Phase 57E startup-state notice exactly", () => {
     message: "Execution completed successfully."
   });
   assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
+});
+
+test("renders Phase 57F seeded startup-state notice exactly", () => {
+  const name = "phase57fSeededStartupStateNotice";
+  const source = fixtureSource("success");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE: "seeded-random",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_SEED: "123",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: SEEDED_STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
+});
+
+test("rejects Phase 57F startup-state seed values outside uint32 range", () => {
+  const name = "phase57fStartupStateSeedOverflow";
+  const source = fixtureSource("success");
+  const result = runFixtureExpectFailure(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE: "seeded-random",
+    MASM32_DIAGNOSTIC_STARTUP_STATE_SEED: "4294967296"
+  });
+  assert.equal(result.stdout, "", `producer stdout must be empty for ${name}`);
+  assert.equal(result.stderr, "diagnostic_json_producer: invalid unsigned environment value\n");
 });
 
 test("renders Phase 57E startup-state notice opt-out exactly", () => {

@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57E:
+Current status at Phase 57F:
 
 Repository/archive milestone:
-Phase 57E - Startup State Notice and Zero-Default Documentation
+Phase 57F - Seeded Random Register and Flag Startup Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57 - Signed IDIV
+Phase 57F - Seeded Random Register and Flag Startup Mode
 
 Status interpretation:
 
-Phase 57E documents deterministic simulator startup, activates the startup-state-notice diagnostic-policy family, and emits a non-fatal Simulator Messages notice by default without changing MASM syntax, parser behavior, VM instruction behavior, executor behavior, browser UI controls, startup values, Program Console behavior, or runtime/source-run MASM behavior metadata advancement.
+Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags through source-run/test-facing settings. It preserves default zero startup, memory bytes, uninitialized-origin metadata, Program Console behavior, parser behavior, VM instruction behavior, executor behavior, and browser UI controls.
 
 ## How to use this file
 
@@ -76,7 +76,14 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57C added a behavior-preserving diagnostic-policy registry skeleton for optional teaching diagnostics and kept runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57D routes existing configurable diagnostic-policy lookup through the registry or compatibility adapters while preserving existing user-visible behavior and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
 - Phase 57E activates and documents the non-fatal startup-state notice while preserving deterministic startup values and keeping runtime/source-run MASM behavior at Phase 57 - Signed IDIV.
+- Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags while preserving memory bytes, uninitialized-origin metadata, default zero startup, and browser UI controls.
 
+
+## Phase 57F - Seeded Random Register and Flag Startup Mode
+
+Phase 57F adds a source-run/test-facing `startup_register_flag_mode` setting with `zero` and `seeded-random` modes plus a `startup_state_seed` value. The default mode preserves deterministic zero startup for registers and modeled flags. The seeded mode initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the modeled CF/ZF/SF/OF flags from a deterministic seed while leaving EIP and unmodeled EFLAGS bits at zero.
+
+Phase 57F does not randomize memory, does not change `.DATA?`, `?`, or `DUP(?)` visible bytes, does not change uninitialized-origin metadata, does not add browser UI controls, and does not change MASM parser or instruction semantics.
 
 ## Phase 57E - Startup State Notice and Zero-Default Documentation
 

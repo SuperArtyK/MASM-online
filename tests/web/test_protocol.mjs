@@ -7,10 +7,11 @@
  */
 
 import assert from "node:assert/strict";
-import { IMPLEMENTED_PHASE, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
+import { IMPLEMENTED_PHASE, IMPLEMENTED_PHASE_NAME, IMPLEMENTED_PHASE_SUFFIX, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
 import {
   COMPATIBILITY_NOTICES_OFF,
   MEMORY_RANGE_DECLARED_OBJECT_WARN,
+  STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
   TEACHING_DIAGNOSTIC_OFF,
   TEACHING_DIAGNOSTIC_STRICT
 } from "../../web/src/settings.js";
@@ -29,6 +30,8 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 57);
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "F");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57F - Seeded Random Register and Flag Startup Mode");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -38,7 +41,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 57
+      phase: 57,
+      phaseSuffix: "F",
+      phaseName: "Phase 57F - Seeded Random Register and Flag Startup Mode"
     }
   });
 });
@@ -54,7 +59,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 57
+      phase: 57,
+      phaseSuffix: "F",
+      phaseName: "Phase 57F - Seeded Random Register and Flag Startup Mode"
     }
   });
 });
@@ -87,7 +94,9 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           memoryRange: 0,
           uninitializedReads: 1,
           undefinedFlagUse: 1,
-          compatibilityNotices: 1
+          compatibilityNotices: 1,
+          startupRegisterFlagMode: 0,
+          startupStateSeed: 0
         });
         return {
           ok: true,
@@ -133,7 +142,9 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
           memoryRange: 5,
           uninitializedReads: 0,
           undefinedFlagUse: 2,
-          compatibilityNotices: 0
+          compatibilityNotices: 0,
+          startupRegisterFlagMode: 0,
+          startupStateSeed: 0
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -142,6 +153,62 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
 
   assert.equal(response.type, "RUN_RESULT");
   assert.equal(response.payload.ok, true);
+});
+
+test("RUN_SOURCE dispatches Phase 57F startup settings to runtime", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".code\nmain PROC\nEND main\n",
+        diagnosticSettings: {
+          startupRegisterFlagMode: STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+          startupStateSeed: 123456789
+        }
+      }
+    },
+    {
+      runSource(source, backendSettings) {
+        assert.equal(source.includes("END main"), true);
+        assert.deepEqual(backendSettings, {
+          memoryRange: 0,
+          uninitializedReads: 1,
+          undefinedFlagUse: 1,
+          compatibilityNotices: 1,
+          startupRegisterFlagMode: 1,
+          startupStateSeed: 123456789
+        });
+        return { ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, true);
+});
+
+test("RUN_SOURCE invalid startup setting returns renderable ui-error", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".code\nmain PROC\nEND main\n",
+        diagnosticSettings: { startupStateSeed: -1 }
+      }
+    },
+    {
+      runSource() {
+        throw new Error("runtime should not be called for invalid startup settings");
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, false);
+  assert.equal(response.payload.status, "ui-error");
+  assert.equal(response.payload.simulatorMessages[0].kind, "ui-error");
+  assert.equal(response.payload.simulatorMessages[0].code, "invalid-startup-setting");
+  assert.equal(response.payload.simulatorMessages[0].setting, "startupStateSeed");
 });
 
 test("RUN_SOURCE invalid diagnostic setting returns renderable ui-error", () => {
@@ -191,9 +258,24 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior phase 29, but the UI/source files expect runtime/source-run MASM behavior phase 57. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57F - Seeded Random Register and Flag Startup Mode. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
+});
+
+test("RUN_SOURCE marks Phase 57 artifacts without Phase 57F suffix as stale", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 57, ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.phase, 57);
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
 });
 
 test("RUN_SOURCE without source returns structured error", () => {

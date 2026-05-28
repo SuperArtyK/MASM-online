@@ -200,6 +200,16 @@ test("formats Phase 53E UI setting errors through Simulator Messages", () => {
   ]), "[ui-error] invalid-diagnostic-setting: Invalid diagnostic setting 'memoryRange'. Accepted values: region-only.");
 });
 
+test("formats Phase 57F startup setting errors through Simulator Messages", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "ui-error",
+      code: "invalid-startup-setting",
+      message: "Invalid startup setting 'startupStateSeed'. Accepted values: unsigned 32-bit integer."
+    }
+  ]), "[ui-error] invalid-startup-setting: Invalid startup setting 'startupStateSeed'. Accepted values: unsigned 32-bit integer.");
+});
+
 test("formats empty simulator messages", () => {
   assert.equal(formatSimulatorMessages([]), "No simulator messages.");
 });

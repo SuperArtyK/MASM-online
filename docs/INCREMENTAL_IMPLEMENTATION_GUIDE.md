@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
 
 ## 1. Purpose
@@ -10960,7 +10960,7 @@ unless the source-run payload intentionally reports the new notice family as run
 ### Example notice text
 
 ```text
-The simulator starts registers, modeled flags, and deterministic memory state from known values for reproducibility. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
 ```
 
 The exact wording may differ, but it must be stable and covered by exact rendered Simulator Messages tests.
@@ -11349,7 +11349,7 @@ Add formatter tests for:
 
 Accept `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage.
 
-Through Phase 57 - Signed IDIV, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts these forms; Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is the first phase that makes declaration diagnostics for these forms configurable.
+Through Phase 57F - Seeded Random Register and Flag Startup Mode, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts these forms; Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is the first phase that makes declaration diagnostics for these forms configurable.
 
 This phase implements compatibility acceptance only. It does not add the configurable warning/error policy; that belongs to Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy.
 

@@ -295,6 +295,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_settings")
+    assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings")
     assert_text_contains("scripts/windows/build_wasm.cmd", "EMSDK_ROOT")
     assert_text_contains("scripts/windows/build_wasm.cmd", "emsdk_env.bat")
     assert_text_contains("scripts/windows/build_wasm.cmd", "-std=c99")
@@ -316,6 +317,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_settings")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings")
     assert_text_contains("scripts/windows/clean_wasm.cmd", "masm32_sim_core.wasm")
     assert_text_contains("scripts/windows/serve_web.cmd", "serve_web.ps1")
     assert_text_contains("scripts/windows/serve_web.ps1", "http.server")
@@ -446,6 +448,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_milestone4_hardcoded_result")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_ui_settings")
+    assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_ui_and_startup_settings")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmMemoryValidationMode")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_memory_validation_mode")
     assert_text_contains("src/wasm/wasm_api.c", "/// Appends compact JSON")
@@ -470,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57E - Startup State Notice and Zero-Default Documentation")
+    assert_text_contains("README.md", "Phase 57F - Seeded Random Register and Flag Startup Mode")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -612,9 +615,13 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase52_lea_source_run_program")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_source_run_program")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase53_mul_uninitialized_memory_source_warning")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase57f_seeded_startup_is_deterministic")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin")
+    assert_text_contains("tests/core/test_vm_cpu.c", "test_seeded_register_flag_startup_is_deterministic")
+    assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57E startup-state notice coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57F seeded startup coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1396,22 +1403,22 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57e_startup_state_notice_present() -> None:
-    """Verify Phase 57E startup-state notice and current-status requirements."""
+def assert_phase57f_startup_state_present() -> None:
+    """Verify Phase 57F startup-state and current-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57E - Startup State Notice and Zero-Default Documentation",
+        "Phase 57F - Seeded Random Register and Flag Startup Mode",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 57 - Signed IDIV",
-        "Phase 57E",
+        "Phase 57F - Seeded Random Register and Flag Startup Mode",
+        "Phase 57F",
         "startup-state-notice",
     ]
     status_block = """Repository/archive milestone:
-Phase 57E - Startup State Notice and Zero-Default Documentation
+Phase 57F - Seeded Random Register and Flag Startup Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57 - Signed IDIV"""
+Phase 57F - Seeded Random Register and Flag Startup Mode"""
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
     assert_all_text_contains("docs/MILESTONE_HISTORY.md", required_status_fragments)
@@ -1430,6 +1437,8 @@ Phase 57 - Signed IDIV"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
+            "Phase 57F - Seeded Random Register and Flag Startup Mode",
+            "source-run/test-facing seeded register/flag startup settings",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1451,6 +1460,7 @@ Phase 57 - Signed IDIV"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57F - Seeded Random Register and Flag Startup Mode",
             "Phase 57E - Startup State Notice and Zero-Default Documentation",
             "Phase 57D - Existing Diagnostic Policy Migration",
             "Phase 57C - Diagnostic Policy Registry Design",
@@ -1469,6 +1479,8 @@ Phase 57 - Signed IDIV"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 57F - Seeded Random Register and Flag Startup Mode",
+            "source-run/test-facing seeded register/flag startup settings",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1482,6 +1494,16 @@ Phase 57 - Signed IDIV"""
         ],
     )
 
+
+    assert_all_text_contains(
+        "web/index.html",
+        [
+            "Phase 57F",
+            "signed IDIV remains the current instruction subset",
+            "source-run/protocol-facing",
+            "does not add browser UI controls",
+        ],
+    )
 
 
 
@@ -1546,7 +1568,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57e_startup_state_notice_present()
+    assert_phase57f_startup_state_present()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

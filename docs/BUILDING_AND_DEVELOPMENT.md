@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57E - Startup State Notice and Zero-Default Documentation
+Phase 57F - Seeded Random Register and Flag Startup Mode
 
 Runtime/source-run MASM behavior phase:
-Phase 57 - Signed IDIV
+Phase 57F - Seeded Random Register and Flag Startup Mode
 
-Phase 57E is deterministic-startup documentation and notice work. It activates the startup-state-notice diagnostic family and emits a non-fatal Simulator Messages notice by default while preserving parser behavior, VM instruction behavior, executor behavior, browser UI controls, Program Console output, startup values, and runtime/source-run MASM behavior metadata.
+Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags through source-run/test-facing settings. It preserves default zero startup, leaves memory and uninitialized-origin metadata unchanged, emits the `startup-state-notice` only through Simulator Messages, and does not add browser UI controls.
 
 ## Repository layout for development
 
@@ -210,7 +210,7 @@ main ENDP
 END main
 ```
 
-The expected runtime behavior remains Phase 57 - Signed IDIV. Phase 57B does not change the served website except documentation files in the repository.
+The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57F - Seeded Random Register and Flag Startup Mode. Phase 57F adds source-run/test-facing seeded register/flag startup settings but does not add browser UI controls.
 
 ## Missing `emcc` troubleshooting
 
@@ -225,7 +225,7 @@ Do not treat missing `emcc` as a native/source-run/Node test failure. It is a de
 
 ## Visual Studio notes
 
-The inspected Phase 57B repository state does not include a committed Visual Studio solution or project file such as `.sln` or `.vcxproj`.
+The inspected repository state does not include a committed Visual Studio solution or project file such as `.sln` or `.vcxproj`.
 
 Implication:
 

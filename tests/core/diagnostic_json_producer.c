@@ -21,6 +21,8 @@
 
 #include "../../src/wasm/wasm_api.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,7 +170,7 @@ static int diagnostic_json_producer_read_source(FILE *stream, char **out_source)
 static int diagnostic_json_producer_parse_u32_env(const char *name, uint32_t *out_value, int *out_present) {
     const char *text = NULL;
     char *end = NULL;
-    unsigned long value = 0UL;
+    unsigned long long value = 0ULL;
 
     if (name == NULL || out_value == NULL || out_present == NULL) {
         return diagnostic_json_producer_fail("invalid environment parse argument");
@@ -180,8 +182,9 @@ static int diagnostic_json_producer_parse_u32_env(const char *name, uint32_t *ou
         return 0;
     }
 
-    value = strtoul(text, &end, 0);
-    if (end == text || end == NULL || *end != '\0' || value > 0xFFFFFFFFUL) {
+    errno = 0;
+    value = strtoull(text, &end, 0);
+    if (end == text || end == NULL || *end != '\0' || errno == ERANGE || value > 0xFFFFFFFFULL) {
         return diagnostic_json_producer_fail("invalid unsigned environment value");
     }
 
@@ -357,6 +360,33 @@ static int diagnostic_json_producer_get_startup_state_notice_setting(Masm32SimWa
     return 0;
 }
 
+/// Returns the requested Phase 57F register/flag startup mode from the diagnostic environment.
+///
+/// @param out_mode Receives the selected startup register/flag mode.
+/// @return Nonzero when MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE selects a setting.
+static int diagnostic_json_producer_get_startup_register_flag_mode(Masm32SimWasmStartupRegisterFlagMode *out_mode) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE");
+
+    if (out_mode == NULL) {
+        return 0;
+    }
+
+    *out_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "zero") == 0) {
+        *out_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO;
+        return 1;
+    }
+    if (strcmp(mode, "seeded-random") == 0) {
+        *out_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -420,6 +450,10 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
     Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO;
+    uint32_t startup_state_seed = 0U;
+    int has_startup_register_flag_mode = 0;
+    int has_startup_state_seed = 0;
     int has_memory_validation = 0;
     int has_section_capacity_validation = 0;
     int has_section_image_validation = 0;
@@ -431,8 +465,22 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     has_memory_validation = diagnostic_json_producer_get_memory_validation_mode(&validation_mode);
     has_section_capacity_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION", &capacity_policy);
     has_section_image_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION", &image_policy);
+    has_startup_register_flag_mode = diagnostic_json_producer_get_startup_register_flag_mode(&startup_register_flag_mode);
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_STARTUP_STATE_SEED", &startup_state_seed, &has_startup_state_seed) != 0) {
+        return 1;
+    }
 
-    if (has_section_capacity_validation || has_section_image_validation) {
+    if (has_startup_register_flag_mode || has_startup_state_seed) {
+        if (!diagnostic_json_producer_get_startup_state_notice_setting(&startup_state_notice_setting)) {
+            startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
+        }
+        json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+            source,
+            startup_register_flag_mode,
+            startup_state_seed,
+            startup_state_notice_setting
+        );
+    } else if (has_section_capacity_validation || has_section_image_validation) {
         json = masm32_sim_wasm_run_source_json_with_section_validation_modes(source, validation_mode, capacity_policy, image_policy);
     } else if (has_memory_validation) {
         json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, validation_mode);

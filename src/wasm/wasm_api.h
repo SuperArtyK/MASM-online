@@ -12,6 +12,8 @@
 
 #include "../core/vm_layout.h"
 
+#include <stdint.h>
+
 /// Selects explicit memory validation behavior for source-run helpers.
 typedef enum Masm32SimWasmMemoryValidationMode {
     /// Validate memory using region and permission checks only; this is the explicit opt-out for uninitialized-read diagnostics.
@@ -54,6 +56,15 @@ typedef enum Masm32SimWasmTeachingDiagnosticSetting {
     MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT
 } Masm32SimWasmTeachingDiagnosticSetting;
 
+
+
+/// Selects the Phase 57F register and modeled-flag startup behavior.
+typedef enum Masm32SimWasmStartupRegisterFlagMode {
+    /// Preserve deterministic zero startup for general-purpose registers and modeled flags.
+    MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO = 0,
+    /// Initialize general-purpose registers and modeled flags from startup_state_seed.
+    MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM
+} Masm32SimWasmStartupRegisterFlagMode;
 
 /// Selects whether the Phase 57E startup-state notice is emitted.
 typedef enum Masm32SimWasmStartupStateNoticeSetting {
@@ -143,6 +154,31 @@ const char *masm32_sim_wasm_run_source_json_with_ui_settings(
     Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
     Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
     Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting
+);
+
+
+/// Parses and executes source using Phase 53E diagnostics plus Phase 57F startup settings.
+///
+/// This browser/test-facing export keeps diagnostic settings and startup
+/// register/flag settings separate. It does not add browser UI controls by
+/// itself; it only exposes the runtime setting path for workers and tests.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_and_startup_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed
 );
 
 /// Parses and executes source using automatic deterministic layout sizing.
@@ -246,7 +282,7 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
 
 /// Parses and executes source with an explicit startup-state notice policy.
 ///
-/// The normal browser export uses the Phase 57E default notice policy. This
+/// The normal browser export uses the startup-state notice default policy introduced in Phase 57E. This
 /// test/configuration-facing helper allows native tests to verify notice
 /// opt-out without adding a browser UI setting in this phase.
 ///
@@ -256,6 +292,21 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
 const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
     const char *source,
     Masm32SimWasmStartupStateNoticeSetting setting
+);
+
+
+/// Parses and executes source with explicit Phase 57F startup register/flag settings.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param startup_register_flag_mode Register/flag startup mode to apply.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param startup_state_notice_setting Whether startup-state notices are emitted.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+    const char *source,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    uint32_t startup_state_seed,
+    Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting
 );
 
 /// Parses and executes source with explicit undefined-flag-use diagnostics.

@@ -340,6 +340,30 @@ static bool vm_cpu_apply_arithmetic_flags(
         && vm_cpu_write_flag(cpu, VM_FLAG_OF, overflow_flag);
 }
 
+
+/// Advances the deterministic Phase 57F startup-state pseudo-random stream.
+///
+/// The mixer is intentionally small, portable C99, and independent of host
+/// library `rand()` behavior so the same seed produces the same register and
+/// modeled-flag startup state across native and Wasm builds.
+///
+/// @param state Mutable 32-bit stream state.
+/// @return Next deterministic 32-bit value, or zero for a NULL state pointer.
+static uint32_t vm_cpu_seeded_startup_next_u32(uint32_t *state) {
+    uint32_t value = 0U;
+
+    if (state == NULL) {
+        return 0U;
+    }
+
+    *state += 0x9E3779B9U;
+    value = *state;
+    value = (value ^ (value >> 16U)) * 0x85EBCA6BU;
+    value = (value ^ (value >> 13U)) * 0xC2B2AE35U;
+    value ^= value >> 16U;
+    return value;
+}
+
 void vm_cpu_init(VmCpu *cpu) {
     if (cpu == NULL) {
         return;
@@ -355,6 +379,33 @@ void vm_cpu_init(VmCpu *cpu) {
     cpu->esp = 0U;
     cpu->eip = 0U;
     cpu->eflags = 0U;
+    vm_cpu_mark_all_flags_valid(cpu);
+}
+
+
+void vm_cpu_init_seeded_registers_and_flags(VmCpu *cpu, uint32_t seed) {
+    uint32_t state = seed;
+    int flag_index = 0;
+
+    if (cpu == NULL) {
+        return;
+    }
+
+    vm_cpu_init(cpu);
+    cpu->eax = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->ebx = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->ecx = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->edx = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->esi = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->edi = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->ebp = vm_cpu_seeded_startup_next_u32(&state);
+    cpu->esp = vm_cpu_seeded_startup_next_u32(&state);
+
+    for (flag_index = 0; flag_index < (int)VM_FLAG_COUNT; flag_index += 1) {
+        uint32_t flag_value = vm_cpu_seeded_startup_next_u32(&state);
+        (void)vm_cpu_write_flag(cpu, (VmFlag)flag_index, (flag_value & 1U) != 0U);
+    }
+
     vm_cpu_mark_all_flags_valid(cpu);
 }
 

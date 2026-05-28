@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "../../src/core/vm_cpu.h"
@@ -386,6 +387,92 @@ static int test_flag_validity_metadata_helpers(void) {
     return failures;
 }
 
+
+/// Verifies deterministic seeded startup for registers and modeled flags.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_seeded_register_flag_startup_is_deterministic(void) {
+    int failures = 0;
+    VmCpu first;
+    VmCpu second;
+    int reg_index = 0;
+    int flag_index = 0;
+
+    vm_cpu_init_seeded_registers_and_flags(&first, 12345U);
+    vm_cpu_init_seeded_registers_and_flags(&second, 12345U);
+
+    for (reg_index = 0; reg_index < (int)VM_REGISTER_COUNT; reg_index += 1) {
+        uint32_t first_value = 0U;
+        uint32_t second_value = 1U;
+        failures += !vm_cpu_read_register(&first, (VmRegister)reg_index, &first_value) ? record_failure("first seeded register read should succeed") : 0;
+        failures += !vm_cpu_read_register(&second, (VmRegister)reg_index, &second_value) ? record_failure("second seeded register read should succeed") : 0;
+        if (first_value != second_value) {
+            failures += record_failure("same seed should produce same register values");
+        }
+    }
+
+    for (flag_index = 0; flag_index < (int)VM_FLAG_COUNT; flag_index += 1) {
+        bool first_value = false;
+        bool second_value = true;
+        failures += !vm_cpu_read_flag(&first, (VmFlag)flag_index, &first_value) ? record_failure("first seeded flag read should succeed") : 0;
+        failures += !vm_cpu_read_flag(&second, (VmFlag)flag_index, &second_value) ? record_failure("second seeded flag read should succeed") : 0;
+        if (first_value != second_value) {
+            failures += record_failure("same seed should produce same modeled flag values");
+        }
+        failures += expect_flag_validity(&first, (VmFlag)flag_index, 1, NULL, NULL, "seeded startup should mark modeled flags valid");
+    }
+
+    failures += expect_register_value(&first, VM_REGISTER_EIP, 0U, "seeded startup should leave EIP zero");
+
+    if ((first.eflags & ~0x000008C1U) != 0U) {
+        failures += record_failure("seeded startup should not set unmodeled EFLAGS bits");
+    }
+
+    vm_cpu_init_seeded_registers_and_flags(NULL, 12345U);
+
+    return failures;
+}
+
+/// Verifies different seeds produce at least one different register or modeled flag.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_seeded_register_flag_startup_changes_by_seed(void) {
+    VmCpu first;
+    VmCpu second;
+    int reg_index = 0;
+    int flag_index = 0;
+    bool saw_difference = false;
+
+    vm_cpu_init_seeded_registers_and_flags(&first, 1U);
+    vm_cpu_init_seeded_registers_and_flags(&second, 2U);
+
+    for (reg_index = 0; reg_index < (int)VM_REGISTER_COUNT; reg_index += 1) {
+        uint32_t first_value = 0U;
+        uint32_t second_value = 0U;
+        (void)vm_cpu_read_register(&first, (VmRegister)reg_index, &first_value);
+        (void)vm_cpu_read_register(&second, (VmRegister)reg_index, &second_value);
+        if (first_value != second_value) {
+            saw_difference = true;
+        }
+    }
+
+    for (flag_index = 0; flag_index < (int)VM_FLAG_COUNT; flag_index += 1) {
+        bool first_value = false;
+        bool second_value = false;
+        (void)vm_cpu_read_flag(&first, (VmFlag)flag_index, &first_value);
+        (void)vm_cpu_read_flag(&second, (VmFlag)flag_index, &second_value);
+        if (first_value != second_value) {
+            saw_difference = true;
+        }
+    }
+
+    if (!saw_difference) {
+        return record_failure("different seeds should produce at least one different register or modeled flag");
+    }
+
+    return 0;
+}
+
 /// Verifies invalid and NULL argument handling.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -441,6 +528,8 @@ int main(void) {
     failures += test_register_metadata();
     failures += test_initialization_marks_modeled_flags_valid();
     failures += test_flag_validity_metadata_helpers();
+    failures += test_seeded_register_flag_startup_is_deterministic();
+    failures += test_seeded_register_flag_startup_changes_by_seed();
     failures += test_invalid_input_handling();
 
     if (failures != 0) {

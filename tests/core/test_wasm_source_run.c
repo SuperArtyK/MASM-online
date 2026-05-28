@@ -16,8 +16,11 @@
 /// Number of bytes reserved for local copies of source-run JSON results.
 #define TEST_JSON_COPY_CAPACITY 8192U
 
-/// Exact Phase 57E startup-state notice wording expected in source-run JSON.
+/// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+
+/// Exact Phase 57F seeded startup notice wording expected in source-run JSON.
+#define TEST_SEEDED_STARTUP_NOTICE_TEXT "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// Records a source-run test failure.
 ///
@@ -2205,7 +2208,7 @@ static int test_phase30_large_dup_count_capacity_diagnostic_source_run_program(v
 ///
 /// @return Number of failures.
 static int test_subsequent_calls_return_latest_result(void) {
-    char first_copy[256];
+    char first_copy[512];
     const char *first = masm32_sim_wasm_run_source_json(
         ".code\nmain PROC\n    mov eax, 1\nmain ENDP\nEND main\n"
     );
@@ -7653,7 +7656,7 @@ static int test_phase57e_default_startup_state_notice_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "Phase 57E should preserve runtime/source-run MASM behavior phase metadata");
+    failures += expect_json_contains(json, "\"phase\":57", "Startup-state notice regression should preserve numeric phase compatibility");
     failures += expect_json_contains(json, "\"ok\":true", "Startup-state notice should not block execution");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Startup-state notice should not change register results");
     failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Startup-state notice should render as simulator notice");
@@ -7756,6 +7759,190 @@ static int test_phase57e_invalid_startup_state_notice_setting(void) {
     failures += expect_json_contains(json, "\"ok\":false", "Invalid startup-state notice setting should fail");
     failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid startup-state notice setting should return invalid argument status");
     failures += expect_json_contains(json, "\"code\":\"invalid-source\"", "Invalid setting should use existing invalid-source diagnostic path");
+
+    return failures;
+}
+
+/// Verifies Phase 57F status metadata is emitted by source-run JSON.
+///
+/// @return Number of failures.
+static int test_phase57f_source_run_phase_metadata(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"phase\":57", "Phase 57F should preserve numeric phase compatibility");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"F\"", "Phase 57F should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57F - Seeded Random Register and Flag Startup Mode\"", "Phase 57F should report the runtime phase name");
+
+    return failures;
+}
+
+/// Verifies Phase 57F zero mode remains unchanged even with a seed.
+///
+/// @return Number of failures.
+static int test_phase57f_zero_mode_seed_does_not_randomize(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        4294967295U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Zero startup mode with a seed should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Zero startup mode should keep EAX zero");
+    failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Zero startup mode should keep EFLAGS zero");
+    failures += expect_json_not_contains(json, "startup-state-notice", "Startup notice should remain independently suppressible");
+
+    return failures;
+}
+
+/// Verifies Phase 57F seeded startup is deterministic for the same seed.
+///
+/// @return Number of failures.
+static int test_phase57f_seeded_startup_is_deterministic(void) {
+    char first_copy[4096];
+    char second_copy[4096];
+    int failures = 0;
+
+    copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        123456789U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+    copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        123456789U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+
+    if (strcmp(first_copy, second_copy) != 0) {
+        failures += record_failure("same Phase 57F seed should produce identical source-run JSON for a source that does not mutate startup state");
+    }
+    failures += expect_json_contains(first_copy, "\"ok\":true", "Seeded startup should execute successfully");
+    failures += expect_json_not_contains(first_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup should expose a nonzero EAX for this fixture seed");
+    failures += expect_json_contains(first_copy, "\"EIP\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup should leave EIP zero");
+
+    return failures;
+}
+
+/// Verifies different Phase 57F seeds affect the startup state.
+///
+/// @return Number of failures.
+static int test_phase57f_different_seeds_change_startup_state(void) {
+    char first_copy[4096];
+    char second_copy[4096];
+
+    copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        1U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+    copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        2U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    ));
+
+    if (strcmp(first_copy, second_copy) == 0) {
+        return record_failure("different Phase 57F seeds should produce different source-run JSON for a source that does not mutate startup state");
+    }
+
+    return 0;
+}
+
+/// Verifies Phase 57F seeded startup emits a mode-accurate notice.
+///
+/// @return Number of failures.
+static int test_phase57f_seeded_startup_notice_source_run(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        0U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "Seeded startup should emit a Simulator Messages notice when enabled");
+    failures += expect_json_contains(json, "\"code\":\"startup-state-notice\"", "Seeded startup notice should use the startup diagnostic code");
+    failures += expect_json_contains(json, TEST_SEEDED_STARTUP_NOTICE_TEXT, "Seeded startup notice should use exact Phase 57F wording");
+    failures += expect_json_not_contains(json, "Program Console", "Seeded startup notice should not write Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57F rejects invalid startup register/flag modes.
+///
+/// @return Number of failures.
+static int test_phase57f_invalid_startup_register_flag_mode(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".code\n"
+        "main PROC\n"
+        "END main\n",
+        (Masm32SimWasmStartupRegisterFlagMode)99,
+        0U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "Invalid startup register/flag mode should fail");
+    failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid startup register/flag mode should report invalid argument");
+    failures += expect_json_contains(json, "\"code\":\"invalid-startup-setting\"", "Invalid startup register/flag mode should use startup-setting diagnostic code");
+    failures += expect_json_contains(json, "startup_register_flag_mode", "Invalid startup register/flag mode should name the setting");
+    failures += expect_json_not_contains(json, "execution-complete", "Invalid startup register/flag mode should not complete execution");
+
+    return failures;
+}
+
+/// Verifies Phase 57F startup randomization does not randomize memory contents.
+///
+/// @return Number of failures.
+static int test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".data\n"
+        "y DWORD 5\n"
+        ".CONST\n"
+        "c DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, x\n"
+        "    mov ebx, y\n"
+        "    mov ecx, c\n"
+        "END main\n",
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+        123U,
+        MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Seeded startup memory preservation fixture should execute");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup should leave uninitialized storage visible bytes zero-filled");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Seeded startup should preserve initialized .data bytes");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Seeded startup should preserve initialized .CONST bytes");
+    failures += expect_json_contains(json, "uninitialized-read", "Seeded startup should preserve uninitialized-origin diagnostics");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Seeded startup alone should not create memory-change rows");
 
     return failures;
 }
@@ -8570,6 +8757,13 @@ int main(void) {
     failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
     failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
     failures += test_phase57e_invalid_startup_state_notice_setting();
+    failures += test_phase57f_source_run_phase_metadata();
+    failures += test_phase57f_zero_mode_seed_does_not_randomize();
+    failures += test_phase57f_seeded_startup_is_deterministic();
+    failures += test_phase57f_different_seeds_change_startup_state();
+    failures += test_phase57f_seeded_startup_notice_source_run();
+    failures += test_phase57f_invalid_startup_register_flag_mode();
+    failures += test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin();
     failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
     failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
     failures += test_phase50b_undefined_flag_use_error_policy_source_run();
@@ -8590,6 +8784,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57E startup-state notice coverage passed.");
+    puts("Source execution tests through Phase 57F seeded startup coverage passed.");
     return 0;
 }

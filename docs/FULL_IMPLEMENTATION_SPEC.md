@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -396,8 +396,8 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 
 `.CONST` behavior is mandatory and phase-sensitive:
 
-- Through Phase 57 - Signed IDIV, `.CONST` accepts initialized read-only storage only.
-- In the current through-Phase-57 implementation state, `.CONST` declarations using `?` or `DUP(?)` are rejected.
+- Through Phase 57F - Seeded Random Register and Flag Startup Mode, `.CONST` accepts initialized read-only storage only.
+- In the current through-Phase-57F implementation state, `.CONST` declarations using `?` or `DUP(?)` are rejected.
 - Uninitialized-origin storage is represented by the currently implemented non-`.CONST` declaration forms that already accept `?` or `DUP(?)`, especially `.DATA?`.
 - Phase 57I - .CONST Uninitialized Storage Acceptance deliberately changes this compatibility rule. After Phase 57I is implemented, tested, and accepted, `.CONST ?` and `.CONST DUP(?)` are accepted as read-only `.CONST` storage with deterministic visible bytes and preserved uninitialized-origin metadata.
 - Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns configurable declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`.
@@ -4077,15 +4077,15 @@ The simulator must remain deterministic by default.
 
 Default startup behavior:
 
-- general-purpose registers start from deterministic known values;
-- modeled flag bits start from deterministic known values;
-- simulated memory bytes are deterministic;
-- `.DATA?`, `?`, and `DUP(?)` storage preserve uninitialized-origin metadata even when their visible byte value is deterministic;
+- modeled registers, including EIP, start at zero;
+- modeled flag bits start cleared;
+- declared memory bytes are deterministic: initialized declarations use their encoded initializer bytes, and uninitialized storage is zero-filled for visible byte values;
+- `.DATA?`, `?`, and `DUP(?)` storage preserve uninitialized-origin metadata even when their visible byte value is deterministic zero;
 - repeated runs with the same source, settings, and input produce the same result.
 
 The simulator must not imply that deterministic startup state is the same as arbitrary real-machine process state. Real MASM programs must not rely on arbitrary register or flag startup values unless the operating environment or calling convention explicitly defines those values.
 
-Future randomized startup modes, if provided, must be deterministic pseudo-random modes selected by settings. They must be seedable and reproducible. The same source, same settings, same seed, and same input must produce the same result.
+Randomized startup modes are current behavior only when an implementation-guide phase explicitly implements the specific startup category. Phase 57F - Seeded Random Register and Flag Startup Mode implements opt-in seeded startup for general-purpose registers and modeled flags only; it does not randomize memory. All randomized startup modes must be deterministic pseudo-random modes selected by settings. They must be seedable and reproducible. The same source, same settings, same seed, and same input must produce the same result.
 
 Randomized startup modes must not use host CPU registers, host process memory, unseeded wall-clock randomness, browser-global nondeterminism, or operating-system process state as simulator state.
 
@@ -4216,11 +4216,11 @@ This is display-only metadata. It is not a new CPU semantic feature.
 
 The simulator may accept MASM-compatible uninitialized storage forms in `.CONST` when the implementation guide phase for this compatibility feature is completed.
 
-This section describes planned behavior after the implementation-guide phase for `.CONST` uninitialized storage is completed. It does not retroactively describe current through-Phase-57 behavior.
+This section describes planned behavior after the implementation-guide phase for `.CONST` uninitialized storage is completed. It does not retroactively describe current through-Phase-57F behavior.
 
-Through Phase 57 - Signed IDIV, before Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts those forms as compatibility forms. After Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy, declaration-time diagnostics for these forms become configurable according to the documented teaching-diagnostic policy.
+Through Phase 57F - Seeded Random Register and Flag Startup Mode, before Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted, `.CONST ?` and `.CONST DUP(?)` remain rejected. Phase 57I is the first phase that accepts those forms as compatibility forms. After Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy, declaration-time diagnostics for these forms become configurable according to the documented teaching-diagnostic policy.
 
-Future assistants must not use this section to claim that `.CONST ?` is already supported in a repository whose latest completed runtime/source-run MASM behavior phase is still Phase 57 - Signed IDIV. Current support must be verified against the implementation guide, latest repository state, tests, and milestone evidence.
+Future assistants must not use this section to claim that `.CONST ?` is already supported merely because the repository has advanced past Phase 57 - Signed IDIV. Through Phase 57F - Seeded Random Register and Flag Startup Mode, `.CONST ?` remains unsupported. Current support must be verified against the implementation guide, latest repository state, tests, and milestone evidence.
 
 Supported forms after that phase should include, at minimum:
 

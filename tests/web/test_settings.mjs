@@ -1,9 +1,10 @@
 /*
  * @file test_settings.mjs
- * @brief Unit tests for Phase 53E diagnostic setting normalization.
+ * @brief Unit tests for diagnostic and startup setting normalization.
  *
  * These tests cover browser-side serialization and mapping of UI settings to
- * the existing C/Wasm diagnostic policy enums without requiring DOM automation.
+ * the existing C/Wasm diagnostic-policy enums and Phase 57F startup settings
+ * without requiring DOM automation.
  */
 
 import assert from "node:assert/strict";
@@ -20,6 +21,8 @@ import {
   TEACHING_DIAGNOSTIC_OFF,
   TEACHING_DIAGNOSTIC_STRICT,
   TEACHING_DIAGNOSTIC_WARN,
+  STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+  STARTUP_REGISTER_FLAG_ZERO,
   defaultDiagnosticSettings,
   diagnosticSettingsToBackendArguments,
   normalizeDiagnosticSettings,
@@ -38,12 +41,14 @@ function test(name, body) {
   console.log(`PASS ${name}`);
 }
 
-test("defaults match Phase 53E teaching profile", () => {
+test("defaults match Phase 57F teaching and startup profile", () => {
   assert.deepEqual(defaultDiagnosticSettings(), {
     memoryRange: MEMORY_RANGE_REGION_ONLY,
     uninitializedReads: TEACHING_DIAGNOSTIC_WARN,
     undefinedFlagUse: TEACHING_DIAGNOSTIC_WARN,
-    compatibilityNotices: COMPATIBILITY_NOTICES_ON
+    compatibilityNotices: COMPATIBILITY_NOTICES_ON,
+    startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    startupStateSeed: 0
   });
 
   const normalized = normalizeDiagnosticSettings(undefined);
@@ -53,7 +58,9 @@ test("defaults match Phase 53E teaching profile", () => {
     memoryRange: 0,
     uninitializedReads: 1,
     undefinedFlagUse: 1,
-    compatibilityNotices: 1
+    compatibilityNotices: 1,
+    startupRegisterFlagMode: 0,
+    startupStateSeed: 0
   });
 });
 
@@ -68,13 +75,17 @@ test("partial settings fill missing values from defaults", () => {
     memoryRange: MEMORY_RANGE_SECTION_CAPACITY_WARN,
     uninitializedReads: TEACHING_DIAGNOSTIC_WARN,
     undefinedFlagUse: TEACHING_DIAGNOSTIC_WARN,
-    compatibilityNotices: COMPATIBILITY_NOTICES_OFF
+    compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
+    startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    startupStateSeed: 0
   });
   assert.deepEqual(normalized.backendSettings, {
     memoryRange: 1,
     uninitializedReads: 1,
     undefinedFlagUse: 1,
-    compatibilityNotices: 0
+    compatibilityNotices: 0,
+    startupRegisterFlagMode: 0,
+    startupStateSeed: 0
   });
 });
 
@@ -99,7 +110,9 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       memoryRange: expectedBackendValue,
       uninitializedReads: 1,
       undefinedFlagUse: 1,
-      compatibilityNotices: 1
+      compatibilityNotices: 1,
+      startupRegisterFlagMode: 0,
+      startupStateSeed: 0
     });
   }
 });
@@ -121,9 +134,40 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       memoryRange: 0,
       uninitializedReads: expectedUninitialized,
       undefinedFlagUse: expectedUndefinedFlagUse,
-      compatibilityNotices: expectedCompatibility
+      compatibilityNotices: expectedCompatibility,
+      startupRegisterFlagMode: 0,
+      startupStateSeed: 0
     });
   }
+});
+
+test("Phase 57F seeded startup settings map to backend enum values", () => {
+  const normalized = normalizeDiagnosticSettings({
+    startupRegisterFlagMode: STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
+    startupStateSeed: "4294967295"
+  });
+
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.settings.startupRegisterFlagMode, STARTUP_REGISTER_FLAG_SEEDED_RANDOM);
+  assert.equal(normalized.settings.startupStateSeed, 4294967295);
+  assert.equal(normalized.backendSettings.startupRegisterFlagMode, 1);
+  assert.equal(normalized.backendSettings.startupStateSeed, 4294967295);
+});
+
+test("invalid Phase 57F startup mode returns startup ui-error diagnostic", () => {
+  const normalized = normalizeDiagnosticSettings({ startupRegisterFlagMode: "all-random" });
+  assert.equal(normalized.ok, false);
+  assert.equal(normalized.diagnostic.kind, "ui-error");
+  assert.equal(normalized.diagnostic.code, "invalid-startup-setting");
+  assert.equal(normalized.diagnostic.setting, "startupRegisterFlagMode");
+});
+
+test("invalid Phase 57F startup seed returns startup ui-error diagnostic", () => {
+  const normalized = normalizeDiagnosticSettings({ startupStateSeed: 4294967296 });
+  assert.equal(normalized.ok, false);
+  assert.equal(normalized.diagnostic.kind, "ui-error");
+  assert.equal(normalized.diagnostic.code, "invalid-startup-setting");
+  assert.equal(normalized.diagnostic.setting, "startupStateSeed");
 });
 
 test("invalid memory range setting returns ui-error diagnostic", () => {
@@ -162,12 +206,16 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     memoryRange: MEMORY_RANGE_DECLARED_OBJECT_WARN,
     uninitializedReads: TEACHING_DIAGNOSTIC_STRICT,
     undefinedFlagUse: TEACHING_DIAGNOSTIC_OFF,
-    compatibilityNotices: COMPATIBILITY_NOTICES_OFF
+    compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
+    startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
+    startupStateSeed: 0
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
     memoryRange: 5,
     uninitializedReads: 2,
     undefinedFlagUse: 0,
-    compatibilityNotices: 0
+    compatibilityNotices: 0,
+    startupRegisterFlagMode: 0,
+    startupStateSeed: 0
   });
 });
