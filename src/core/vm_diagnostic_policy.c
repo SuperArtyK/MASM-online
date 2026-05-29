@@ -6,7 +6,8 @@
  * off/warn/error policy vocabulary in one C99 module. Phase 57D routes existing
  * configurable families through registry-backed compatibility helpers. Phase
  * 57E activates the startup-state notice family without changing startup
- * values or runtime/source-run MASM behavior metadata.
+ * values or runtime/source-run MASM behavior metadata. Phase 57J activates
+ * `.CONST` uninitialized-storage declaration diagnostics.
  */
 
 #include "vm_diagnostic_policy.h"
@@ -61,9 +62,9 @@ static const VmDiagnosticPolicyFamilyInfo VM_DIAGNOSTIC_POLICY_FAMILY_TABLE[] = 
     {
         VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
         "const-uninitialized-storage",
-        VM_DIAGNOSTIC_POLICY_FAMILY_STATE_RESERVED_INACTIVE,
-        false,
-        VM_DIAGNOSTIC_POLICY_VALUE_OFF,
+        VM_DIAGNOSTIC_POLICY_FAMILY_STATE_IMPLEMENTED,
+        true,
+        VM_DIAGNOSTIC_POLICY_VALUE_WARN,
     },
     {
         VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,

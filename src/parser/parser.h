@@ -24,6 +24,7 @@
 #include "lexer.h"
 #include "symbols.h"
 #include "vm_ir.h"
+#include "../core/vm_diagnostic_policy.h"
 
 /// Identifies the final status of one parser attempt.
 typedef enum VmParserStatus {
@@ -139,6 +140,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH,
     /// A statically known instruction destination attempts to write read-only `.CONST` storage.
     VM_PARSER_DIAGNOSTIC_CONST_WRITE,
+    /// An accepted `.CONST ?` or `.CONST DUP(?)` declaration reserves uninitialized read-only storage.
+    VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE,
     /// A .model directive used a form outside `.model flat, stdcall`.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL,
     /// An INCLUDE directive requested a file outside the simulator's virtual built-ins.
@@ -285,6 +288,8 @@ typedef struct VmParserConfig {
     size_t diagnostic_capacity;
     /// Suppresses accepted compatibility no-op, metadata-only, and limited-behavior notices.
     bool suppress_compatibility_notices;
+    /// Phase 57J `.CONST ?` and `.CONST DUP(?)` declaration diagnostic policy.
+    VmDiagnosticPolicyValue const_uninitialized_storage_policy;
 } VmParserConfig;
 
 /// Summarizes one parse attempt.

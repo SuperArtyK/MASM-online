@@ -88,6 +88,7 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION",
   "MASM32_DIAGNOSTIC_SHIFT_VALIDATION",
   "MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE",
+  "MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE",
   "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE",
   "MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE",
   "MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE",
@@ -2869,8 +2870,8 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
-test("renders Phase 57I CONST uninitialized-read warning exactly", () => {
-  const name = "phase57iConstUninitializedRead";
+test("renders Phase 57J CONST declaration warning and read warning exactly", () => {
+  const name = "phase57jConstUninitializedDeclarationWarn";
   const source = `.CONST
 limit DWORD ?
 .code
@@ -2879,7 +2880,84 @@ main PROC
 main ENDP
 END main
 `;
-  const { json, rawJson, rendered } = runFixtureFile(name, source);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "const-uninitialized-storage",
+      message: ".CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.",
+      line: 2,
+      column: 1,
+      byteOffset: 7,
+      spanLength: 5
+    },
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      sourceLocation: { line: 5, column: null, byteOffset: null, spanLength: null },
+      symbolName: "limit",
+      accessStartAddress: "00600000h",
+      accessEndAddress: "00600003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 57J CONST declaration error policy exactly", () => {
+  const name = "phase57jConstUninitializedDeclarationError";
+  const source = `.CONST
+limit DWORD ?
+.code
+main PROC
+    mov eax, limit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE: "error"
+  });
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "const-uninitialized-storage",
+      message: ".CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.",
+      line: 2,
+      column: 1,
+      byteOffset: 7,
+      spanLength: 5
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.");
+});
+
+test("renders Phase 57J CONST declaration off policy without suppressing read warning", () => {
+  const name = "phase57jConstUninitializedDeclarationOff";
+  const source = `.CONST
+limit DWORD ?
+.code
+main PROC
+    mov eax, limit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE: "off"
+  });
   assertRunStatus(json, true, "ok");
   assert.equal(json.instructionCount, 1);
   assert.deepEqual(json.simulatorMessages, [
@@ -2904,6 +2982,77 @@ END main
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 57J direct CONST uninitialized write diagnostics exactly", () => {
+  const name = "phase57jConstUninitializedDirectWrite";
+  const source = `.CONST
+limit DWORD ?
+.code
+main PROC
+    mov limit, 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "const-uninitialized-storage",
+      message: ".CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.",
+      line: 2,
+      column: 1,
+      byteOffset: 7,
+      spanLength: 5
+    },
+    {
+      kind: "assembly-error",
+      code: "const-write",
+      message: "Cannot write to .CONST data. Constant data is read-only.",
+      line: 5,
+      column: 9,
+      byteOffset: 45,
+      spanLength: 5
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[assembly-error] const-write line 5, column 9, byte offset 45, span length 5: Cannot write to .CONST data. Constant data is read-only.");
+});
+
+test("renders Phase 57J computed CONST uninitialized write diagnostics exactly", () => {
+  const name = "phase57jConstUninitializedComputedWrite";
+  const source = `.CONST
+limit DWORD ?
+.code
+main PROC
+    mov eax, OFFSET limit
+    mov DWORD PTR [eax], 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 1);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "const-uninitialized-storage",
+      message: ".CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.",
+      line: 2,
+      column: 1,
+      byteOffset: 7,
+      spanLength: 5
+    },
+    {
+      kind: "runtime-error",
+      code: "permission-denied",
+      message: "Memory write at 00600000h for 4 bytes is not permitted in .const.",
+      line: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const.");
 });
 
 test("renders ROR undefined modeled flag warning exactly", () => {

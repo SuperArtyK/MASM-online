@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -399,7 +399,7 @@ These affect source structure, symbol layout, procedure boundaries, or entry-poi
 - Phase 57I - .CONST Uninitialized Storage Acceptance accepts `.CONST ?` and `.CONST DUP(?)` as read-only `.CONST` storage with deterministic visible bytes and preserved uninitialized-origin metadata.
 - `.CONST` declarations using explicit initialized values remain accepted as initialized read-only storage.
 - Uninitialized-origin storage includes `.DATA?`, compatible `.data` `?` / `DUP(?)` declarations, and Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` declarations.
-- Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns configurable declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`.
+- Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns configurable declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`; its default behavior is a non-fatal warning.
 - `.CONST` creates read-only storage in every implementation state.
 - `.CONST` must be protected by final effective address range, not only by symbol metadata.
 - The preferred implementation is a dedicated read-only `.const` VM memory region.
@@ -4215,7 +4215,7 @@ This is display-only metadata. It is not a new CPU semantic feature.
 
 The simulator may accept MASM-compatible uninitialized storage forms in `.CONST` when the implementation guide phase for this compatibility feature is completed.
 
-Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted. `.CONST ?` and `.CONST DUP(?)` are now accepted compatibility forms. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy owns future configurable declaration diagnostics for these forms.
+Phase 57I - .CONST Uninitialized Storage Acceptance is implemented and accepted. `.CONST ?` and `.CONST DUP(?)` are accepted compatibility forms. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy is implemented and adds configurable declaration diagnostics for these forms.
 
 Supported forms include, at minimum:
 
@@ -4234,19 +4234,19 @@ Semantics:
 - direct and computed writes to the final byte range remain blocked by mandatory `.CONST` protection;
 - reads from the storage may trigger uninitialized-read diagnostics according to the active uninitialized-read policy.
 
-Because `.CONST ?` is suspicious in educational code, Phase 57J should provide a configurable diagnostic family:
+Because `.CONST ?` is suspicious in educational code, Phase 57J provides this configurable diagnostic family:
 
 ```text
 const-uninitialized-storage
 ```
 
-Default policy when implemented:
+Default policy:
 
 ```text
 warn
 ```
 
-The warning must explain that the simulator accepts the declaration for compatibility, initializes bytes deterministically, and preserves uninitialized-origin metadata. The warning must appear in Simulator Messages, not Program Console.
+The warning explains that the simulator accepts the declaration for compatibility, initializes bytes deterministically, and preserves uninitialized-origin metadata. The warning appears in Simulator Messages, not Program Console. The `off` policy suppresses only this declaration diagnostic. The `error` policy reports an assembly error and refuses execution before runtime. This declaration policy is separate from read-time `uninitialized-read` diagnostics.
 
 ### 20A.6 `.CODE` Memory Access Policy
 

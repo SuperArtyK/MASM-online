@@ -412,7 +412,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_diagnostic_policy.h", "bool vm_diagnostic_policy_parse_family")
     assert_text_contains("src/core/vm_diagnostic_policy.c", "VM_DIAGNOSTIC_POLICY_FAMILY_TABLE")
     assert_text_contains("tests/core/test_diagnostic_policy.c", "/*\n * @file test_diagnostic_policy.c")
-    assert_text_contains("tests/core/test_diagnostic_policy.c", "Diagnostic policy registry, migration, and startup notice tests passed.")
+    assert_text_contains("tests/core/test_diagnostic_policy.c", "Diagnostic policy registry, migration, startup notice, and const-uninitialized-storage tests passed.")
     assert_text_contains("tests/core/test_vm_flags.c", "/*\n * @file test_vm_flags.c")
     assert_text_contains("tests/core/test_vm_flags.c", "/// Verifies success-path named flag")
     assert_text_contains("tests/core/test_vm_memory.c", "/*\n * @file test_vm_memory.c")
@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: INVOKE is not supported yet; use CALL when available.")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57I - .CONST Uninitialized Storage Acceptance")
+    assert_text_contains("README.md", "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy")
     assert_text_contains("README.md", "Phase 57G - Seeded Random Uninitialized Storage Mode")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
@@ -622,7 +622,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57I .CONST uninitialized storage acceptance coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57J .CONST uninitialized storage diagnostics and policy coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1405,21 +1405,21 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase57h_register_display_status_present() -> None:
-    """Verify Phase 57I .CONST acceptance and current-status requirements."""
+    """Verify Phase 57J .CONST diagnostics and current-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57I - .CONST Uninitialized Storage Acceptance",
+        "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 57I - .CONST Uninitialized Storage Acceptance",
+        "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
         "[unchanged]",
         "startup-state-notice",
     ]
     status_block = """Repository/archive milestone:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Runtime/source-run MASM behavior phase:
-Phase 57I - .CONST Uninitialized Storage Acceptance"""
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
     assert_all_text_contains("docs/MILESTONE_HISTORY.md", required_status_fragments)
@@ -1438,7 +1438,7 @@ Phase 57I - .CONST Uninitialized Storage Acceptance"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
-            "Phase 57I - .CONST Uninitialized Storage Acceptance",
+            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
             ".CONST ?",
             "final-register `[unchanged]` display markers",
             "source-run/test-facing seeded uninitialized-storage visible-byte settings",
@@ -1463,6 +1463,7 @@ Phase 57I - .CONST Uninitialized Storage Acceptance"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
             "Phase 57I - .CONST Uninitialized Storage Acceptance",
             "Phase 57H - Register Unchanged Display Markers",
             "Phase 57G - Seeded Random Uninitialized Storage Mode",
@@ -1484,7 +1485,7 @@ Phase 57I - .CONST Uninitialized Storage Acceptance"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 57I - .CONST Uninitialized Storage Acceptance",
+            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
             ".CONST ?",
             "final-register `[unchanged]` display markers",
             "source-run/test-facing seeded uninitialized-storage visible-byte settings",
@@ -1505,11 +1506,12 @@ Phase 57I - .CONST Uninitialized Storage Acceptance"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Phase 57I",
+            "Phase 57J",
             "signed IDIV remains the current instruction subset",
             ".CONST",
             "[unchanged]",
             "source-run settings",
+            "configurable declaration diagnostics",
         ],
     )
 

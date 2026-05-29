@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Runtime/source-run MASM behavior phase:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
-Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
+Phase 57J adds configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. The default policy warns through Simulator Messages and continues, `off` suppresses only this declaration diagnostic, and `error` rejects execution before runtime. Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
 
 ## Repository layout for development
 
@@ -210,7 +210,7 @@ main ENDP
 END main
 ```
 
-The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57I - .CONST Uninitialized Storage Acceptance. Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings. These phases do not add browser UI controls.
+The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy. Phase 57J adds configurable declaration diagnostics for `.CONST ?` / `.CONST DUP(?)`; Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings. These phases do not add browser UI controls.
 
 ## Missing `emcc` troubleshooting
 

@@ -333,6 +333,38 @@ static int diagnostic_json_producer_get_undefined_flag_use_policy(Masm32SimWasmU
     return 0;
 }
 
+
+/// Returns the requested Phase 57J const-uninitialized-storage policy.
+///
+/// @param out_policy Receives the selected policy value.
+/// @return Nonzero when MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE selects a policy.
+static int diagnostic_json_producer_get_const_uninitialized_storage_policy(VmDiagnosticPolicyValue *out_policy) {
+    const char *mode = getenv("MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE");
+
+    if (out_policy == NULL) {
+        return 0;
+    }
+
+    *out_policy = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
+    if (mode == NULL) {
+        return 0;
+    }
+    if (strcmp(mode, "off") == 0) {
+        *out_policy = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+        return 1;
+    }
+    if (strcmp(mode, "warn") == 0) {
+        *out_policy = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
+        return 1;
+    }
+    if (strcmp(mode, "error") == 0) {
+        *out_policy = VM_DIAGNOSTIC_POLICY_VALUE_ERROR;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Returns the requested startup-state notice setting from the diagnostic environment.
 ///
 /// @param out_setting Receives the selected Phase 57E startup-state notice setting.
@@ -476,6 +508,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
     Masm32SimWasmShiftValidationMode shift_mode = MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS;
     Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF;
+    VmDiagnosticPolicyValue const_uninitialized_storage_policy = VM_DIAGNOSTIC_POLICY_VALUE_WARN;
     Masm32SimWasmStartupStateNoticeSetting startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
     Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode = MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO;
     Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode = MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO;
@@ -486,6 +519,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_memory_validation = 0;
     int has_section_capacity_validation = 0;
     int has_section_image_validation = 0;
+    int has_const_uninitialized_storage_policy = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -494,6 +528,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     has_memory_validation = diagnostic_json_producer_get_memory_validation_mode(&validation_mode);
     has_section_capacity_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION", &capacity_policy);
     has_section_image_validation = diagnostic_json_producer_get_section_validation_policy("MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION", &image_policy);
+    has_const_uninitialized_storage_policy = diagnostic_json_producer_get_const_uninitialized_storage_policy(&const_uninitialized_storage_policy);
     has_startup_register_flag_mode = diagnostic_json_producer_get_startup_register_flag_mode(&startup_register_flag_mode);
     has_uninitialized_storage_visible_byte_mode = diagnostic_json_producer_get_uninitialized_storage_visible_byte_mode(&uninitialized_storage_visible_byte_mode);
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_STARTUP_STATE_SEED", &startup_state_seed, &has_startup_state_seed) != 0) {
@@ -515,6 +550,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
         json = masm32_sim_wasm_run_source_json_with_section_validation_modes(source, validation_mode, capacity_policy, image_policy);
     } else if (has_memory_validation) {
         json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, validation_mode);
+    } else if (has_const_uninitialized_storage_policy) {
+        json = masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_policy(source, const_uninitialized_storage_policy);
     } else if (diagnostic_json_producer_use_automatic_layout()) {
         policy = vm_layout_default_policy();
         if (diagnostic_json_producer_apply_layout_env(&policy) != 0) {

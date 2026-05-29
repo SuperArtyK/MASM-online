@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57I:
+Current status at Phase 57J:
 
 Repository/archive milestone:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Runtime/source-run MASM behavior phase:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Status interpretation:
 
-Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. It advances runtime/source-run MASM behavior metadata because accepted source behavior changed. Existing `.CONST` write protection, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57J adds configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. It advances runtime/source-run MASM behavior metadata because user-visible diagnostic policy behavior changed. Existing `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -79,12 +79,16 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57F adds opt-in deterministic seeded startup for general-purpose registers and modeled flags while preserving memory bytes, uninitialized-origin metadata, default zero startup, and existing browser UI behavior without adding browser UI controls.
 - Phase 57G adds opt-in deterministic seeded visible bytes for uninitialized-origin storage while preserving metadata, default zero startup, initialized data bytes, and existing browser UI behavior without adding browser UI controls.
 - Phase 57H adds final-register `[unchanged]` display markers for canonical register families that the executed program did not write, while keeping runtime/source-run MASM behavior metadata at Phase 57G.
-- Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` as read-only uninitialized-origin storage, advances runtime/source-run MASM behavior metadata to Phase 57I, and leaves Phase 57J to add future configurable declaration diagnostics.
+- Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` as read-only uninitialized-origin storage, advances runtime/source-run MASM behavior metadata to Phase 57I, and is followed by Phase 57J configurable declaration diagnostics.
 
+
+## Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+
+Phase 57J activates the `const-uninitialized-storage` diagnostic family for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. The default `warn` policy emits a Simulator Messages declaration warning and continues; `off` suppresses only the declaration diagnostic; `error` reports an assembly error and refuses execution before runtime. The phase preserves `.CONST` read-only protection, uninitialized-origin metadata, seeded uninitialized-storage visible-byte behavior, and read-time `uninitialized-read` diagnostics as separate behavior.
 
 ## Phase 57I - .CONST Uninitialized Storage Acceptance
 
-Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as compatibility forms. The allocated bytes live in the `.CONST` region, remain read-only for simulated program writes, retain uninitialized-origin metadata, and participate in existing uninitialized-read diagnostics and seeded uninitialized-storage visible-byte mode. Phase 57J owns the future configurable declaration diagnostic policy for this suspicious teaching pattern.
+Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as compatibility forms. The allocated bytes live in the `.CONST` region, remain read-only for simulated program writes, retain uninitialized-origin metadata, and participate in existing uninitialized-read diagnostics and seeded uninitialized-storage visible-byte mode. Phase 57J adds the configurable declaration diagnostic policy for this suspicious teaching pattern.
 
 ## Phase 57H - Register Unchanged Display Markers
 

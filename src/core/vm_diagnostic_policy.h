@@ -34,7 +34,7 @@ typedef enum VmDiagnosticPolicyFamily {
     VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE,
     /// Informational notices for accepted no-op, metadata-only, virtual-only, or limited MASM compatibility constructs.
     VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE,
-    /// Reserved family for future `.CONST ?` and `.CONST DUP(?)` compatibility diagnostics.
+    /// Declaration diagnostics for accepted `.CONST ?` and `.CONST DUP(?)` compatibility storage.
     VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
     /// Informational notice explaining deterministic simulator startup state.
     VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,

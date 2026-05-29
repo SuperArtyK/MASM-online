@@ -1,20 +1,20 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Runtime/source-run MASM behavior phase:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
-Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. Reads are allowed when the final address/range is valid, writes remain blocked by existing `.CONST` protection, and the existing uninitialized-read diagnostic policy applies when those bytes are read. Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, Phase 57F seeded register/flag startup, Phase 57E startup-state notices, Phase 57D diagnostic-policy migration, Phase 57C diagnostic-policy registry design, Phase 57B documentation extraction, Phase 57A README cleanup, Phase 57-CORR2 compact negative register-indirect displacement parsing, and Phase 57-CORR1 protected-region diagnostic clarification remain accepted behavior.
+Phase 57J adds configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. Reads are allowed when the final address/range is valid, writes remain blocked by existing `.CONST` protection, and the existing uninitialized-read diagnostic policy applies when those bytes are read. Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, Phase 57F seeded register/flag startup, Phase 57E startup-state notices, Phase 57D diagnostic-policy migration, Phase 57C diagnostic-policy registry design, Phase 57B documentation extraction, Phase 57A README cleanup, Phase 57-CORR2 compact negative register-indirect displacement parsing, and Phase 57-CORR1 protected-region diagnostic clarification remain accepted behavior.
 
-This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV. The current runtime/source-run MASM behavior phase is Phase 57I - .CONST Uninitialized Storage Acceptance because Phase 57I changes accepted source declarations while leaving the instruction subset anchored by Phase 57 - Signed IDIV. This reference also includes Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage settings, Phase 57F seeded register/flag startup, Milestone 52A display formatting, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV. The current runtime/source-run MASM behavior phase is Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy because Phase 57J changes user-visible declaration diagnostics and policy behavior while leaving the instruction subset anchored by Phase 57 - Signed IDIV. This reference also includes Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage settings, Phase 57F seeded register/flag startup, Milestone 52A display formatting, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 Historical infrastructure note: Milestone 32 adds fixed memory-layout policy infrastructure only; later layout, diagnostic, and startup settings build on that infrastructure without changing the current instruction subset unless their phase explicitly says so.
 
-### Phase 57F, Phase 57G, and Phase 57I startup/data modes
+### Phase 57F, Phase 57G, Phase 57I, and Phase 57J startup/data diagnostics
 
-Runtime/source-run MASM behavior phase Phase 57I preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
+Runtime/source-run MASM behavior phase Phase 57J preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
 
 ```text
 startup_register_flag_mode = zero | seeded-random
@@ -28,7 +28,7 @@ When `startup_register_flag_mode` is `seeded-random`, the simulator initializes 
 
 When `uninitialized_storage_visible_byte_mode` is `seeded-random`, the simulator initializes only visible bytes of storage that still carry uninitialized-origin metadata, including `.DATA?`, scalar `?`, `DUP(?)`, and Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` storage. The same source, settings, seed, and input produce the same visible bytes. Different seeds are expected to produce at least one different byte in targeted fixtures.
 
-Initialized `.data` and initialized `.CONST` bytes are not randomized. Uninitialized-origin metadata remains preserved, so reads from randomized uninitialized-origin bytes still emit uninitialized-read diagnostics according to the selected policy. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only even when seeded visible bytes are enabled.
+Initialized `.data` and initialized `.CONST` bytes are not randomized. Uninitialized-origin metadata remains preserved, so reads from randomized uninitialized-origin bytes still emit uninitialized-read diagnostics according to the selected policy. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only even when seeded visible bytes are enabled. The `const-uninitialized-storage` declaration diagnostic is independent from read-time `uninitialized-read`: the default is `warn`, `off` suppresses only the declaration diagnostic, and `error` rejects execution before runtime.
 
 ### Phase 57-CORR1 memory diagnostic clarification
 

@@ -11,6 +11,7 @@
 #define MASM32_SIM_WASM_API_H
 
 #include "../core/vm_layout.h"
+#include "../core/vm_diagnostic_policy.h"
 
 #include <stdint.h>
 
@@ -375,6 +376,20 @@ const char *masm32_sim_wasm_run_source_json_with_startup_modes(
 const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
     const char *source,
     Masm32SimWasmUndefinedFlagUsePolicy policy
+);
+
+
+/// Parses and executes source with explicit Phase 57J `.CONST ?` declaration diagnostics.
+///
+/// This test/configuration-facing helper verifies the `const-uninitialized-storage`
+/// policy without adding browser UI controls in Phase 57J.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param policy `const-uninitialized-storage` policy value: off, warn, or error.
+/// @return Pointer to the same static JSON buffer used by other source-run helpers.
+const char *masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_policy(
+    const char *source,
+    VmDiagnosticPolicyValue policy
 );
 
 /// Parses and executes source with memory validation and test-only initialization metadata.

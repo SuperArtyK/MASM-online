@@ -1476,6 +1476,53 @@ static bool vm_parser_add_notice(
     return vm_parser_add_diagnostic_with_severity(state, code, VM_PARSER_DIAGNOSTIC_SEVERITY_NOTICE, token, message);
 }
 
+/// Records one formatted parser diagnostic with explicit severity.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param severity Diagnostic severity.
+/// @param token Optional token associated with the diagnostic.
+/// @param format printf-style message format.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_formatted_diagnostic_with_severity(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    VmParserDiagnosticSeverity severity,
+    const VmLexerToken *token,
+    const char *format,
+    ...
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+    va_list args;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || format == NULL) {
+        return false;
+    }
+
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    diagnostic->severity = severity;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+
+    va_start(args, format);
+    (void)vsnprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), format, args);
+    va_end(args);
+    diagnostic->message = diagnostic->message_storage;
+
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
 /// Records one parser diagnostic whose message includes parse-specific values.
 ///
 /// @param state Parser state whose diagnostic buffer should receive the entry.
@@ -2925,6 +2972,43 @@ static void vm_parser_restore_active_data_offset(VmParserState *state, uint32_t 
     }
 }
 
+/// Emits the Phase 57J `.CONST ?` declaration diagnostic when configured.
+///
+/// @param state Parser state whose diagnostics should receive the policy result.
+/// @param name_token Declaration symbol token used for source location.
+/// @param symbol_name Stable copied symbol name for user-facing text.
+/// @return true when the policy was applied or no diagnostic was required.
+static bool vm_parser_apply_const_uninitialized_storage_policy(
+    VmParserState *state,
+    const VmLexerToken *name_token,
+    const char *symbol_name
+) {
+    VmDiagnosticPolicyValue policy = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+    VmParserDiagnosticSeverity severity = VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING;
+
+    if (state == NULL || state->config == NULL) {
+        return false;
+    }
+
+    policy = state->config->const_uninitialized_storage_policy;
+    if (policy == VM_DIAGNOSTIC_POLICY_VALUE_OFF) {
+        return true;
+    }
+
+    severity = policy == VM_DIAGNOSTIC_POLICY_VALUE_ERROR
+        ? VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR
+        : VM_PARSER_DIAGNOSTIC_SEVERITY_WARNING;
+
+    return vm_parser_add_formatted_diagnostic_with_severity(
+        state,
+        VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE,
+        severity,
+        name_token,
+        ".CONST declaration `%s` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.",
+        symbol_name != NULL ? symbol_name : "<unnamed>"
+    );
+}
+
 /// Parses one .data declaration line.
 ///
 /// @param state Parser state to mutate.
@@ -3047,6 +3131,10 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     symbol.has_uninitialized_initializer = has_uninitialized;
     symbol.has_uninitialized_storage = symbol_section == VM_SYMBOL_SECTION_DATA_UNINITIALIZED ||
         (symbol_section == VM_SYMBOL_SECTION_CONST && has_uninitialized);
+    if (symbol_section == VM_SYMBOL_SECTION_CONST && has_uninitialized &&
+        !vm_parser_apply_const_uninitialized_storage_policy(state, name_token, symbol.name)) {
+        return false;
+    }
     state->config->symbols[state->result->symbol_count] = symbol;
     state->result->symbol_count += 1U;
 
@@ -7287,6 +7375,13 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         return false;
     }
 
+    if (!vm_diagnostic_policy_family_accepts_value(
+            VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
+            config->const_uninitialized_storage_policy)) {
+        vm_parser_init_result(out_result, VM_PARSER_STATUS_INVALID_ARGUMENT);
+        return false;
+    }
+
     return true;
 }
 
@@ -7581,6 +7676,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "ambiguous-memory-width";
         case VM_PARSER_DIAGNOSTIC_CONST_WRITE:
             return "const-write";
+        case VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE:
+            return "const-uninitialized-storage";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL:
             return "unsupported-model";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE:

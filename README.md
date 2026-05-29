@@ -5,16 +5,16 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Runtime/source-run MASM behavior phase:
-Phase 57I - .CONST Uninitialized Storage Acceptance
+Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
-Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` declarations as read-only uninitialized-origin storage. The storage remains protected by existing `.CONST` write checks, reads participate in the existing uninitialized-read diagnostics, and opt-in seeded uninitialized-storage visible bytes now cover accepted `.CONST` uninitialized-origin bytes. Phase 57H final-register `[unchanged]` display markers, Phase 57G - Seeded Random Uninitialized Storage Mode source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available, with the Simulator Messages-only `startup-state-notice` preserved. The instruction subset remains anchored by Phase 57 - Signed IDIV.
+Phase 57J adds configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. The default policy warns through Simulator Messages and continues; `off` suppresses only the declaration diagnostic, and `error` rejects execution before runtime. Existing `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G - Seeded Random Uninitialized Storage Mode source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available, with the Simulator Messages-only `startup-state-notice` preserved. The instruction subset remains anchored by Phase 57 - Signed IDIV.
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, the default startup-state notice, opt-in seeded register/flag startup and opt-in seeded uninitialized-storage visible bytes for tests/configuration, final-register unchanged display markers, accepted read-only `.CONST ?` / `.CONST DUP(?)` storage, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). In broad terms, that includes the C99 core VM/parser/executor, checked simulated memory, `.data`, `.DATA?`, `.CONST`, selected MASM compatibility directives, selected register and memory operands, selected arithmetic/logic/shift/rotate/multiply/divide instructions through signed `idiv`, diagnostic settings, the default startup-state notice, opt-in seeded register/flag startup and opt-in seeded uninitialized-storage visible bytes for tests/configuration, final-register unchanged display markers, accepted read-only `.CONST ?` / `.CONST DUP(?)` storage with configurable declaration diagnostics, and the virtual Irvine32 `exit` terminator.
 
 For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
 

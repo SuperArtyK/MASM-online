@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57I .CONST uninitialized storage acceptance.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57J .CONST uninitialized storage diagnostics and policy.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -7895,8 +7895,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"I\"", "Phase 57I should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57I - .CONST Uninitialized Storage Acceptance\"", "Phase 57I should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"J\"", "Phase 57J should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy\"", "Phase 57J should report the runtime phase name");
 
     return failures;
 }
@@ -8334,7 +8334,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"I\"", "Phase 57I .CONST ? fixture should report runtime suffix I");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"J\"", "Phase 57J .CONST ? fixture should report runtime suffix J");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -8349,9 +8349,10 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     failures += expect_json_contains(direct_write_copy, "\"ok\":false", "Direct write to .CONST ? should fail");
     failures += expect_json_contains(direct_write_copy, "\"status\":\"parse-error\"", "Direct write to .CONST ? should fail during parsing when static detection applies");
     failures += expect_json_contains(direct_write_copy, "\"code\":\"const-write\"", "Direct write to .CONST ? should use existing const-write diagnostic");
-    failures += expect_json_not_contains(direct_write_copy, "const-uninitialized-storage", "Phase 57I direct write should not activate Phase 57J diagnostic family");
+    failures += expect_json_contains(direct_write_copy, "\"code\":\"const-uninitialized-storage\"", "Phase 57J direct write should also emit the declaration diagnostic");
     failures += expect_json_contains(computed_write_copy, "\"ok\":false", "Computed write to .CONST ? should fail");
     failures += expect_json_contains(computed_write_copy, "\"status\":\"execution-error\"", "Computed write to .CONST ? should fail at runtime");
+    failures += expect_json_contains(computed_write_copy, "\"code\":\"const-uninitialized-storage\"", "Computed write to .CONST ? should preserve the Phase 57J declaration diagnostic");
     failures += expect_json_contains(computed_write_copy, "\"code\":\"permission-denied\"", "Computed write to .CONST ? should use existing permission diagnostic");
     failures += expect_json_contains(computed_write_copy, "\"memoryChanges\":[]", "Failed computed write to .CONST ? should not commit memory changes");
     failures += expect_json_not_contains(computed_write_copy, "uninitialized-read", "Computed write to .CONST ? should not be reclassified as an uninitialized read");
@@ -8360,6 +8361,95 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     failures += expect_json_contains(strict_read_copy, "\"EAX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "Strict .CONST ? read should preserve prior completed instruction state");
     failures += expect_json_contains(strict_read_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Strict .CONST ? read should stop before mutating consumer register");
     failures += expect_json_not_contains(strict_read_copy, "execution-complete", "Strict .CONST ? read should not emit execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 57J `.CONST ?` declaration diagnostic policies.
+///
+/// @return Number of failures.
+static int test_phase57j_const_uninitialized_storage_policy_source_run(void) {
+    const char *source =
+        ".CONST\n"
+        "limit DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, limit\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *multi_source =
+        ".CONST\n"
+        "limit DWORD ?\n"
+        "buf BYTE 4 DUP(?)\n"
+        "ready DWORD 9\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, ready\n"
+        "main ENDP\n"
+        "END main\n";
+    char warn_copy[TEST_JSON_COPY_CAPACITY];
+    char off_copy[TEST_JSON_COPY_CAPACITY];
+    char error_copy[TEST_JSON_COPY_CAPACITY];
+    char read_off_copy[TEST_JSON_COPY_CAPACITY];
+    char multi_copy[TEST_JSON_COPY_CAPACITY];
+    char invalid_policy_copy[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(warn_copy, sizeof(warn_copy), masm32_sim_wasm_run_source_json(source));
+    copy_source_run_json(
+        off_copy,
+        sizeof(off_copy),
+        masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_policy(source, VM_DIAGNOSTIC_POLICY_VALUE_OFF)
+    );
+    copy_source_run_json(
+        error_copy,
+        sizeof(error_copy),
+        masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_policy(source, VM_DIAGNOSTIC_POLICY_VALUE_ERROR)
+    );
+    copy_source_run_json(
+        read_off_copy,
+        sizeof(read_off_copy),
+        masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY)
+    );
+    copy_source_run_json(multi_copy, sizeof(multi_copy), masm32_sim_wasm_run_source_json(multi_source));
+    copy_source_run_json(
+        invalid_policy_copy,
+        sizeof(invalid_policy_copy),
+        masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_policy(source, VM_DIAGNOSTIC_POLICY_VALUE_COUNT)
+    );
+
+    failures += expect_json_contains(warn_copy, "\"ok\":true", "Default const-uninitialized-storage warning policy should continue execution");
+    failures += expect_json_contains(warn_copy, "\"kind\":\"simulator-warning\",\"code\":\"const-uninitialized-storage\"", "Default policy should emit a simulator warning declaration diagnostic");
+    failures += expect_json_contains(warn_copy, ".CONST declaration `limit` reserves uninitialized read-only storage", "Declaration diagnostic should name the .CONST symbol");
+    failures += expect_json_contains(warn_copy, "\"line\":2,\"column\":1", "Declaration diagnostic should point at the .CONST declarator source location");
+    failures += expect_json_contains(warn_copy, "\"spanLength\":5", "Declaration diagnostic should preserve declarator span length");
+    failures += expect_json_contains(warn_copy, "\"code\":\"uninitialized-read\"", "Default read policy should still warn separately when .CONST ? is read");
+    failures += expect_json_contains(warn_copy, "\"code\":\"execution-complete\"", "Warning policy should still emit execution-complete when execution succeeds");
+    failures += expect_json_contains_once(warn_copy, "\"code\":\"const-uninitialized-storage\"", "Single .CONST ? declaration should produce one declaration warning");
+
+    failures += expect_json_contains(off_copy, "\"ok\":true", "const-uninitialized-storage off policy should continue execution");
+    failures += expect_json_not_contains(off_copy, "const-uninitialized-storage", "Off policy should suppress only the declaration diagnostic");
+    failures += expect_json_contains(off_copy, "\"code\":\"uninitialized-read\"", "Off policy should not suppress read-time uninitialized-read diagnostics");
+    failures += expect_json_contains(off_copy, "\"code\":\"execution-complete\"", "Off policy run should still complete");
+
+    failures += expect_json_contains(error_copy, "\"ok\":false", "Error policy should reject .CONST ? declarations");
+    failures += expect_json_contains(error_copy, "\"status\":\"parse-error\"", "Error policy should reject before runtime execution");
+    failures += expect_json_contains(error_copy, "\"kind\":\"assembly-error\",\"code\":\"const-uninitialized-storage\"", "Error policy should emit an assembly error declaration diagnostic");
+    failures += expect_json_not_contains(error_copy, "uninitialized-read", "Error policy should stop before read-time diagnostics");
+    failures += expect_json_not_contains(error_copy, "execution-complete", "Error policy should not emit execution-complete");
+
+    failures += expect_json_contains(read_off_copy, "\"ok\":true", "Region-only read policy should still execute .CONST ? reads");
+    failures += expect_json_contains(read_off_copy, "\"code\":\"const-uninitialized-storage\"", "Region-only read policy should not suppress declaration diagnostics");
+    failures += expect_json_not_contains(read_off_copy, "uninitialized-read", "Region-only read policy should suppress read-time uninitialized-read diagnostics");
+
+    failures += expect_json_contains(multi_copy, "\"ok\":true", "Multiple .CONST declaration warning fixture should execute");
+    if (count_json_fragment_occurrences(multi_copy, "\"code\":\"const-uninitialized-storage\"") != 2U) {
+        failures += record_failure("Two .CONST declarations with uninitialized storage should emit exactly two declaration diagnostics");
+    }
+    failures += expect_json_not_contains(multi_copy, "from ready + 0", "Initialized .CONST declaration should not be treated as uninitialized-origin storage");
+
+    failures += expect_json_contains(invalid_policy_copy, "\"ok\":false", "Invalid const-uninitialized-storage policy should fail");
+    failures += expect_json_contains(invalid_policy_copy, "\"status\":\"invalid-argument\"", "Invalid const-uninitialized-storage policy should return invalid-argument status");
 
     return failures;
 }
@@ -9340,6 +9430,7 @@ int main(void) {
     failures += test_phase57g_different_seeds_change_uninitialized_storage();
     failures += test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class();
     failures += test_phase57i_const_uninitialized_storage_acceptance_source_run();
+    failures += test_phase57j_const_uninitialized_storage_policy_source_run();
     failures += test_phase57g_startup_axes_are_orthogonal();
     failures += test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage();
     failures += test_phase57g_seeded_uninitialized_storage_strict_read_stops();
@@ -9366,6 +9457,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57I .CONST uninitialized storage acceptance coverage passed.");
+    puts("Source execution tests through Phase 57J .CONST uninitialized storage diagnostics and policy coverage passed.");
     return 0;
 }
