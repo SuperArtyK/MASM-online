@@ -4651,6 +4651,215 @@ static int test_phase55_imul_parse_error_paths(void) {
 
 
 
+
+/// Verifies one source sample reports the Phase 57M unsupported segment/group symbol diagnostic.
+///
+/// @param source MASM-like source text expected to use an unsupported segment/group symbol.
+/// @param expected_message_fragment Fragment expected in the diagnostic message.
+/// @param expected_symbol_count Expected number of ordinary data symbols after recovery.
+/// @return Zero on success, otherwise a positive failure count.
+static int expect_phase57m_segment_symbol_diagnostic(
+    const char *source,
+    const char *expected_message_fragment,
+    size_t expected_symbol_count
+) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57M segment/group symbol should produce parser diagnostics");
+    if (result.diagnostic_count < 1U) {
+        failures += record_failure("Phase 57M segment/group symbol should produce at least one diagnostic");
+        return failures;
+    }
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL, "Phase 57M diagnostic code should be unsupported-segment-symbol");
+    failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "Phase 57M diagnostic should block execution");
+    failures += expect_string_contains(buffers.diagnostics[0].message, expected_message_fragment, "Phase 57M diagnostic message should explain segment/group concept");
+    failures += expect_size(result.symbol_count, expected_symbol_count, "Phase 57M rejected symbol should not create an ordinary data symbol");
+
+    return failures;
+}
+
+/// Verifies Phase 57M targeted diagnostics for exact segment/group references.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57m_segment_symbol_reference_diagnostics(void) {
+    int failures = 0;
+
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET _TEXT\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET _DATA\nmain ENDP\nEND main\n",
+        "MASM/object data-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET _BSS\nmain ENDP\nEND main\n",
+        "MASM/object uninitialized-data segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET CONST\nmain ENDP\nEND main\n",
+        "MASM/object constant-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET STACK\nmain ENDP\nEND main\n",
+        "MASM/object stack-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET DGROUP\nmain ENDP\nEND main\n",
+        "MASM memory-model group concept",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET FLAT\nmain ENDP\nEND main\n",
+        "MASM memory-model group concept",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, DWORD PTR [_TEXT]\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, DWORD PTR [_DATA]\nmain ENDP\nEND main\n",
+        "MASM/object data-segment symbol",
+        0U
+    );
+
+    return failures;
+}
+
+/// Verifies Phase 57M targeted diagnostics for segment and group definition forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57m_segment_symbol_definition_diagnostics(void) {
+    int failures = 0;
+
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "_TEXT SEGMENT\n_TEXT ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "_TEXT ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "_DATA SEGMENT\n_DATA ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object data-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "_DATA ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object data-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "CONST SEGMENT\nCONST ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object constant-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "_BSS SEGMENT\n_BSS ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object uninitialized-data segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "STACK SEGMENT\nSTACK ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM/object stack-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "DGROUP GROUP _DATA, _BSS\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        "MASM memory-model group concept",
+        0U
+    );
+
+    return failures;
+}
+
+/// Verifies Phase 57M CASEMAP behavior and ordinary symbol preservation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57m_segment_symbol_casemap_and_regressions(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET _text\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "OPTION CASEMAP:ALL\n.code\nmain PROC\n    mov eax, OFFSET _data\nmain ENDP\nEND main\n",
+        "MASM/object data-segment symbol",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        ".code\nmain PROC\n    mov eax, OFFSET dgroup\nmain ENDP\nEND main\n",
+        "MASM memory-model group concept",
+        0U
+    );
+    failures += expect_phase57m_segment_symbol_diagnostic(
+        "OPTION CASEMAP:NONE\n.code\nmain PROC\n    mov eax, OFFSET _TEXT\nmain ENDP\nEND main\n",
+        "MASM/object segment symbol",
+        0U
+    );
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".data\n"
+        "_text DWORD 77\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET _text\n"
+        "    mov ebx, _text\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should permit non-exact segment-like ordinary symbols");
+    failures += expect_size(result.diagnostic_count, 0U, "CASEMAP:NONE non-exact segment-like symbol should not diagnose");
+    failures += expect_size(result.symbol_count, 1U, "CASEMAP:NONE non-exact segment-like data label should be inserted");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "_TEXT DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:ALL data-label collision should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL, "CASEMAP:ALL segment-like data label should use unsupported-segment-symbol");
+    failures += expect_size(result.symbol_count, 0U, "CASEMAP:ALL segment-like data label should not be inserted");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "    mov ebx, value\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "ordinary non-colliding data label should still parse");
+    failures += expect_size(result.diagnostic_count, 0U, "ordinary non-colliding data label should produce no diagnostics");
+
+    return failures;
+}
+
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4677,6 +4886,9 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS), "invalid-instruction-operands") != 0) {
         failures += record_failure("parser diagnostic helper should name invalid-instruction-operands");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL), "unsupported-segment-symbol") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported-segment-symbol");
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_LEXER_INVALID_HEX_LITERAL), "invalid-hex-literal") != 0) {
         failures += record_failure("parser diagnostic helper should name surfaced lexer invalid hex diagnostics");
@@ -4838,6 +5050,9 @@ int main(void) {
     failures += test_phase56_div_parse_error_paths();
     failures += test_phase57_idiv_parse_to_ir();
     failures += test_phase57_idiv_parse_error_paths();
+    failures += test_phase57m_segment_symbol_reference_diagnostics();
+    failures += test_phase57m_segment_symbol_definition_diagnostics();
+    failures += test_phase57m_segment_symbol_casemap_and_regressions();
     failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 

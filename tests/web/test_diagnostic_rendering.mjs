@@ -4727,6 +4727,183 @@ END main
 });
 
 
+test("Phase 57M renders _TEXT OFFSET segment-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET _TEXT
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-text-segment-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-text-segment-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 5: `_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.");
+});
+
+test("Phase 57M renders _DATA OFFSET segment-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET _DATA
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-data-segment-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`_DATA` is a MASM/object data-segment symbol. Use declared data labels instead; MASM32 Educational Mode does not expose linker segment symbols.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-data-segment-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 5: `_DATA` is a MASM/object data-segment symbol. Use declared data labels instead; MASM32 Educational Mode does not expose linker segment symbols.");
+});
+
+test("Phase 57M renders _BSS OFFSET segment-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET _BSS
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-bss-segment-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`_BSS` is a MASM/object uninitialized-data segment symbol. Use declared data labels in `.DATA?` instead; MASM32 Educational Mode does not expose linker segment symbols.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-bss-segment-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 4: `_BSS` is a MASM/object uninitialized-data segment symbol. Use declared data labels in `.DATA?` instead; MASM32 Educational Mode does not expose linker segment symbols.");
+});
+
+test("Phase 57M renders CONST OFFSET segment-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET CONST
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-const-segment-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`CONST` is a MASM/object constant-segment symbol. Use declared `.CONST` labels instead; MASM32 Educational Mode does not expose linker segment symbols as addressable symbols.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-const-segment-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 5: `CONST` is a MASM/object constant-segment symbol. Use declared `.CONST` labels instead; MASM32 Educational Mode does not expose linker segment symbols as addressable symbols.");
+});
+
+test("Phase 57M renders STACK OFFSET segment-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET STACK
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-stack-segment-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`STACK` is a MASM/object stack-segment symbol. MASM32 Educational Mode does not expose the simulator stack region as an addressable linker segment symbol.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-stack-segment-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 5: `STACK` is a MASM/object stack-segment symbol. MASM32 Educational Mode does not expose the simulator stack region as an addressable linker segment symbol.");
+});
+
+test("Phase 57M renders FLAT OFFSET group-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET FLAT
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-flat-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`FLAT` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-flat-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 4: `FLAT` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.");
+});
+
+test("Phase 57M renders DGROUP OFFSET group-symbol diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov eax, OFFSET DGROUP
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-offset-dgroup-symbol", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`DGROUP` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.",
+    line: 3,
+    column: 21,
+    byteOffset: 36,
+    spanLength: 6
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-offset-dgroup-symbol", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 3, column 21, byte offset 36, span length 6: `DGROUP` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols.");
+});
+
+test("Phase 57M renders _TEXT SEGMENT definition diagnostic exactly", () => {
+  const source = `_TEXT SEGMENT
+_TEXT ENDS
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57m-text-segment-definition", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-segment-symbol",
+    message: "`_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.",
+    line: 1,
+    column: 1,
+    byteOffset: 0,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57m-text-segment-definition", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 1, column 1, byte offset 0, span length 5: `_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.");
+});
+
 test("Phase 57L renders code memory read diagnostic exactly", () => {
   const source = `.code
 main PROC

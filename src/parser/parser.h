@@ -172,6 +172,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_EFFECTIVE_ADDRESS_EXPRESSION,
     /// An instruction used operands outside the valid shape for that instruction.
     VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS,
+    /// A MASM/object/linker segment or group name was used as an addressable symbol or segment definition.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL,
     /// A recognized Irvine32 virtual symbol was used before its routine implementation exists.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE,
     /// An accepted compatibility construct has no runtime effect in the simulator.

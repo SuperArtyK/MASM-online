@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57L .CODE memory access diagnostics.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57M segment/group symbol diagnostics.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -7895,8 +7895,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"L\"", "Phase 57L should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57L - .CODE Memory Access Diagnostics\"", "Phase 57L should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"M\"", "Phase 57M should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57M - MASM Segment and Group Symbol Diagnostics\"", "Phase 57M should report the runtime phase name");
 
     return failures;
 }
@@ -8334,7 +8334,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"L\"", "Phase 57L .CONST ? fixture should report runtime suffix L");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"M\"", "Phase 57M .CONST ? fixture should report runtime suffix M");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -9026,7 +9026,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"L\"", "Phase 57L code read should report runtime suffix L");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"M\"", "Phase 57M code read should report runtime suffix M");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -9069,6 +9069,188 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     return failures;
 }
+
+/// Verifies Phase 57M targeted source-run diagnostics for segment/group symbols.
+///
+/// @return Number of failures.
+static int test_phase57m_segment_symbol_source_run(void) {
+    char offset_text_json[TEST_JSON_COPY_CAPACITY];
+    char ptr_data_json[TEST_JSON_COPY_CAPACITY];
+    char offset_stack_json[TEST_JSON_COPY_CAPACITY];
+    char offset_flat_json[TEST_JSON_COPY_CAPACITY];
+    char segment_def_json[TEST_JSON_COPY_CAPACITY];
+    char group_def_json[TEST_JSON_COPY_CAPACITY];
+    char casemap_all_json[TEST_JSON_COPY_CAPACITY];
+    char casemap_none_exact_json[TEST_JSON_COPY_CAPACITY];
+    char casemap_none_ordinary_json[TEST_JSON_COPY_CAPACITY];
+    char ordinary_label_json[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(
+        offset_text_json,
+        sizeof(offset_text_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET _TEXT\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        ptr_data_json,
+        sizeof(ptr_data_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, DWORD PTR [_DATA]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        offset_stack_json,
+        sizeof(offset_stack_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET STACK\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        offset_flat_json,
+        sizeof(offset_flat_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET FLAT\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        segment_def_json,
+        sizeof(segment_def_json),
+        masm32_sim_wasm_run_source_json(
+            "_TEXT SEGMENT\n"
+            "_TEXT ENDS\n"
+            ".code\n"
+            "main PROC\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        group_def_json,
+        sizeof(group_def_json),
+        masm32_sim_wasm_run_source_json(
+            "DGROUP GROUP _DATA, _BSS\n"
+            ".code\n"
+            "main PROC\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        casemap_all_json,
+        sizeof(casemap_all_json),
+        masm32_sim_wasm_run_source_json(
+            "OPTION CASEMAP:ALL\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET _text\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        casemap_none_exact_json,
+        sizeof(casemap_none_exact_json),
+        masm32_sim_wasm_run_source_json(
+            "OPTION CASEMAP:NONE\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET _TEXT\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        casemap_none_ordinary_json,
+        sizeof(casemap_none_ordinary_json),
+        masm32_sim_wasm_run_source_json(
+            "OPTION CASEMAP:NONE\n"
+            ".data\n"
+            "_text DWORD 77\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET _text\n"
+            "    mov ebx, _text\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        ordinary_label_json,
+        sizeof(ordinary_label_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "value DWORD 1\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET value\n"
+            "    mov ebx, value\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+
+    printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
+
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"M\"", "Phase 57M segment diagnostics should report runtime suffix M");
+    failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
+    failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
+    failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
+    failures += expect_json_contains(offset_text_json, "\"code\":\"unsupported-segment-symbol\"", "OFFSET _TEXT should use unsupported-segment-symbol code");
+    failures += expect_json_contains(offset_text_json, "MASM/object segment symbol", "OFFSET _TEXT diagnostic should explain segment symbol");
+    failures += expect_json_contains(offset_text_json, "does not expose linker segment symbols or readable `.code` / section images", "OFFSET _TEXT diagnostic should not expose .code alias");
+    failures += expect_json_not_contains(offset_text_json, "execution-complete", "OFFSET _TEXT should not complete");
+    failures += expect_json_not_contains(offset_text_json, "programConsole", "OFFSET _TEXT should not create Program Console output");
+
+    failures += expect_json_contains(ptr_data_json, "\"code\":\"unsupported-segment-symbol\"", "DWORD PTR [_DATA] should use unsupported-segment-symbol code");
+    failures += expect_json_contains(ptr_data_json, "Use declared data labels instead", "DWORD PTR [_DATA] diagnostic should recommend labels");
+    failures += expect_json_not_contains(ptr_data_json, "unknown-symbol", "DWORD PTR [_DATA] should not fall through to unknown-symbol");
+    failures += expect_json_contains(offset_stack_json, "\"code\":\"unsupported-segment-symbol\"", "OFFSET STACK should use unsupported-segment-symbol code");
+    failures += expect_json_contains(offset_stack_json, "MASM/object stack-segment symbol", "OFFSET STACK diagnostic should explain stack segment symbol");
+    failures += expect_json_contains(offset_flat_json, "\"code\":\"unsupported-segment-symbol\"", "OFFSET FLAT should use unsupported-segment-symbol code");
+    failures += expect_json_contains(offset_flat_json, "MASM memory-model group concept", "OFFSET FLAT diagnostic should explain group concept");
+
+    failures += expect_json_contains(segment_def_json, "\"code\":\"unsupported-segment-symbol\"", "_TEXT SEGMENT should use unsupported-segment-symbol code");
+    failures += expect_json_contains(segment_def_json, "MASM/object segment symbol", "_TEXT SEGMENT diagnostic should explain segment symbol");
+    failures += expect_json_not_contains(segment_def_json, "execution-complete", "_TEXT SEGMENT should not execute");
+    failures += expect_json_not_contains(segment_def_json, "programConsole", "_TEXT SEGMENT should not create Program Console output");
+
+    failures += expect_json_contains(group_def_json, "\"code\":\"unsupported-segment-symbol\"", "DGROUP GROUP should use unsupported-segment-symbol code");
+    failures += expect_json_contains(group_def_json, "MASM memory-model group concept", "DGROUP GROUP diagnostic should explain group concept");
+    failures += expect_json_not_contains(group_def_json, "execution-complete", "DGROUP GROUP should not execute");
+    failures += expect_json_not_contains(group_def_json, "programConsole", "DGROUP GROUP should not create Program Console output");
+
+    failures += expect_json_contains(casemap_all_json, "\"code\":\"unsupported-segment-symbol\"", "CASEMAP:ALL should diagnose _text as _TEXT");
+    failures += expect_json_contains(casemap_none_exact_json, "\"code\":\"unsupported-segment-symbol\"", "CASEMAP:NONE exact _TEXT should still diagnose");
+    failures += expect_json_contains(casemap_none_ordinary_json, "\"ok\":true", "CASEMAP:NONE non-exact _text ordinary label should run");
+    failures += expect_json_contains(casemap_none_ordinary_json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "CASEMAP:NONE non-exact _text should get normal data address");
+    failures += expect_json_contains(casemap_none_ordinary_json, "\"EBX\":{\"hex\":\"0000004Dh\",\"unsigned\":77}", "CASEMAP:NONE non-exact _text should read normal data value");
+    failures += expect_json_not_contains(casemap_none_ordinary_json, "unsupported-segment-symbol", "CASEMAP:NONE non-exact _text should not diagnose");
+
+    failures += expect_json_contains(ordinary_label_json, "\"ok\":true", "ordinary data label should continue to run");
+    failures += expect_json_contains(ordinary_label_json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "ordinary data label OFFSET should still resolve");
+    failures += expect_json_contains(ordinary_label_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "ordinary data label read should still execute");
+
+    return failures;
+}
+
 /// Verifies Phase 57-CORR1 reports `.CONST` context for a cross-region write overlap.
 ///
 /// @return Number of failures.
@@ -9574,6 +9756,7 @@ int main(void) {
     failures += test_phase57_idiv_source_run_programs();
     failures += test_phase57_idiv_source_run_error_paths();
     failures += test_phase57l_code_memory_access_diagnostics_source_run();
+    failures += test_phase57m_segment_symbol_source_run();
     failures += test_phase57corr1_const_cross_region_write_diagnostic_context();
     failures += test_phase57corr1_direct_const_write_still_permission_denied();
     failures += test_phase57corr1_const_cross_region_read_remains_region_failure();
@@ -9655,6 +9838,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57L .CODE memory access diagnostics coverage passed.");
+    puts("Source execution tests through Phase 57M segment/group symbol diagnostics coverage passed.");
     return 0;
 }

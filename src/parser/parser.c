@@ -181,6 +181,14 @@ typedef struct VmParserUnsupportedFeature {
     const char *message;
 } VmParserUnsupportedFeature;
 
+/// Describes one MASM/object/linker segment or group name that is not addressable.
+typedef struct VmParserUnsupportedSegmentSymbol {
+    /// Canonical spelling used for active-policy recognition.
+    const char *spelling;
+    /// Stable diagnostic message explaining why the name is not addressable.
+    const char *message;
+} VmParserUnsupportedSegmentSymbol;
+
 /// Describes one known name in the virtual Irvine32 registry.
 typedef struct VmParserIrvine32RegistryEntry {
     /// Canonical Irvine32 routine, pseudo-instruction, or external name.
@@ -236,6 +244,15 @@ static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserCo
 static bool vm_parser_expect_comma(VmParserState *state);
 
 static bool vm_parser_expect_line_end(VmParserState *state);
+
+static void vm_parser_recover_skip_line(VmParserState *state);
+
+static void vm_parser_recover_skip_block(
+    VmParserState *state,
+    const char *first_terminator,
+    const char *second_terminator,
+    const char *third_terminator
+);
 
 static bool vm_parser_emit_instruction(
     VmParserState *state,
@@ -1297,6 +1314,128 @@ static const char *vm_parser_unsupported_data_type_message(const VmLexerToken *t
     };
 
     return vm_parser_find_unsupported_feature_message(token, data_types, sizeof(data_types) / sizeof(data_types[0]));
+}
+
+
+/// Returns the registered segment/group-symbol table.
+///
+/// @param out_count Receives the number of entries when non-NULL.
+/// @return Static table of unsupported segment/group symbols.
+static const VmParserUnsupportedSegmentSymbol *vm_parser_unsupported_segment_symbols(size_t *out_count) {
+    static const VmParserUnsupportedSegmentSymbol symbols[] = {
+        {"_TEXT", "`_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images."},
+        {"_DATA", "`_DATA` is a MASM/object data-segment symbol. Use declared data labels instead; MASM32 Educational Mode does not expose linker segment symbols."},
+        {"_BSS", "`_BSS` is a MASM/object uninitialized-data segment symbol. Use declared data labels in `.DATA?` instead; MASM32 Educational Mode does not expose linker segment symbols."},
+        {"CONST", "`CONST` is a MASM/object constant-segment symbol. Use declared `.CONST` labels instead; MASM32 Educational Mode does not expose linker segment symbols as addressable symbols."},
+        {"STACK", "`STACK` is a MASM/object stack-segment symbol. MASM32 Educational Mode does not expose the simulator stack region as an addressable linker segment symbol."},
+        {"DGROUP", "`DGROUP` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols."},
+        {"FLAT", "`FLAT` is a MASM memory-model group concept. MASM32 Educational Mode uses simulator-defined flat memory regions and does not expose linker groups as addressable symbols."}
+    };
+
+    if (out_count != NULL) {
+        *out_count = sizeof(symbols) / sizeof(symbols[0]);
+    }
+    return symbols;
+}
+
+/// Returns whether a token matches a canonical segment/group spelling under a CASEMAP policy.
+///
+/// @param state Parser state carrying the active CASEMAP policy.
+/// @param token Candidate symbol token.
+/// @param spelling Canonical unsupported segment/group spelling.
+/// @return true when @p token matches @p spelling under the active policy.
+static bool vm_parser_segment_symbol_token_matches_spelling(
+    const VmParserState *state,
+    const VmLexerToken *token,
+    const char *spelling
+) {
+    size_t spelling_length = 0U;
+
+    if (state == NULL || token == NULL || spelling == NULL || !vm_parser_token_can_name_data_symbol(token)) {
+        return false;
+    }
+
+    if (state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_ALL) {
+        return vm_parser_token_equals(token, spelling);
+    }
+
+    spelling_length = strlen(spelling);
+    return token->lexeme != NULL && token->lexeme_length == spelling_length && memcmp(token->lexeme, spelling, spelling_length) == 0;
+}
+
+/// Finds the unsupported segment/group entry for a token under the active CASEMAP policy.
+///
+/// @param state Parser state carrying the active CASEMAP policy.
+/// @param token Candidate symbol token.
+/// @return Matching segment/group entry, or NULL when the token is ordinary user-symbol text.
+static const VmParserUnsupportedSegmentSymbol *vm_parser_find_unsupported_segment_symbol(
+    const VmParserState *state,
+    const VmLexerToken *token
+) {
+    const VmParserUnsupportedSegmentSymbol *symbols = NULL;
+    size_t symbol_count = 0U;
+    size_t index = 0U;
+
+    symbols = vm_parser_unsupported_segment_symbols(&symbol_count);
+    for (index = 0U; index < symbol_count; index += 1U) {
+        if (vm_parser_segment_symbol_token_matches_spelling(state, token, symbols[index].spelling)) {
+            return &symbols[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Adds the targeted diagnostic for an unsupported segment/group symbol.
+///
+/// @param state Parser state whose diagnostics should receive the entry.
+/// @param token Token naming the unsupported segment/group concept.
+/// @return true when @p token was recognized and a diagnostic was recorded.
+static bool vm_parser_add_unsupported_segment_symbol_diagnostic(
+    VmParserState *state,
+    const VmLexerToken *token
+) {
+    const VmParserUnsupportedSegmentSymbol *symbol = vm_parser_find_unsupported_segment_symbol(state, token);
+
+    if (symbol == NULL) {
+        return false;
+    }
+
+    return vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL, token, symbol->message);
+}
+
+/// Diagnoses unsupported MASM segment/group definition forms and skips the line or block.
+///
+/// @param state Parser state to mutate.
+/// @return true when a segment or group definition form was recognized and consumed.
+static bool vm_parser_recover_unsupported_segment_symbol_if_recognized(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *next = vm_parser_peek_token(state, 1U);
+
+    if (state == NULL || token == NULL || next == NULL || token->kind == VM_LEXER_TOKEN_EOF) {
+        return false;
+    }
+
+    if (next->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+        (vm_parser_token_equals(next, "SEGMENT") || vm_parser_token_equals(next, "ENDS")) &&
+        vm_parser_find_unsupported_segment_symbol(state, token) != NULL) {
+        (void)vm_parser_add_unsupported_segment_symbol_diagnostic(state, token);
+        if (vm_parser_token_equals(next, "SEGMENT")) {
+            vm_parser_recover_skip_block(state, "ends", NULL, NULL);
+        } else {
+            vm_parser_recover_skip_line(state);
+        }
+        return true;
+    }
+
+    if (next->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(next, "GROUP") &&
+        vm_parser_find_unsupported_segment_symbol(state, token) != NULL) {
+        (void)vm_parser_add_unsupported_segment_symbol_diagnostic(state, token);
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    return false;
 }
 
 /// Returns the current parser token.
@@ -3030,6 +3169,11 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, name_token)) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
     if (type_token == NULL || type_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_symbol_parse_data_type(type_token->lexeme, type_token->lexeme_length, &data_type)) {
         const char *unsupported_type_message = vm_parser_unsupported_data_type_message(type_token);
         if (unsupported_type_message != NULL) {
@@ -3516,6 +3660,10 @@ static const VmSymbol *vm_parser_resolve_symbol_with_message(VmParserState *stat
     VmSymbolLookupStatus lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
 
     if (state == NULL || !vm_parser_token_can_name_data_symbol(token)) {
+        return NULL;
+    }
+
+    if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, token)) {
         return NULL;
     }
 
@@ -5119,6 +5267,9 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         uint32_t encoded_address = 0U;
         if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "OFFSET requires a following data symbol.");
+            return false;
+        }
+        if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, symbol_token)) {
             return false;
         }
         symbol = vm_symbol_find_by_name_with_policy(
@@ -6785,6 +6936,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return vm_parser_parse_option_directive(state) && !state->diagnostic_overflowed;
     }
 
+    if (vm_parser_recover_unsupported_segment_symbol_if_recognized(state)) {
+        return !state->diagnostic_overflowed;
+    }
+
     if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
         return !state->diagnostic_overflowed;
     }
@@ -7121,6 +7276,11 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, name_token)) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
     if (vm_parser_find_equate(state, name_token) != NULL ||
         vm_parser_has_conflicting_data_symbol(state, name_token)) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate numeric equate or data symbol name.");
@@ -7294,6 +7454,13 @@ static bool vm_parser_parse_data_sections(VmParserState *state) {
             continue;
         }
 
+        if (vm_parser_recover_unsupported_segment_symbol_if_recognized(state)) {
+            if (state->diagnostic_overflowed) {
+                return false;
+            }
+            continue;
+        }
+
         if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
             if (state->diagnostic_overflowed) {
                 return false;
@@ -7462,6 +7629,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
         consumed_preamble_line = vm_parser_parse_equate_line_if_recognized(&state);
         if (!consumed_preamble_line) {
             consumed_preamble_line = vm_parser_parse_header_line_if_recognized(&state);
+        }
+        if (!consumed_preamble_line) {
+            consumed_preamble_line = vm_parser_recover_unsupported_segment_symbol_if_recognized(&state);
         }
         if (!consumed_preamble_line) {
             consumed_preamble_line = vm_parser_recover_unsupported_feature_if_recognized(&state);
@@ -7708,6 +7878,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-effective-address-expression";
         case VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS:
             return "invalid-instruction-operands";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL:
+            return "unsupported-segment-symbol";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE:
             return "unsupported-irvine32-routine";
         case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_NO_OP:
