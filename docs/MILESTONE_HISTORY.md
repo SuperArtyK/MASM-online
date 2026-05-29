@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57J:
+Current status at Phase 57K:
 
 Repository/archive milestone:
-Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+Phase 57K - .CODE and MASM Segment Symbol Access Policy
 
 Runtime/source-run MASM behavior phase:
 Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
 Status interpretation:
 
-Phase 57J adds configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)` declarations accepted by Phase 57I. It advances runtime/source-run MASM behavior metadata because user-visible diagnostic policy behavior changed. Existing `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57K is policy, documentation, registry-metadata, and characterization work for unsupported `.code` memory access and unsupported MASM segment/group symbols. It does not add MASM syntax, parser behavior, VM instruction behavior, source-run diagnostics, rendered Simulator Messages wording, Program Console output, browser controls, or runtime/source-run metadata changes. Runtime/source-run MASM behavior therefore remains Phase 57J. Existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -80,7 +80,17 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57G adds opt-in deterministic seeded visible bytes for uninitialized-origin storage while preserving metadata, default zero startup, initialized data bytes, and existing browser UI behavior without adding browser UI controls.
 - Phase 57H adds final-register `[unchanged]` display markers for canonical register families that the executed program did not write, while keeping runtime/source-run MASM behavior metadata at Phase 57G.
 - Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` as read-only uninitialized-origin storage, advances runtime/source-run MASM behavior metadata to Phase 57I, and is followed by Phase 57J configurable declaration diagnostics.
+- Phase 57J activates configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`, advances runtime/source-run MASM behavior metadata to Phase 57J, and preserves `.CONST` storage semantics.
+- Phase 57K locks the v1 policy that `.code` memory access is unsupported and that MASM segment/group names are not aliases for simulator regions, while keeping runtime/source-run MASM behavior at Phase 57J.
 
+
+## Phase 57K - .CODE and MASM Segment Symbol Access Policy
+
+Phase 57K audits and characterizes current `.code` memory behavior while locking the v1 source-level policy to `unsupported-code-memory-access`. The simulator executes internal IR and does not expose real x86 opcode bytes, deterministic code-image bytes, a PE `.text` image, or writable/readable `.code` section bytes to simulated source programs. Phase 57L owns later runtime/source-run `.code` access diagnostics.
+
+Phase 57K also defines `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` as unsupported MASM/object/linker segment or group symbols, not aliases for `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any internal VM region. Phase 57M owns later targeted `unsupported-segment-symbol` parser diagnostics.
+
+Phase 57K updates repository/archive status only. Runtime/source-run MASM behavior remains Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy.
 
 ## Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 
@@ -122,7 +132,7 @@ Phase 57D does not add new diagnostic families, browser settings, MASM syntax, p
 
 ## Phase 57C - Diagnostic Policy Registry Design
 
-Phase 57C adds the shared diagnostic-policy registry skeleton for optional teaching diagnostics. The registry defines the common `off`, `warn`, and `error` policy vocabulary and central names for current and reserved policy families: `uninitialized-read`, `undefined-flag-use`, `compatibility-notice`, `const-uninitialized-storage`, `startup-state-notice`, and `code-image-read`.
+Phase 57C adds the shared diagnostic-policy registry skeleton for optional teaching diagnostics. The registry defines the common `off`, `warn`, and `error` policy vocabulary and central names for current and reserved policy families: `uninitialized-read`, `undefined-flag-use`, `compatibility-notice`, `const-uninitialized-storage`, `startup-state-notice`, and `unsupported-code-memory-access`.
 
 Phase 57C does not migrate existing diagnostic settings onto the registry and does not add user-visible diagnostic behavior. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, source-run JSON behavior, Program Console behavior, or runtime/source-run MASM behavior metadata changes.
 

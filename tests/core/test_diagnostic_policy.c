@@ -3,7 +3,9 @@
  * @brief Unit tests for the diagnostic-policy registry and migration helpers.
  *
  * These tests verify the shared off/warn/error vocabulary, policy-family
- * registry metadata, Phase 57D behavior-preserving migration helpers, Phase 57E startup-state notices, and Phase 57J const-uninitialized-storage diagnostics.
+ * registry metadata, Phase 57D behavior-preserving migration helpers, Phase
+ * 57E startup-state notices, Phase 57J const-uninitialized-storage diagnostics,
+ * and the Phase 57K reserved unsupported-code-memory-access family.
  */
 
 #include <stdbool.h>
@@ -102,14 +104,14 @@ static int test_invalid_policy_value_rejection(void) {
 /// @return Zero on success, otherwise a positive failure count.
 static int test_policy_family_parse_and_format(void) {
     int failures = 0;
-    VmDiagnosticPolicyFamily family = VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ;
+    VmDiagnosticPolicyFamily family = VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS;
 
     failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ), "uninitialized-read", "uninitialized-read family format");
     failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_UNDEFINED_FLAG_USE), "undefined-flag-use", "undefined-flag-use family format");
     failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_COMPATIBILITY_NOTICE), "compatibility-notice", "compatibility-notice family format");
     failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE), "const-uninitialized-storage", "const-uninitialized-storage family format");
     failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice", "startup-state-notice family format");
-    failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ), "code-image-read", "code-image-read family format");
+    failures += expect_string_equal(vm_diagnostic_policy_family_name(VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS), "unsupported-code-memory-access", "unsupported-code-memory-access family format");
 
     failures += expect_true(vm_diagnostic_policy_parse_family("uninitialized-read", &family), "parse uninitialized-read should succeed");
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ ? record_failure("parse uninitialized-read enum") : 0;
@@ -121,8 +123,8 @@ static int test_policy_family_parse_and_format(void) {
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE ? record_failure("parse const-uninitialized-storage enum") : 0;
     failures += expect_true(vm_diagnostic_policy_parse_family("startup-state-notice", &family), "parse startup family should succeed");
     failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE ? record_failure("parse startup-state-notice enum") : 0;
-    failures += expect_true(vm_diagnostic_policy_parse_family("code-image-read", &family), "parse reserved code family should succeed");
-    failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ ? record_failure("parse code-image-read enum") : 0;
+    failures += expect_true(vm_diagnostic_policy_parse_family("unsupported-code-memory-access", &family), "parse reserved code memory-access family should succeed");
+    failures += family != VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS ? record_failure("parse unsupported-code-memory-access enum") : 0;
 
     return failures;
 }
@@ -176,13 +178,13 @@ static int test_policy_family_metadata(void) {
 
     failures += expect_false(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE), "const-uninitialized-storage should be implemented, not reserved");
     failures += expect_false(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE), "startup-state-notice should be implemented, not reserved");
-    failures += expect_true(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ), "code-image-read should be reserved inactive");
+    failures += expect_true(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS), "unsupported-code-memory-access should be reserved inactive");
     failures += expect_false(vm_diagnostic_policy_family_is_reserved(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ), "uninitialized-read should not be reserved inactive");
 
-    info = vm_diagnostic_policy_family_info(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ);
-    failures += info == NULL ? record_failure("code-image-read metadata should exist") : 0;
+    info = vm_diagnostic_policy_family_info(VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS);
+    failures += info == NULL ? record_failure("unsupported-code-memory-access metadata should exist") : 0;
     if (info != NULL) {
-        failures += info->has_default_value ? record_failure("reserved code-image-read should not have current default") : 0;
+        failures += info->has_default_value ? record_failure("reserved unsupported-code-memory-access should not have current default") : 0;
     }
 
     return failures;
@@ -288,7 +290,7 @@ static int test_phase57d_family_value_acceptance(void) {
     failures += expect_true(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_OFF), "startup-state-notice should accept off");
     failures += expect_true(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "startup-state-notice should accept warn");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "startup-state-notice should reject unsupported error mode");
-    failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "reserved code-image-read should reject error");
+    failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS, VM_DIAGNOSTIC_POLICY_VALUE_ERROR), "reserved unsupported-code-memory-access should reject error");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_UNINITIALIZED_READ, VM_DIAGNOSTIC_POLICY_VALUE_COUNT), "implemented family should reject out-of-range value");
     failures += expect_false(vm_diagnostic_policy_family_accepts_value(VM_DIAGNOSTIC_POLICY_FAMILY_COUNT, VM_DIAGNOSTIC_POLICY_VALUE_WARN), "out-of-range family should reject warn");
 

@@ -1404,19 +1404,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57h_register_display_status_present() -> None:
-    """Verify Phase 57J .CONST diagnostics and current-status requirements."""
+def assert_phase57k_code_policy_status_present() -> None:
+    """Verify Phase 57K policy status and Phase 57J runtime-status requirements."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
+        "Phase 57K - .CODE and MASM Segment Symbol Access Policy",
         "Runtime/source-run MASM behavior phase:",
         "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
         "[unchanged]",
         "startup-state-notice",
     ]
     status_block = """Repository/archive milestone:
-Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+Phase 57K - .CODE and MASM Segment Symbol Access Policy
 
 Runtime/source-run MASM behavior phase:
 Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
@@ -1438,10 +1438,14 @@ Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
+            "Phase 57K - .CODE and MASM Segment Symbol Access Policy",
             "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
+            "unsupported",
+            "_TEXT",
+            "DGROUP",
             ".CONST ?",
             "final-register `[unchanged]` display markers",
-            "source-run/test-facing seeded uninitialized-storage visible-byte settings",
+            "seeded uninitialized-storage visible-byte settings",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1463,6 +1467,7 @@ Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57K - .CODE and MASM Segment Symbol Access Policy",
             "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
             "Phase 57I - .CONST Uninitialized Storage Acceptance",
             "Phase 57H - Register Unchanged Display Markers",
@@ -1485,10 +1490,11 @@ Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 57K - .CODE and MASM Segment Symbol Access Policy",
             "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
             ".CONST ?",
             "final-register `[unchanged]` display markers",
-            "source-run/test-facing seeded uninitialized-storage visible-byte settings",
+            "seeded uninitialized-storage visible-byte settings",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1502,19 +1508,58 @@ Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"""
         ],
     )
 
-
     assert_all_text_contains(
         "web/index.html",
         [
-            "Phase 57J",
-            "signed IDIV remains the current instruction subset",
+            "Phase 57K",
+            "runtime source-run behavior remains Phase 57J",
+            ".code memory access",
+            "MASM segment/group symbols",
             ".CONST",
             "[unchanged]",
-            "source-run settings",
-            "configurable declaration diagnostics",
         ],
     )
 
+
+def assert_phase57k_code_policy_documented() -> None:
+    """Verify Phase 57K .code and segment/group policy documentation."""
+
+    phase57k_fragments = [
+        "unsupported-code-memory-access",
+        "unsupported-segment-symbol",
+        "`.code` memory access",
+        "internal IR",
+        "PE `.text`",
+        "x86",
+        "_TEXT",
+        "_DATA",
+        "_BSS",
+        "CONST",
+        "STACK",
+        "DGROUP",
+        "FLAT",
+        "Phase 57M - MASM Segment and Group Symbol Diagnostics",
+    ]
+    assert_all_text_contains("docs/FULL_IMPLEMENTATION_SPEC.md", phase57k_fragments)
+    assert_all_text_contains("docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md", phase57k_fragments)
+    assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", phase57k_fragments)
+    assert_all_text_contains("docs/MILESTONE_HISTORY.md", ["unsupported-code-memory-access", "unsupported-segment-symbol", "_TEXT", "DGROUP", "Runtime/source-run MASM behavior remains Phase 57J"])
+    assert_all_text_not_contains(
+        "README.md",
+        [
+            "unsupported-readable-code-image",
+            "deterministic-simulator-code-image",
+            "x86 opcode bytes are emitted",
+        ],
+    )
+    assert_all_text_not_contains(
+        "docs/SUPPORTED_SYNTAX.md",
+        [
+            "unsupported-readable-code-image",
+            "deterministic-simulator-code-image",
+            "x86 opcode bytes are emitted",
+        ],
+    )
 
 
 def report_phase51_smoke_harness_status() -> None:
@@ -1578,7 +1623,8 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57h_register_display_status_present()
+    assert_phase57k_code_policy_status_present()
+    assert_phase57k_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
 

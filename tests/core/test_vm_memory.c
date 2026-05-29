@@ -4,8 +4,9 @@
  *
  * These tests cover deterministic memory layout, checked reads and writes,
  * region permissions, invalid address reporting, unaligned-access warnings, raw
- * byte-change recording, read-only .const behavior, and fixed-layout
- * compatibility without introducing parser or instruction execution.
+ * byte-change recording, read-only .const behavior, Phase 57K .code
+ * region characterization, and fixed-layout compatibility without introducing
+ * parser or instruction execution.
  */
 
 #include <stdbool.h>
@@ -270,27 +271,48 @@ static int test_heap_and_stack_valid_access(void) {
     return failures;
 }
 
-/// Verifies code-region permission behavior.
+/// Characterizes current low-level .code memory-region behavior for Phase 57K.
+///
+/// Phase 57K locks source-level policy to `unsupported-code-memory-access`, but
+/// does not implement Phase 57L runtime denial. This test records the current
+/// low-level VM artifact: the fixed `.code` region has zero-initialized backing
+/// storage, permits checked reads, denies checked writes through ordinary
+/// permissions, and is executable metadata rather than a source-level byte image.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_code_write_fails_and_read_succeeds(void) {
+static int test_phase57k_code_region_current_behavior_characterization(void) {
     int failures = 0;
     VmMemory memory;
     VmMemoryDiagnostic diagnostic;
     uint32_t value32 = 0xFFFFFFFFU;
+    const VmMemoryRegion *code_region = NULL;
 
     failures += expect_status(vm_memory_init(&memory, NULL), VM_MEMORY_STATUS_OK, "memory initialization should succeed");
     if (failures != 0) {
         return failures;
     }
 
-    failures += expect_status(vm_memory_read_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value32, &diagnostic), VM_MEMORY_STATUS_OK, "code read should succeed");
-    failures += expect_u32(value32, 0U, "code region should initialize to zero");
+    code_region = vm_memory_get_region(&memory, VM_MEMORY_REGION_CODE);
+    if (code_region == NULL) {
+        vm_memory_deinit(&memory);
+        return record_failure("code region should exist for Phase 57K characterization");
+    }
+
+    failures += expect_u32(code_region->base, VM_MEMORY_DEFAULT_CODE_BASE, "Phase 57K code-region base should match fixed layout");
+    failures += expect_u32(code_region->size, VM_MEMORY_DEFAULT_CODE_SIZE, "Phase 57K code-region capacity should match fixed layout");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_READ), true, "Phase 57K current low-level code region is readable");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_WRITE), false, "Phase 57K current low-level code region is not writable");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_EXECUTE), true, "Phase 57K current low-level code region carries execute permission");
+
+    failures += expect_status(vm_memory_read_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value32, &diagnostic), VM_MEMORY_STATUS_OK, "Phase 57K current low-level code read should succeed");
+    failures += expect_u32(value32, 0U, "Phase 57K current low-level code read returns zero-filled backing storage");
     failures += expect_bool(diagnostic.has_region, true, "code read diagnostic should identify region");
     failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_MEMORY_REGION_CODE, "code read diagnostic region mismatch");
+    failures += expect_u32((uint32_t)diagnostic.access_type, (uint32_t)VM_MEMORY_ACCESS_READ, "code read diagnostic access type mismatch");
 
-    failures += expect_status(vm_memory_write_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0xDEADBEEFU, &diagnostic), VM_MEMORY_STATUS_PERMISSION_DENIED, "code write should fail permission check");
+    failures += expect_status(vm_memory_write_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0xDEADBEEFU, &diagnostic), VM_MEMORY_STATUS_PERMISSION_DENIED, "Phase 57K current low-level code write should fail ordinary permission check");
     failures += expect_bool(diagnostic.has_region, true, "code write diagnostic should identify region");
+    failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_MEMORY_REGION_CODE, "code write diagnostic region mismatch");
     failures += expect_u32((uint32_t)diagnostic.access_type, (uint32_t)VM_MEMORY_ACCESS_WRITE, "code write diagnostic access type mismatch");
     failures += expect_size(vm_memory_change_count(&memory), 0U, "failed code write should not record changes");
 
@@ -567,7 +589,7 @@ int main(void) {
     failures += test_default_layout_and_metadata();
     failures += test_data_read_write_little_endian();
     failures += test_heap_and_stack_valid_access();
-    failures += test_code_write_fails_and_read_succeeds();
+    failures += test_phase57k_code_region_current_behavior_characterization();
     failures += test_invalid_address_errors_are_structured();
     failures += test_unaligned_access_succeeds_with_warning();
     failures += test_region_boundary_edge_cases();

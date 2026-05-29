@@ -7,7 +7,9 @@
  * configurable families through registry-backed compatibility helpers. Phase
  * 57E activates the startup-state notice family without changing startup
  * values or runtime/source-run MASM behavior metadata. Phase 57J activates
- * `.CONST` uninitialized-storage declaration diagnostics.
+ * `.CONST` uninitialized-storage declaration diagnostics. Phase 57K reserves
+ * `unsupported-code-memory-access` for the future Phase 57L `.code`
+ * memory-access diagnostics while keeping the family inactive.
  */
 
 #include "vm_diagnostic_policy.h"
@@ -74,8 +76,8 @@ static const VmDiagnosticPolicyFamilyInfo VM_DIAGNOSTIC_POLICY_FAMILY_TABLE[] = 
         VM_DIAGNOSTIC_POLICY_VALUE_WARN,
     },
     {
-        VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ,
-        "code-image-read",
+        VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS,
+        "unsupported-code-memory-access",
         VM_DIAGNOSTIC_POLICY_FAMILY_STATE_RESERVED_INACTIVE,
         false,
         VM_DIAGNOSTIC_POLICY_VALUE_OFF,

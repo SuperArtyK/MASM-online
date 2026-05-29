@@ -38,8 +38,8 @@ typedef enum VmDiagnosticPolicyFamily {
     VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
     /// Informational notice explaining deterministic simulator startup state.
     VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,
-    /// Reserved family for future `.code` image memory-read diagnostics.
-    VM_DIAGNOSTIC_POLICY_FAMILY_CODE_IMAGE_READ,
+    /// Reserved family for future `.code` memory-access diagnostics.
+    VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS,
     /// Number of known diagnostic-policy families.
     VM_DIAGNOSTIC_POLICY_FAMILY_COUNT
 } VmDiagnosticPolicyFamily;

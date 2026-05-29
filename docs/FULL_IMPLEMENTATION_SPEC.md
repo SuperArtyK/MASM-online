@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -4151,7 +4151,7 @@ undefined-flag-use
 compatibility-notice
 const-uninitialized-storage
 startup-state-notice
-code-image-read
+unsupported-code-memory-access
 ```
 
 Future diagnostic families should be added through the same policy mechanism rather than one-off parser flags, source-run flags, environment variables, or UI-only checks.
@@ -4252,11 +4252,23 @@ The warning explains that the simulator accepts the declaration for compatibilit
 
 This section defines the planned v1 `.code` memory-access policy. It is not a statement that `.code` memory-access diagnostics are implemented in the current repository state.
 
-Through Phase 57-CORR2 - Compact Negative Register-Indirect Displacement Correction, assistants must not claim that `.code` memory-access denial is implemented unless the current repository tests prove it.
+Through Phase 57K - .CODE and MASM Segment Symbol Access Policy, assistants must not claim that `.code` memory-access denial is implemented. Phase 57K characterizes current behavior and locks policy, but Phase 57L owns runtime/source-run denial diagnostics.
 
 Phase 57K - .CODE and MASM Segment Symbol Access Policy owns the policy audit and source-of-truth cleanup for `.code` access behavior.
 
 Phase 57L - .CODE Memory Access Diagnostics owns the runtime/source-run implementation of `.code` read/write denial.
+
+Phase 57K audit result for the current low-level VM memory layer:
+
+- fixed-layout `.code` base: `00400000h`;
+- fixed-layout `.code` capacity: `00100000h` bytes;
+- low-level permissions: read and execute are present, write is absent;
+- low-level checked reads wholly inside `.code` currently succeed;
+- low-level checked writes wholly inside `.code` currently fail through ordinary region permissions, not through a specific `.code` source-level policy diagnostic;
+- current low-level reads return deterministic zero bytes because the region backing storage is zero-initialized by the VM memory initializer;
+- those returned zero bytes are backing-storage defaults, not a section image, not PE `.text` bytes, not x86 opcode bytes, not emitted IR bytes, and not a supported source-level contract;
+- current source programs can reach `.code` addresses through existing register-indirect or displacement memory forms after loading the fixed address into a register, for example `mov eax, 00400000h` followed by `mov ebx, DWORD PTR [eax]`;
+- Phase 57K documents this as a current implementation artifact that Phase 57L must replace with the selected `.code` memory-access diagnostic.
 
 The simulator has a `.code` source section and may have parser, IR, source-location, and execution metadata associated with executable source lines. That does not mean `.code` is user-readable or user-writable simulated program memory.
 
@@ -4403,6 +4415,8 @@ Preferred diagnostic family:
 ```text
 unsupported-segment-symbol
 ```
+
+Phase 57K defines this policy and classification target only. Phase 57M - MASM Segment and Group Symbol Diagnostics owns the parser/source-run implementation of this diagnostic. Through Phase 57K, assistants must not claim that `unsupported-segment-symbol` diagnostics are implemented unless the current repository tests prove a later phase added them.
 
 The diagnostic should explain that the name is a MASM/object/linker segment or group concept and is not exposed as an addressable simulator symbol.
 
