@@ -1263,7 +1263,6 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
         {"struct", "Unsupported feature: STRUCT declarations are not supported yet."},
         {"union", "Unsupported feature: UNION declarations are not supported yet."},
         {"record", "Unsupported feature: RECORD declarations are not supported yet."},
-        {"invoke", "Unsupported feature: INVOKE is not supported yet; use CALL when available."},
         {"proto", "Unsupported feature: PROTO procedure metadata is not supported yet."},
         {"local", "Unsupported feature: LOCAL procedure variables are not supported yet."},
         {"macro", "Unsupported feature: MASM macro definitions are not supported yet."},
@@ -1300,6 +1299,134 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
     };
 
     return vm_parser_find_unsupported_feature_message(token, keywords, sizeof(keywords) / sizeof(keywords[0]));
+}
+
+
+/// Returns whether a token is an INVOKE keyword.
+///
+/// @param token Token to inspect.
+/// @return true when @p token spells INVOKE case-insensitively.
+static bool vm_parser_token_is_invoke(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "invoke");
+}
+
+/// Returns whether a token is an ADDR operator in an unsupported INVOKE line.
+///
+/// @param token Token to inspect.
+/// @return true when @p token spells ADDR case-insensitively.
+static bool vm_parser_token_is_addr_operator(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "addr");
+}
+
+/// Returns whether an INVOKE target is a known external MASM32 runtime routine.
+///
+/// @param token Candidate routine token.
+/// @return true for Phase 57R-recognized MASM32 runtime-style names.
+static bool vm_parser_invoke_target_is_masm32_runtime(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "stdout");
+}
+
+/// Returns whether an INVOKE target is a known C runtime-style routine.
+///
+/// @param token Candidate routine token.
+/// @return true for Phase 57R-recognized C runtime names.
+static bool vm_parser_invoke_target_is_crt(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "crt_printf");
+}
+
+/// Returns whether an INVOKE target is the Phase 57R-recognized WinAPI process terminator.
+///
+/// The check uses the virtual Irvine32 registry classification to avoid creating
+/// a contradictory taxonomy for `ExitProcess`, but remains scoped to the target
+/// milestone's explicitly named WinAPI routine.
+///
+/// @param token Candidate routine token.
+/// @return true when @p token names `ExitProcess` and the registry classifies it
+/// as Windows/API/external.
+static bool vm_parser_invoke_target_is_exitprocess(const VmLexerToken *token) {
+    return token != NULL &&
+           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           vm_parser_token_equals(token, "exitprocess") &&
+           vm_parser_classify_irvine32_symbol(token->lexeme, token->lexeme_length) ==
+               VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL;
+}
+
+/// Emits Phase 57R diagnostics for one recognized unsupported INVOKE line.
+///
+/// The routine deliberately performs only line-oriented classification. It does
+/// not parse INVOKE arguments, lower ADDR, set up a stack frame, or call any
+/// external routine.
+///
+/// @param state Parser state to mutate.
+/// @return true when the INVOKE line was classified and skipped.
+static bool vm_parser_recover_invoke_diagnostics_if_recognized(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    const VmLexerToken *scan = NULL;
+    const VmLexerToken *target = NULL;
+    bool saw_addr = false;
+
+    if (!vm_parser_token_is_invoke(token)) {
+        return false;
+    }
+
+    (void)vm_parser_add_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE,
+        token,
+        "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines."
+    );
+
+    vm_parser_advance(state);
+    scan = vm_parser_current_token(state);
+    while (scan != NULL && scan->kind != VM_LEXER_TOKEN_EOF && scan->kind != VM_LEXER_TOKEN_NEWLINE) {
+        if (scan->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+            if (vm_parser_token_is_addr_operator(scan)) {
+                if (!saw_addr) {
+                    (void)vm_parser_add_diagnostic(
+                        state,
+                        VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR,
+                        scan,
+                        "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support."
+                    );
+                    saw_addr = true;
+                }
+            } else if (target == NULL) {
+                target = scan;
+            }
+        }
+        vm_parser_advance(state);
+        scan = vm_parser_current_token(state);
+    }
+
+    if (target != NULL) {
+        if (vm_parser_invoke_target_is_masm32_runtime(target)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE,
+                target,
+                "StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines."
+            );
+        } else if (vm_parser_invoke_target_is_crt(target)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE,
+                target,
+                "crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines."
+            );
+        } else if (vm_parser_invoke_target_is_exitprocess(target)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION,
+                target,
+                "ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator."
+            );
+        }
+    }
+
+    if (scan != NULL && scan->kind == VM_LEXER_TOKEN_NEWLINE) {
+        vm_parser_advance(state);
+    }
+    return true;
 }
 
 /// Returns an unsupported-feature message for a deferred data type.
@@ -1959,6 +2086,10 @@ static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *s
         message = vm_parser_unsupported_keyword_message(diagnostic_token);
         (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
         vm_parser_recover_skip_block(state, "endm", NULL, NULL);
+        return true;
+    }
+
+    if (vm_parser_recover_invoke_diagnostics_if_recognized(state)) {
         return true;
     }
 
@@ -8251,6 +8382,18 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-windows-api-library";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY:
             return "unsupported-masm32-library";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE:
+            return "unsupported-invoke";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR:
+            return "unsupported-addr";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE:
+            return "unsupported-external-routine";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION:
+            return "unsupported-winapi-execution";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE:
+            return "unsupported-masm32-runtime-routine";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE:
+            return "unsupported-crt-routine";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION:
             return "unsupported-option";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:

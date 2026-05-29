@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 57;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "Q";
+export const IMPLEMENTED_PHASE_SUFFIX = "R";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 57Q - INCLUDELIB and External Library Diagnostics";
+export const IMPLEMENTED_PHASE_NAME = "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics";
 
 /**
  * Creates the initial worker readiness response.

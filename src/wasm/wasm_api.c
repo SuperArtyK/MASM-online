@@ -70,11 +70,11 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 57U
 
-/// Suffix for the current Phase 57Q runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "Q"
+/// Suffix for the current Phase 57R runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "R"
 
-/// Full name of the current Phase 57Q runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57Q - INCLUDELIB and External Library Diagnostics"
+/// Full name of the current Phase 57R runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"
 
 /// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
@@ -4514,6 +4514,12 @@ static const char *masm32_sim_wasm_parser_diagnostic_kind(const VmParserDiagnost
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE) {

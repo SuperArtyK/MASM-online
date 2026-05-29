@@ -12,16 +12,15 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57Q:
+Current status at Phase 57R:
 
 Repository/archive milestone:
-Phase 57Q - INCLUDELIB and External Library Diagnostics
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57Q - INCLUDELIB and External Library Diagnostics
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
 
-Phase 57Q adds clear parser/source-run diagnostics for `INCLUDELIB` linker and import-library directives. General library directives such as `includelib customlib.lib` report `unsupported-includelib`; MASM32 SDK libraries such as `includelib \masm32\lib\masm32.lib` or `includelib masm32.lib` report `unsupported-masm32-library`; Windows import libraries such as `includelib \masm32\lib\kernel32.lib`, `includelib C:\masm32\lib\kernel32.lib`, or `includelib kernel32.lib` report `unsupported-windows-api-library`. These diagnostics explain that MASM32 Educational Mode does not link object files, load `.lib` files, process PE imports, or execute external library routines. Phase 57P host/path-like `INCLUDE` diagnostics remain available for unsupported local include files, while supported virtual includes such as `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` remain simulator-defined and do not load host files. Phase 57Q does not implement host filesystem access, library search paths, object files, import tables, PE loading, a linker, WinAPI execution, external routine execution, or macro expansion. Phase 57O - Explicit-Width NOP Encoding-Operand Forms keeps NOP encoding-operand behavior available. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
-## How to use this file
+Phase 57R adds clear parser/source-run diagnostics for unsupported `INVOKE` syntax, `ADDR` operands, and common external routine names. `invoke StdOut, addr titleMsg` reports `unsupported-invoke`, `unsupported-addr`, and `unsupported-masm32-runtime-routine`; `invoke crt_printf, addr numberFmt, counter` reports C runtime formatted-output diagnostics; and `invoke ExitProcess, 0` reports `unsupported-winapi-execution` rather than virtual Irvine32 `exit` behavior. Source containing these diagnostics does not execute and does not produce Program Console output. Phase 57R does not implement `INVOKE`, `ADDR`, stack setup, calling conventions, `StdOut`, `crt_printf`, `ExitProcess`, WinAPI execution, PE imports, linker behavior, or external routine execution. Phase 57Q `INCLUDELIB` linker/import-library diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -85,7 +84,12 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57O accepts selected MASM-compatible NOP register and explicit-width memory-looking encoding-operand forms as IR-level no-ops and advances runtime/source-run MASM behavior metadata to Phase 57O.
 - Phase 57P recognizes host/path-like `INCLUDE` directive tails, emits one unsupported include diagnostic per recognized host/path-like directive instead of repeated path-character lexer errors, preserves supported virtual includes, does not implement host file loading, and advances runtime/source-run MASM behavior metadata to Phase 57P.
 - Phase 57Q recognizes `INCLUDELIB` library directive tails, emits linker/import-library non-goal diagnostics instead of generic parser or lexer diagnostics, does not implement library loading, object files, imports, PE loading, a linker, WinAPI execution, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57Q.
+- Phase 57R adds unsupported `INVOKE`, `ADDR`, MASM32 runtime-style, CRT-style, and WinAPI/external routine diagnostics, refuses execution for those source lines, preserves virtual Irvine32 `exit`, does not implement invocation lowering, stack setup, calling conventions, WinAPI, CRT, MASM32 runtime, PE, linker, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57R.
 
+
+## Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+
+Phase 57R implements targeted parser/source-run diagnostics for common unsupported invocation-style source lines. `INVOKE` reports `unsupported-invoke`; `ADDR` arguments report `unsupported-addr`; `StdOut` reports `unsupported-masm32-runtime-routine`; `crt_printf` reports `unsupported-crt-routine`; and `ExitProcess` reports `unsupported-winapi-execution` instead of being confused with the virtual Irvine32 `exit` terminator. Source containing these diagnostics refuses execution, does not produce Program Console output, and does not create calls, stack frames, linker/import metadata, or external routine behavior.
 
 ## Phase 57Q - INCLUDELIB and External Library Diagnostics
 

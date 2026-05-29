@@ -1,12 +1,14 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57Q - INCLUDELIB and External Library Diagnostics
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57Q - INCLUDELIB and External Library Diagnostics
+Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
 
-Phase 57Q adds clear parser/source-run diagnostics for `INCLUDELIB` linker and import-library directives. General library directives such as `includelib customlib.lib` report `unsupported-includelib`; MASM32 SDK libraries such as `includelib \masm32\lib\masm32.lib` or `includelib masm32.lib` report `unsupported-masm32-library`; Windows import libraries such as `includelib \masm32\lib\kernel32.lib`, `includelib C:\masm32\lib\kernel32.lib`, or `includelib kernel32.lib` report `unsupported-windows-api-library`. These diagnostics explain that MASM32 Educational Mode does not link object files, load `.lib` files, process PE imports, or execute external library routines. Phase 57P host/path-like `INCLUDE` diagnostics remain available for unsupported local include files, while supported virtual includes such as `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` remain simulator-defined and do not load host files. Phase 57Q does not implement host filesystem access, library search paths, object files, import tables, PE loading, a linker, WinAPI execution, external routine execution, or macro expansion. Phase 57O - Explicit-Width NOP Encoding-Operand Forms keeps NOP encoding-operand behavior available. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available. This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV plus later diagnostics, display, startup, `.CONST`, segment-symbol, `.code` access, NOP encoding-operand, host include path diagnostics, and INCLUDELIB diagnostic phases through Phase 57Q - INCLUDELIB and External Library Diagnostics. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+Phase 57R adds clear parser/source-run diagnostics for unsupported `INVOKE` syntax, `ADDR` operands, and common external routine names. `invoke StdOut, addr titleMsg` reports `unsupported-invoke`, `unsupported-addr`, and `unsupported-masm32-runtime-routine`; `invoke crt_printf, addr numberFmt, counter` reports C runtime formatted-output diagnostics; and `invoke ExitProcess, 0` reports `unsupported-winapi-execution` rather than virtual Irvine32 `exit` behavior. Source containing these diagnostics does not execute and does not produce Program Console output. Phase 57R does not implement `INVOKE`, `ADDR`, stack setup, calling conventions, `StdOut`, `crt_printf`, `ExitProcess`, WinAPI execution, PE imports, linker behavior, or external routine execution. Phase 57Q `INCLUDELIB` linker/import-library diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+
+The executable arithmetic instruction subset remains implemented through Phase 57 - Signed IDIV, with later diagnostic, display, startup, and status phases layered on top.
 
 Historical infrastructure note: Milestone 32 adds fixed memory-layout policy infrastructure only; later layout, diagnostic, and startup settings build on that infrastructure without changing the current instruction subset unless their phase explicitly says so.
 
@@ -18,7 +20,7 @@ Phase 57M implements the MASM segment/group symbol policy with targeted `unsuppo
 
 ### Phase 57F, Phase 57G, Phase 57I, and Phase 57J startup/data diagnostics
 
-Runtime/source-run MASM behavior phase Phase 57Q preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
+Runtime/source-run MASM behavior phase Phase 57R preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
 
 ```text
 startup_register_flag_mode = zero | seeded-random
@@ -100,6 +102,8 @@ Accepted before `.data` or `.code` as compatibility no-ops, metadata-only direct
 - `.model flat, stdcall`. Other `.model` forms report `unsupported-model`.
 - `.stack` and `.stack size`, where the optional size is stored as parser metadata. In automatic layout selected by tests/configuration, the parsed size controls stack region capacity metadata. Fixed-layout browser execution and runtime stack behavior are still deferred.
 - `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. `INCLUDE Irvine32.inc` registers known Irvine32 names as virtual metadata for classification and diagnostics. It also enables the zero-operand virtual `exit` terminator. It does not implement `call`, `ret`, ExitProcess behavior, stack behavior, Program Console routines, other Irvine32 bodies, Windows API behavior, linking, or host include loading. `INCLUDE Macros.inc` remains a virtual no-op and does not populate the Irvine32 registry. `INCLUDELIB` directives are not virtual includes and are not accepted as no-ops; they report Phase 57Q linker/library diagnostics such as `unsupported-includelib`, `unsupported-masm32-library`, or `unsupported-windows-api-library`. Basename-only unsupported include files report `unsupported-include`. Host/path-like include operands such as `include \masm32\include\masm32.inc`, `include C:\masm32\include\kernel32.inc`, `include ..\include\file.inc`, `include .\local.inc`, and `include /usr/local/include/file.inc` report Phase 57P diagnostics such as `unsupported-host-include-path`, `unsupported-masm32-library-include`, or `unsupported-windows-api-include` instead of repeated lexer path-separator errors.
+
+Phase 57R `INVOKE` diagnostics: `INVOKE` remains unsupported and is not lowered into calls or stack arguments. `ADDR` operands remain unsupported. `StdOut` is diagnosed as an external MASM32 runtime-style routine, `crt_printf` as a C runtime routine, and `ExitProcess` as WinAPI/external process behavior outside the simulator boundary. These diagnostics are emitted through Simulator Messages, refuse execution, and do not write to Program Console.
 - `OPTION CASEMAP:ALL` as an explicit selection of the default user-symbol case-insensitive policy.
 - `OPTION CASEMAP:NONE` as an exact-case user-symbol policy from that directive forward.
 - `OPTION CASEMAP:NOTPUBLIC` is recognized but reports `unsupported-option` because public/external linkage semantics are not implemented.

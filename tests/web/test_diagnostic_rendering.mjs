@@ -2193,22 +2193,145 @@ END main
   }
 });
 
-test("renders unsupported feature diagnostic exactly", () => {
+test("renders unsupported INVOKE diagnostic exactly", () => {
   const name = "unsupportedFeature";
   const source = fixtureSource("unsupportedFeature");
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "unsupported-feature",
-    code: "unsupported-feature",
-    message: "Unsupported feature: INVOKE is not supported yet; use CALL when available.",
+    code: "unsupported-invoke",
+    message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
     line: 3,
     column: 5,
     byteOffset: 20,
     spanLength: 6
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-feature line 3, column 5, byte offset 20, span length 6: Unsupported feature: INVOKE is not supported yet; use CALL when available.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 3, column 5, byte offset 20, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.");
+});
+
+test("Phase 57R renders INVOKE, ADDR, and MASM32 runtime diagnostics exactly", () => {
+  const name = "phase57r-invoke-stdout";
+  const source = `.data
+titleMsg BYTE "Hello", 0
+.code
+main PROC
+    invoke StdOut, addr titleMsg
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-invoke",
+      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
+      line: 5,
+      column: 5,
+      byteOffset: 51,
+      spanLength: 6
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-addr",
+      message: "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.",
+      line: 5,
+      column: 20,
+      byteOffset: 66,
+      spanLength: 4
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-masm32-runtime-routine",
+      message: "StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.",
+      line: 5,
+      column: 12,
+      byteOffset: 58,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 5, column 5, byte offset 51, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-addr line 5, column 20, byte offset 66, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.\n[unsupported-feature] unsupported-masm32-runtime-routine line 5, column 12, byte offset 58, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.");
+});
+
+test("Phase 57R renders CRT routine diagnostic exactly", () => {
+  const name = "phase57r-invoke-crt";
+  const source = `.code
+main PROC
+    invoke crt_printf, addr numberFmt, counter
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-invoke",
+      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
+      line: 3,
+      column: 5,
+      byteOffset: 20,
+      spanLength: 6
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-addr",
+      message: "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.",
+      line: 3,
+      column: 24,
+      byteOffset: 39,
+      spanLength: 4
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-crt-routine",
+      message: "crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.",
+      line: 3,
+      column: 12,
+      byteOffset: 27,
+      spanLength: 10
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 3, column 5, byte offset 20, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-addr line 3, column 24, byte offset 39, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.\n[unsupported-feature] unsupported-crt-routine line 3, column 12, byte offset 27, span length 10: crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.");
+});
+
+test("Phase 57R renders WinAPI ExitProcess diagnostic exactly", () => {
+  const name = "phase57r-invoke-exitprocess";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    invoke ExitProcess, 0
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-invoke",
+      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
+      line: 4,
+      column: 5,
+      byteOffset: 41,
+      spanLength: 6
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-winapi-execution",
+      message: "ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.",
+      line: 4,
+      column: 12,
+      byteOffset: 48,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 4, column 5, byte offset 41, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-winapi-execution line 4, column 12, byte offset 48, span length 11: ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.");
 });
 
 test("renders ambiguous memory width diagnostic exactly", () => {
@@ -4419,8 +4542,8 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
     },
     {
       kind: "unsupported-feature",
-      code: "unsupported-feature",
-      message: "Unsupported feature: INVOKE is not supported yet; use CALL when available.",
+      code: "unsupported-invoke",
+      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
       line: 10,
       column: 5,
       byteOffset: 82,
@@ -4438,7 +4561,7 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assert.equal(rendered.includes("mov ebx"), false);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.\n[unsupported-feature] unsupported-feature line 10, column 5, byte offset 82, span length 6: Unsupported feature: INVOKE is not supported yet; use CALL when available.\n[unsupported-feature] unsupported-feature line 11, column 5, byte offset 102, span length 3: Unsupported feature: MASM .IF high-level flow is not supported yet.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.\n[unsupported-feature] unsupported-invoke line 10, column 5, byte offset 82, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-feature line 11, column 5, byte offset 102, span length 3: Unsupported feature: MASM .IF high-level flow is not supported yet.");
 });
 
 

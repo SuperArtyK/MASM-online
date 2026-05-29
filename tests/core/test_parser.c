@@ -1,10 +1,11 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 57Q diagnostics.
+ * @brief Unit and integration tests for the parser through Phase 57R diagnostics.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, INCLUDELIB non-goal diagnostics,
- * and integration with the current executor without adding future execution behavior.
+ * INVOKE/ADDR external-routine diagnostics, and integration with the current
+ * executor without adding future execution behavior.
  */
 
 #include <stdbool.h>
@@ -432,7 +433,6 @@ static int test_textbook_unsupported_keywords_are_stable(void) {
     failures += expect_unsupported_feature_source("PUBLIC main\n.code\nmain PROC\nmain ENDP\nEND main\n", "PUBLIC");
     failures += expect_unsupported_feature_source("COMM buffer:BYTE:16\n.code\nmain PROC\nmain ENDP\nEND main\n", "COMM");
     failures += expect_unsupported_feature_source("m MACRO\nENDM\n.code\nmain PROC\nmain ENDP\nEND main\n", "macro definitions");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\nINVOKE ExitProcess, 0\nmain ENDP\nEND main\n", "INVOKE");
     failures += expect_unsupported_feature_source(".code\nmain PROC\nLOCAL temp:DWORD\nmain ENDP\nEND main\n", "LOCAL");
 
     return failures;
@@ -477,7 +477,7 @@ static int test_multi_diagnostic_unsupported_feature_recovery(void) {
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "multiple unsupported constructs should recover with diagnostics");
     failures += expect_size(result.diagnostic_count, 3U, "STRUCT, INVOKE, and .IF should produce three diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "STRUCT diagnostic code should match");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "INVOKE diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "INVOKE diagnostic code should match");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".IF diagnostic code should match");
     failures += expect_string_contains(buffers.diagnostics[0].message, "STRUCT", "first diagnostic should describe STRUCT");
     failures += expect_string_contains(buffers.diagnostics[1].message, "INVOKE", "second diagnostic should describe INVOKE");
@@ -2239,6 +2239,109 @@ static int test_phase57q_includelib_diagnostics(void) {
         &result
     ), VM_PARSER_STATUS_LEXER_FAILED, "Phase 57Q path outside INCLUDELIB context should still surface lexer diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER, "Phase 57Q should not make path separators valid outside directive lines");
+
+    return failures;
+}
+
+
+/// Verifies Phase 57R classifies unsupported INVOKE, ADDR, and external routine lines.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57r_invoke_addr_external_routine_diagnostics(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+    const char *stdout_source =
+        ".data\n"
+        "titleMsg BYTE \"Hello\", 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke StdOut, addr titleMsg\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *crt_source =
+        ".code\n"
+        "main PROC\n"
+        "    Invoke crt_printf, Addr numberFmt, counter\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *exitprocess_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke ExitProcess, 0\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *registry_external_non_target_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke MsgBox, 0\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *multiple_source =
+        ".code\n"
+        "main PROC\n"
+        "    invoke StdOut, addr titleMsg\n"
+        "    invoke crt_printf, addr numberFmt, counter\n"
+        "    invoke ExitProcess, 0\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(stdout_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57R StdOut INVOKE should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 3U, "StdOut INVOKE should report INVOKE, ADDR, and MASM32 runtime diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "StdOut INVOKE should report unsupported-invoke first");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR, "StdOut INVOKE should report unsupported ADDR");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE, "StdOut INVOKE should report MASM32 runtime routine");
+    failures += expect_size(buffers.diagnostics[0].location.line, 5U, "INVOKE diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "INVOKE diagnostic should point at INVOKE token");
+    failures += expect_size(buffers.diagnostics[1].location.column, 20U, "ADDR diagnostic should point at ADDR token");
+    failures += expect_size(buffers.diagnostics[2].location.column, 12U, "StdOut diagnostic should point at routine token");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "INVOKE diagnostic span should be six bytes");
+    failures += expect_size(buffers.diagnostics[1].lexeme_length, 4U, "ADDR diagnostic span should be four bytes");
+    failures += expect_size(buffers.diagnostics[2].lexeme_length, 6U, "StdOut diagnostic span should be six bytes");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "INVOKE syntax is not implemented", "INVOKE message should explain unsupported syntax");
+    failures += expect_string_contains(buffers.diagnostics[1].message, "ADDR operands are not implemented", "ADDR message should explain unsupported operand operator");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "MASM32 runtime", "StdOut message should describe MASM32 runtime boundary");
+    failures += expect_size(result.instruction_count, 0U, "unsupported INVOKE source should not emit instructions");
+
+    failures += expect_parser_status(parse_for_test(crt_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57R CRT INVOKE should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 3U, "CRT INVOKE should report INVOKE, ADDR, and CRT diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "CRT source should report unsupported-invoke");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR, "CRT source should report unsupported-addr");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE, "CRT source should report unsupported CRT routine");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "C runtime", "CRT diagnostic should describe C runtime output");
+
+    failures += expect_parser_status(parse_for_test(exitprocess_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57R ExitProcess INVOKE should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 2U, "ExitProcess INVOKE should report INVOKE and WinAPI diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "ExitProcess source should report unsupported-invoke");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION, "ExitProcess source should report WinAPI non-goal");
+    failures += expect_string_contains(buffers.diagnostics[1].message, "not the virtual Irvine32 exit", "ExitProcess message should distinguish virtual Irvine32 exit");
+    failures += expect_size(buffers.diagnostics[1].location.line, 4U, "ExitProcess diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[1].location.column, 12U, "ExitProcess diagnostic should point at routine name");
+    failures += expect_size(buffers.diagnostics[1].lexeme_length, 11U, "ExitProcess diagnostic span should match routine name");
+
+    failures += expect_parser_status(parse_for_test(registry_external_non_target_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57R should not broaden WinAPI INVOKE diagnostics beyond named target routines");
+    failures += expect_size(result.diagnostic_count, 1U, "non-target registry external INVOKE should report only unsupported-invoke in Phase 57R");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "non-target registry external should not receive ExitProcess-specific diagnostic");
+
+    failures += expect_parser_status(parse_for_test(multiple_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57R multiple INVOKE lines should recover");
+    failures += expect_size(result.diagnostic_count, 8U, "multiple INVOKE lines should report useful line diagnostics without token cascades");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "first line should start with unsupported-invoke");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR, "first line should include unsupported-addr");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE, "first line should include MASM32 runtime routine");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[3].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "second line should start with unsupported-invoke");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[4].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR, "second line should include unsupported-addr");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[5].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE, "second line should include CRT routine");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[6].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "third line should start with unsupported-invoke");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[7].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION, "third line should include WinAPI routine");
+
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE), "unsupported-invoke", "unsupported-invoke code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR), "unsupported-addr", "unsupported-addr code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE), "unsupported-masm32-runtime-routine", "MASM32 routine code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE), "unsupported-crt-routine", "CRT routine code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE), "unsupported-external-routine", "generic external routine code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION), "unsupported-winapi-execution", "WinAPI code name should be stable");
 
     return failures;
 }
@@ -5296,6 +5399,7 @@ int main(void) {
     failures += test_phase41_virtual_irvine32_include_records_registry();
     failures += test_phase57p_host_include_path_diagnostics();
     failures += test_phase57q_includelib_diagnostics();
+    failures += test_phase57r_invoke_addr_external_routine_diagnostics();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();

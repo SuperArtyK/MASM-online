@@ -31,8 +31,8 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 57);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "Q");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57Q - INCLUDELIB and External Library Diagnostics");
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "R");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -43,8 +43,8 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       },
       wasmTestValue: 32,
       phase: 57,
-      phaseSuffix: "Q",
-      phaseName: "Phase 57Q - INCLUDELIB and External Library Diagnostics"
+      phaseSuffix: "R",
+      phaseName: "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"
     }
   });
 });
@@ -61,8 +61,8 @@ test("ready message supports not-built wasm status", () => {
       },
       wasmTestValue: null,
       phase: 57,
-      phaseSuffix: "Q",
-      phaseName: "Phase 57Q - INCLUDELIB and External Library Diagnostics"
+      phaseSuffix: "R",
+      phaseName: "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"
     }
   });
 });
@@ -295,12 +295,12 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57Q - INCLUDELIB and External Library Diagnostics. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 
-test("RUN_SOURCE marks Phase 57 artifacts without Phase 57Q suffix as stale", () => {
+test("RUN_SOURCE marks Phase 57 artifacts without Phase 57R suffix as stale", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
