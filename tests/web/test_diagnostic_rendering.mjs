@@ -327,6 +327,34 @@ END main
 `,
     reason: "Lexer invalid-hex diagnostic fixture."
   },
+  phase57pHostIncludePath: {
+    source: `include \\masm32\\include\\masm32.inc
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57P unsupported MASM32 SDK host INCLUDE path fixture."
+  },
+  phase57pWindowsApiIncludePath: {
+    source: `include C:\\masm32\\include\\kernel32.inc
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57P unsupported Windows/API INCLUDE path fixture."
+  },
+  phase57pMultipleHostIncludePaths: {
+    source: `include ..\\include\\file.inc
+include \\masm32\\include\\kernel32.inc
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57P multi-diagnostic host INCLUDE path fixture."
+  },
   unterminatedString: {
     source: `.data
 msg BYTE "Hello
@@ -1521,6 +1549,75 @@ test("native producer accepts stdin and emits invalid hex JSON rendered by real 
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-hex-literal line 3, column 14, byte offset 29, span length 2: hex literal requires at least one digit");
+});
+
+test("Phase 57P renders unsupported MASM32 SDK include path exactly", () => {
+  const name = "phase57pHostIncludePath";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-masm32-library-include",
+      message: "Host filesystem include path '\\masm32\\include\\masm32.inc' is not supported. This browser simulator does not read the local MASM32 SDK; use supported virtual includes only.",
+      line: 1,
+      column: 9,
+      byteOffset: 8,
+      spanLength: 26
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-masm32-library-include line 1, column 9, byte offset 8, span length 26: Host filesystem include path '\\masm32\\include\\masm32.inc' is not supported. This browser simulator does not read the local MASM32 SDK; use supported virtual includes only.");
+});
+
+test("Phase 57P renders unsupported Windows API include path exactly", () => {
+  const name = "phase57pWindowsApiIncludePath";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-windows-api-include",
+      message: "Windows API include path 'C:\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.",
+      line: 1,
+      column: 9,
+      byteOffset: 8,
+      spanLength: 30
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-windows-api-include line 1, column 9, byte offset 8, span length 30: Windows API include path 'C:\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.");
+});
+
+test("Phase 57P renders multiple host include diagnostics exactly", () => {
+  const name = "phase57pMultipleHostIncludePaths";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-host-include-path",
+      message: "Host filesystem include path '..\\include\\file.inc' is not supported. This browser simulator does not read local include files, relative include paths, or include search paths; use supported virtual includes only.",
+      line: 1,
+      column: 9,
+      byteOffset: 8,
+      spanLength: 19
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-windows-api-include",
+      message: "Windows API include path '\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.",
+      line: 2,
+      column: 9,
+      byteOffset: 36,
+      spanLength: 28
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-host-include-path line 1, column 9, byte offset 8, span length 19: Host filesystem include path '..\\include\\file.inc' is not supported. This browser simulator does not read local include files, relative include paths, or include search paths; use supported virtual includes only.\n[unsupported-feature] unsupported-windows-api-include line 2, column 9, byte offset 36, span length 28: Windows API include path '\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.");
 });
 
 test("native producer accepts fixture file path for successful execution", () => {

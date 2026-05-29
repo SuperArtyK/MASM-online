@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 57;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "O";
+export const IMPLEMENTED_PHASE_SUFFIX = "P";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 57O - Explicit-Width NOP Encoding-Operand Forms";
+export const IMPLEMENTED_PHASE_NAME = "Phase 57P - Host Include Path Diagnostics";
 
 /**
  * Creates the initial worker readiness response.

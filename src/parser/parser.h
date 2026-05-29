@@ -148,6 +148,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL,
     /// An INCLUDE directive requested a file outside the simulator's virtual built-ins.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE,
+    /// An INCLUDE directive used a host filesystem, relative, or absolute path.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH,
+    /// An INCLUDE directive referenced Windows API declarations outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE,
+    /// An INCLUDE directive referenced a local MASM32 SDK include path outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE,
     /// An OPTION directive used a form outside the accepted compatibility subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION,
     /// A bracketed memory operand used a valid register that is not yet supported as an address base.

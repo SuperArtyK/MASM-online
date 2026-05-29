@@ -454,6 +454,53 @@ static int test_error_diagnostics(void) {
     return failures;
 }
 
+/// Verifies Phase 57P INCLUDE host paths are captured without path-separator lexer noise.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57p_include_path_tail_tokens(void) {
+    int failures = 0;
+    VmLexerToken tokens[16];
+    VmLexerDiagnostic diagnostics[8];
+    VmLexerResult result;
+
+    failures += expect_status(
+        tokenize_for_test("include \\masm32\\include\\kernel32.inc\nmov eax, 1\n", tokens, 16U, diagnostics, 8U, &result),
+        VM_LEXER_STATUS_OK,
+        "Phase 57P include host path should tokenize without lexer diagnostics"
+    );
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57P include host path should not emit unexpected-character diagnostics");
+    failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57P include line should begin with INCLUDE identifier token");
+    failures += expect_lexeme(&tokens[0], "include", "Phase 57P include keyword lexeme should be preserved");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_INCLUDE_PATH, "Phase 57P include host path should be one include-path token");
+    failures += expect_lexeme(&tokens[1], "\\masm32\\include\\kernel32.inc", "Phase 57P include path lexeme should be preserved");
+    failures += expect_token_kind(tokens[2].kind, VM_LEXER_TOKEN_NEWLINE, "Phase 57P include path token should stop before newline");
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57P include path recognition should not consume the next line");
+
+    failures += expect_status(
+        tokenize_for_test("    InClUdE   ..\\include\\file.inc ; comment\n", tokens, 16U, diagnostics, 8U, &result),
+        VM_LEXER_STATUS_OK,
+        "Phase 57P indented mixed-case include host path should tokenize without lexer diagnostics"
+    );
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57P indented mixed-case include host path should not emit diagnostics");
+    failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57P indented mixed-case include should produce an identifier token");
+    failures += expect_lexeme(&tokens[0], "InClUdE", "Phase 57P include keyword should preserve mixed-case spelling");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_INCLUDE_PATH, "Phase 57P indented mixed-case include should produce an include-path token");
+    failures += expect_lexeme(&tokens[1], "..\\include\\file.inc", "Phase 57P include path token should trim trailing whitespace before comments");
+
+    failures += expect_status(
+        tokenize_for_test("mov eax, \\masm32\\include\\kernel32.inc\n", tokens, 16U, diagnostics, 8U, &result),
+        VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS,
+        "Phase 57P path separators outside INCLUDE directive context should remain invalid"
+    );
+    failures += expect_diagnostic_code(diagnostics[0].code, VM_LEXER_DIAGNOSTIC_UNEXPECTED_CHARACTER, "Phase 57P should not make backslash a general token");
+
+    if (strcmp(vm_lexer_token_kind_name(VM_LEXER_TOKEN_INCLUDE_PATH), "INCLUDE_PATH") != 0) {
+        failures += record_failure("token kind helper should name INCLUDE_PATH");
+    }
+
+    return failures;
+}
+
 /// Verifies token and diagnostic buffer capacity handling.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -522,6 +569,7 @@ int main(void) {
     failures += test_string_literals();
     failures += test_character_literals();
     failures += test_error_diagnostics();
+    failures += test_phase57p_include_path_tail_tokens();
     failures += test_capacity_and_invalid_arguments();
     failures += test_metadata_helpers();
 

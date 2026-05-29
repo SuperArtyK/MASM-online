@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57O:
+Current status at Phase 57P:
 
 Repository/archive milestone:
-Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+Phase 57P - Host Include Path Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+Phase 57P - Host Include Path Diagnostics
 
 Status interpretation:
 
-Phase 57O accepts selected MASM-compatible 16-bit and 32-bit `nop` encoding operands as source-level no-ops: register forms such as `nop ax` and `nop eax`, plus explicit `WORD PTR`, `SWORD PTR`, `DWORD PTR`, and `SDWORD PTR` memory-looking forms such as `nop DWORD PTR [eax]`. Accepted register-form NOP operands are not read or written, and accepted memory-looking forms reuse existing memory-addressing grammar but do not evaluate addresses, read or write memory, perform planned memory validation, emit memory diagnostics, or create memory-change rows. Zero-operand `nop` remains supported. Unsupported `nop` operand forms still report stable diagnostics that explain invalid immediates, missing memory sizes, invalid operand sizes, or that real x86 byte encoding is not emitted. Phase 57O does not add real opcode bytes, `.code` byte images, disassembly, PE/object/linker behavior, browser controls, or Program Console output. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57P recognizes host/path-like `INCLUDE` directive tails and emits one stable unsupported include diagnostic per directive instead of repeated lexer `unexpected-character` diagnostics for path separators. MASM32 SDK paths, Windows/API include paths, relative paths, and absolute host paths remain unsupported because the browser simulator does not read host files, load local SDK headers, search include directories, load PE imports, or execute WinAPI calls. Supported virtual includes such as `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` remain unchanged. Phase 57P does not implement host filesystem access, `INCLUDELIB`, PE/object/linker behavior, imports, WinAPI execution, or macro expansion. Phase 57O - Explicit-Width NOP Encoding-Operand Forms behavior remains available: accepted register-form operands are not read or written, and accepted memory-looking forms reuse existing memory-addressing grammar but do not evaluate addresses, read or write memory, perform planned memory validation, emit memory diagnostics, or create memory-change rows. Zero-operand `nop` remains supported. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -86,7 +86,12 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57M implements targeted `unsupported-segment-symbol` parser/source-run diagnostics for MASM/object/linker segment and group names and advances runtime/source-run MASM behavior metadata to Phase 57M.
 - Phase 57N audits and hardens existing zero-operand `nop` behavior, updates rejected operand-form diagnostics, and keeps runtime/source-run MASM behavior metadata at Phase 57M.
 - Phase 57O accepts selected MASM-compatible NOP register and explicit-width memory-looking encoding-operand forms as IR-level no-ops and advances runtime/source-run MASM behavior metadata to Phase 57O.
+- Phase 57P recognizes host/path-like `INCLUDE` directive tails, emits one unsupported include diagnostic per recognized host/path-like directive instead of repeated path-character lexer errors, preserves supported virtual includes, does not implement host file loading or `INCLUDELIB`, and advances runtime/source-run MASM behavior metadata to Phase 57P.
 
+
+## Phase 57P - Host Include Path Diagnostics
+
+Phase 57P implements targeted parser/source-run diagnostics for host/path-like `INCLUDE` operands. Recognized MASM32 SDK paths, Windows/API include paths, relative host paths, and Unix-style absolute host paths now emit one stable unsupported include diagnostic per directive instead of repeated lexer `unexpected-character` diagnostics for path separators. Supported virtual includes remain unchanged. Phase 57P does not implement host filesystem access, include search paths, `INCLUDELIB`, PE/object/linker behavior, WinAPI execution, or macro expansion.
 
 ## Phase 57O - Explicit-Width NOP Encoding-Operand Forms
 

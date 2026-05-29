@@ -65,6 +65,8 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_DOT,
     /// Colon used by labels.
     VM_LEXER_TOKEN_COLON,
+    /// Host/path-like INCLUDE directive operand captured only in INCLUDE directive-tail context.
+    VM_LEXER_TOKEN_INCLUDE_PATH,
     /// Number of lexer token kinds.
     VM_LEXER_TOKEN_KIND_COUNT
 } VmLexerTokenKind;

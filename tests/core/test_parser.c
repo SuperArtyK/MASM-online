@@ -2111,6 +2111,80 @@ static int test_phase41_virtual_irvine32_include_records_registry(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57P host/path-like INCLUDE diagnostics are parser-level diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57p_host_include_path_diagnostics(void) {
+    typedef struct IncludePathCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        const char *message_fragment;
+    } IncludePathCase;
+    static const IncludePathCase cases[] = {
+        {"include \\masm32\\include\\masm32.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE, "local MASM32 SDK"},
+        {"include \\masm32\\include\\kernel32.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE, "Windows API execution"},
+        {"include C:\\masm32\\include\\kernel32.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE, "PE loading, imports, and WinAPI calls"},
+        {"include ..\\include\\file.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH, "relative include paths"},
+        {"include .\\local.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH, "supported virtual includes"},
+        {"include /usr/local/include/file.inc\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH, "include search paths"}
+    };
+    int failures = 0;
+    size_t index = 0U;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57P host include path should produce parser diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "Phase 57P host include path should produce one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].code, "Phase 57P host include path should use the expected diagnostic code");
+        failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "Phase 57P host include path should be an assembly error");
+        failures += expect_size(buffers.diagnostics[0].location.line, 1U, "Phase 57P host include path diagnostic should preserve line");
+        failures += expect_size(buffers.diagnostics[0].location.column, 9U, "Phase 57P host include path diagnostic should point at path tail");
+        failures += expect_size(buffers.diagnostics[0].location.offset, 8U, "Phase 57P host include path diagnostic should preserve byte offset");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "Phase 57P host include path message should describe the specific unsupported boundary");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "include \\masm32\\include\\masm32.inc\n"
+        "include \\masm32\\include\\kernel32.inc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57P multiple host include paths should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 2U, "Phase 57P multiple host include paths should produce one diagnostic per include line");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE, "Phase 57P first include path diagnostic should be MASM32 SDK specific");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE, "Phase 57P second include path diagnostic should be Windows/API specific");
+    failures += expect_size(buffers.diagnostics[1].location.line, 2U, "Phase 57P second include path diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[1].location.column, 9U, "Phase 57P second include path diagnostic should point at path tail");
+
+    failures += expect_parser_status(parse_for_test(
+        "    InClUdE   ..\\include\\file.inc ; comment\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57P indented mixed-case host include path should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 1U, "Phase 57P indented mixed-case include should produce one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH, "Phase 57P indented mixed-case include should use host include path diagnostic");
+    failures += expect_size(buffers.diagnostics[0].location.column, 15U, "Phase 57P indented mixed-case include diagnostic should point at path tail");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 14U, "Phase 57P indented mixed-case include diagnostic should preserve byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 19U, "Phase 57P indented mixed-case include diagnostic should trim trailing whitespace and comment text");
+
+    failures += expect_parser_status(parse_for_test(
+        "mov eax, \\masm32\\include\\kernel32.inc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_LEXER_FAILED, "Phase 57P path outside INCLUDE context should still surface lexer diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER, "Phase 57P should not make path separators valid outside INCLUDE lines");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Windows.inc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57P basename-only unsupported include should remain on existing unsupported-include path");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, "Phase 57P should preserve basename-only unsupported include behavior");
+
+    return failures;
+}
+
 /// Verifies known Irvine32 names produce specific diagnostics only after the virtual include.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5025,6 +5099,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE), "unsupported-include") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported include diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH), "unsupported-host-include-path") != 0) {
+        failures += record_failure("parser diagnostic helper should name host include path diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE), "unsupported-windows-api-include") != 0) {
+        failures += record_failure("parser diagnostic helper should name Windows/API include diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE), "unsupported-masm32-library-include") != 0) {
+        failures += record_failure("parser diagnostic helper should name MASM32 SDK include diagnostics");
+    }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION), "unsupported-option") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported option diagnostics");
     }
@@ -5144,6 +5227,7 @@ int main(void) {
     failures += test_phase53d_active_semantics_do_not_emit_noop_notices();
     failures += test_phase35a_casemap_parser_policy();
     failures += test_phase41_virtual_irvine32_include_records_registry();
+    failures += test_phase57p_host_include_path_diagnostics();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();

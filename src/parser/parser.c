@@ -18,6 +18,7 @@
 #include "vm_memory.h"
 
 #include <stdarg.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -7306,6 +7307,107 @@ static bool vm_parser_include_path_matches(const VmParserState *state, const cha
            vm_parser_header_token_equals(extension_token, "inc") && vm_parser_is_line_end_token(tail_after_split_extension);
 }
 
+/// Returns whether a token slice contains an ASCII string ignoring case.
+///
+/// @param token Token whose source slice should be inspected.
+/// @param needle Null-terminated ASCII text to find.
+/// @return true when @p needle appears in @p token ignoring ASCII case.
+static bool vm_parser_token_contains_ignore_case(const VmLexerToken *token, const char *needle) {
+    size_t token_index = 0U;
+    size_t needle_length = 0U;
+
+    if (token == NULL || token->lexeme == NULL || needle == NULL || needle[0] == '\0') {
+        return false;
+    }
+
+    while (needle[needle_length] != '\0') {
+        needle_length += 1U;
+    }
+    if (needle_length > token->lexeme_length) {
+        return false;
+    }
+
+    for (token_index = 0U; token_index + needle_length <= token->lexeme_length; token_index += 1U) {
+        size_t needle_index = 0U;
+        bool matched = true;
+        for (needle_index = 0U; needle_index < needle_length; needle_index += 1U) {
+            if (vm_parser_ascii_lower(token->lexeme[token_index + needle_index]) != vm_parser_ascii_lower(needle[needle_index])) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Classifies one host/path-like INCLUDE operand for Phase 57P diagnostics.
+///
+/// @param path_token INCLUDE_PATH token to classify.
+/// @return The most specific parser diagnostic code for the include path.
+static VmParserDiagnosticCode vm_parser_classify_include_path_diagnostic(const VmLexerToken *path_token) {
+    if (vm_parser_token_contains_ignore_case(path_token, "kernel32.inc") ||
+        vm_parser_token_contains_ignore_case(path_token, "windows.inc") ||
+        vm_parser_token_contains_ignore_case(path_token, "user32.inc") ||
+        vm_parser_token_contains_ignore_case(path_token, "gdi32.inc")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE;
+    }
+
+    if (vm_parser_token_contains_ignore_case(path_token, "\\masm32\\") ||
+        vm_parser_token_contains_ignore_case(path_token, "/masm32/") ||
+        vm_parser_token_contains_ignore_case(path_token, "masm32.inc")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE;
+    }
+
+    return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH;
+}
+
+/// Adds one Phase 57P diagnostic for a host/path-like INCLUDE operand.
+///
+/// @param state Parser state to mutate.
+/// @param path_token INCLUDE_PATH token carrying the unsupported path tail.
+static void vm_parser_add_include_path_diagnostic(VmParserState *state, const VmLexerToken *path_token) {
+    VmParserDiagnosticCode code = vm_parser_classify_include_path_diagnostic(path_token);
+    int path_length = path_token != NULL && path_token->lexeme_length <= (size_t)INT_MAX ? (int)path_token->lexeme_length : 0;
+    const char *path_text = path_token != NULL && path_token->lexeme != NULL ? path_token->lexeme : "";
+
+    if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            code,
+            path_token,
+            "Windows API include path '%.*s' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.",
+            path_length,
+            path_text
+        );
+        return;
+    }
+
+    if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            code,
+            path_token,
+            "Host filesystem include path '%.*s' is not supported. This browser simulator does not read the local MASM32 SDK; use supported virtual includes only.",
+            path_length,
+            path_text
+        );
+        return;
+    }
+
+    (void)vm_parser_add_formatted_diagnostic(
+        state,
+        code,
+        path_token,
+        "Host filesystem include path '%.*s' is not supported. This browser simulator does not read local include files, relative include paths, or include search paths; use supported virtual includes only.",
+        path_length,
+        path_text
+    );
+}
+
 /// Parses supported virtual INCLUDE directives and rejects real include files.
 ///
 /// @param state Parser state to mutate.
@@ -7338,6 +7440,12 @@ static bool vm_parser_parse_include_directive(VmParserState *state) {
     }
 
     const VmLexerToken *path_token = vm_parser_peek_token(state, 1U);
+    if (path_token != NULL && path_token->kind == VM_LEXER_TOKEN_INCLUDE_PATH) {
+        vm_parser_add_include_path_diagnostic(state, path_token);
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
     (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, path_token != NULL ? path_token : include_token, "Unsupported include file. Only virtual INCLUDE Irvine32.inc and INCLUDE Macros.inc are accepted.");
     vm_parser_recover_skip_line(state);
     return true;
@@ -8028,6 +8136,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-model";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE:
             return "unsupported-include";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HOST_INCLUDE_PATH:
+            return "unsupported-host-include-path";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE:
+            return "unsupported-windows-api-include";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE:
+            return "unsupported-masm32-library-include";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION:
             return "unsupported-option";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:

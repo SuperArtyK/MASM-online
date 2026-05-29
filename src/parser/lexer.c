@@ -6,7 +6,8 @@
  * MASM32 registers, signed decimal and hexadecimal numbers, strings, commas,
  * square brackets, parentheses, question marks, plus, minus, asterisk, slash,
  * comparison punctuation needed to classify unsupported textbook constructs,
- * single-quoted character and packed character literal spans, colons, comments, directives, and line endings.
+ * single-quoted character and packed character literal spans, colons, comments, directives, line endings,
+ * and host/path-like INCLUDE directive tails in directive-tail context only.
  */
 
 #include "lexer.h"
@@ -24,6 +25,8 @@ typedef struct VmLexerCursor {
     uint32_t line;
     /// Current one-based column.
     uint32_t column;
+    /// Whether the current byte is still before the first non-whitespace token on this line.
+    bool at_line_start;
 } VmLexerCursor;
 
 /// Carries mutable output state while tokenizing.
@@ -51,6 +54,19 @@ typedef struct VmLexerRegisterName {
     /// Register identifier produced when the spelling matches.
     VmRegister reg;
 } VmLexerRegisterName;
+
+static bool lexer_add_token(
+    VmLexerWriter *writer,
+    VmLexerTokenKind kind,
+    VmLexerSourceLocation location,
+    const char *source,
+    size_t length,
+    uint64_t number_value,
+    uint32_t number_base,
+    bool number_is_negative,
+    VmRegister register_id
+);
+static VmLexerStatus lexer_token_capacity_failure(VmLexerWriter *writer, VmLexerSourceLocation location, const char *source);
 
 /// Returns whether a byte is an ASCII decimal digit.
 ///
@@ -145,6 +161,14 @@ static bool lexer_slice_equals_ignore_case(const char *text, size_t length, cons
     return index == length && expected[index] == '\0';
 }
 
+/// Returns whether a byte is horizontal source whitespace.
+///
+/// @param ch Source byte to inspect.
+/// @return true when @p ch is a horizontal whitespace byte.
+static bool lexer_is_horizontal_whitespace(char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\v' || ch == '\f';
+}
+
 /// Returns the source byte at the current cursor position.
 ///
 /// @param cursor Cursor to inspect.
@@ -207,8 +231,109 @@ static size_t lexer_advance_newline(VmLexerCursor *cursor) {
 
     cursor->line += 1U;
     cursor->column = 1U;
+    cursor->at_line_start = true;
 
     return consumed;
+}
+
+/// Returns whether a source slice starts with an INCLUDE directive and path-like tail.
+///
+/// This predicate is intentionally line-oriented and narrow. It is used only so
+/// host/path-like INCLUDE operands can be diagnosed at parser level without
+/// treating backslash or arbitrary paths as general MASM expression tokens.
+///
+/// @param cursor Cursor positioned at the first non-whitespace byte of a line.
+/// @param out_path_offset Receives the byte offset of the path tail on success.
+/// @return true when the current line starts with INCLUDE followed by a host/path-like tail.
+static bool lexer_try_match_include_path_line(const VmLexerCursor *cursor, size_t *out_path_offset) {
+    size_t tail = 0U;
+    char ch = '\0';
+
+    if (cursor == NULL || out_path_offset == NULL || !cursor->at_line_start) {
+        return false;
+    }
+
+    if (!lexer_slice_equals_ignore_case(cursor->source + cursor->offset, 7U, "include")) {
+        return false;
+    }
+
+    ch = cursor->source[cursor->offset + 7U];
+    if (!lexer_is_horizontal_whitespace(ch)) {
+        return false;
+    }
+
+    tail = cursor->offset + 8U;
+    while (lexer_is_horizontal_whitespace(cursor->source[tail])) {
+        tail += 1U;
+    }
+
+    ch = cursor->source[tail];
+    if (ch == '\\' || ch == '/') {
+        *out_path_offset = tail;
+        return true;
+    }
+
+    if (ch == '.') {
+        char next = cursor->source[tail + 1U];
+        char after_next = cursor->source[tail + 2U];
+        if (next == '\\' || next == '/' || ((next == '.') && (after_next == '\\' || after_next == '/'))) {
+            *out_path_offset = tail;
+            return true;
+        }
+    }
+
+    if (lexer_is_alpha(ch) && cursor->source[tail + 1U] == ':' &&
+        (cursor->source[tail + 2U] == '\\' || cursor->source[tail + 2U] == '/')) {
+        *out_path_offset = tail;
+        return true;
+    }
+
+    return false;
+}
+
+/// Scans a line-leading INCLUDE directive with a host/path-like tail.
+///
+/// @param cursor Cursor positioned at the INCLUDE keyword.
+/// @param writer Output writer to mutate.
+/// @return Lexer status after emitting INCLUDE and INCLUDE_PATH tokens.
+static VmLexerStatus lexer_scan_include_path_directive(VmLexerCursor *cursor, VmLexerWriter *writer) {
+    VmLexerSourceLocation include_start = lexer_location(cursor);
+    VmLexerSourceLocation path_start;
+    size_t path_offset = 0U;
+    size_t path_end = 0U;
+    size_t token_path_end = 0U;
+
+    if (!lexer_try_match_include_path_line(cursor, &path_offset)) {
+        return VM_LEXER_STATUS_OK;
+    }
+
+    while (cursor->offset < include_start.offset + 7U) {
+        lexer_advance_byte(cursor);
+    }
+    if (!lexer_add_token(writer, VM_LEXER_TOKEN_IDENTIFIER, include_start, cursor->source + include_start.offset, 7U, 0U, 0U, false, VM_REGISTER_COUNT)) {
+        return lexer_token_capacity_failure(writer, include_start, cursor->source + include_start.offset);
+    }
+
+    while (cursor->offset < path_offset) {
+        lexer_advance_byte(cursor);
+    }
+    path_start = lexer_location(cursor);
+
+    while (lexer_peek(cursor) != '\0' && lexer_peek(cursor) != '\r' && lexer_peek(cursor) != '\n' && lexer_peek(cursor) != ';') {
+        lexer_advance_byte(cursor);
+    }
+    path_end = cursor->offset;
+    token_path_end = path_end;
+    while (token_path_end > path_offset && lexer_is_horizontal_whitespace(cursor->source[token_path_end - 1U])) {
+        token_path_end -= 1U;
+    }
+
+    if (!lexer_add_token(writer, VM_LEXER_TOKEN_INCLUDE_PATH, path_start, cursor->source + path_offset, token_path_end - path_offset, 0U, 0U, false, VM_REGISTER_COUNT)) {
+        return lexer_token_capacity_failure(writer, path_start, cursor->source + path_offset);
+    }
+
+    cursor->at_line_start = false;
+    return VM_LEXER_STATUS_OK;
 }
 
 /// Adds one token to the output buffer.
@@ -705,11 +830,13 @@ VmLexerStatus vm_lexer_tokenize(
     cursor.offset = 0U;
     cursor.line = 1U;
     cursor.column = 1U;
+    cursor.at_line_start = true;
 
     while (lexer_peek(&cursor) != '\0') {
         char ch = lexer_peek(&cursor);
+        size_t include_path_offset = 0U;
 
-        if (ch == ' ' || ch == '\t' || ch == '\v' || ch == '\f') {
+        if (lexer_is_horizontal_whitespace(ch)) {
             lexer_advance_byte(&cursor);
             continue;
         }
@@ -727,6 +854,15 @@ VmLexerStatus vm_lexer_tokenize(
             }
             continue;
         }
+        if (lexer_try_match_include_path_line(&cursor, &include_path_offset)) {
+            (void)include_path_offset;
+            status = lexer_scan_include_path_directive(&cursor, &writer);
+            if (status == VM_LEXER_STATUS_TOKEN_CAPACITY_EXCEEDED || status == VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED) {
+                break;
+            }
+            continue;
+        }
+        cursor.at_line_start = false;
         if (lexer_is_identifier_start(ch)) {
             status = lexer_scan_identifier(&cursor, &writer);
         } else if (lexer_is_digit(ch) || ((ch == '-' || ch == '+') && lexer_is_digit(lexer_peek_ahead(&cursor, 1U)))) {
@@ -824,7 +960,8 @@ const char *vm_lexer_token_kind_name(VmLexerTokenKind kind) {
         "GREATER_THAN",
         "EQUALS",
         "DOT",
-        "COLON"
+        "COLON",
+        "INCLUDE_PATH"
     };
 
     if ((uint32_t)kind >= (uint32_t)VM_LEXER_TOKEN_KIND_COUNT) {
