@@ -70,11 +70,11 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 57U
 
-/// Suffix for the current Phase 57J runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "J"
+/// Suffix for the current Phase 57L runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "L"
 
-/// Full name of the current Phase 57J runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy"
+/// Full name of the current Phase 57L runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57L - .CODE Memory Access Diagnostics"
 
 /// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
@@ -4701,6 +4701,19 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                     (unsigned int)range_end,
                     (unsigned int)memory_diagnostic->const_region_start
                 );
+            } else if (has_range_end && memory_diagnostic->has_code_overlap) {
+                (void)snprintf(
+                    buffer,
+                    buffer_size,
+                    "Cross-region memory %s at %08Xh for %u byte%s. The memory address range %08Xh..%08Xh crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at %08Xh. This is not allowed; program stopped before access.",
+                    access_name,
+                    (unsigned int)memory_diagnostic->address,
+                    (unsigned int)memory_diagnostic->size,
+                    memory_diagnostic->size == 1U ? "" : "s",
+                    (unsigned int)memory_diagnostic->address,
+                    (unsigned int)range_end,
+                    (unsigned int)memory_diagnostic->code_region_start
+                );
             } else {
                 (void)snprintf(
                     buffer,
@@ -4712,6 +4725,21 @@ static const char *masm32_sim_wasm_format_memory_error_message(
                     memory_diagnostic->size == 1U ? "" : "s"
                 );
             }
+        }
+        return memory_status_name;
+    }
+
+    if (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS) {
+        if (buffer != NULL && buffer_size > 0U) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s at %08Xh for %u byte%s overlaps .CODE/_TEXT. The simulator does not expose .CODE/_TEXT as an accessible memory region. Program stopped before access.",
+                access_name,
+                (unsigned int)memory_diagnostic->address,
+                (unsigned int)memory_diagnostic->size,
+                memory_diagnostic->size == 1U ? "" : "s"
+            );
         }
         return memory_status_name;
     }
@@ -4785,7 +4813,10 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
 
     if (diagnostic != NULL && diagnostic->has_instruction) {
         line = diagnostic->instruction.source_line;
-        if (status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
+        if (status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
+            (diagnostic->status == VM_EXEC_STATUS_MEMORY_ERROR &&
+             (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS ||
+              (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING && diagnostic->memory_diagnostic.has_code_overlap)))) {
             masm32_sim_wasm_copy_instruction_source_span(
                 &diagnostic->instruction,
                 g_masm32_sim_wasm_run_storage.source_text,

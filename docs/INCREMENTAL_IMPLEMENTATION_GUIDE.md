@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
 
 ## 1. Purpose
@@ -354,7 +354,7 @@ For current `.CONST` behavior:
 
 The protected-region start address in the message must come from runtime layout metadata. It must not be hardcoded to the fixed-layout default. This is required so the diagnostic remains correct under fixed educational layout, automatic deterministic layout, seeded randomized layout, and fresh randomized layout.
 
-TODO(future `.code` memory-access-denial phases): when `.code` becomes protected for a memory access kind, reuse the `region-boundary-crossing` diagnostic shape for cross-region accesses that intersect `.code`. Substitute `.code` for `.CONST` and use the runtime `.code` base address from active layout metadata. Do not hardcode fixed-layout addresses. Do not implement `.code` access denial merely because this TODO exists; implement it only in the phase that explicitly owns `.code` memory-access protection.
+Phase 57L `.code` memory-access-denial rule: `.code` is now protected for source-level memory reads and writes. Cross-region accesses that intersect `.code` reuse the `region-boundary-crossing` diagnostic shape. The diagnostic substitutes `.code` for `.CONST`, uses the runtime `.code` base address from active layout metadata, and must not hardcode fixed-layout addresses.
 
 Required test coverage does not need to cover every Cartesian combination of operand form and memory-validation policy unless the target phase explicitly requires that. It must cover every applicable policy at least once and every newly accepted memory operand class at least once.
 
@@ -9913,20 +9913,20 @@ Required result:
 - Add or update exact rendered Simulator Messages tests for the new wording.
 - Update documentation/status only where needed to describe the corrective diagnostic behavior and repository/runtime status split.
 
-### Future-owned TODO for `.code` protected-region diagnostics
+### Historical note for `.code` protected-region diagnostics
 
-TODO(future `.code` memory-access-denial phases): when `.code` becomes protected for a memory access kind, reuse the `region-boundary-crossing` diagnostic shape for cross-region accesses that intersect `.code`.
+During Phase 57-CORR1 this item was future-owned. Phase 57L implements `.code` memory-access denial, so cross-region accesses that intersect `.code` reuse the `region-boundary-crossing` diagnostic shape.
 
-The future `.code` diagnostic must:
+The Phase 57L `.code` diagnostic must:
 
-- substitute `.code` for `.CONST`;
+- identify the no-access `.CODE/_TEXT` region in rendered diagnostic copy without making `_TEXT` an addressable symbol alias;
 - use the runtime `.code` base address from active layout metadata;
 - avoid hardcoded fixed-layout addresses;
 - work under fixed educational layout, automatic deterministic layout, seeded randomized layout, and fresh randomized layout;
 - preserve no-partial-mutation behavior;
 - include exact structured diagnostics and rendered Simulator Messages tests.
 
-This TODO is future-owned. It must not be used to implement `.code` memory-access denial during Phase 57-CORR1.
+This item remained future-owned during Phase 57-CORR1 and was intentionally not implemented there. Phase 57L is the implementation owner for `.code` memory-access denial.
 
 ### Non-goals
 
@@ -11899,10 +11899,10 @@ mov al, BYTE PTR [ebx]        ; if EBX points into .code
 
 The diagnostic must explain:
 
-- `.code` memory bytes are not exposed;
-- the simulator executes internal IR;
-- real PE `.text` bytes and x86 opcodes are not modeled;
-- the access stopped before reading a value.
+- `.CODE/_TEXT` is not exposed as an accessible memory region;
+- the program stopped before access.
+
+The `.CODE/_TEXT` wording is diagnostic copy only. `_TEXT` remains an unsupported MASM/object segment symbol and is not an addressable alias for the simulator's internal `.code` region.
 
 ### Required `.code` write behavior
 
@@ -11928,9 +11928,10 @@ add BYTE PTR [ebx], 1         ; if EBX points into .code
 
 The diagnostic must explain:
 
-- `.code` is not writable simulated program memory;
-- the simulator does not expose `.code` as a mutable section image;
-- the write stopped before memory mutation.
+- `.CODE/_TEXT` is not exposed as an accessible memory region;
+- the program stopped before access.
+
+The `.CODE/_TEXT` wording is diagnostic copy only. `_TEXT` remains an unsupported MASM/object segment symbol and is not an addressable alias for the simulator's internal `.code` region.
 
 ### No-partial-mutation behavior
 

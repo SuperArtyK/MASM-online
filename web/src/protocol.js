@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 57;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "J";
+export const IMPLEMENTED_PHASE_SUFFIX = "L";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy";
+export const IMPLEMENTED_PHASE_NAME = "Phase 57L - .CODE Memory Access Diagnostics";
 
 /**
  * Creates the initial worker readiness response.

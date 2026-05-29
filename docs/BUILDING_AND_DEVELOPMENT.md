@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57K - .CODE and MASM Segment Symbol Access Policy
+Phase 57L - .CODE Memory Access Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+Phase 57L - .CODE Memory Access Diagnostics
 
-Phase 57K updates policy documentation, registry metadata, and characterization/static checks for unsupported `.code` memory access and unsupported MASM segment/group symbols. Runtime/source-run MASM behavior remains Phase 57J because `.code` access diagnostics and segment/group-symbol diagnostics are not implemented in Phase 57K. Phase 57J configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
+Phase 57L implements runtime/source-run diagnostics for memory reads or writes whose final byte range overlaps `.code`. Wholly contained `.code` memory accesses report `unsupported-code-memory-access`; cross-region `.code` overlaps report `region-boundary-crossing`. Phase 57K - .CODE and MASM Segment Symbol Access Policy remains documented for Phase 57M implementation. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy remains the owner of configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics. Phase 57J configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
 
 ## Repository layout for development
 
@@ -210,7 +210,7 @@ main ENDP
 END main
 ```
 
-The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy. The repository/archive status is Phase 57K - .CODE and MASM Segment Symbol Access Policy. Phase 57K documents unsupported `.code` memory access and unsupported MASM segment/group symbols without adding browser UI controls or changing runtime/source-run behavior. Phase 57J adds configurable declaration diagnostics for `.CONST ?` / `.CONST DUP(?)`; Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings.
+The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57L - .CODE Memory Access Diagnostics. The repository/archive status is Phase 57L - .CODE Memory Access Diagnostics. Phase 57L adds runtime/source-run `.code` memory-access diagnostics without adding browser UI controls; Phase 57K - .CODE and MASM Segment Symbol Access Policy remains documentation-only until Phase 57M. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy remains the owner of configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics. Phase 57J adds configurable declaration diagnostics for `.CONST ?` / `.CONST DUP(?)`; Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings.
 
 ## Missing `emcc` troubleshooting
 

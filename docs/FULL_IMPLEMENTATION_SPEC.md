@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -2375,7 +2375,7 @@ Strict behavior:
 
 Reads from `.CONST` are allowed if the full range is otherwise valid. A read that intersects `.CONST` fails only when it crosses independent VM regions, violates address/range validation, or violates another mandatory or enabled strict validation. It must not be rejected merely because `.CONST` is read-only.
 
-Future `.code` access-denial phases must reuse the protected-region diagnostic model when applicable. If a future phase makes `.code` protected for a given access kind and a cross-region access intersects `.code`, the diagnostic must substitute `.code` for `.CONST` and must use the runtime `.code` base address from layout metadata. Future implementations must not hardcode fixed-layout addresses. This future `.code` note is not current behavior and must not be used to implement `.code` access denial before the owning phase.
+Phase 57L `.code` access-denial diagnostics reuse the protected-region diagnostic model when applicable. When a cross-region access intersects `.code`, the diagnostic identifies the no-access `.CODE/_TEXT` region and uses the runtime `.code` base address from layout metadata. Implementations must not hardcode fixed-layout addresses. The `.CODE/_TEXT` wording is diagnostic copy only; `_TEXT` remains an unsupported MASM/object segment symbol and is not an addressable alias for the simulator's internal `.code` region.
 
 Required no-partial-mutation behavior for fatal cross-region, protected-region-overlap, or `.CONST` write failures:
 
@@ -4250,31 +4250,25 @@ The warning explains that the simulator accepts the declaration for compatibilit
 
 ### 20A.6 `.CODE` Memory Access Policy
 
-This section defines the planned v1 `.code` memory-access policy. It is not a statement that `.code` memory-access diagnostics are implemented in the current repository state.
+This section defines the implemented v1 `.code` memory-access policy after Phase 57L - .CODE Memory Access Diagnostics. Phase 57K - .CODE and MASM Segment Symbol Access Policy owns the policy audit and source-of-truth cleanup for `.code` access behavior. Phase 57L owns and implements runtime/source-run `.code` read/write denial diagnostics.
 
-Through Phase 57K - .CODE and MASM Segment Symbol Access Policy, assistants must not claim that `.code` memory-access denial is implemented. Phase 57K characterizes current behavior and locks policy, but Phase 57L owns runtime/source-run denial diagnostics.
-
-Phase 57K - .CODE and MASM Segment Symbol Access Policy owns the policy audit and source-of-truth cleanup for `.code` access behavior.
-
-Phase 57L - .CODE Memory Access Diagnostics owns the runtime/source-run implementation of `.code` read/write denial.
-
-Phase 57K audit result for the current low-level VM memory layer:
+Phase 57L implementation result for the current VM memory layer and source-run path:
 
 - fixed-layout `.code` base: `00400000h`;
 - fixed-layout `.code` capacity: `00100000h` bytes;
 - low-level permissions: read and execute are present, write is absent;
-- low-level checked reads wholly inside `.code` currently succeed;
-- low-level checked writes wholly inside `.code` currently fail through ordinary region permissions, not through a specific `.code` source-level policy diagnostic;
-- current low-level reads return deterministic zero bytes because the region backing storage is zero-initialized by the VM memory initializer;
-- those returned zero bytes are backing-storage defaults, not a section image, not PE `.text` bytes, not x86 opcode bytes, not emitted IR bytes, and not a supported source-level contract;
-- current source programs can reach `.code` addresses through existing register-indirect or displacement memory forms after loading the fixed address into a register, for example `mov eax, 00400000h` followed by `mov ebx, DWORD PTR [eax]`;
-- Phase 57K documents this as a current implementation artifact that Phase 57L must replace with the selected `.code` memory-access diagnostic.
+- checked source-level memory reads wholly inside `.code` fail with `unsupported-code-memory-access`;
+- checked source-level memory writes wholly inside `.code` fail with `unsupported-code-memory-access`;
+- cross-region memory reads or writes whose final byte range intersects `.code` fail with `region-boundary-crossing` and `.code` protected-region context;
+- diagnostics use the active runtime `.code` region base rather than hardcoded fixed-layout addresses;
+- `.code` backing bytes are not a section image, not PE `.text` bytes, not x86 opcode bytes, not emitted IR bytes, and not a supported source-level contract;
+- source programs can syntactically produce `.code` addresses through existing register-indirect or displacement memory forms after loading a `.code` address into a register, but those memory accesses fail before reading a value or committing mutation.
 
 The simulator has a `.code` source section and may have parser, IR, source-location, and execution metadata associated with executable source lines. That does not mean `.code` is user-readable or user-writable simulated program memory.
 
 In MASM32 Educational Mode, `.code` is an internal source/IR execution area, not a modeled PE `.text` byte image and not a region of user-addressable opcode bytes.
 
-Required v1 policy after Phase 57L is implemented and accepted:
+Implemented v1 policy after Phase 57L:
 
 ```text
 unsupported-code-memory-access
@@ -4298,7 +4292,7 @@ This includes:
 - symbol-derived forms, if any future feature can produce them;
 - computed addresses that happen to land in `.code`.
 
-The diagnostic must explain that `.code` memory bytes are not exposed by MASM32 Educational Mode.
+The diagnostic must explain that `.CODE/_TEXT` is not exposed by MASM32 Educational Mode as an accessible memory region. The `.CODE/_TEXT` wording is diagnostic copy only; `_TEXT` remains an unsupported MASM/object segment symbol and is not an addressable alias for the simulator's internal `.code` region.
 
 The diagnostic must not say or imply that real MASM/PE programs have empty `.text` sections. The issue is simulator scope: this project executes internal IR and does not expose real x86 instruction bytes.
 
@@ -4339,11 +4333,11 @@ For current `.CONST` behavior:
 - a wholly-contained read from `.CONST` is allowed unless another mandatory or enabled strict validation rejects it;
 - a cross-region read intersecting `.CONST` must not be described as a general `.CONST` read prohibition.
 
-For future `.code` behavior after Phase 57L implements `.code` memory-access denial:
+For current Phase 57L `.code` memory-access-denial behavior:
 
 - a wholly-contained read or write overlapping `.code` reports the `.code` memory-access diagnostic selected by Phase 57L;
 - a cross-region access that intersects `.code` must use `region-boundary-crossing` if runtime layout metadata can identify `.code` as the protected region involved;
-- the rendered message must use the runtime `.code` base address from active layout metadata, not a hardcoded fixed-layout address.
+- the rendered message must use the runtime `.code` base address from active layout metadata, not a hardcoded fixed-layout address, and should identify the no-access `.CODE/_TEXT` region without making `_TEXT` an addressable symbol alias.
 
 The simulator must not split, stitch, partially perform, or partially diagnose one source-level memory access across independent VM memory regions.
 

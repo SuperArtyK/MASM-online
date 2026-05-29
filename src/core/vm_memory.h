@@ -52,7 +52,8 @@
 
 /// Identifies one deterministic simulated memory region.
 typedef enum VmMemoryRegionKind {
-    /// Simulated .code region, readable and executable but not writable.
+    /// Simulated .code region; Phase 57L denies source-level checked reads
+    /// and writes while execute metadata remains available for VM internals.
     VM_MEMORY_REGION_CODE = 0,
     /// Simulated .data region, readable and writable but not executable.
     VM_MEMORY_REGION_DATA,
@@ -98,6 +99,8 @@ typedef enum VmMemoryStatus {
     VM_MEMORY_STATUS_INVALID_ADDRESS,
     /// Operation failed because one access crossed a protected memory-region boundary.
     VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING,
+    /// Operation failed because source-level memory access to `.code` is not supported.
+    VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS,
     /// Operation failed because the matching region lacks the required permission.
     VM_MEMORY_STATUS_PERMISSION_DENIED,
     /// Operation failed because backing storage could not be allocated.
@@ -166,6 +169,14 @@ typedef struct VmMemoryDiagnostic {
     uint32_t const_overlap_start;
     /// Inclusive last address in the attempted range that overlaps `.CONST`.
     uint32_t const_overlap_end;
+    /// Whether the failed range overlaps protected `.code` storage.
+    bool has_code_overlap;
+    /// Runtime base address of the active `.code` region.
+    uint32_t code_region_start;
+    /// Inclusive first address in the attempted range that overlaps `.code`.
+    uint32_t code_overlap_start;
+    /// Inclusive last address in the attempted range that overlaps `.code`.
+    uint32_t code_overlap_end;
     /// Whether the operation used an unaligned multi-byte address.
     bool is_unaligned;
 } VmMemoryDiagnostic;

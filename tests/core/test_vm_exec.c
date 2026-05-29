@@ -494,8 +494,8 @@ static int test_error_paths_and_diagnostics(void) {
     failures += expect_status(vm_load_program(&vm, code_write, 1U), VM_EXEC_STATUS_OK, "code write program should load");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "write to code should fail as memory error");
     diagnostic = vm_last_diagnostic(&vm);
-    if (diagnostic == NULL || diagnostic->memory_status != VM_MEMORY_STATUS_PERMISSION_DENIED) {
-        failures += record_failure("code write diagnostic should report permission denied");
+    if (diagnostic == NULL || diagnostic->memory_status != VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS) {
+        failures += record_failure("code write diagnostic should report unsupported-code-memory-access");
     }
 
     failures += expect_status(vm_load_program(&vm, mismatched_register_width, 1U), VM_EXEC_STATUS_OK, "mismatched register width program should load");

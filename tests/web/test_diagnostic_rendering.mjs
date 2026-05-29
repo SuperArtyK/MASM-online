@@ -4726,6 +4726,78 @@ END main
   assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
 });
 
+
+test("Phase 57L renders code memory read diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov ebx, 00400000h
+    mov al, BYTE PTR [ebx]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57l-code-read", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "unsupported-code-memory-access",
+    message: "Memory read at 00400000h for 1 byte overlaps .CODE/_TEXT. The simulator does not expose .CODE/_TEXT as an accessible memory region. Program stopped before access.",
+    line: 4,
+    column: 5,
+    byteOffset: 43,
+    spanLength: 22
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57l-code-read", source, rawJson, rendered, "[runtime-error] unsupported-code-memory-access line 4, column 5, byte offset 43, span length 22: Memory read at 00400000h for 1 byte overlaps .CODE/_TEXT. The simulator does not expose .CODE/_TEXT as an accessible memory region. Program stopped before access.");
+});
+
+test("Phase 57L renders code memory write diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov ebx, 00400000h
+    mov BYTE PTR [ebx], 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57l-code-write", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "unsupported-code-memory-access",
+    message: "Memory write at 00400000h for 1 byte overlaps .CODE/_TEXT. The simulator does not expose .CODE/_TEXT as an accessible memory region. Program stopped before access.",
+    line: 4,
+    column: 5,
+    byteOffset: 43,
+    spanLength: 21
+  });
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57l-code-write", source, rawJson, rendered, "[runtime-error] unsupported-code-memory-access line 4, column 5, byte offset 43, span length 21: Memory write at 00400000h for 1 byte overlaps .CODE/_TEXT. The simulator does not expose .CODE/_TEXT as an accessible memory region. Program stopped before access.");
+});
+
+test("Phase 57L renders code partial-overlap diagnostic exactly", () => {
+  const source = `.code
+main PROC
+    mov ebx, 003FFFFFh
+    mov WORD PTR [ebx], 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase57l-code-partial-overlap", source);
+  assert.equal(json.ok, false, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "region-boundary-crossing",
+    message: "Cross-region memory write at 003FFFFFh for 2 bytes. The memory address range 003FFFFFh..00400000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h. This is not allowed; program stopped before access.",
+    line: 4,
+    column: 5,
+    byteOffset: 43,
+    spanLength: 21
+  });
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals("phase57l-code-partial-overlap", source, rawJson, rendered, "[runtime-error] region-boundary-crossing line 4, column 5, byte offset 43, span length 21: Cross-region memory write at 003FFFFFh for 2 bytes. The memory address range 003FFFFFh..00400000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h. This is not allowed; program stopped before access.");
+});
+
 test("Phase 57-CORR2 renders compact negative displacement write success", () => {
   const source = `.data
 x DWORD 0, 0

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the repository/archive Phase 57K UI shell with Phase 57J source-run behavior: source editing, Run button, final register display with unchanged parent-row markers, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, compatibility notice, and `.CONST` declaration policy behavior where routed through the Wasm/source-run path. Phase 57K policy documentation for `.code` memory access and MASM segment/group symbols does not add browser UI controls.
+  This page provides the repository/archive Phase 57L UI shell with Phase 57L source-run behavior: source editing, Run button, final register display with unchanged parent-row markers, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, compatibility notice, and `.CONST` declaration policy behavior where routed through the Wasm/source-run path. Phase 57L adds mandatory `.code` memory-access diagnostics without adding browser UI controls; Phase 57K MASM segment/group-symbol policy remains future Phase 57M diagnostic work.
 -->
 <html lang="en">
   <head>
@@ -16,7 +16,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Repository Phase 57K: .code memory access and MASM segment/group symbols are documented as unsupported policy areas; runtime source-run behavior remains Phase 57J with configurable .CONST declaration diagnostics, final-register [unchanged] markers, and opt-in seeded startup/storage settings.</p>
+        <p class="muted">Repository/runtime Phase 57L: memory ranges that overlap .code now produce mandatory Simulator Messages diagnostics. .CONST declaration diagnostics, final-register [unchanged] markers, and opt-in seeded startup/storage settings remain available.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC

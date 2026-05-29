@@ -38,7 +38,7 @@ typedef enum VmDiagnosticPolicyFamily {
     VM_DIAGNOSTIC_POLICY_FAMILY_CONST_UNINITIALIZED_STORAGE,
     /// Informational notice explaining deterministic simulator startup state.
     VM_DIAGNOSTIC_POLICY_FAMILY_STARTUP_STATE_NOTICE,
-    /// Reserved family for future `.code` memory-access diagnostics.
+    /// Mandatory `.code` memory-access diagnostic family; not user-configurable.
     VM_DIAGNOSTIC_POLICY_FAMILY_UNSUPPORTED_CODE_MEMORY_ACCESS,
     /// Number of known diagnostic-policy families.
     VM_DIAGNOSTIC_POLICY_FAMILY_COUNT
@@ -131,8 +131,8 @@ bool vm_diagnostic_policy_family_default_value(VmDiagnosticPolicyFamily family, 
 /// Implemented teaching-diagnostic families accept the shared off/warn/error
 /// vocabulary when their current behavior includes a fatal mode. Compatibility
 /// notices and startup-state notices currently accept only off/warn because
-/// they are non-fatal notices. Reserved inactive families reject all values so
-/// future diagnostics are not accidentally activated by name.
+/// they are non-fatal notices. Reserved inactive families and mandatory non-configurable diagnostics reject all
+/// values so they are not accidentally controlled as optional teaching policies.
 ///
 /// @param family Family identifier to inspect.
 /// @param value Policy value to validate for that family.

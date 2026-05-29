@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57K:
+Current status at Phase 57L:
 
 Repository/archive milestone:
-Phase 57K - .CODE and MASM Segment Symbol Access Policy
+Phase 57L - .CODE Memory Access Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
+Phase 57L - .CODE Memory Access Diagnostics
 
 Status interpretation:
 
-Phase 57K is policy, documentation, registry-metadata, and characterization work for unsupported `.code` memory access and unsupported MASM segment/group symbols. It does not add MASM syntax, parser behavior, VM instruction behavior, source-run diagnostics, rendered Simulator Messages wording, Program Console output, browser controls, or runtime/source-run metadata changes. Runtime/source-run MASM behavior therefore remains Phase 57J. Existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57L is runtime/source-run diagnostic work for memory reads or writes whose final byte range overlaps `.code`. It adds the mandatory `unsupported-code-memory-access` diagnostic for wholly contained `.code` memory accesses and uses `region-boundary-crossing` for cross-region `.code` overlaps. It does not add MASM syntax, new instruction behavior, browser controls, Program Console output, segment/group-symbol diagnostics, readable code images, x86 opcode emission, PE layout, or linker/loader behavior. Existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -82,7 +82,12 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57I accepts `.CONST ?` and `.CONST DUP(?)` as read-only uninitialized-origin storage, advances runtime/source-run MASM behavior metadata to Phase 57I, and is followed by Phase 57J configurable declaration diagnostics.
 - Phase 57J activates configurable `const-uninitialized-storage` declaration diagnostics for `.CONST ?` and `.CONST DUP(?)`, advances runtime/source-run MASM behavior metadata to Phase 57J, and preserves `.CONST` storage semantics.
 - Phase 57K locks the v1 policy that `.code` memory access is unsupported and that MASM segment/group names are not aliases for simulator regions, while keeping runtime/source-run MASM behavior at Phase 57J.
+- Phase 57L implements mandatory `.code` memory-access diagnostics, advances runtime/source-run MASM behavior metadata to Phase 57L, and preserves Phase 57K segment/group-symbol diagnostics as future Phase 57M work.
 
+
+## Phase 57L - .CODE Memory Access Diagnostics
+
+Phase 57L implements mandatory source-level/runtime `.code` memory-access diagnostics. Wholly contained `.code` reads and writes report `unsupported-code-memory-access`. Cross-region memory accesses whose final byte range intersects `.code` report `region-boundary-crossing` with `.code` protected-region context from the active runtime layout. Fatal diagnostics stop before read consumption, memory mutation, flag mutation, Program Console output, memory-change rows, or `execution-complete`. Phase 57L does not implement segment/group-symbol diagnostics, readable `.code` byte images, x86 opcode emission, PE layout, linker behavior, or segment modeling.
 
 ## Phase 57K - .CODE and MASM Segment Symbol Access Policy
 
@@ -90,7 +95,7 @@ Phase 57K audits and characterizes current `.code` memory behavior while locking
 
 Phase 57K also defines `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` as unsupported MASM/object/linker segment or group symbols, not aliases for `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any internal VM region. Phase 57M owns later targeted `unsupported-segment-symbol` parser diagnostics.
 
-Phase 57K updates repository/archive status only. Runtime/source-run MASM behavior remains Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy.
+Phase 57K updated repository/archive status only. At that time, runtime/source-run MASM behavior remained Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy. Phase 57L later advances runtime/source-run MASM behavior metadata and implements `.code` runtime/source-run diagnostics.
 
 ## Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy
 

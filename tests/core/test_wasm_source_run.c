@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57J .CONST uninitialized storage diagnostics and policy.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57L .CODE memory access diagnostics.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -7895,8 +7895,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"J\"", "Phase 57J should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy\"", "Phase 57J should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"L\"", "Phase 57L should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57L - .CODE Memory Access Diagnostics\"", "Phase 57L should report the runtime phase name");
 
     return failures;
 }
@@ -8334,7 +8334,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"J\"", "Phase 57J .CONST ? fixture should report runtime suffix J");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"L\"", "Phase 57L .CONST ? fixture should report runtime suffix L");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -8873,6 +8873,202 @@ static int test_phase51_fixed_and_automatic_layout_smoke_harness(void) {
     return failures;
 }
 
+
+/// Verifies Phase 57L `.code` memory reads, writes, partial overlaps, and RMW failures.
+///
+/// @return Number of failures.
+static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
+    int failures = 0;
+    char byte_read_json[TEST_JSON_COPY_CAPACITY];
+    char word_read_json[TEST_JSON_COPY_CAPACITY];
+    char dword_read_json[TEST_JSON_COPY_CAPACITY];
+    char before_read_json[TEST_JSON_COPY_CAPACITY];
+    char inside_out_read_json[TEST_JSON_COPY_CAPACITY];
+    char byte_write_json[TEST_JSON_COPY_CAPACITY];
+    char word_write_json[TEST_JSON_COPY_CAPACITY];
+    char dword_write_json[TEST_JSON_COPY_CAPACITY];
+    char before_write_json[TEST_JSON_COPY_CAPACITY];
+    char inside_out_write_json[TEST_JSON_COPY_CAPACITY];
+    char rmw_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(
+        byte_read_json,
+        sizeof(byte_read_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov al, BYTE PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        word_read_json,
+        sizeof(word_read_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov ax, WORD PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        dword_read_json,
+        sizeof(dword_read_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov eax, DWORD PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        before_read_json,
+        sizeof(before_read_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 003FFFFFh\n"
+            "    mov ax, WORD PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        inside_out_read_json,
+        sizeof(inside_out_read_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 004FFFFFh\n"
+            "    mov ax, WORD PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        byte_write_json,
+        sizeof(byte_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov BYTE PTR [ebx], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        word_write_json,
+        sizeof(word_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov WORD PTR [ebx], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        dword_write_json,
+        sizeof(dword_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    mov DWORD PTR [ebx], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        before_write_json,
+        sizeof(before_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 003FFFFFh\n"
+            "    mov WORD PTR [ebx], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        inside_out_write_json,
+        sizeof(inside_out_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 004FFFFFh\n"
+            "    mov WORD PTR [ebx], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        rmw_json,
+        sizeof(rmw_json),
+        masm32_sim_wasm_run_source_json(
+            ".code\n"
+            "main PROC\n"
+            "    mov ebx, 00400000h\n"
+            "    inc DWORD PTR [ebx]\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+
+    printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
+
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"L\"", "Phase 57L code read should report runtime suffix L");
+    failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
+    failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
+    failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
+    failures += expect_json_contains(byte_read_json, "Memory read at 00400000h for 1 byte overlaps .CODE/_TEXT", "Phase 57L BYTE .code read message should identify address and width");
+    failures += expect_json_contains(byte_read_json, "simulator does not expose .CODE/_TEXT as an accessible memory region", "Phase 57L .code read message should explain no-access policy");
+    failures += expect_json_contains(byte_read_json, "Program stopped before access", "Phase 57L .code read message should say read was not consumed");
+    failures += expect_json_contains(byte_read_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 57L failed .code read should not mutate EAX");
+    failures += expect_json_contains(byte_read_json, "\"memoryChanges\":[]", "Phase 57L failed .code read should not record memory changes");
+    failures += expect_json_not_contains(byte_read_json, "execution-complete", "Phase 57L failed .code read should not complete");
+
+    failures += expect_json_contains(word_read_json, "Memory read at 00400000h for 2 bytes overlaps .CODE/_TEXT", "Phase 57L WORD .code read should be denied");
+    failures += expect_json_contains(dword_read_json, "Memory read at 00400000h for 4 bytes overlaps .CODE/_TEXT", "Phase 57L DWORD .code read should be denied");
+
+    failures += expect_json_contains(before_read_json, "\"code\":\"region-boundary-crossing\"", "Phase 57L read from before .code should use region-boundary-crossing");
+    failures += expect_json_contains(before_read_json, "memory address range 003FFFFFh..00400000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h", "Phase 57L read from before .code should describe .code overlap");
+    failures += expect_json_contains(inside_out_read_json, "\"code\":\"region-boundary-crossing\"", "Phase 57L read from inside .code out should use region-boundary-crossing");
+    failures += expect_json_contains(inside_out_read_json, "memory address range 004FFFFFh..00500000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h", "Phase 57L read from inside .code out should describe .code overlap");
+
+    failures += expect_json_contains(byte_write_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code write should use unsupported-code-memory-access");
+    failures += expect_json_contains(byte_write_json, "Memory write at 00400000h for 1 byte overlaps .CODE/_TEXT", "Phase 57L BYTE .code write message should identify address and width");
+    failures += expect_json_contains(byte_write_json, "simulator does not expose .CODE/_TEXT as an accessible memory region", "Phase 57L .code write message should explain no-access policy");
+    failures += expect_json_contains(byte_write_json, "Program stopped before access", "Phase 57L .code write message should say mutation did not happen");
+    failures += expect_json_contains(byte_write_json, "\"memoryChanges\":[]", "Phase 57L failed .code write should not record memory changes");
+    failures += expect_json_not_contains(byte_write_json, "execution-complete", "Phase 57L failed .code write should not complete");
+    failures += expect_json_contains(word_write_json, "Memory write at 00400000h for 2 bytes overlaps .CODE/_TEXT", "Phase 57L WORD .code write should be denied");
+    failures += expect_json_contains(dword_write_json, "Memory write at 00400000h for 4 bytes overlaps .CODE/_TEXT", "Phase 57L DWORD .code write should be denied");
+
+    failures += expect_json_contains(before_write_json, "\"code\":\"region-boundary-crossing\"", "Phase 57L write from before .code should use region-boundary-crossing");
+    failures += expect_json_contains(before_write_json, "memory address range 003FFFFFh..00400000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h", "Phase 57L write from before .code should describe .code overlap");
+    failures += expect_json_contains(before_write_json, "\"memoryChanges\":[]", "Phase 57L cross-region .code write should not record memory changes");
+    failures += expect_json_contains(inside_out_write_json, "\"code\":\"region-boundary-crossing\"", "Phase 57L write from inside .code out should use region-boundary-crossing");
+    failures += expect_json_contains(inside_out_write_json, "memory address range 004FFFFFh..00500000h crosses/overlaps a no-access memory region, .CODE/_TEXT, that starts at 00400000h", "Phase 57L write from inside .code out should describe .code overlap");
+    failures += expect_json_contains(inside_out_write_json, "\"memoryChanges\":[]", "Phase 57L inside-out .code write should not record memory changes");
+
+    failures += expect_json_contains(rmw_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L .code read-modify-write should use unsupported-code-memory-access");
+    failures += expect_json_contains(rmw_json, "Memory read at 00400000h for 4 bytes overlaps .CODE/_TEXT", "Phase 57L .code read-modify-write should stop at read stage");
+    failures += expect_json_contains(rmw_json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 57L failed .code RMW should not update flags");
+    failures += expect_json_contains(rmw_json, "\"memoryChanges\":[]", "Phase 57L failed .code RMW should not write back");
+    failures += expect_json_not_contains(rmw_json, "execution-complete", "Phase 57L failed .code RMW should not complete");
+
+    return failures;
+}
 /// Verifies Phase 57-CORR1 reports `.CONST` context for a cross-region write overlap.
 ///
 /// @return Number of failures.
@@ -8965,27 +9161,28 @@ static int test_phase57corr1_const_cross_region_read_remains_region_failure(void
     return failures;
 }
 
-/// Verifies Phase 57-CORR1 preserves ordinary non-`.CONST` range diagnostics.
+/// Verifies ordinary non-protected-region range diagnostics remain unchanged.
 ///
 /// @return Number of failures.
-static int test_phase57corr1_non_const_cross_region_write_remains_ordinary_region_failure(void) {
+static int test_non_protected_cross_region_write_remains_ordinary_region_failure(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
-        "    mov eax, 004FFFFEh\n"
+        "    mov eax, 007FFFFEh\n"
         "    mov DWORD PTR [eax], 12345678h\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
-    printf("PHASE 57-CORR1 source-run program exercised: phase57corr1-non-const-cross-region-write\n");
-    failures += expect_json_contains(json, "\"ok\":false", "Phase 57-CORR1 non-.CONST cross-region write should fail");
-    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "Phase 57-CORR1 non-.CONST cross-region write should remain a region/range diagnostic");
-    failures += expect_json_contains(json, "Invalid memory write at 004FFFFEh for 4 bytes", "Phase 57-CORR1 non-.CONST cross-region write should identify attempted write start and width");
-    failures += expect_json_not_contains(json, "protected memory region, .CONST", "Phase 57-CORR1 non-.CONST cross-region write should not gain protected .CONST wording");
-    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 57-CORR1 non-.CONST cross-region write should not commit memory changes");
-    failures += expect_json_not_contains(json, "execution-complete", "Phase 57-CORR1 non-.CONST cross-region write should not emit execution-complete");
+    printf("PHASE 57L source-run program exercised: non-protected-cross-region-write\n");
+    failures += expect_json_contains(json, "\"ok\":false", "non-protected cross-region write should fail");
+    failures += expect_json_contains(json, "\"code\":\"invalid-address\"", "non-protected cross-region write should remain a region/range diagnostic");
+    failures += expect_json_contains(json, "Invalid memory write at 007FFFFEh for 4 bytes", "non-protected cross-region write should identify attempted write start and width");
+    failures += expect_json_not_contains(json, "protected memory region, .CONST", "non-protected cross-region write should not gain protected .CONST wording");
+    failures += expect_json_not_contains(json, "no-access memory region, .CODE/_TEXT", "non-protected cross-region write should not gain protected .code wording");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "non-protected cross-region write should not commit memory changes");
+    failures += expect_json_not_contains(json, "execution-complete", "non-protected cross-region write should not emit execution-complete");
 
     return failures;
 }
@@ -9376,10 +9573,11 @@ int main(void) {
     failures += test_phase56_div_source_run_error_paths();
     failures += test_phase57_idiv_source_run_programs();
     failures += test_phase57_idiv_source_run_error_paths();
+    failures += test_phase57l_code_memory_access_diagnostics_source_run();
     failures += test_phase57corr1_const_cross_region_write_diagnostic_context();
     failures += test_phase57corr1_direct_const_write_still_permission_denied();
     failures += test_phase57corr1_const_cross_region_read_remains_region_failure();
-    failures += test_phase57corr1_non_const_cross_region_write_remains_ordinary_region_failure();
+    failures += test_non_protected_cross_region_write_remains_ordinary_region_failure();
     failures += test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled();
     failures += test_phase53a_default_object_spanning_read_has_no_object_diagnostic();
     failures += test_phase53a_object_spanning_read_warning_mode_continues();
@@ -9457,6 +9655,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57J .CONST uninitialized storage diagnostics and policy coverage passed.");
+    puts("Source execution tests through Phase 57L .CODE memory access diagnostics coverage passed.");
     return 0;
 }

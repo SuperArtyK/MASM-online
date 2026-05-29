@@ -4,8 +4,8 @@
  *
  * These tests cover deterministic memory layout, checked reads and writes,
  * region permissions, invalid address reporting, unaligned-access warnings, raw
- * byte-change recording, read-only .const behavior, Phase 57K .code
- * region characterization, and fixed-layout compatibility without introducing
+ * byte-change recording, read-only .const behavior, Phase 57L .code
+ * memory-access denial, and fixed-layout compatibility without introducing
  * parser or instruction execution.
  */
 
@@ -271,20 +271,20 @@ static int test_heap_and_stack_valid_access(void) {
     return failures;
 }
 
-/// Characterizes current low-level .code memory-region behavior for Phase 57K.
+/// Verifies Phase 57L mandatory `.code` memory access denial.
 ///
-/// Phase 57K locks source-level policy to `unsupported-code-memory-access`, but
-/// does not implement Phase 57L runtime denial. This test records the current
-/// low-level VM artifact: the fixed `.code` region has zero-initialized backing
-/// storage, permits checked reads, denies checked writes through ordinary
-/// permissions, and is executable metadata rather than a source-level byte image.
+/// The `.code` region remains execute-capable metadata for the VM, but checked
+/// source-level memory reads and writes must not expose it as a readable or
+/// writable byte image.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase57k_code_region_current_behavior_characterization(void) {
+static int test_phase57l_code_region_memory_access_denial(void) {
     int failures = 0;
     VmMemory memory;
     VmMemoryDiagnostic diagnostic;
     uint32_t value32 = 0xFFFFFFFFU;
+    uint16_t value16 = 0xABCDU;
+    uint8_t value8 = 0xABU;
     const VmMemoryRegion *code_region = NULL;
 
     failures += expect_status(vm_memory_init(&memory, NULL), VM_MEMORY_STATUS_OK, "memory initialization should succeed");
@@ -295,26 +295,37 @@ static int test_phase57k_code_region_current_behavior_characterization(void) {
     code_region = vm_memory_get_region(&memory, VM_MEMORY_REGION_CODE);
     if (code_region == NULL) {
         vm_memory_deinit(&memory);
-        return record_failure("code region should exist for Phase 57K characterization");
+        return record_failure("code region should exist for Phase 57L access denial");
     }
 
-    failures += expect_u32(code_region->base, VM_MEMORY_DEFAULT_CODE_BASE, "Phase 57K code-region base should match fixed layout");
-    failures += expect_u32(code_region->size, VM_MEMORY_DEFAULT_CODE_SIZE, "Phase 57K code-region capacity should match fixed layout");
-    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_READ), true, "Phase 57K current low-level code region is readable");
-    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_WRITE), false, "Phase 57K current low-level code region is not writable");
-    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_EXECUTE), true, "Phase 57K current low-level code region carries execute permission");
+    failures += expect_u32(code_region->base, VM_MEMORY_DEFAULT_CODE_BASE, "Phase 57L code-region base should match fixed layout");
+    failures += expect_u32(code_region->size, VM_MEMORY_DEFAULT_CODE_SIZE, "Phase 57L code-region capacity should match fixed layout");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_READ), true, "code region retains read permission metadata for execute/future internals");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_WRITE), false, "code region remains not writable");
+    failures += expect_bool(vm_memory_region_has_permission(code_region, VM_MEMORY_PERMISSION_EXECUTE), true, "code region carries execute permission");
 
-    failures += expect_status(vm_memory_read_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value32, &diagnostic), VM_MEMORY_STATUS_OK, "Phase 57K current low-level code read should succeed");
-    failures += expect_u32(value32, 0U, "Phase 57K current low-level code read returns zero-filled backing storage");
+    failures += expect_status(vm_memory_read_u8(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value8, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code BYTE read should be denied");
+    failures += expect_u32(value8, 0xABU, "failed code byte read should not overwrite output value");
     failures += expect_bool(diagnostic.has_region, true, "code read diagnostic should identify region");
+    failures += expect_bool(diagnostic.has_code_overlap, true, "code read diagnostic should report code overlap");
+    failures += expect_u32(diagnostic.code_region_start, VM_MEMORY_DEFAULT_CODE_BASE, "code read diagnostic should use runtime code base");
     failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_MEMORY_REGION_CODE, "code read diagnostic region mismatch");
     failures += expect_u32((uint32_t)diagnostic.access_type, (uint32_t)VM_MEMORY_ACCESS_READ, "code read diagnostic access type mismatch");
 
-    failures += expect_status(vm_memory_write_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0xDEADBEEFU, &diagnostic), VM_MEMORY_STATUS_PERMISSION_DENIED, "Phase 57K current low-level code write should fail ordinary permission check");
+    failures += expect_status(vm_memory_read_u16(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value16, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code WORD read should be denied");
+    failures += expect_u32(value16, 0xABCDU, "failed code word read should not overwrite output value");
+    failures += expect_status(vm_memory_read_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, &value32, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code DWORD read should be denied");
+    failures += expect_u32(value32, 0xFFFFFFFFU, "failed code dword read should not overwrite output value");
+
+    failures += expect_status(vm_memory_write_u8(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0x12U, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code BYTE write should be denied");
+    failures += expect_status(vm_memory_write_u16(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0x1234U, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code WORD write should be denied");
+    failures += expect_status(vm_memory_write_u32(&memory, VM_MEMORY_DEFAULT_CODE_BASE, 0xDEADBEEFU, &diagnostic), VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS, "Phase 57L code DWORD write should be denied");
     failures += expect_bool(diagnostic.has_region, true, "code write diagnostic should identify region");
+    failures += expect_bool(diagnostic.has_code_overlap, true, "code write diagnostic should report code overlap");
+    failures += expect_u32(diagnostic.code_region_start, VM_MEMORY_DEFAULT_CODE_BASE, "code write diagnostic should use runtime code base");
     failures += expect_u32((uint32_t)diagnostic.region, (uint32_t)VM_MEMORY_REGION_CODE, "code write diagnostic region mismatch");
     failures += expect_u32((uint32_t)diagnostic.access_type, (uint32_t)VM_MEMORY_ACCESS_WRITE, "code write diagnostic access type mismatch");
-    failures += expect_size(vm_memory_change_count(&memory), 0U, "failed code write should not record changes");
+    failures += expect_size(vm_memory_change_count(&memory), 0U, "failed code writes should not record changes");
 
     vm_memory_deinit(&memory);
     return failures;
@@ -347,6 +358,22 @@ static int test_invalid_address_errors_are_structured(void) {
     failures += expect_u32(diagnostic.address, VM_MEMORY_DEFAULT_CODE_BASE - 1U, "invalid read diagnostic address mismatch");
     failures += expect_u32(diagnostic.size, 1U, "invalid read diagnostic size mismatch");
     failures += expect_u32(value8, 0xABU, "failed read should not overwrite output value");
+
+    failures += expect_status(vm_memory_read_u16(&memory, VM_MEMORY_DEFAULT_CODE_BASE - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing from before .code into .code should use region-boundary diagnostic");
+    failures += expect_bool(diagnostic.has_code_overlap, true, "range crossing read into .code should report code overlap context");
+    failures += expect_u32(diagnostic.code_region_start, VM_MEMORY_DEFAULT_CODE_BASE, "code crossing region start should match active .code base");
+    failures += expect_u32(diagnostic.code_overlap_start, VM_MEMORY_DEFAULT_CODE_BASE, "code crossing overlap start should match .code base");
+    failures += expect_u32(diagnostic.code_overlap_end, VM_MEMORY_DEFAULT_CODE_BASE, "single-byte code overlap end should match .code base");
+    failures += expect_u32(value16, 0xABCDU, "failed code-crossing read should not overwrite output value");
+
+    failures += expect_status(vm_memory_write_u16(&memory, VM_MEMORY_DEFAULT_CODE_BASE - 1U, 0x1234U, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing write into .code should use region-boundary diagnostic");
+    failures += expect_bool(diagnostic.has_code_overlap, true, "range crossing write into .code should report code overlap context");
+    failures += expect_u32(diagnostic.code_region_start, VM_MEMORY_DEFAULT_CODE_BASE, "code write-crossing region start should match active .code base");
+    failures += expect_size(vm_memory_change_count(&memory), 0U, "failed code-crossing write should not record changes");
+
+    failures += expect_status(vm_memory_read_u16(&memory, VM_MEMORY_DEFAULT_CODE_BASE + VM_MEMORY_DEFAULT_CODE_SIZE - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing from inside .code out of .code should use region-boundary diagnostic");
+    failures += expect_bool(diagnostic.has_code_overlap, true, "range crossing out of .code should report code overlap context");
+    failures += expect_u32(diagnostic.code_overlap_start, VM_MEMORY_DEFAULT_CODE_BASE + VM_MEMORY_DEFAULT_CODE_SIZE - 1U, "inside-code crossing overlap start should be last code byte");
 
     failures += expect_status(vm_memory_read_u16(&memory, data_region->base + data_region->size - 1U, &value16, &diagnostic), VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING, "range crossing data end into .CONST should use region-boundary diagnostic");
     failures += expect_bool(diagnostic.has_region, true, "range crossing should identify starting region");
@@ -589,7 +616,7 @@ int main(void) {
     failures += test_default_layout_and_metadata();
     failures += test_data_read_write_little_endian();
     failures += test_heap_and_stack_valid_access();
-    failures += test_phase57k_code_region_current_behavior_characterization();
+    failures += test_phase57l_code_region_memory_access_denial();
     failures += test_invalid_address_errors_are_structured();
     failures += test_unaligned_access_succeeds_with_warning();
     failures += test_region_boundary_edge_cases();
