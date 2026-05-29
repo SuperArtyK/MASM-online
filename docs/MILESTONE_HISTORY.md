@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57N:
+Current status at Phase 57O:
 
 Repository/archive milestone:
-Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 57M - MASM Segment and Group Symbol Diagnostics
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
 
 Status interpretation:
 
-Phase 57N is zero-operand `nop` audit, repair, and regression-hardening work. It confirms existing zero-operand `nop` support remains an IR-level no-op, strengthens parser/executor/source-run/rendered-message coverage, and gives rejected operand-bearing `nop` forms stable diagnostics that defer explicit-width NOP encoding-operand forms to Phase 57O - Explicit-Width NOP Encoding-Operand Forms. It does not add new accepted MASM syntax, real x86 opcode bytes, `.code` byte images, disassembly, explicit-width NOP encoding-operand forms, browser controls, or Program Console output. Runtime/source-run MASM behavior metadata remains Phase 57M - MASM Segment and Group Symbol Diagnostics. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57O accepts selected MASM-compatible 16-bit and 32-bit `nop` encoding operands as source-level no-ops: register forms such as `nop ax` and `nop eax`, plus explicit `WORD PTR`, `SWORD PTR`, `DWORD PTR`, and `SDWORD PTR` memory-looking forms such as `nop DWORD PTR [eax]`. Accepted register-form NOP operands are not read or written, and accepted memory-looking forms reuse existing memory-addressing grammar but do not evaluate addresses, read or write memory, perform planned memory validation, emit memory diagnostics, or create memory-change rows. Zero-operand `nop` remains supported. Unsupported `nop` operand forms still report stable diagnostics that explain invalid immediates, missing memory sizes, invalid operand sizes, or that real x86 byte encoding is not emitted. Phase 57O does not add real opcode bytes, `.code` byte images, disassembly, PE/object/linker behavior, browser controls, or Program Console output. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -85,7 +85,16 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57L implements mandatory `.code` memory-access diagnostics and advances runtime/source-run MASM behavior metadata to Phase 57L.
 - Phase 57M implements targeted `unsupported-segment-symbol` parser/source-run diagnostics for MASM/object/linker segment and group names and advances runtime/source-run MASM behavior metadata to Phase 57M.
 - Phase 57N audits and hardens existing zero-operand `nop` behavior, updates rejected operand-form diagnostics, and keeps runtime/source-run MASM behavior metadata at Phase 57M.
+- Phase 57O accepts selected MASM-compatible NOP register and explicit-width memory-looking encoding-operand forms as IR-level no-ops and advances runtime/source-run MASM behavior metadata to Phase 57O.
 
+
+## Phase 57O - Explicit-Width NOP Encoding-Operand Forms
+
+Phase 57O accepts selected MASM-compatible 16-bit and 32-bit `nop` encoding operands as source-level no-ops: register forms such as `nop ax` and `nop eax`, plus explicit `WORD PTR`, `SWORD PTR`, `DWORD PTR`, and `SDWORD PTR` memory-looking forms such as `nop DWORD PTR [eax]`. Accepted register forms are not read or written, and accepted memory-looking forms reuse existing memory-addressing grammar only for parsing. They do not evaluate addresses, read or write memory, perform planned memory validation, emit memory diagnostics, create memory-change rows, produce Program Console output, or emit NOP-specific Simulator Messages. Unsupported forms such as 8-bit register operands, immediate operands, untyped memory-looking operands, byte/signed-byte PTR operands and QWORD/SQWORD PTR forms remain rejected with stable diagnostics. Phase 57O does not implement real x86 opcode bytes, `.code` byte images, disassembly, PE/object/linker behavior, or browser UI controls.
+
+## Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
+
+Phase 57N audits and hardens existing zero-operand `nop` behavior, strengthens parser/executor/source-run/rendered-message coverage, and gives rejected operand-bearing `nop` forms stable diagnostics that deferred explicit-width NOP encoding operands to Phase 57O at the time. It did not add accepted source syntax, real x86 opcode bytes, `.code` byte images, disassembly, browser controls, or Program Console output. Runtime/source-run MASM behavior metadata remained Phase 57M after Phase 57N because zero-operand `nop` was already accepted. Phase 57O later superseded the deferral for selected MASM-compatible NOP register and explicit-width memory-looking encoding operands.
 
 ## Phase 57M - MASM Segment and Group Symbol Diagnostics
 

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57M segment/group symbol diagnostics.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57O NOP encoding operands.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -1661,7 +1661,7 @@ static int test_phase20_source_run_error_paths(void) {
     nop_operand_json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
-        "    nop eax\n"
+        "    nop al\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1682,9 +1682,8 @@ static int test_phase20_source_run_error_paths(void) {
     failures += expect_json_contains(xchg_mismatch_copy, "operand-width-mismatch", "XCHG width mismatch should report operand width mismatch");
     failures += expect_json_contains(xchg_mismatch_copy, "XCHG operand widths must match", "XCHG width mismatch diagnostic should describe width rule");
     failures += expect_json_contains(nop_operand_copy, "\"ok\":false", "NOP with operand should fail source-run");
-    failures += expect_json_contains(nop_operand_copy, "unsupported-syntax", "NOP with operand should report unsupported syntax");
-    failures += expect_json_contains(nop_operand_copy, "NOP operand form is not accepted", "NOP with operand should reject operand form");
-    failures += expect_json_contains(nop_operand_copy, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "NOP with operand should name Phase 57O future owner");
+    failures += expect_json_contains(nop_operand_copy, "invalid-operand-size", "NOP 8-bit register should report invalid operand size");
+    failures += expect_json_contains(nop_operand_copy, "no 8-bit encoding-operand form", "NOP 8-bit register diagnostic should describe valid register widths");
     failures += expect_json_contains(neg_ambiguous_json, "\"ok\":false", "NEG ambiguous memory should fail source-run");
     failures += expect_json_contains(neg_ambiguous_json, "ambiguous-memory-width", "NEG ambiguous memory should report stable ambiguous-memory-width diagnostic");
     failures += expect_json_contains(neg_ambiguous_json, "Memory operand width is ambiguous", "NEG ambiguous memory diagnostic should describe width ambiguity");
@@ -1780,28 +1779,134 @@ static int test_phase57n_nop_source_run_hardening(void) {
     return failures;
 }
 
-/// Verifies Phase 57N source-run diagnostics for rejected NOP operand forms.
+/// Verifies Phase 57O explicit-width NOP encoding operands do not access memory.
 ///
 /// @return Number of failures.
-static int test_phase57n_nop_source_run_rejections(void) {
-    static const char *const invalid_sources[] = {
-        ".code\nmain PROC\n    nop eax\nmain ENDP\nEND main\n",
-        ".code\nmain PROC\n    nop 1\nmain ENDP\nEND main\n",
-        ".code\nmain PROC\n    nop eax, ebx\nmain ENDP\nEND main\n",
-        ".code\nmain PROC\n    nop DWORD PTR [eax]\nmain ENDP\nEND main\n"
+static int test_phase57o_nop_encoding_operand_source_run(void) {
+    const char *invalid_address_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0\n"
+        "    nop DWORD PTR [eax]\n"
+        "    mov ebx, 42\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    char invalid_address_copy[4096];
+    const char *const_json = NULL;
+    char const_copy[4096];
+    const char *uninitialized_json = NULL;
+    char uninitialized_copy[4096];
+    const char *register_word_json = NULL;
+    char register_word_copy[4096];
+    int failures = 0;
+
+    if (invalid_address_json == NULL) {
+        return record_failure("Phase 57O invalid-address NOP result should not be NULL");
+    }
+    (void)snprintf(invalid_address_copy, sizeof(invalid_address_copy), "%s", invalid_address_json);
+
+    const_json = masm32_sim_wasm_run_source_json(
+        ".CONST\n"
+        "limit DWORD 10\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET limit\n"
+        "    nop DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (const_json == NULL) {
+        return record_failure("Phase 57O .CONST-address NOP result should not be NULL");
+    }
+    (void)snprintf(const_copy, sizeof(const_copy), "%s", const_json);
+
+    uninitialized_json = masm32_sim_wasm_run_source_json(
+        ".DATA?\n"
+        "buf DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET buf\n"
+        "    nop DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (uninitialized_json == NULL) {
+        return record_failure("Phase 57O .DATA? NOP result should not be NULL");
+    }
+    (void)snprintf(uninitialized_copy, sizeof(uninitialized_copy), "%s", uninitialized_json);
+
+    register_word_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0FFFFFFFFh\n"
+        "    nop ax\n"
+        "    nop eax\n"
+        "    nop WORD PTR [eax + 4]\n"
+        "    nop SWORD PTR [eax + 4]\n"
+        "    nop SDWORD PTR [eax + 4]\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (register_word_json == NULL) {
+        return record_failure("Phase 57O register/WORD NOP result should not be NULL");
+    }
+    (void)snprintf(register_word_copy, sizeof(register_word_copy), "%s", register_word_json);
+
+    failures += expect_json_contains(invalid_address_copy, "\"ok\":true", "Phase 57O NOP encoding operand should not read invalid address zero");
+    failures += expect_json_contains(invalid_address_copy, "\"instructionCount\":3", "Phase 57O NOP encoding operand should count as one instruction");
+    failures += expect_json_contains(invalid_address_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Phase 57O NOP encoding operand should allow following MOV");
+    failures += expect_json_contains(invalid_address_copy, "\"memoryChanges\":[]", "Phase 57O invalid-address NOP should not create memory changes");
+    failures += expect_json_not_contains(invalid_address_copy, "invalid-memory", "Phase 57O NOP encoding operand should not emit invalid-memory diagnostics");
+    failures += expect_json_not_contains(invalid_address_copy, "programConsole", "Phase 57O NOP encoding operand should not produce Program Console output");
+
+    failures += expect_json_contains(const_copy, "\"ok\":true", "Phase 57O NOP encoding operand over .CONST address should execute");
+    failures += expect_json_not_contains(const_copy, "permission-denied", "Phase 57O NOP encoding operand should not emit .CONST permission diagnostics");
+    failures += expect_json_not_contains(const_copy, "unsupported-code-memory-access", "Phase 57O NOP encoding operand should not emit .code memory diagnostics");
+
+    failures += expect_json_contains(uninitialized_copy, "\"ok\":true", "Phase 57O NOP encoding operand over .DATA? address should execute");
+    failures += expect_json_not_contains(uninitialized_copy, "uninitialized-read", "Phase 57O NOP encoding operand should not emit uninitialized-read diagnostics");
+    failures += expect_json_not_contains(uninitialized_copy, "declared-object", "Phase 57O NOP encoding operand should not emit declared-object diagnostics");
+    failures += expect_json_not_contains(uninitialized_copy, "section-capacity", "Phase 57O NOP encoding operand should not emit section-capacity diagnostics");
+    failures += expect_json_not_contains(uninitialized_copy, "section-image", "Phase 57O NOP encoding operand should not emit section-image diagnostics");
+
+    failures += expect_json_contains(register_word_copy, "\"ok\":true", "Phase 57O register/WORD NOP encoding operands should execute");
+    failures += expect_json_contains(register_word_copy, "\"instructionCount\":6", "Phase 57O register/WORD/SWORD/SDWORD NOP encoding operands should count as instructions");
+    failures += expect_json_contains(register_word_copy, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "Phase 57O register-form NOP should not mutate EAX");
+    failures += expect_json_not_contains(register_word_copy, "invalid-memory", "Phase 57O register/WORD NOP encoding operands should not read invalid address");
+
+    return failures;
+}
+
+/// Verifies Phase 57O source-run diagnostics for unsupported NOP operand forms.
+///
+/// @return Number of failures.
+static int test_phase57o_nop_source_run_rejections(void) {
+    static const struct {
+        const char *source;
+        const char *code;
+        const char *message_fragment;
+    } invalid_cases[] = {
+        {".code\nmain PROC\n    nop al\nmain ENDP\nEND main\n", "invalid-operand-size", "no 8-bit encoding-operand form"},
+        {".code\nmain PROC\n    nop ah\nmain ENDP\nEND main\n", "invalid-operand-size", "no 8-bit encoding-operand form"},
+        {".code\nmain PROC\n    nop 1\nmain ENDP\nEND main\n", "invalid-instruction-operands", "does not accept an immediate"},
+        {".code\nmain PROC\n    nop eax, ebx\nmain ENDP\nEND main\n", "invalid-instruction-operands", "at most one operand"},
+        {".code\nmain PROC\n    nop [eax]\nmain ENDP\nEND main\n", "ambiguous-memory-width", "must have an explicit size"},
+        {".code\nmain PROC\n    nop BYTE PTR [eax]\nmain ENDP\nEND main\n", "invalid-operand-size", "no 8-bit encoding-operand form"},
+        {".code\nmain PROC\n    nop SBYTE PTR [eax]\nmain ENDP\nEND main\n", "invalid-operand-size", "no 8-bit encoding-operand form"},
+        {".code\nmain PROC\n    nop QWORD PTR [eax]\nmain ENDP\nEND main\n", "invalid-operand-size", "QWORD/SQWORD are not supported"},
+        {".code\nmain PROC\n    nop SQWORD PTR [eax]\nmain ENDP\nEND main\n", "invalid-operand-size", "QWORD/SQWORD are not supported"}
     };
     int failures = 0;
     size_t index = 0U;
 
-    for (index = 0U; index < sizeof(invalid_sources) / sizeof(invalid_sources[0]); index += 1U) {
-        const char *json = masm32_sim_wasm_run_source_json(invalid_sources[index]);
-        failures += expect_json_contains(json, "\"ok\":false", "Phase 57N invalid NOP form should fail source-run");
-        failures += expect_json_contains(json, "unsupported-syntax", "Phase 57N invalid NOP form should use unsupported-syntax code");
-        failures += expect_json_contains(json, "NOP operand form is not accepted", "Phase 57N invalid NOP form should reject operands");
-        failures += expect_json_contains(json, "Zero-operand `nop` is supported", "Phase 57N invalid NOP form should name accepted form");
-        failures += expect_json_contains(json, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "Phase 57N invalid NOP form should name Phase 57O future owner");
-        failures += expect_json_not_contains(json, "execution-complete", "Phase 57N invalid NOP form should not complete execution");
-        failures += expect_json_not_contains(json, "programConsole", "Phase 57N invalid NOP form should not produce Program Console output");
+    for (index = 0U; index < sizeof(invalid_cases) / sizeof(invalid_cases[0]); index += 1U) {
+        const char *json = masm32_sim_wasm_run_source_json(invalid_cases[index].source);
+        failures += expect_json_contains(json, "\"ok\":false", "Phase 57O invalid NOP form should fail source-run");
+        failures += expect_json_contains(json, invalid_cases[index].code, "Phase 57O invalid NOP form should use the expected diagnostic code");
+        failures += expect_json_contains(json, invalid_cases[index].message_fragment, "Phase 57O invalid NOP form should describe the specific invalid form");
+        failures += expect_json_not_contains(json, "execution-complete", "Phase 57O invalid NOP form should not complete execution");
+        failures += expect_json_not_contains(json, "programConsole", "Phase 57O invalid NOP form should not produce Program Console output");
     }
 
     return failures;
@@ -8011,8 +8116,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"M\"", "Phase 57M should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57M - MASM Segment and Group Symbol Diagnostics\"", "Phase 57M should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"O\"", "Phase 57O should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57O - Explicit-Width NOP Encoding-Operand Forms\"", "Phase 57O should report the runtime phase name");
 
     return failures;
 }
@@ -8450,7 +8555,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"M\"", "Phase 57M .CONST ? fixture should report runtime suffix M");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"O\"", "Phase 57O .CONST ? fixture should report runtime suffix O");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -9142,7 +9247,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"M\"", "Phase 57M code read should report runtime suffix M");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"O\"", "Phase 57O code read should report runtime suffix O");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -9325,7 +9430,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"M\"", "Phase 57M segment diagnostics should report runtime suffix M");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"O\"", "Phase 57O segment diagnostics should report runtime suffix O");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -9752,7 +9857,8 @@ int main(void) {
     failures += test_phase20_memory_source_run_program();
     failures += test_phase20_source_run_error_paths();
     failures += test_phase57n_nop_source_run_hardening();
-    failures += test_phase57n_nop_source_run_rejections();
+    failures += test_phase57o_nop_encoding_operand_source_run();
+    failures += test_phase57o_nop_source_run_rejections();
     failures += test_phase21_source_run_acceptance_program();
     failures += test_phase21_memory_and_borrow_source_run_program();
     failures += test_phase21_source_run_error_paths();
@@ -9956,6 +10062,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57N zero-operand NOP hardening coverage passed.");
+    puts("Source execution tests through Phase 57O explicit-width NOP encoding-operand coverage passed.");
     return 0;
 }

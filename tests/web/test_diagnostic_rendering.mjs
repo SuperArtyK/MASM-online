@@ -1857,13 +1857,91 @@ test("renders exit operand diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 4, column 10, byte offset 46, span length 1: exit does not take operands.");
 });
 
-test("Phase 57N renders NOP operand diagnostics exactly", () => {
-  const message = "NOP operand form is not accepted. Zero-operand `nop` is supported; explicit BYTE/WORD/DWORD PTR NOP encoding-operand forms are deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.";
+test("Phase 57O renders invalid NOP operand diagnostics exactly", () => {
   const cases = [
-    { name: "phase57n-nop-register-operand", line: "    nop eax", column: 9, byteOffset: 24, spanLength: 3 },
-    { name: "phase57n-nop-immediate-operand", line: "    nop 1", column: 9, byteOffset: 24, spanLength: 1 },
-    { name: "phase57n-nop-two-operands", line: "    nop eax, ebx", column: 9, byteOffset: 24, spanLength: 3 },
-    { name: "phase57n-nop-dword-ptr-operand", line: "    nop DWORD PTR [eax]", column: 9, byteOffset: 24, spanLength: 5 }
+    {
+      name: "phase57o-nop-byte-register-operand",
+      line: "    nop al",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. NOP has no 8-bit encoding-operand form. Did you mean to use the ordinary, zero-operand \"NOP\"?",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 2
+    },
+    {
+      name: "phase57o-nop-high-byte-register-operand",
+      line: "    nop ah",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. NOP has no 8-bit encoding-operand form. Did you mean to use the ordinary, zero-operand \"NOP\"?",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 2
+    },
+    {
+      name: "phase57o-nop-immediate-operand",
+      line: "    nop 1",
+      code: "invalid-instruction-operands",
+      message: "NOP does not accept an immediate operand. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 1
+    },
+    {
+      name: "phase57o-nop-two-operands",
+      line: "    nop eax, ebx",
+      code: "invalid-instruction-operands",
+      message: "NOP accepts at most one operand.",
+      column: 12,
+      byteOffset: 27,
+      spanLength: 1
+    },
+    {
+      name: "phase57o-nop-untyped-memory-operand",
+      line: "    nop [eax]",
+      code: "ambiguous-memory-width",
+      message: "NOP memory encoding operand must have an explicit size. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 1
+    },
+    {
+      name: "phase57o-nop-byte-ptr-operand",
+      line: "    nop BYTE PTR [eax]",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. NOP has no 8-bit encoding-operand form. Did you mean to use the ordinary, zero-operand \"NOP\"?",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 4
+    },
+    {
+      name: "phase57o-nop-sbyte-ptr-operand",
+      line: "    nop SBYTE PTR [eax]",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. NOP has no 8-bit encoding-operand form. Did you mean to use the ordinary, zero-operand \"NOP\"?",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 5
+    },
+
+
+    {
+      name: "phase57o-nop-qword-ptr-operand",
+      line: "    nop QWORD PTR [eax]",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. QWORD/SQWORD are not supported in MASM32 Educational Mode. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 5
+    },
+    {
+      name: "phase57o-nop-sqword-ptr-operand",
+      line: "    nop SQWORD PTR [eax]",
+      code: "invalid-operand-size",
+      message: "NOP encoding operand size is invalid. QWORD/SQWORD are not supported in MASM32 Educational Mode. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.",
+      column: 9,
+      byteOffset: 24,
+      spanLength: 6
+    }
   ];
 
   for (const diagnosticCase of cases) {
@@ -1878,8 +1956,8 @@ END main
     assert.deepEqual(json.simulatorMessages, [
       {
         kind: "assembly-error",
-        code: "unsupported-syntax",
-        message,
+        code: diagnosticCase.code,
+        message: diagnosticCase.message,
         line: 3,
         column: diagnosticCase.column,
         byteOffset: diagnosticCase.byteOffset,
@@ -1887,7 +1965,7 @@ END main
       }
     ]);
     assertNoExecutionComplete(json.simulatorMessages);
-    assertRenderedEquals(diagnosticCase.name, source, rawJson, rendered, `[assembly-error] unsupported-syntax line 3, column ${diagnosticCase.column}, byte offset ${diagnosticCase.byteOffset}, span length ${diagnosticCase.spanLength}: ${message}`);
+    assertRenderedEquals(diagnosticCase.name, source, rawJson, rendered, `[assembly-error] ${diagnosticCase.code} line 3, column ${diagnosticCase.column}, byte offset ${diagnosticCase.byteOffset}, span length ${diagnosticCase.spanLength}: ${diagnosticCase.message}`);
   }
 });
 

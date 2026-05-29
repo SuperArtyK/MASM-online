@@ -3442,11 +3442,97 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
     return false;
 }
 
-/// Returns the stable diagnostic text for rejected Phase 57N NOP operand forms.
+/// Returns the stable diagnostic text for unsupported Phase 57O NOP operand forms.
 ///
-/// @return User-facing diagnostic message for NOP operands before Phase 57O.
-static const char *vm_parser_nop_operand_diagnostic_message(void) {
-    return "NOP operand form is not accepted. Zero-operand `nop` is supported; explicit BYTE/WORD/DWORD PTR NOP encoding-operand forms are deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.";
+/// @return User-facing diagnostic message for unsupported NOP operand shapes.
+static const char *vm_parser_nop_unsupported_operand_message(void) {
+    return "NOP with this operand form is not supported. Zero-operand `nop`, 16-bit or 32-bit register encoding operands, and explicit WORD/SWORD/DWORD/SDWORD PTR memory encoding operands are supported as IR-level no-ops; real x86 byte encoding is not emitted.";
+}
+
+/// Returns the stable diagnostic text for immediate NOP operands.
+///
+/// @return User-facing diagnostic message for immediate NOP operands.
+static const char *vm_parser_nop_immediate_operand_message(void) {
+    return "NOP does not accept an immediate operand. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.";
+}
+
+/// Returns the stable diagnostic text for excess NOP operands.
+///
+/// @return User-facing diagnostic message for extra NOP operands.
+static const char *vm_parser_nop_extra_operand_message(void) {
+    return "NOP accepts at most one operand.";
+}
+
+/// Returns the stable diagnostic text for untyped NOP memory encoding operands.
+///
+/// @return User-facing diagnostic message for untyped NOP memory operands.
+static const char *vm_parser_nop_memory_size_required_message(void) {
+    return "NOP memory encoding operand must have an explicit size. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.";
+}
+
+/// Returns the stable diagnostic text for byte-sized NOP encoding operands.
+///
+/// @return User-facing diagnostic message for 8-bit NOP operand sizes.
+static const char *vm_parser_nop_byte_operand_size_message(void) {
+    return "NOP encoding operand size is invalid. NOP has no 8-bit encoding-operand form. Did you mean to use the ordinary, zero-operand \"NOP\"?";
+}
+
+/// Returns the stable diagnostic text for QWORD/SQWORD NOP encoding operands.
+///
+/// @return User-facing diagnostic message for 64-bit NOP operand sizes.
+static const char *vm_parser_nop_qword_operand_size_message(void) {
+    return "NOP encoding operand size is invalid. QWORD/SQWORD are not supported in MASM32 Educational Mode. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.";
+}
+
+/// Returns the stable diagnostic text for invalid NOP encoding operand sizes.
+///
+/// @return User-facing diagnostic message for invalid NOP operand sizes.
+static const char *vm_parser_nop_invalid_operand_size_message(void) {
+    return "NOP encoding operand size is invalid. Use zero-operand \"NOP\", or a \"NOP\" with a 16-bit/32-bit register, or WORD/SWORD/DWORD/SDWORD PTR.";
+}
+
+/// Returns the best diagnostic text for an invalid NOP encoding operand width.
+///
+/// @param width_bits Invalid operand width in bits.
+/// @return User-facing diagnostic message for the invalid NOP operand size.
+static const char *vm_parser_nop_invalid_operand_size_message_for_width(uint8_t width_bits) {
+    if (width_bits == 8U) {
+        return vm_parser_nop_byte_operand_size_message();
+    }
+    if (width_bits == 64U) {
+        return vm_parser_nop_qword_operand_size_message();
+    }
+    return vm_parser_nop_invalid_operand_size_message();
+}
+
+/// Returns whether a parsed PTR width names an accepted Phase 57O NOP memory width.
+///
+/// Phase 57O accepts WORD/SWORD and DWORD/SDWORD PTR memory-looking NOP
+/// encoding operands because real MASM accepts signed aliases for the same
+/// 16-bit and 32-bit sizes. Byte, signed-byte, QWORD, and SQWORD PTR spellings
+/// are invalid NOP encoding operand sizes.
+///
+/// @param width Parsed PTR width metadata to classify.
+/// @return true when @p width is 16 or 32 bits.
+static bool vm_parser_ptr_width_is_nop_memory_encoding_width(const VmParserPtrWidth *width) {
+    return width != NULL && (width->width_bits == 16U || width->width_bits == 32U);
+}
+
+/// Returns whether a register token names an accepted NOP register encoding operand.
+///
+/// Phase 57O accepts 16-bit and 32-bit register operands as source-level NOP
+/// encoding operands. The register is not read, written, or emitted as a VM
+/// operand.
+///
+/// @param token Token to classify.
+/// @return true when @p token is a 16-bit or 32-bit register token.
+static bool vm_parser_token_is_nop_register_encoding_operand(const VmLexerToken *token) {
+    uint8_t width_bits = 0U;
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_REGISTER) {
+        return false;
+    }
+    width_bits = vm_cpu_register_width_bits(token->register_id);
+    return width_bits == 16U || width_bits == 32U;
 }
 
 /// Returns whether an opcode uses no explicit source operands.
@@ -4566,6 +4652,72 @@ static bool vm_parser_parse_ptr_memory_operand(VmParserState *state, const VmPar
 
     vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "PTR width override requires a data symbol or supported symbol-offset memory operand.");
     return false;
+}
+
+/// Parses a Phase 57O NOP encoding operand and discards the parsed operand.
+///
+/// Accepted NOP operands in Phase 57O are source-level encoding operands, not
+/// simulated register or memory operands. This helper classifies supported
+/// 16-bit/32-bit register operands directly and reuses the existing
+/// explicit-width memory grammar only to classify supported WORD/SWORD/DWORD/SDWORD PTR
+/// memory syntax. It then returns no executable operand so the emitted IR
+/// remains the zero-operand NOP.
+///
+/// @param state Parser state positioned at the first operand token after NOP.
+/// @param operand_token First operand token used for diagnostics.
+/// @return true when a supported NOP encoding operand was consumed.
+static bool vm_parser_parse_nop_encoding_operand(VmParserState *state, const VmLexerToken *operand_token) {
+    VmParserPtrWidth width;
+    VmIrOperand ignored_operand;
+
+    memset(&width, 0, sizeof(width));
+    memset(&ignored_operand, 0, sizeof(ignored_operand));
+
+    if (state == NULL || operand_token == NULL) {
+        return false;
+    }
+
+    if (vm_parser_token_is_nop_register_encoding_operand(operand_token)) {
+        vm_parser_advance(state);
+        return true;
+    }
+
+    if (operand_token->kind == VM_LEXER_TOKEN_REGISTER) {
+        uint8_t register_width_bits = vm_cpu_register_width_bits(operand_token->register_id);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, operand_token, vm_parser_nop_invalid_operand_size_message_for_width(register_width_bits));
+        return false;
+    }
+
+    if (operand_token->kind == VM_LEXER_TOKEN_NUMBER || operand_token->kind == VM_LEXER_TOKEN_STRING || operand_token->kind == VM_LEXER_TOKEN_CHARACTER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, operand_token, vm_parser_nop_immediate_operand_message());
+        return false;
+    }
+
+    if (operand_token->kind == VM_LEXER_TOKEN_LEFT_BRACKET ||
+        (operand_token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_peek_token(state, 1U) != NULL && vm_parser_peek_token(state, 1U)->kind == VM_LEXER_TOKEN_LEFT_BRACKET)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, operand_token, vm_parser_nop_memory_size_required_message());
+        return false;
+    }
+
+    if (!vm_parser_current_token_starts_ptr_width(state)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, operand_token, vm_parser_nop_unsupported_operand_message());
+        return false;
+    }
+
+    if (!vm_parser_parse_ptr_width_prefix(state, &width)) {
+        return false;
+    }
+
+    if (!vm_parser_ptr_width_is_nop_memory_encoding_width(&width)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, width.width_token != NULL ? width.width_token : operand_token, vm_parser_nop_invalid_operand_size_message_for_width(width.width_bits));
+        return false;
+    }
+
+    if (!vm_parser_parse_ptr_memory_operand(state, &width, &ignored_operand)) {
+        return false;
+    }
+
+    return true;
 }
 
 /// Reports an invalid LEA effective-address expression diagnostic.
@@ -6522,17 +6674,32 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     vm_parser_advance(state);
+    if (opcode == VM_IR_OPCODE_NOP) {
+        if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            const VmLexerToken *nop_operand_token = vm_parser_current_token(state);
+            if (!vm_parser_parse_nop_encoding_operand(state, nop_operand_token)) {
+                return false;
+            }
+            if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), vm_parser_nop_extra_operand_message());
+                return false;
+            }
+        }
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
     if (vm_parser_opcode_has_no_operands(opcode)) {
         if (opcode == VM_IR_OPCODE_EXIT && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "exit does not take operands.");
             return false;
         }
-        if ((opcode == VM_IR_OPCODE_NOP || opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
+        if ((opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
             !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             const char *message = "Instruction does not take operands.";
-            if (opcode == VM_IR_OPCODE_NOP) {
-                message = vm_parser_nop_operand_diagnostic_message();
-            } else if (opcode == VM_IR_OPCODE_CLC) {
+            if (opcode == VM_IR_OPCODE_CLC) {
                 message = "CLC does not take operands.";
             } else if (opcode == VM_IR_OPCODE_STC) {
                 message = "STC does not take operands.";
@@ -7815,6 +7982,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-syntax";
         case VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH:
             return "operand-width-mismatch";
+        case VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE:
+            return "invalid-operand-size";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE:
             return "unsupported-feature";
         case VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE:

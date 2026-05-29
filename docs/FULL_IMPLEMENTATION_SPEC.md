@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57N zero-operand NOP audit, repair, and regression hardening, Phase 57M MASM segment and group symbol diagnostics, Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision for Phase 57O explicit-width NOP encoding-operand forms, Phase 57N zero-operand NOP audit, repair, and regression hardening, Phase 57M MASM segment and group symbol diagnostics, Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
 
 
 ## 1. Project Goal
@@ -4456,9 +4456,9 @@ The simulator may support source-level `nop` instruction forms as internal IR no
 `NOP` support is split into two conceptual levels:
 
 1. **Zero-operand `nop`**.
-2. **Explicit-width NOP encoding-operand forms**, such as `nop DWORD PTR [eax]`.
+2. **NOP encoding-operand forms**, such as `nop eax` and `nop DWORD PTR [eax]`.
 
-The zero-operand form may be implemented first. Explicit-width encoding-operand forms may be implemented later.
+The zero-operand form may be implemented first. Encoding-operand forms may be implemented later.
 
 Supporting source-level `nop` means:
 
@@ -4475,18 +4475,37 @@ Supporting source-level `nop` means:
 - the instruction continues execution normally;
 - the instruction counts as one executed instruction for execution-limit and future stepping purposes.
 
-Explicit-width NOP encoding-operand forms may resemble memory operands:
+NOP encoding-operand forms may use either register operands or explicit-width
+memory-looking operands:
 
 ```asm
-nop BYTE PTR [eax]
+nop eax
+nop ax
 nop WORD PTR [eax]
+nop SWORD PTR [eax]
 nop DWORD PTR [eax]
+nop SDWORD PTR [eax]
 ```
 
-When accepted, such operands are **encoding operands only**. They are parsed only to recognize the source-level no-op form. They are not executable memory operands.
+Phase 57O accepts MASM-compatible 16-bit and 32-bit NOP encoding operands:
+16-bit and 32-bit register operands, plus explicit `WORD PTR`, `SWORD PTR`, `DWORD PTR`, and `SDWORD PTR`
+memory-looking operands where the address syntax is already supported by the
+current parser. It does not accept 8-bit, signed-byte, 64-bit, or untyped
+memory-looking NOP operands. In particular, `nop BYTE PTR [eax]`,
+`nop SBYTE PTR [eax]`, `nop QWORD PTR [eax]`, and `nop [eax]` are rejected.
+This matches real MASM behavior observed during Phase 57O user triage:
+`nop eax` and `nop DWORD PTR [eax]` assemble, while `nop [eax]` requires an
+operand size and byte/signed-byte/QWORD/SQWORD forms report invalid operand size.
+
+When accepted, such operands are **encoding operands only**. They are parsed
+only to recognize the source-level no-op form. Accepted register-form NOP
+operands are not executable register reads or writes. Accepted memory-looking
+NOP operands are not executable memory operands.
 
 For accepted `nop` encoding operands:
 
+- do not read the value of accepted register operands;
+- do not write accepted register operands;
 - do not evaluate the final effective address at runtime;
 - do not call checked memory read helpers;
 - do not call checked memory write helpers;

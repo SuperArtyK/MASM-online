@@ -102,6 +102,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
     /// Recognized operands have widths that cannot be combined by the current instruction.
     VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH,
+    /// An instruction operand used a size that the instruction does not accept.
+    VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE,
     /// The parser recognized a MASM textbook construct that is intentionally deferred.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE,
     /// A numeric literal exceeded the 32-bit immediate range supported by the current IR.

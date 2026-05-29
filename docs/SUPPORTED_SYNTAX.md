@@ -1,14 +1,14 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 57M - MASM Segment and Group Symbol Diagnostics
+Phase 57O - Explicit-Width NOP Encoding-Operand Forms
 
-Phase 57N audits and hardens existing zero-operand `nop` support. Zero-operand `nop` remains supported as a case-insensitive IR-level no-op, and operand-bearing `nop` forms now use stable diagnostics that defer explicit-width NOP encoding-operand forms to Phase 57O - Explicit-Width NOP Encoding-Operand Forms. Phase 57N does not add new accepted MASM syntax, real x86 opcode bytes, `.code` byte images, disassembly, or explicit-width NOP encoding-operand forms. Runtime/source-run MASM behavior metadata remains Phase 57M - MASM Segment and Group Symbol Diagnostics, whose targeted `unsupported-segment-symbol` parser/source-run diagnostics remain active for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT`. Phase 57L `.code` memory diagnostics, Phase 57J configurable `const-uninitialized-storage` declaration diagnostics, Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` storage, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, Phase 57F seeded register/flag startup, Phase 57E startup-state notices, Phase 57D diagnostic-policy migration, Phase 57C diagnostic-policy registry design, Phase 57B documentation extraction, Phase 57A README cleanup, Phase 57-CORR2 compact negative register-indirect displacement parsing, and Phase 57-CORR1 protected-region diagnostic clarification remain accepted behavior.
+Phase 57O accepts selected MASM-compatible 16-bit and 32-bit `nop` encoding operands as source-level no-ops. Accepted forms include zero-operand `nop`, register-form encoding operands such as `nop ax` and `nop eax`, and explicit `WORD PTR` / `SWORD PTR` / `DWORD PTR` / `SDWORD PTR` memory-looking encoding operands that reuse the existing memory-addressing grammar. Register-form NOP operands are not read or written, and memory-looking NOP operands are not simulated memory operands: execution does not evaluate the effective address, read memory, write memory, perform planned memory validation, emit memory diagnostics, or create memory-change rows. Unsupported `nop` operand forms remain diagnosed, and real x86 byte encoding, `.code` byte images, disassembly, and PE/object/linker behavior remain outside current behavior. Phase 57M - MASM Segment and Group Symbol Diagnostics targeted `unsupported-segment-symbol` parser/source-run diagnostics remain active for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT`. Phase 57L `.code` memory diagnostics, Phase 57J configurable `const-uninitialized-storage` declaration diagnostics, Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` storage, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, Phase 57F seeded register/flag startup, Phase 57E startup-state notices, Phase 57D diagnostic-policy migration, Phase 57C diagnostic-policy registry design, Phase 57B documentation extraction, Phase 57A README cleanup, Phase 57-CORR2 compact negative register-indirect displacement parsing, and Phase 57-CORR1 protected-region diagnostic clarification remain accepted behavior.
 
-This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV. The current runtime/source-run MASM behavior phase is Phase 57M - MASM Segment and Group Symbol Diagnostics because Phase 57M changes user-visible parser/source-run diagnostics for recognized MASM/object/linker symbol forms while leaving the instruction subset anchored by Phase 57 - Signed IDIV. Repository/archive Phase 57N hardens already-supported zero-operand `nop` behavior and rejected-form diagnostics without advancing runtime/source-run MASM behavior metadata. This reference also includes Phase 57L `.code` memory diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage settings, Phase 57F seeded register/flag startup, Milestone 52A display formatting, Milestone 53A memory-validation policy clarification, Milestone 53B opt-in section-capacity and section-image validation modes, Milestone 53C default teaching diagnostics, and Milestone 53D compatibility notices for accepted no-op, metadata-only, virtual-only, and limited-behavior MASM constructs. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
+This reference describes the implemented MASM source syntax and instruction subset through Phase 57 - Signed IDIV plus later diagnostics, display, startup, `.CONST`, segment-symbol, `.code` access, and NOP encoding-operand phases through Phase 57O - Explicit-Width NOP Encoding-Operand Forms. This document is intentionally not a full MASM reference. Unsupported constructs listed here should produce stable diagnostics instead of vague parser errors.
 
 Historical infrastructure note: Milestone 32 adds fixed memory-layout policy infrastructure only; later layout, diagnostic, and startup settings build on that infrastructure without changing the current instruction subset unless their phase explicitly says so.
 
@@ -20,7 +20,7 @@ Phase 57M implements the MASM segment/group symbol policy with targeted `unsuppo
 
 ### Phase 57F, Phase 57G, Phase 57I, and Phase 57J startup/data diagnostics
 
-Runtime/source-run MASM behavior phase Phase 57M preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
+Runtime/source-run MASM behavior phase Phase 57O preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
 
 ```text
 startup_register_flag_mode = zero | seeded-random
@@ -327,7 +327,19 @@ Signed `PTR` aliases select memory access width only. `SBYTE PTR`, `SWORD PTR`, 
 
 `neg` supports register and memory destinations with 8-bit, 16-bit, or 32-bit widths. It updates the tracked arithmetic flags (`CF`, `ZF`, `SF`, and `OF`) using the destination width.
 
-`nop` takes no operands. It advances execution without changing registers, modeled flags, flag-validity metadata, memory, Program Console output, or memory-change rows, and it counts as one executed instruction. Operand-bearing `nop` forms such as `nop eax` and `nop DWORD PTR [eax]` remain rejected until Phase 57O - Explicit-Width NOP Encoding-Operand Forms; they are not memory accesses and do not imply real x86 opcode-byte emission.
+`nop` supports the zero-operand form plus selected MASM-compatible 16-bit and 32-bit encoding-operand forms:
+
+```asm
+nop
+nop r16
+nop r32
+nop WORD PTR [reg32]
+nop SWORD PTR [reg32]
+nop DWORD PTR [reg32]
+nop SDWORD PTR [reg32]
+```
+
+The accepted explicit-width memory-looking forms reuse the current memory-addressing grammar, so displacement and symbol-plus-register forms such as `nop DWORD PTR [eax + 4]`, `nop DWORD PTR [eax - 4]`, `nop DWORD PTR [array + esi]`, and `nop DWORD PTR array[esi]` are accepted when the corresponding address syntax is already supported. These NOP operands are encoding operands only. Register-form NOP operands are not read or written, and memory-looking NOP operands do not evaluate an effective address at runtime, do not read or write memory, do not perform planned memory validation, and do not emit uninitialized-read, declared-object, section-capacity, section-image, `.CONST`, or `.code` memory diagnostics. They advance execution without changing registers, modeled flags, flag-validity metadata, memory, Program Console output, or memory-change rows, and each accepted `nop` counts as one executed instruction. Unsupported forms such as `nop al`, `nop 1`, `nop [eax]`, byte/signed-byte PTR operands such as `nop BYTE PTR [eax]` and `nop SBYTE PTR [eax]`, `nop QWORD PTR [eax]`, and `nop SQWORD PTR [eax]` remain rejected. Accepted `nop` forms do not imply real x86 opcode-byte emission.
 
 `adc` and `sbb` support register and memory destinations with compatible register, immediate, or memory sources where existing width rules are unambiguous. They use the current carry flag as carry-in or borrow-in and update the tracked arithmetic flags (`CF`, `ZF`, `SF`, and `OF`).
 
