@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Incremental Implementation Guide
 
-> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57P host include path diagnostics, Phase 57O explicit-width NOP encoding-operand forms, Phase 57N zero-operand NOP audit, repair, and regression hardening, Phase 57M MASM segment and group symbol diagnostics, Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
+> **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision for Phase 57Q INCLUDELIB and external library diagnostics, Phase 57P host include path diagnostics, Phase 57O explicit-width NOP encoding-operand forms, Phase 57N zero-operand NOP audit, repair, and regression hardening, Phase 57M MASM segment and group symbol diagnostics, Phase 57L .CODE memory access diagnostics, Phase 57K .CODE and MASM segment symbol access policy, Phase 57J .CONST uninitialized storage diagnostics and policy, Phase 57I .CONST uninitialized storage acceptance, Phase 57H register unchanged display markers, Phase 57G seeded random uninitialized-storage visible-byte mode, Phase 57F seeded random register/flag startup mode, Phase 57E startup-state notice and zero-default documentation, Phase 57D existing diagnostic-policy migration, Phase 57C diagnostic-policy registry design, the Phase 57-CORR2 compact negative register-indirect displacement correction, and the Phase 57-CORR1 `region-boundary-crossing` protected-region diagnostic clarification. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
 
 ## 1. Purpose
@@ -13181,7 +13181,7 @@ includelib somefile.lib
 Emit a diagnostic similar to:
 
 ```text
-INCLUDELIB is a linker/import-library directive. MASM32 Educational Mode does not link object files, load .lib files, process PE imports, or execute external library routines.
+INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand 'somefile.lib' cannot be used; execution stops before program start.
 ```
 
 For Windows API library paths:
@@ -13195,7 +13195,7 @@ includelib C:\masm32\lib\kernel32.lib
 Emit a diagnostic similar to:
 
 ```text
-kernel32.lib is a Windows import library. This simulator does not load PE imports or execute WinAPI routines.
+INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library 'kernel32.lib' requires PE imports and WinAPI execution.
 ```
 
 For MASM32 SDK library paths:
@@ -13208,7 +13208,7 @@ includelib masm32.lib
 Emit a diagnostic similar to:
 
 ```text
-masm32.lib is an external MASM32 library. This browser simulator does not link MASM32 .lib files or load external library routines; only documented virtual Irvine32 behavior is provided.
+INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library 'masm32.lib' requires external library linking.
 ```
 
 Exact wording may differ, but the message must be stable, actionable, and covered by exact rendered Simulator Messages tests.

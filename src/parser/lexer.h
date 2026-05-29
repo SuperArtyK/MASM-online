@@ -4,8 +4,8 @@
  *
  * This module converts a source buffer into a flat token stream while
  * preserving source locations. It intentionally performs lexical analysis
- * only; parsing, symbol resolution, IR generation, and execution remain
- * owned by later pipeline modules.
+ * only; parsing, symbol resolution, IR generation, linker/library diagnostics,
+ * and execution remain owned by later pipeline modules.
  */
 
 #ifndef MASM32_SIM_LEXER_H
@@ -65,7 +65,7 @@ typedef enum VmLexerTokenKind {
     VM_LEXER_TOKEN_DOT,
     /// Colon used by labels.
     VM_LEXER_TOKEN_COLON,
-    /// Host/path-like INCLUDE directive operand captured only in INCLUDE directive-tail context.
+    /// Directive path tail captured only in narrow INCLUDE or INCLUDELIB directive-tail context.
     VM_LEXER_TOKEN_INCLUDE_PATH,
     /// Number of lexer token kinds.
     VM_LEXER_TOKEN_KIND_COUNT

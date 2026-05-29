@@ -355,6 +355,43 @@ END main
 `,
     reason: "Phase 57P multi-diagnostic host INCLUDE path fixture."
   },
+  phase57qGenericIncludelib: {
+    source: `includelib customlib.lib
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57Q generic unsupported INCLUDELIB fixture."
+  },
+  phase57qMasm32Library: {
+    source: `includelib \\masm32\\lib\\masm32.lib
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57Q unsupported MASM32 library fixture."
+  },
+  phase57qWindowsApiLibrary: {
+    source: `includelib C:\\masm32\\lib\\kernel32.lib
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57Q unsupported Windows API library fixture."
+  },
+  phase57qMultipleIncludelib: {
+    source: `includelib customlib.lib
+includelib kernel32.lib
+.code
+main PROC
+main ENDP
+END main
+`,
+    reason: "Phase 57Q multi-diagnostic INCLUDELIB fixture."
+  },
   unterminatedString: {
     source: `.data
 msg BYTE "Hello
@@ -1618,6 +1655,96 @@ test("Phase 57P renders multiple host include diagnostics exactly", () => {
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-host-include-path line 1, column 9, byte offset 8, span length 19: Host filesystem include path '..\\include\\file.inc' is not supported. This browser simulator does not read local include files, relative include paths, or include search paths; use supported virtual includes only.\n[unsupported-feature] unsupported-windows-api-include line 2, column 9, byte offset 36, span length 28: Windows API include path '\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.");
+});
+
+
+test("Phase 57Q renders unsupported INCLUDELIB exactly", () => {
+  const name = "phase57qGenericIncludelib";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-includelib",
+      message: "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand 'customlib.lib' cannot be used; execution stops before program start.",
+      line: 1,
+      column: 12,
+      byteOffset: 11,
+      spanLength: 13
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-includelib line 1, column 12, byte offset 11, span length 13: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand 'customlib.lib' cannot be used; execution stops before program start.");
+});
+
+test("Phase 57Q renders unsupported MASM32 library exactly", () => {
+  const name = "phase57qMasm32Library";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-masm32-library",
+      message: "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library '\\masm32\\lib\\masm32.lib' requires external library linking.",
+      line: 1,
+      column: 12,
+      byteOffset: 11,
+      spanLength: 22
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-masm32-library line 1, column 12, byte offset 11, span length 22: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library '\\masm32\\lib\\masm32.lib' requires external library linking.");
+});
+
+test("Phase 57Q renders unsupported Windows API library exactly", () => {
+  const name = "phase57qWindowsApiLibrary";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-windows-api-library",
+      message: "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library 'C:\\masm32\\lib\\kernel32.lib' requires PE imports and WinAPI execution.",
+      line: 1,
+      column: 12,
+      byteOffset: 11,
+      spanLength: 26
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-windows-api-library line 1, column 12, byte offset 11, span length 26: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library 'C:\\masm32\\lib\\kernel32.lib' requires PE imports and WinAPI execution.");
+});
+
+test("Phase 57Q renders multiple INCLUDELIB diagnostics exactly", () => {
+  const name = "phase57qMultipleIncludelib";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-includelib",
+      message: "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand 'customlib.lib' cannot be used; execution stops before program start.",
+      line: 1,
+      column: 12,
+      byteOffset: 11,
+      spanLength: 13
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-windows-api-library",
+      message: "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library 'kernel32.lib' requires PE imports and WinAPI execution.",
+      line: 2,
+      column: 12,
+      byteOffset: 36,
+      spanLength: 12
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-includelib line 1, column 12, byte offset 11, span length 13: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand 'customlib.lib' cannot be used; execution stops before program start.\n[unsupported-feature] unsupported-windows-api-library line 2, column 12, byte offset 36, span length 12: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library 'kernel32.lib' requires PE imports and WinAPI execution.");
 });
 
 test("native producer accepts fixture file path for successful execution", () => {

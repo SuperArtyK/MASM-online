@@ -7,7 +7,7 @@
  * square brackets, parentheses, question marks, plus, minus, asterisk, slash,
  * comparison punctuation needed to classify unsupported textbook constructs,
  * single-quoted character and packed character literal spans, colons, comments, directives, line endings,
- * and host/path-like INCLUDE directive tails in directive-tail context only.
+ * and narrow INCLUDE / INCLUDELIB directive tails in directive-tail context only.
  */
 
 #include "lexer.h"
@@ -238,52 +238,99 @@ static size_t lexer_advance_newline(VmLexerCursor *cursor) {
 
 /// Returns whether a source slice starts with an INCLUDE directive and path-like tail.
 ///
-/// This predicate is intentionally line-oriented and narrow. It is used only so
-/// host/path-like INCLUDE operands can be diagnosed at parser level without
-/// treating backslash or arbitrary paths as general MASM expression tokens.
+/// Returns whether a keyword spelling is followed by whitespace at the current line start.
 ///
 /// @param cursor Cursor positioned at the first non-whitespace byte of a line.
-/// @param out_path_offset Receives the byte offset of the path tail on success.
-/// @return true when the current line starts with INCLUDE followed by a host/path-like tail.
-static bool lexer_try_match_include_path_line(const VmLexerCursor *cursor, size_t *out_path_offset) {
+/// @param keyword Keyword spelling to match case-insensitively.
+/// @param keyword_length Length of the keyword spelling.
+/// @param out_tail_offset Receives the byte offset of the first non-space tail byte on success.
+/// @return true when the keyword and a non-empty directive tail are present.
+static bool lexer_try_match_directive_tail_keyword(
+    const VmLexerCursor *cursor,
+    const char *keyword,
+    size_t keyword_length,
+    size_t *out_tail_offset
+) {
     size_t tail = 0U;
-    char ch = '\0';
 
-    if (cursor == NULL || out_path_offset == NULL || !cursor->at_line_start) {
+    if (cursor == NULL || keyword == NULL || out_tail_offset == NULL || !cursor->at_line_start) {
         return false;
     }
 
-    if (!lexer_slice_equals_ignore_case(cursor->source + cursor->offset, 7U, "include")) {
+    if (!lexer_slice_equals_ignore_case(cursor->source + cursor->offset, keyword_length, keyword)) {
         return false;
     }
 
-    ch = cursor->source[cursor->offset + 7U];
-    if (!lexer_is_horizontal_whitespace(ch)) {
+    if (!lexer_is_horizontal_whitespace(cursor->source[cursor->offset + keyword_length])) {
         return false;
     }
 
-    tail = cursor->offset + 8U;
+    tail = cursor->offset + keyword_length + 1U;
     while (lexer_is_horizontal_whitespace(cursor->source[tail])) {
         tail += 1U;
     }
 
-    ch = cursor->source[tail];
+    if (cursor->source[tail] == '\0' || cursor->source[tail] == '\r' || cursor->source[tail] == '\n' || cursor->source[tail] == ';') {
+        return false;
+    }
+
+    *out_tail_offset = tail;
+    return true;
+}
+
+/// Returns whether a directive tail starts with a host/path-like spelling.
+///
+/// This predicate remains intentionally narrow. It prevents path separators in
+/// recognized directive-tail contexts from becoming repeated lexer diagnostics
+/// without making backslash or arbitrary paths general MASM expression tokens.
+///
+/// @param source Source buffer.
+/// @param tail Byte offset of the directive tail.
+/// @return true when the tail starts with a host/path-like path spelling.
+static bool lexer_tail_is_host_path_like(const char *source, size_t tail) {
+    char ch = source != NULL ? source[tail] : '\0';
+
     if (ch == '\\' || ch == '/') {
-        *out_path_offset = tail;
         return true;
     }
 
     if (ch == '.') {
-        char next = cursor->source[tail + 1U];
-        char after_next = cursor->source[tail + 2U];
+        char next = source[tail + 1U];
+        char after_next = source[tail + 2U];
         if (next == '\\' || next == '/' || ((next == '.') && (after_next == '\\' || after_next == '/'))) {
-            *out_path_offset = tail;
             return true;
         }
     }
 
-    if (lexer_is_alpha(ch) && cursor->source[tail + 1U] == ':' &&
-        (cursor->source[tail + 2U] == '\\' || cursor->source[tail + 2U] == '/')) {
+    return lexer_is_alpha(ch) && source[tail + 1U] == ':' &&
+        (source[tail + 2U] == '\\' || source[tail + 2U] == '/');
+}
+
+/// Matches one line-leading directive whose path-like tail should be a single token.
+///
+/// @param cursor Cursor positioned at the first non-whitespace byte of a line.
+/// @param out_keyword_length Receives the directive keyword length on success.
+/// @param out_path_offset Receives the byte offset of the path tail on success.
+/// @return true for recognized INCLUDE host paths or INCLUDELIB path tails.
+static bool lexer_try_match_path_tail_directive_line(
+    const VmLexerCursor *cursor,
+    size_t *out_keyword_length,
+    size_t *out_path_offset
+) {
+    size_t tail = 0U;
+
+    if (cursor == NULL || out_keyword_length == NULL || out_path_offset == NULL) {
+        return false;
+    }
+
+    if (lexer_try_match_directive_tail_keyword(cursor, "include", 7U, &tail) && lexer_tail_is_host_path_like(cursor->source, tail)) {
+        *out_keyword_length = 7U;
+        *out_path_offset = tail;
+        return true;
+    }
+
+    if (lexer_try_match_directive_tail_keyword(cursor, "includelib", 10U, &tail)) {
+        *out_keyword_length = 10U;
         *out_path_offset = tail;
         return true;
     }
@@ -291,27 +338,28 @@ static bool lexer_try_match_include_path_line(const VmLexerCursor *cursor, size_
     return false;
 }
 
-/// Scans a line-leading INCLUDE directive with a host/path-like tail.
+/// Scans a line-leading directive with a path-like tail.
 ///
-/// @param cursor Cursor positioned at the INCLUDE keyword.
+/// @param cursor Cursor positioned at the directive keyword.
 /// @param writer Output writer to mutate.
-/// @return Lexer status after emitting INCLUDE and INCLUDE_PATH tokens.
-static VmLexerStatus lexer_scan_include_path_directive(VmLexerCursor *cursor, VmLexerWriter *writer) {
-    VmLexerSourceLocation include_start = lexer_location(cursor);
+/// @return Lexer status after emitting the directive keyword and INCLUDE_PATH tokens.
+static VmLexerStatus lexer_scan_path_tail_directive(VmLexerCursor *cursor, VmLexerWriter *writer) {
+    VmLexerSourceLocation keyword_start = lexer_location(cursor);
     VmLexerSourceLocation path_start;
+    size_t keyword_length = 0U;
     size_t path_offset = 0U;
     size_t path_end = 0U;
     size_t token_path_end = 0U;
 
-    if (!lexer_try_match_include_path_line(cursor, &path_offset)) {
+    if (!lexer_try_match_path_tail_directive_line(cursor, &keyword_length, &path_offset)) {
         return VM_LEXER_STATUS_OK;
     }
 
-    while (cursor->offset < include_start.offset + 7U) {
+    while (cursor->offset < keyword_start.offset + keyword_length) {
         lexer_advance_byte(cursor);
     }
-    if (!lexer_add_token(writer, VM_LEXER_TOKEN_IDENTIFIER, include_start, cursor->source + include_start.offset, 7U, 0U, 0U, false, VM_REGISTER_COUNT)) {
-        return lexer_token_capacity_failure(writer, include_start, cursor->source + include_start.offset);
+    if (!lexer_add_token(writer, VM_LEXER_TOKEN_IDENTIFIER, keyword_start, cursor->source + keyword_start.offset, keyword_length, 0U, 0U, false, VM_REGISTER_COUNT)) {
+        return lexer_token_capacity_failure(writer, keyword_start, cursor->source + keyword_start.offset);
     }
 
     while (cursor->offset < path_offset) {
@@ -834,7 +882,8 @@ VmLexerStatus vm_lexer_tokenize(
 
     while (lexer_peek(&cursor) != '\0') {
         char ch = lexer_peek(&cursor);
-        size_t include_path_offset = 0U;
+        size_t path_tail_offset = 0U;
+        size_t path_tail_keyword_length = 0U;
 
         if (lexer_is_horizontal_whitespace(ch)) {
             lexer_advance_byte(&cursor);
@@ -854,9 +903,10 @@ VmLexerStatus vm_lexer_tokenize(
             }
             continue;
         }
-        if (lexer_try_match_include_path_line(&cursor, &include_path_offset)) {
-            (void)include_path_offset;
-            status = lexer_scan_include_path_directive(&cursor, &writer);
+        if (lexer_try_match_path_tail_directive_line(&cursor, &path_tail_keyword_length, &path_tail_offset)) {
+            (void)path_tail_keyword_length;
+            (void)path_tail_offset;
+            status = lexer_scan_path_tail_directive(&cursor, &writer);
             if (status == VM_LEXER_STATUS_TOKEN_CAPACITY_EXCEEDED || status == VM_LEXER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED) {
                 break;
             }

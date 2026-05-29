@@ -1,10 +1,10 @@
 /*
  * @file test_data_section.c
- * @brief Tests data declarations, symbols, memory operands, metadata operators, constant expressions, and nested DUP support through Milestone 30.
+ * @brief Tests data declarations, symbols, memory operands, metadata operators, constant expressions, nested DUP, and later source-run metadata regressions.
  *
  * These tests cover the parser-level data image and symbol table, integration
  * with the existing VM executor, Wasm JSON output, and error paths for the new
- * data-section behavior without adding future control-flow or Irvine32 scope.
+ * data-section behavior without adding future control-flow, linker, or Irvine32 scope.
  */
 
 #include <stdbool.h>
@@ -2261,7 +2261,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "END main\n"
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
-    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"P\"", ".CONST uninitialized source-run should report Phase 57P");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"Q\"", ".CONST uninitialized source-run should report Phase 57Q");
     failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
     failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
     failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");

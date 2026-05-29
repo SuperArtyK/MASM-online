@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  This page provides the repository/archive Phase 57P UI shell with Phase 57P source-run behavior: source editing, Run button, final register display with unchanged parent-row markers, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, compatibility notice, and `.CONST` declaration policy behavior where routed through the Wasm/source-run path. Phase 57P reports host/path-like `INCLUDE` directives through targeted Simulator Messages diagnostics without reading host files; Phase 57O NOP register and explicit-width memory-looking encoding operands, Phase 57M MASM segment/group-symbol diagnostics, and Phase 57L `.code` memory-access diagnostics remain active.
+  This page provides the repository/archive Phase 57Q UI shell with Phase 57Q source-run behavior: source editing, Run button, final register display with unchanged parent-row markers, symbol-aware memory changes, simulator diagnostics, and console panel. Parsing and execution stay inside the worker/Wasm path; diagnostic settings expose existing memory validation, teaching warning, compatibility notice, and `.CONST` declaration policy behavior where routed through the Wasm/source-run path. Phase 57Q reports `INCLUDELIB` directives through linker/library non-goal Simulator Messages diagnostics without linking libraries; Phase 57P host/path-like `INCLUDE` diagnostics remain active without reading host files; Phase 57O NOP register and explicit-width memory-looking encoding operands, Phase 57M MASM segment/group-symbol diagnostics, and Phase 57L `.code` memory-access diagnostics remain active.
 -->
 <html lang="en">
   <head>
@@ -16,7 +16,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Repository/runtime Phase 57P: host/path-like INCLUDE directives now produce targeted Simulator Messages diagnostics instead of repeated path-character errors; zero-operand nop plus selected 16-bit/32-bit NOP register and WORD/SWORD/DWORD/SDWORD PTR memory-looking encoding operands remain IR-level no-ops; MASM segment/group names still produce targeted Simulator Messages diagnostics, and .code memory ranges still produce mandatory diagnostics. .CONST declaration diagnostics, final-register [unchanged] markers, and opt-in seeded startup/storage settings remain available.</p>
+        <p class="muted">Repository/runtime Phase 57Q: INCLUDELIB directives now produce linker/library non-goal Simulator Messages diagnostics; host/path-like INCLUDE directives still produce targeted Simulator Messages diagnostics instead of repeated path-character errors; zero-operand nop plus selected 16-bit/32-bit NOP register and WORD/SWORD/DWORD/SDWORD PTR memory-looking encoding operands remain IR-level no-ops; MASM segment/group names still produce targeted Simulator Messages diagnostics, and .code memory ranges still produce mandatory diagnostics. .CONST declaration diagnostics, final-register [unchanged] markers, and opt-in seeded startup/storage settings remain available.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC

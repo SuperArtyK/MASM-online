@@ -1,11 +1,11 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57O NOP encoding operands.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57Q INCLUDELIB diagnostics.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
  * changes as JSON, and returns
- * structured simulator messages for parse, argument, layout, and runtime errors.
+ * structured simulator messages for parse, argument, layout, linker/library, and runtime errors.
  */
 
 #include <stdio.h>
@@ -2293,7 +2293,6 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
     char windows_copy[2048];
     char multi_copy[4096];
     char outside_context_copy[2048];
-    char includelib_copy[2048];
     const char *masm32_json = masm32_sim_wasm_run_source_json(
         "include \\masm32\\include\\masm32.inc\n"
         ".code\n"
@@ -2331,11 +2330,6 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
     );
     (void)snprintf(outside_context_copy, sizeof(outside_context_copy), "%s", outside_context_json != NULL ? outside_context_json : "");
 
-    const char *includelib_json = masm32_sim_wasm_run_source_json(
-        "includelib \\masm32\\lib\\kernel32.lib\n"
-    );
-    (void)snprintf(includelib_copy, sizeof(includelib_copy), "%s", includelib_json != NULL ? includelib_json : "");
-
     failures += expect_json_contains(masm32_copy, "\"ok\":false", "Phase 57P MASM32 SDK include path should fail before execution");
     failures += expect_json_contains(masm32_copy, "unsupported-masm32-library-include", "Phase 57P MASM32 SDK include path should expose specific diagnostic code");
     failures += expect_json_contains(masm32_copy, "local MASM32 SDK", "Phase 57P MASM32 SDK include diagnostic should explain SDK boundary");
@@ -2354,8 +2348,92 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
     failures += expect_json_not_contains(multi_copy, "unexpected-character", "Phase 57P multi include fixture should suppress repeated path separator diagnostics");
 
     failures += expect_json_contains(outside_context_copy, "unexpected-character", "Phase 57P path separators outside INCLUDE context should remain lexer diagnostics");
-    failures += expect_json_contains(includelib_copy, "unexpected-character", "Phase 57P should leave path-like INCLUDELIB diagnostics to Phase 57Q");
-    failures += expect_json_not_contains(includelib_copy, "unsupported-host-include-path", "Phase 57P should not implement Phase 57Q INCLUDELIB diagnostics");
+
+    return failures;
+}
+
+/// Verifies Phase 57Q INCLUDELIB source-run diagnostics and no-execution behavior.
+///
+/// @return Number of failures.
+static int test_phase57q_includelib_source_run_diagnostics(void) {
+    int failures = 0;
+    char masm32_copy[2048];
+    char windows_copy[2048];
+    char generic_copy[2048];
+    char multi_copy[4096];
+    char outside_context_copy[2048];
+    const char *masm32_json = masm32_sim_wasm_run_source_json(
+        "includelib \\masm32\\lib\\masm32.lib\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 123\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    (void)snprintf(masm32_copy, sizeof(masm32_copy), "%s", masm32_json != NULL ? masm32_json : "");
+
+    const char *windows_json = masm32_sim_wasm_run_source_json(
+        "includelib kernel32.lib\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 123\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    (void)snprintf(windows_copy, sizeof(windows_copy), "%s", windows_json != NULL ? windows_json : "");
+
+    const char *generic_json = masm32_sim_wasm_run_source_json(
+        "includelib customlib.lib\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 123\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    (void)snprintf(generic_copy, sizeof(generic_copy), "%s", generic_json != NULL ? generic_json : "");
+
+    const char *multi_json = masm32_sim_wasm_run_source_json(
+        "includelib customlib.lib\n"
+        "includelib C:\\masm32\\lib\\kernel32.lib\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 123\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    (void)snprintf(multi_copy, sizeof(multi_copy), "%s", multi_json != NULL ? multi_json : "");
+
+    const char *outside_context_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, \\masm32\\lib\\kernel32.lib\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    (void)snprintf(outside_context_copy, sizeof(outside_context_copy), "%s", outside_context_json != NULL ? outside_context_json : "");
+
+    failures += expect_json_contains(masm32_copy, "\"ok\":false", "Phase 57Q MASM32 INCLUDELIB should fail before execution");
+    failures += expect_json_contains(masm32_copy, "unsupported-masm32-library", "Phase 57Q MASM32 INCLUDELIB should expose MASM32 library code");
+    failures += expect_json_contains(masm32_copy, "external library linking", "Phase 57Q MASM32 INCLUDELIB should explain library boundary");
+    failures += expect_json_contains(masm32_copy, "\"column\":12", "Phase 57Q MASM32 INCLUDELIB diagnostic should point at library operand");
+    failures += expect_json_contains(masm32_copy, "\"byteOffset\":11", "Phase 57Q MASM32 INCLUDELIB diagnostic should preserve byte offset");
+    failures += expect_json_not_contains(masm32_copy, "unexpected-character", "Phase 57Q MASM32 INCLUDELIB should suppress repeated path diagnostics");
+    failures += expect_json_not_contains(masm32_copy, "execution-complete", "Phase 57Q MASM32 INCLUDELIB should not execute");
+    failures += expect_json_not_contains(masm32_copy, "programConsole", "Phase 57Q INCLUDELIB should not produce Program Console output");
+
+    failures += expect_json_contains(windows_copy, "unsupported-windows-api-library", "Phase 57Q Windows INCLUDELIB should expose Windows/API library code");
+    failures += expect_json_contains(windows_copy, "Windows import library", "Phase 57Q Windows INCLUDELIB should explain import-library boundary");
+    failures += expect_json_not_contains(windows_copy, "unexpected-character", "Phase 57Q basename INCLUDELIB should suppress lexer path diagnostics");
+
+    failures += expect_json_contains(generic_copy, "unsupported-includelib", "Phase 57Q generic INCLUDELIB should expose generic code");
+    failures += expect_json_contains(generic_copy, "does not link objects", "Phase 57Q generic INCLUDELIB should explain linker boundary");
+
+    failures += expect_json_contains(multi_copy, "unsupported-includelib", "Phase 57Q multi INCLUDELIB fixture should include generic diagnostic");
+    failures += expect_json_contains(multi_copy, "unsupported-windows-api-library", "Phase 57Q multi INCLUDELIB fixture should include Windows/API diagnostic");
+    failures += expect_json_contains(multi_copy, "\"line\":2", "Phase 57Q multi INCLUDELIB fixture should preserve second diagnostic line");
+    failures += expect_json_not_contains(multi_copy, "unexpected-character", "Phase 57Q multi INCLUDELIB fixture should suppress repeated path separator diagnostics");
+
+    failures += expect_json_contains(outside_context_copy, "unexpected-character", "Phase 57Q path separators outside directive context should remain lexer diagnostics");
 
     return failures;
 }
@@ -8193,8 +8271,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"P\"", "Phase 57P should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57P - Host Include Path Diagnostics\"", "Phase 57P should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"Q\"", "Phase 57Q should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57Q - INCLUDELIB and External Library Diagnostics\"", "Phase 57Q should report the runtime phase name");
 
     return failures;
 }
@@ -8632,7 +8710,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"P\"", "Phase 57P .CONST ? fixture should report runtime suffix P");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"Q\"", "Phase 57Q .CONST ? fixture should report runtime suffix Q");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -9324,7 +9402,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"P\"", "Phase 57P code read should report runtime suffix P");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"Q\"", "Phase 57Q code read should report runtime suffix Q");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -9507,7 +9585,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"P\"", "Phase 57P segment diagnostics should report runtime suffix P");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"Q\"", "Phase 57Q segment diagnostics should report runtime suffix Q");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -9950,6 +10028,7 @@ int main(void) {
     failures += test_phase26_header_source_run_acceptance_program();
     failures += test_phase26_header_source_run_error_paths();
     failures += test_phase57p_host_include_path_source_run_diagnostics();
+    failures += test_phase57q_includelib_source_run_diagnostics();
     failures += test_phase28_additional_data_sections_source_run_programs();
     failures += test_phase30_dup_initializer_list_source_run_program();
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
@@ -10140,6 +10219,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57P host include path diagnostic coverage passed.");
+    puts("Source execution tests through Phase 57Q INCLUDELIB diagnostic coverage passed.");
     return 0;
 }

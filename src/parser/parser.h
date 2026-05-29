@@ -9,7 +9,7 @@
  * initializers, OFFSET, direct symbol memory operands, constant symbol-offset
  * memory operands, signed and unsigned PTR width overrides, register-indirect
  * memory operands, TYPE, LENGTHOF, SIZEOF, packed character literals,
- * implemented instruction groups, explicit unsupported-feature diagnostics,
+ * implemented instruction groups, INCLUDELIB diagnostics, explicit unsupported-feature diagnostics,
  * safe recovery for recognized MASM textbook constructs, specific surfaced
  * lexer diagnostics, and virtual Irvine32 registry metadata.
  */
@@ -154,6 +154,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_INCLUDE,
     /// An INCLUDE directive referenced a local MASM32 SDK include path outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE,
+    /// An INCLUDELIB directive requested linker/import-library behavior outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB,
+    /// An INCLUDELIB directive referenced a Windows import library outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY,
+    /// An INCLUDELIB directive referenced an external MASM32 library outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY,
     /// An OPTION directive used a form outside the accepted compatibility subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION,
     /// A bracketed memory operand used a valid register that is not yet supported as an address base.

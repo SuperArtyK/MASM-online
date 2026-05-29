@@ -488,6 +488,30 @@ static int test_phase57p_include_path_tail_tokens(void) {
     failures += expect_lexeme(&tokens[1], "..\\include\\file.inc", "Phase 57P include path token should trim trailing whitespace before comments");
 
     failures += expect_status(
+        tokenize_for_test("includelib \\masm32\\lib\\kernel32.lib\nmov eax, 1\n", tokens, 16U, diagnostics, 8U, &result),
+        VM_LEXER_STATUS_OK,
+        "Phase 57Q INCLUDELIB path should tokenize without lexer diagnostics"
+    );
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57Q INCLUDELIB path should not emit unexpected-character diagnostics");
+    failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57Q INCLUDELIB line should begin with identifier token");
+    failures += expect_lexeme(&tokens[0], "includelib", "Phase 57Q INCLUDELIB keyword lexeme should be preserved");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_INCLUDE_PATH, "Phase 57Q INCLUDELIB path should be one directive-tail token");
+    failures += expect_lexeme(&tokens[1], "\\masm32\\lib\\kernel32.lib", "Phase 57Q INCLUDELIB path lexeme should be preserved");
+    failures += expect_token_kind(tokens[2].kind, VM_LEXER_TOKEN_NEWLINE, "Phase 57Q INCLUDELIB path token should stop before newline");
+    failures += expect_token_kind(tokens[3].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57Q INCLUDELIB path recognition should not consume the next line");
+
+    failures += expect_status(
+        tokenize_for_test("    InClUdElIb   kernel32.lib ; comment\n", tokens, 16U, diagnostics, 8U, &result),
+        VM_LEXER_STATUS_OK,
+        "Phase 57Q basename-only INCLUDELIB should tokenize without lexer diagnostics"
+    );
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57Q basename-only INCLUDELIB should not emit diagnostics");
+    failures += expect_token_kind(tokens[0].kind, VM_LEXER_TOKEN_IDENTIFIER, "Phase 57Q mixed-case INCLUDELIB should produce an identifier token");
+    failures += expect_lexeme(&tokens[0], "InClUdElIb", "Phase 57Q INCLUDELIB keyword should preserve mixed-case spelling");
+    failures += expect_token_kind(tokens[1].kind, VM_LEXER_TOKEN_INCLUDE_PATH, "Phase 57Q basename-only INCLUDELIB should produce one directive-tail token");
+    failures += expect_lexeme(&tokens[1], "kernel32.lib", "Phase 57Q INCLUDELIB basename token should trim trailing whitespace and comments");
+
+    failures += expect_status(
         tokenize_for_test("mov eax, \\masm32\\include\\kernel32.inc\n", tokens, 16U, diagnostics, 8U, &result),
         VM_LEXER_STATUS_OK_WITH_DIAGNOSTICS,
         "Phase 57P path separators outside INCLUDE directive context should remain invalid"

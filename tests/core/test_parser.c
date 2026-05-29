@@ -1,10 +1,10 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Milestone 57.
+ * @brief Unit and integration tests for the parser through Phase 57Q diagnostics.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
- * error diagnostics for unsupported syntax, and integration with the current
- * executor without adding browser-visible execution behavior.
+ * error diagnostics for unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * and integration with the current executor without adding future execution behavior.
  */
 
 #include <stdbool.h>
@@ -428,7 +428,6 @@ static int test_textbook_unsupported_keywords_are_stable(void) {
     failures += expect_unsupported_feature_source("Choice UNION\nx DWORD ?\nChoice ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "UNION");
     failures += expect_unsupported_feature_source("Flags RECORD bit0:1\n.code\nmain PROC\nmain ENDP\nEND main\n", "RECORD");
     failures += expect_unsupported_feature_source("ExitProcess PROTO\n.code\nmain PROC\nmain ENDP\nEND main\n", "PROTO");
-    failures += expect_unsupported_feature_source("INCLUDELIB kernel32.lib\n.code\nmain PROC\nmain ENDP\nEND main\n", "INCLUDELIB");
     failures += expect_unsupported_feature_source("EXTERN ExitProcess:PROC\n.code\nmain PROC\nmain ENDP\nEND main\n", "EXTERN");
     failures += expect_unsupported_feature_source("PUBLIC main\n.code\nmain PROC\nmain ENDP\nEND main\n", "PUBLIC");
     failures += expect_unsupported_feature_source("COMM buffer:BYTE:16\n.code\nmain PROC\nmain ENDP\nEND main\n", "COMM");
@@ -2181,6 +2180,65 @@ static int test_phase57p_host_include_path_diagnostics(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57P basename-only unsupported include should remain on existing unsupported-include path");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDE, "Phase 57P should preserve basename-only unsupported include behavior");
+
+    return failures;
+}
+
+/// Verifies Phase 57Q INCLUDELIB diagnostics are linker/library non-goal diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57q_includelib_diagnostics(void) {
+    typedef struct IncludeLibCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        const char *message_fragment;
+        size_t column;
+        size_t offset;
+        size_t span;
+    } IncludeLibCase;
+    static const IncludeLibCase cases[] = {
+        {"includelib \\masm32\\lib\\masm32.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY, "external library linking", 12U, 11U, 22U},
+        {"includelib \\masm32\\lib\\kernel32.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY, "PE imports", 12U, 11U, 24U},
+        {"includelib kernel32.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY, "Windows import library", 12U, 11U, 12U},
+        {"includelib masm32.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY, "MASM32 library", 12U, 11U, 10U},
+        {"includelib C:\\masm32\\lib\\kernel32.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY, "PE imports", 12U, 11U, 26U},
+        {"includelib customlib.lib\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB, "does not link objects", 12U, 11U, 13U}
+    };
+    int failures = 0;
+    size_t index = 0U;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57Q INCLUDELIB should produce parser diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "Phase 57Q INCLUDELIB should produce one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].code, "Phase 57Q INCLUDELIB should use the expected diagnostic code");
+        failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "Phase 57Q INCLUDELIB should be an assembly error");
+        failures += expect_size(buffers.diagnostics[0].location.line, 1U, "Phase 57Q INCLUDELIB diagnostic should preserve line");
+        failures += expect_size(buffers.diagnostics[0].location.column, cases[index].column, "Phase 57Q INCLUDELIB diagnostic should point at library operand");
+        failures += expect_size(buffers.diagnostics[0].location.offset, cases[index].offset, "Phase 57Q INCLUDELIB diagnostic should preserve byte offset");
+        failures += expect_size(buffers.diagnostics[0].lexeme_length, cases[index].span, "Phase 57Q INCLUDELIB diagnostic should preserve operand span");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "Phase 57Q INCLUDELIB message should describe the specific linker boundary");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "includelib customlib.lib\n"
+        "includelib kernel32.lib\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57Q multiple INCLUDELIB lines should produce parser diagnostics");
+    failures += expect_size(result.diagnostic_count, 2U, "Phase 57Q multiple INCLUDELIB lines should produce one diagnostic per line");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB, "Phase 57Q first INCLUDELIB diagnostic should be generic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY, "Phase 57Q second INCLUDELIB diagnostic should be Windows/API specific");
+    failures += expect_size(buffers.diagnostics[1].location.line, 2U, "Phase 57Q second INCLUDELIB diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[1].location.column, 12U, "Phase 57Q second INCLUDELIB diagnostic should point at library operand");
+
+    failures += expect_parser_status(parse_for_test(
+        "mov eax, \\masm32\\lib\\kernel32.lib\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_LEXER_FAILED, "Phase 57Q path outside INCLUDELIB context should still surface lexer diagnostics");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LEXER_UNEXPECTED_CHARACTER, "Phase 57Q should not make path separators valid outside directive lines");
 
     return failures;
 }
@@ -5108,6 +5166,15 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE), "unsupported-masm32-library-include") != 0) {
         failures += record_failure("parser diagnostic helper should name MASM32 SDK include diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB), "unsupported-includelib") != 0) {
+        failures += record_failure("parser diagnostic helper should name INCLUDELIB diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY), "unsupported-windows-api-library") != 0) {
+        failures += record_failure("parser diagnostic helper should name Windows/API library diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY), "unsupported-masm32-library") != 0) {
+        failures += record_failure("parser diagnostic helper should name MASM32 library diagnostics");
+    }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION), "unsupported-option") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported option diagnostics");
     }
@@ -5228,6 +5295,7 @@ int main(void) {
     failures += test_phase35a_casemap_parser_policy();
     failures += test_phase41_virtual_irvine32_include_records_registry();
     failures += test_phase57p_host_include_path_diagnostics();
+    failures += test_phase57q_includelib_diagnostics();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();

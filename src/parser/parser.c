@@ -6,7 +6,7 @@
  * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
  * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routine bodies,
  * and full MASM expression parsing remain later milestones. The parser records
- * virtual Irvine32 include metadata and routine classifications without loading
+ * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
  * unsupported-feature diagnostics, safely skipped when recoverable, and surfaced
@@ -163,6 +163,12 @@ typedef struct VmParserState {
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
+
+/// Adds one Phase 57Q diagnostic for an INCLUDELIB directive.
+///
+/// @param state Parser state to mutate.
+/// @param library_token Token carrying the unsupported library operand, when present.
+static void vm_parser_add_includelib_diagnostic(VmParserState *state, const VmLexerToken *library_token);
 
 /// Describes one parsed PTR width override prefix.
 typedef struct VmParserPtrWidth {
@@ -1262,7 +1268,6 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
         {"local", "Unsupported feature: LOCAL procedure variables are not supported yet."},
         {"macro", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"endm", "Unsupported feature: MASM macro definitions are not supported yet."},
-        {"includelib", "Unsupported feature: INCLUDELIB linker declarations are not supported yet."},
         {"extern", "Unsupported feature: EXTERN declarations are not supported yet."},
         {"externdef", "Unsupported feature: EXTERNDEF declarations are not supported yet."},
         {"extrn", "Unsupported feature: EXTRN declarations are not supported yet."},
@@ -1954,6 +1959,12 @@ static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *s
         message = vm_parser_unsupported_keyword_message(diagnostic_token);
         (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, diagnostic_token, message);
         vm_parser_recover_skip_block(state, "endm", NULL, NULL);
+        return true;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "includelib")) {
+        vm_parser_add_includelib_diagnostic(state, vm_parser_peek_token(state, 1U));
+        vm_parser_recover_skip_line(state);
         return true;
     }
 
@@ -7408,6 +7419,95 @@ static void vm_parser_add_include_path_diagnostic(VmParserState *state, const Vm
     );
 }
 
+/// Classifies one INCLUDELIB operand for Phase 57Q diagnostics.
+///
+/// @param library_token Token carrying the unsupported library tail.
+/// @return The most specific parser diagnostic code for the library reference.
+static VmParserDiagnosticCode vm_parser_classify_includelib_diagnostic(const VmLexerToken *library_token) {
+    if (vm_parser_token_contains_ignore_case(library_token, "kernel32.lib") ||
+        vm_parser_token_contains_ignore_case(library_token, "user32.lib") ||
+        vm_parser_token_contains_ignore_case(library_token, "gdi32.lib") ||
+        vm_parser_token_contains_ignore_case(library_token, "windows.lib")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY;
+    }
+
+    if (vm_parser_token_contains_ignore_case(library_token, "masm32.lib")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY;
+    }
+
+    return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB;
+}
+
+/// Adds one Phase 57Q diagnostic for an INCLUDELIB directive.
+///
+/// @param state Parser state to mutate.
+/// @param library_token Token carrying the unsupported library operand, when present.
+static void vm_parser_add_includelib_diagnostic(VmParserState *state, const VmLexerToken *library_token) {
+    const VmLexerToken *diagnostic_token = library_token != NULL ? library_token : vm_parser_current_token(state);
+    VmParserDiagnosticCode code = vm_parser_classify_includelib_diagnostic(library_token);
+    int library_length = library_token != NULL && library_token->lexeme_length <= (size_t)INT_MAX ? (int)library_token->lexeme_length : 0;
+    const char *library_text = library_token != NULL && library_token->lexeme != NULL ? library_token->lexeme : "";
+
+    if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            code,
+            diagnostic_token,
+            "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library '%.*s' requires PE imports and WinAPI execution.",
+            library_length,
+            library_text
+        );
+        return;
+    }
+
+    if (code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            code,
+            diagnostic_token,
+            "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library '%.*s' requires external library linking.",
+            library_length,
+            library_text
+        );
+        return;
+    }
+
+    if (library_token != NULL) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            code,
+            diagnostic_token,
+            "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Library operand '%.*s' cannot be used; execution stops before program start.",
+            library_length,
+            library_text
+        );
+        return;
+    }
+
+    (void)vm_parser_add_diagnostic(
+        state,
+        code,
+        diagnostic_token,
+        "INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines."
+    );
+}
+
+/// Parses INCLUDELIB directives and rejects linker/import-library behavior.
+///
+/// @param state Parser state to mutate.
+/// @return true when an INCLUDELIB line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_includelib_directive(VmParserState *state) {
+    const VmLexerToken *library_token = vm_parser_peek_token(state, 1U);
+
+    if (library_token == NULL || vm_parser_is_line_end_token(library_token)) {
+        library_token = NULL;
+    }
+
+    vm_parser_add_includelib_diagnostic(state, library_token);
+    vm_parser_recover_skip_line(state);
+    return true;
+}
+
 /// Parses supported virtual INCLUDE directives and rejects real include files.
 ///
 /// @param state Parser state to mutate.
@@ -7690,6 +7790,9 @@ static bool vm_parser_parse_header_line_if_recognized(VmParserState *state) {
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
         if (vm_parser_token_equals(token, "include")) {
             return vm_parser_parse_include_directive(state);
+        }
+        if (vm_parser_token_equals(token, "includelib")) {
+            return vm_parser_parse_includelib_directive(state);
         }
         if (vm_parser_token_equals(token, "option")) {
             return vm_parser_parse_option_directive(state);
@@ -8142,6 +8245,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-windows-api-include";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY_INCLUDE:
             return "unsupported-masm32-library-include";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INCLUDELIB:
+            return "unsupported-includelib";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY:
+            return "unsupported-windows-api-library";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY:
+            return "unsupported-masm32-library";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION:
             return "unsupported-option";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:
