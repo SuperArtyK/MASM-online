@@ -12,12 +12,12 @@ Source-of-truth rule:
 Current status:
 
 Repository/archive milestone:
-Phase 57M - MASM Segment and Group Symbol Diagnostics
+Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 57M - MASM Segment and Group Symbol Diagnostics
 
-Phase 57M implements targeted parser/source-run `unsupported-segment-symbol` diagnostics for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT`. These names are diagnostic-only compatibility classifications and do not expose simulator regions or create segment/linker metadata. Phase 57L `.code` memory diagnostics remain active for memory reads or writes whose final byte range overlaps `.code`: wholly contained `.code` accesses report `unsupported-code-memory-access`, and cross-region `.code` overlaps report `region-boundary-crossing`. Phase 57J configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, the `startup-state-notice` is emitted only through Simulator Messages, and no browser UI controls are added.
+Phase 57N audits and hardens existing zero-operand `nop` support, confirms it remains an IR-level no-op, and updates rejected operand-bearing `nop` forms to use stable Phase 57O deferral wording. It does not add new accepted MASM syntax, browser UI controls, opcode-byte emission, `.code` byte images, or explicit-width NOP encoding-operand forms. Runtime/source-run MASM behavior metadata remains Phase 57M - MASM Segment and Group Symbol Diagnostics. Phase 57M targeted parser/source-run `unsupported-segment-symbol` diagnostics remain active for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT`. Phase 57L `.code` memory diagnostics, including `unsupported-code-memory-access`, Phase 57J configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available independently. Default execution remains zero-startup, uninitialized-origin metadata is preserved, and the `startup-state-notice` is emitted only through Simulator Messages.
 
 ## Repository layout for development
 
@@ -210,7 +210,7 @@ main ENDP
 END main
 ```
 
-The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57M - MASM Segment and Group Symbol Diagnostics. The repository/archive status is Phase 57M - MASM Segment and Group Symbol Diagnostics. Phase 57M adds parser/source-run diagnostics for MASM segment/group symbols without adding browser UI controls; Phase 57L `.code` memory-access diagnostics remain active. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy remains the owner of configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics. Phase 57J adds configurable declaration diagnostics for `.CONST ?` / `.CONST DUP(?)`; Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings.
+The expected instruction behavior remains anchored by Phase 57 - Signed IDIV, while runtime/source-run status is Phase 57M - MASM Segment and Group Symbol Diagnostics. The repository/archive status is Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening. Phase 57N audits and hardens existing zero-operand `nop` behavior without adding new accepted syntax or browser UI controls; Phase 57M parser/source-run diagnostics for MASM segment/group symbols and Phase 57L `.code` memory-access diagnostics remain active. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy remains the owner of configurable `.CONST ?` / `.CONST DUP(?)` declaration diagnostics. Phase 57J adds configurable declaration diagnostics for `.CONST ?` / `.CONST DUP(?)`; Phase 57I adds read-only `.CONST ?` / `.CONST DUP(?)` acceptance, Phase 57H adds final-register display markers, Phase 57G adds source-run/test-facing seeded uninitialized-storage visible-byte settings, and Phase 57F preserves seeded register/flag startup settings.
 
 ## Missing `emcc` troubleshooting
 

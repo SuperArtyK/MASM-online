@@ -744,6 +744,62 @@ static int test_xchg_memory_and_nop_delta(void) {
     return failures;
 }
 
+/// Verifies Phase 57N NOP preserves architectural state and execution accounting.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57n_nop_preserves_state_and_counts(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t value = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_NOP, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "NoP", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 57N NOP preservation test");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "NOP preservation program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x11111111U) ? 0 : record_failure("seed EAX should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x22222222U) ? 0 : record_failure("seed EBX should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ECX, 0x33333333U) ? 0 : record_failure("seed ECX should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x44444444U) ? 0 : record_failure("seed EDX should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x55555555U) ? 0 : record_failure("seed ESI should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDI, 0x66666666U) ? 0 : record_failure("seed EDI should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x77777777U) ? 0 : record_failure("seed EBP should succeed before NOP");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x88888888U) ? 0 : record_failure("seed ESP should succeed before NOP");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("seed CF should succeed before NOP");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("seed ZF should succeed before NOP");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_SF) ? 0 : record_failure("seed SF should succeed before NOP");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF invalidity before NOP should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "NOP should execute successfully");
+
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta->register_change_count, 0U, "NOP should report no register changes");
+    failures += expect_size(delta->flag_change_count, 0U, "NOP should report no flag changes");
+    failures += expect_size(delta->memory_change_count, 0U, "NOP should report no memory changes");
+    failures += expect_size(delta->memory_access_count, 0U, "NOP should report no memory accesses");
+    failures += expect_u32((uint32_t)delta->instruction_count, 1U, "NOP should count as one executed instruction in last delta");
+    failures += expect_u32((uint32_t)vm.instruction_count, 1U, "NOP should increment VM instruction count");
+    failures += expect_u32((uint32_t)vm.instruction_pointer, 1U, "NOP should advance instruction pointer");
+
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &value) ? expect_u32(value, 0x11111111U, "NOP should preserve EAX") : record_failure("read EAX after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &value) ? expect_u32(value, 0x22222222U, "NOP should preserve EBX") : record_failure("read EBX after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &value) ? expect_u32(value, 0x33333333U, "NOP should preserve ECX") : record_failure("read ECX after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &value) ? expect_u32(value, 0x44444444U, "NOP should preserve EDX") : record_failure("read EDX after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &value) ? expect_u32(value, 0x55555555U, "NOP should preserve ESI") : record_failure("read ESI after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDI, &value) ? expect_u32(value, 0x66666666U, "NOP should preserve EDI") : record_failure("read EDI after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &value) ? expect_u32(value, 0x77777777U, "NOP should preserve EBP") : record_failure("read EBP after NOP should succeed");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &value) ? expect_u32(value, 0x88888888U, "NOP should preserve ESP") : record_failure("read ESP after NOP should succeed");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "NOP should preserve CF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "NOP should preserve ZF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "NOP should preserve SF bit");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "NOP should preserve OF validity metadata");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "NOP-only program should halt after one step");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies NEG register and memory behavior plus arithmetic flag edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3772,6 +3828,7 @@ int main(void) {
     failures += test_extension_instruction_error_paths();
     failures += test_xchg_registers_preserves_flags();
     failures += test_xchg_memory_and_nop_delta();
+    failures += test_phase57n_nop_preserves_state_and_counts();
     failures += test_neg_register_memory_and_flags();
     failures += test_phase20_error_paths();
     failures += test_adc_register_carry_propagation();

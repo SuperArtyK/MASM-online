@@ -3442,6 +3442,13 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
     return false;
 }
 
+/// Returns the stable diagnostic text for rejected Phase 57N NOP operand forms.
+///
+/// @return User-facing diagnostic message for NOP operands before Phase 57O.
+static const char *vm_parser_nop_operand_diagnostic_message(void) {
+    return "NOP operand form is not accepted. Zero-operand `nop` is supported; explicit BYTE/WORD/DWORD PTR NOP encoding-operand forms are deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.";
+}
+
 /// Returns whether an opcode uses no explicit source operands.
 ///
 /// @param opcode Opcode to inspect.
@@ -6524,7 +6531,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             const char *message = "Instruction does not take operands.";
             if (opcode == VM_IR_OPCODE_NOP) {
-                message = "NOP does not take operands.";
+                message = vm_parser_nop_operand_diagnostic_message();
             } else if (opcode == VM_IR_OPCODE_CLC) {
                 message = "CLC does not take operands.";
             } else if (opcode == VM_IR_OPCODE_STC) {

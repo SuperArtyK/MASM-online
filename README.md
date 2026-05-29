@@ -5,12 +5,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57M - MASM Segment and Group Symbol Diagnostics
+Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 57M - MASM Segment and Group Symbol Diagnostics
 
-Phase 57M implements targeted `unsupported-segment-symbol` parser/source-run diagnostics for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` when they are used as addressable symbols or segment/group definitions. These names are not aliases for `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any internal VM region; users should declare ordinary data labels and use `OFFSET label` for simulator data addresses. Phase 57L `.code` memory-access diagnostics remain active: source-level reads or writes whose final byte range overlaps `.code` stop with `unsupported-code-memory-access` or, for cross-region overlaps, `region-boundary-crossing`. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G - Seeded Random Uninitialized Storage Mode seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available. The instruction subset remains anchored by Phase 57 - Signed IDIV.
+Phase 57N audits and hardens the existing zero-operand `nop` instruction path. Zero-operand `nop` remains an IR-level no-op that parses case-insensitively, executes without changing registers, flags, flag-validity metadata, memory, Program Console output, or memory-change rows, and counts as one executed instruction. Phase 57N also gives operand-bearing `nop` forms stable diagnostics that keep explicit-width NOP encoding-operand forms deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms. Because zero-operand `nop` was already accepted before this hardening milestone, the runtime/source-run MASM behavior phase remains Phase 57M - MASM Segment and Group Symbol Diagnostics. Phase 57M segment/group-symbol diagnostics use `unsupported-segment-symbol` for MASM/object/linker names such as `_TEXT` and `DGROUP`; those names remain unsupported as simulator region aliases. Phase 57L `.code` memory-access diagnostics still include `unsupported-code-memory-access`. Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G - Seeded Random Uninitialized Storage Mode seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available. The instruction subset remains anchored by Phase 57 - Signed IDIV.
 
 ## Current simulator scope
 

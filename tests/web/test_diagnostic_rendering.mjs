@@ -1857,6 +1857,40 @@ test("renders exit operand diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 4, column 10, byte offset 46, span length 1: exit does not take operands.");
 });
 
+test("Phase 57N renders NOP operand diagnostics exactly", () => {
+  const message = "NOP operand form is not accepted. Zero-operand `nop` is supported; explicit BYTE/WORD/DWORD PTR NOP encoding-operand forms are deferred to Phase 57O - Explicit-Width NOP Encoding-Operand Forms.";
+  const cases = [
+    { name: "phase57n-nop-register-operand", line: "    nop eax", column: 9, byteOffset: 24, spanLength: 3 },
+    { name: "phase57n-nop-immediate-operand", line: "    nop 1", column: 9, byteOffset: 24, spanLength: 1 },
+    { name: "phase57n-nop-two-operands", line: "    nop eax, ebx", column: 9, byteOffset: 24, spanLength: 3 },
+    { name: "phase57n-nop-dword-ptr-operand", line: "    nop DWORD PTR [eax]", column: 9, byteOffset: 24, spanLength: 5 }
+  ];
+
+  for (const diagnosticCase of cases) {
+    const source = `.code
+main PROC
+${diagnosticCase.line}
+main ENDP
+END main
+`;
+    const { json, rawJson, rendered } = runFixture(diagnosticCase.name, source);
+    assertRunStatus(json, false, "parse-error");
+    assert.deepEqual(json.simulatorMessages, [
+      {
+        kind: "assembly-error",
+        code: "unsupported-syntax",
+        message,
+        line: 3,
+        column: diagnosticCase.column,
+        byteOffset: diagnosticCase.byteOffset,
+        spanLength: diagnosticCase.spanLength
+      }
+    ]);
+    assertNoExecutionComplete(json.simulatorMessages);
+    assertRenderedEquals(diagnosticCase.name, source, rawJson, rendered, `[assembly-error] unsupported-syntax line 3, column ${diagnosticCase.column}, byte offset ${diagnosticCase.byteOffset}, span length ${diagnosticCase.spanLength}: ${message}`);
+  }
+});
+
 test("renders unsupported feature diagnostic exactly", () => {
   const name = "unsupportedFeature";
   const source = fixtureSource("unsupportedFeature");

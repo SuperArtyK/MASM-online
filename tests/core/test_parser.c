@@ -1125,7 +1125,73 @@ static int test_phase20_instruction_parse_error_paths(void) {
 
     failures += expect_parser_status(parse_for_test(nop_operand_source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOP operand should produce parser diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "NOP operand diagnostic should be unsupported syntax");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "does not take operands", "NOP operand diagnostic should describe no-operand rule");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Zero-operand `nop` is supported", "NOP operand diagnostic should describe supported zero-operand form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "NOP operand diagnostic should name Phase 57O future owner");
+
+    return failures;
+}
+
+/// Verifies Phase 57N zero-operand NOP case-insensitive parsing and metadata.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57n_zero_operand_nop_parse_to_ir(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    nop\n"
+        "    NOP\n"
+        "    NoP\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserStatus status = parse_for_test(source, &buffers, &result);
+
+    failures += expect_parser_status(status, VM_PARSER_STATUS_OK, "Phase 57N NOP case variants should parse successfully");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 57N NOP case variants should not produce diagnostics");
+    failures += expect_size(result.instruction_count, 3U, "Phase 57N NOP case variants should emit three instructions");
+    failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_NOP, "lowercase nop should emit NOP opcode");
+    failures += expect_u32(buffers.instructions[1].opcode, VM_IR_OPCODE_NOP, "uppercase NOP should emit NOP opcode");
+    failures += expect_u32(buffers.instructions[2].opcode, VM_IR_OPCODE_NOP, "mixed-case NoP should emit NOP opcode");
+    failures += expect_u32(buffers.instructions[0].destination.kind, VM_IR_OPERAND_NONE, "lowercase nop should emit no destination");
+    failures += expect_u32(buffers.instructions[1].source.kind, VM_IR_OPERAND_NONE, "uppercase NOP should emit no source");
+    failures += expect_u32(buffers.instructions[2].source_line, 5U, "mixed-case NoP should preserve source line");
+    failures += expect_string_contains(buffers.instructions[2].source_text, "NoP", "mixed-case NoP should preserve source text spelling");
+
+    return failures;
+}
+
+/// Verifies Phase 57N rejects all operand-bearing NOP forms before Phase 57O.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase57n_nop_operand_rejections(void) {
+    static const char *const invalid_sources[] = {
+        ".code\nmain PROC\n    nop eax\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop ax\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop al\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop eax, ebx\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop BYTE PTR [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop WORD PTR [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop DWORD PTR [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop QWORD PTR [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop SQWORD PTR [eax]\nmain ENDP\nEND main\n"
+    };
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(invalid_sources) / sizeof(invalid_sources[0]); index += 1U) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        failures += expect_parser_status(parse_for_test(invalid_sources[index], &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 57N invalid NOP form should produce parser diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "Phase 57N invalid NOP form should produce one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "Phase 57N invalid NOP diagnostic should be unsupported syntax");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "NOP operand form is not accepted", "Phase 57N invalid NOP diagnostic should reject operand form");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "Zero-operand `nop` is supported", "Phase 57N invalid NOP diagnostic should identify accepted zero-operand form");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "Phase 57N invalid NOP diagnostic should name Phase 57O future owner");
+    }
 
     return failures;
 }
@@ -5002,6 +5068,8 @@ int main(void) {
     failures += test_extension_instruction_parse_error_paths();
     failures += test_phase20_instructions_parse_to_ir();
     failures += test_phase20_instruction_parse_error_paths();
+    failures += test_phase57n_zero_operand_nop_parse_to_ir();
+    failures += test_phase57n_nop_operand_rejections();
     failures += test_phase21_instructions_parse_to_ir();
     failures += test_phase21_instruction_parse_error_paths();
     failures += test_phase22_test_instruction_parses_to_ir();

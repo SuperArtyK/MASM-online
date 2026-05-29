@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57M:
+Current status at Phase 57N:
 
 Repository/archive milestone:
-Phase 57M - MASM Segment and Group Symbol Diagnostics
+Phase 57N - Zero-Operand NOP Audit, Repair, and Regression Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 57M - MASM Segment and Group Symbol Diagnostics
 
 Status interpretation:
 
-Phase 57M is parser/source-run diagnostic work for MASM/object/linker segment and group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT`. It adds targeted `unsupported-segment-symbol` diagnostics when these names are used as addressable symbols or segment/group definitions. It does not add segment registers, segment overrides, `ASSUME`, object files, linker groups, PE layout, internal region aliases, new instruction behavior, browser controls, or Program Console output. Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57N is zero-operand `nop` audit, repair, and regression-hardening work. It confirms existing zero-operand `nop` support remains an IR-level no-op, strengthens parser/executor/source-run/rendered-message coverage, and gives rejected operand-bearing `nop` forms stable diagnostics that defer explicit-width NOP encoding-operand forms to Phase 57O - Explicit-Width NOP Encoding-Operand Forms. It does not add new accepted MASM syntax, real x86 opcode bytes, `.code` byte images, disassembly, explicit-width NOP encoding-operand forms, browser controls, or Program Console output. Runtime/source-run MASM behavior metadata remains Phase 57M - MASM Segment and Group Symbol Diagnostics. Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, existing `.CONST` declaration diagnostics, `.CONST` write protection, read-time `uninitialized-read` diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 ## How to use this file
 
@@ -84,6 +84,7 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57K locks the v1 policy that `.code` memory access is unsupported and that MASM segment/group names are not aliases for simulator regions, while keeping runtime/source-run MASM behavior at Phase 57J.
 - Phase 57L implements mandatory `.code` memory-access diagnostics and advances runtime/source-run MASM behavior metadata to Phase 57L.
 - Phase 57M implements targeted `unsupported-segment-symbol` parser/source-run diagnostics for MASM/object/linker segment and group names and advances runtime/source-run MASM behavior metadata to Phase 57M.
+- Phase 57N audits and hardens existing zero-operand `nop` behavior, updates rejected operand-form diagnostics, and keeps runtime/source-run MASM behavior metadata at Phase 57M.
 
 
 ## Phase 57M - MASM Segment and Group Symbol Diagnostics

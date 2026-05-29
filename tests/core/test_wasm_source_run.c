@@ -1683,10 +1683,126 @@ static int test_phase20_source_run_error_paths(void) {
     failures += expect_json_contains(xchg_mismatch_copy, "XCHG operand widths must match", "XCHG width mismatch diagnostic should describe width rule");
     failures += expect_json_contains(nop_operand_copy, "\"ok\":false", "NOP with operand should fail source-run");
     failures += expect_json_contains(nop_operand_copy, "unsupported-syntax", "NOP with operand should report unsupported syntax");
-    failures += expect_json_contains(nop_operand_copy, "NOP does not take operands", "NOP with operand should describe no-operand rule");
+    failures += expect_json_contains(nop_operand_copy, "NOP operand form is not accepted", "NOP with operand should reject operand form");
+    failures += expect_json_contains(nop_operand_copy, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "NOP with operand should name Phase 57O future owner");
     failures += expect_json_contains(neg_ambiguous_json, "\"ok\":false", "NEG ambiguous memory should fail source-run");
     failures += expect_json_contains(neg_ambiguous_json, "ambiguous-memory-width", "NEG ambiguous memory should report stable ambiguous-memory-width diagnostic");
     failures += expect_json_contains(neg_ambiguous_json, "Memory operand width is ambiguous", "NEG ambiguous memory diagnostic should describe width ambiguity");
+
+    return failures;
+}
+
+/// Verifies Phase 57N zero-operand NOP source-run no-op behavior.
+///
+/// @return Number of failures.
+static int test_phase57n_nop_source_run_hardening(void) {
+    char between_copy[4096];
+    char before_copy[4096];
+    char after_copy[4096];
+    char only_copy[4096];
+    const char *between_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    nop\n"
+        "    inc eax\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    const char *before_json = NULL;
+    const char *after_json = NULL;
+    const char *only_json = NULL;
+    int failures = 0;
+
+    if (between_json == NULL) {
+        return record_failure("Phase 57N NOP between result should not be NULL");
+    }
+    (void)snprintf(between_copy, sizeof(between_copy), "%s", between_json);
+
+    before_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    NOP\n"
+        "    mov ebx, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (before_json == NULL) {
+        return record_failure("Phase 57N NOP before result should not be NULL");
+    }
+    (void)snprintf(before_copy, sizeof(before_copy), "%s", before_json);
+
+    after_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov ecx, 3\n"
+        "    NoP\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (after_json == NULL) {
+        return record_failure("Phase 57N NOP after result should not be NULL");
+    }
+    (void)snprintf(after_copy, sizeof(after_copy), "%s", after_json);
+
+    only_json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    nop\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    if (only_json == NULL) {
+        return record_failure("Phase 57N NOP-only result should not be NULL");
+    }
+    (void)snprintf(only_copy, sizeof(only_copy), "%s", only_json);
+
+    failures += expect_json_contains(between_copy, "\"ok\":true", "NOP between mutating instructions should execute");
+    failures += expect_json_contains(between_copy, "\"instructionCount\":3", "NOP between mutating instructions should count as one instruction");
+    failures += expect_json_contains(between_copy, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "NOP between MOV and INC should leave EAX = 2");
+    failures += expect_json_contains(between_copy, "\"memoryChanges\":[]", "NOP register-only program should not create memory changes");
+    failures += expect_json_not_contains(between_copy, "programConsole", "NOP source-run program should not produce Program Console output");
+    failures += expect_json_not_contains(between_copy, "NOP operand form is not accepted", "valid NOP should not emit NOP diagnostics");
+
+    failures += expect_json_contains(before_copy, "\"ok\":true", "NOP before another instruction should execute");
+    failures += expect_json_contains(before_copy, "\"instructionCount\":2", "NOP before another instruction should count toward instruction count");
+    failures += expect_json_contains(before_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "NOP before MOV should preserve later MOV behavior");
+
+    failures += expect_json_contains(after_copy, "\"ok\":true", "NOP after another instruction should execute");
+    failures += expect_json_contains(after_copy, "\"instructionCount\":2", "NOP after another instruction should count toward instruction count");
+    failures += expect_json_contains(after_copy, "\"ECX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "NOP after MOV should preserve ECX");
+
+    failures += expect_json_contains(only_copy, "\"ok\":true", "NOP-only program should execute");
+    failures += expect_json_contains(only_copy, "\"instructionCount\":1", "NOP-only program should count one instruction");
+    failures += expect_json_contains(only_copy, "\"memoryChanges\":[]", "NOP-only program should not create memory changes");
+    failures += expect_json_not_contains(only_copy, "programConsole", "NOP-only program should not produce Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57N source-run diagnostics for rejected NOP operand forms.
+///
+/// @return Number of failures.
+static int test_phase57n_nop_source_run_rejections(void) {
+    static const char *const invalid_sources[] = {
+        ".code\nmain PROC\n    nop eax\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop eax, ebx\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop DWORD PTR [eax]\nmain ENDP\nEND main\n"
+    };
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(invalid_sources) / sizeof(invalid_sources[0]); index += 1U) {
+        const char *json = masm32_sim_wasm_run_source_json(invalid_sources[index]);
+        failures += expect_json_contains(json, "\"ok\":false", "Phase 57N invalid NOP form should fail source-run");
+        failures += expect_json_contains(json, "unsupported-syntax", "Phase 57N invalid NOP form should use unsupported-syntax code");
+        failures += expect_json_contains(json, "NOP operand form is not accepted", "Phase 57N invalid NOP form should reject operands");
+        failures += expect_json_contains(json, "Zero-operand `nop` is supported", "Phase 57N invalid NOP form should name accepted form");
+        failures += expect_json_contains(json, "Phase 57O - Explicit-Width NOP Encoding-Operand Forms", "Phase 57N invalid NOP form should name Phase 57O future owner");
+        failures += expect_json_not_contains(json, "execution-complete", "Phase 57N invalid NOP form should not complete execution");
+        failures += expect_json_not_contains(json, "programConsole", "Phase 57N invalid NOP form should not produce Program Console output");
+    }
 
     return failures;
 }
@@ -9635,6 +9751,8 @@ int main(void) {
     failures += test_phase20_source_run_acceptance_program();
     failures += test_phase20_memory_source_run_program();
     failures += test_phase20_source_run_error_paths();
+    failures += test_phase57n_nop_source_run_hardening();
+    failures += test_phase57n_nop_source_run_rejections();
     failures += test_phase21_source_run_acceptance_program();
     failures += test_phase21_memory_and_borrow_source_run_program();
     failures += test_phase21_source_run_error_paths();
@@ -9838,6 +9956,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57M segment/group symbol diagnostics coverage passed.");
+    puts("Source execution tests through Phase 57N zero-operand NOP hardening coverage passed.");
     return 0;
 }
