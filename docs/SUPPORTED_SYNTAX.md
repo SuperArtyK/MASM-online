@@ -1,12 +1,16 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+Phase 57S - Unsupported High-Level Flow Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+Phase 57S - Unsupported High-Level Flow Diagnostics
 
-Phase 57R adds clear parser/source-run diagnostics for unsupported `INVOKE` syntax, `ADDR` operands, and common external routine names. `invoke StdOut, addr titleMsg` reports `unsupported-invoke`, `unsupported-addr`, and `unsupported-masm32-runtime-routine`; `invoke crt_printf, addr numberFmt, counter` reports C runtime formatted-output diagnostics; and `invoke ExitProcess, 0` reports `unsupported-winapi-execution` rather than virtual Irvine32 `exit` behavior. Source containing these diagnostics does not execute and does not produce Program Console output. Phase 57R does not implement `INVOKE`, `ADDR`, stack setup, calling conventions, `StdOut`, `crt_printf`, `ExitProcess`, WinAPI execution, PE imports, linker behavior, or external routine execution. Phase 57Q `INCLUDELIB` linker/import-library diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57S adds clear parser/source-run diagnostics for unsupported high-level MASM flow constructs. `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` are recognized as unsupported high-level flow where encountered. They report `unsupported-high-level-if`, `unsupported-high-level-else`, `unsupported-high-level-endif`, `unsupported-high-level-while`, `unsupported-high-level-repeat`, or `unsupported-high-level-flow`; source containing these diagnostics refuses execution, emits no `execution-complete`, and does not write to Program Console. Phase 57S does not implement high-level-flow lowering, labels, branch execution, expression parsing for conditions, loop semantics, or block execution. Phase 57R `INVOKE`/`ADDR`/external-routine diagnostics, Phase 57Q `INCLUDELIB` diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+
+### Phase 57S - Unsupported High-Level Flow Diagnostics
+
+High-level MASM flow constructs are recognized but not executable. The parser/source-run path reports source-located unsupported-feature diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` where they are encountered. Recognized unsupported high-level-flow blocks are skipped for recovery where safe so body instructions do not execute and do not produce unrelated cascaded diagnostics. The simulator does not lower these constructs to labels, jumps, or branches; later branch/control-flow phases own lower-level control-flow behavior.
 
 The executable arithmetic instruction subset remains implemented through Phase 57 - Signed IDIV, with later diagnostic, display, startup, and status phases layered on top.
 
@@ -20,7 +24,7 @@ Phase 57M implements the MASM segment/group symbol policy with targeted `unsuppo
 
 ### Phase 57F, Phase 57G, Phase 57I, and Phase 57J startup/data diagnostics
 
-Runtime/source-run MASM behavior phase Phase 57R preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
+Runtime/source-run MASM behavior phase Phase 57S preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
 
 ```text
 startup_register_flag_mode = zero | seeded-random

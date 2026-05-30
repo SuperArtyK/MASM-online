@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 57R diagnostics.
+ * @brief Unit and integration tests for the parser through Phase 57S diagnostics.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * error diagnostics for unsupported syntax, INCLUDELIB non-goal diagnostics,
@@ -253,6 +253,32 @@ static int expect_unsupported_feature_source(const char *source, const char *exp
     return failures;
 }
 
+/// Verifies one source sample reports a specific unsupported diagnostic.
+///
+/// @param source MASM-like source text expected to hit a recognized deferred feature.
+/// @param expected_code Parser diagnostic code expected for the first diagnostic.
+/// @param expected_message_fragment Fragment expected in the diagnostic message.
+/// @return Zero on success, otherwise a positive failure count.
+static int expect_specific_unsupported_source(
+    const char *source,
+    VmParserDiagnosticCode expected_code,
+    const char *expected_message_fragment
+) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "recognized unsupported feature should produce parser diagnostics");
+    if (result.diagnostic_count < 1U) {
+        failures += record_failure("recognized unsupported feature should produce at least one parser diagnostic");
+        return failures;
+    }
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, expected_code, "recognized unsupported feature diagnostic code should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, expected_message_fragment, "recognized unsupported feature diagnostic message should describe the feature");
+
+    return failures;
+}
+
 /// Verifies that the guide's minimal program parses into two IR instructions.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -409,11 +435,11 @@ static int test_error_path_diagnostics(void) {
 static int test_textbook_unsupported_directives_are_stable(void) {
     int failures = 0;
 
-    failures += expect_unsupported_feature_source(".code\nmain PROC\nmov eax, 1\n.IF eax == 1\nmov ebx, 2\nmain ENDP\nEND main\n", ".IF");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\nmov ecx, 3\n.WHILE ecx > 0\nsub ecx, 1\nmain ENDP\nEND main\n", ".WHILE");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\n.REPEAT\nmov eax, 1\n.UNTIL eax == 1\nmain ENDP\nEND main\n", ".REPEAT");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\n.BREAK\nmain ENDP\nEND main\n", ".BREAK");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\n.CONTINUE\nmain ENDP\nEND main\n", ".CONTINUE");
+    failures += expect_specific_unsupported_source(".code\nmain PROC\nmov eax, 1\n.IF eax == 1\nmov ebx, 2\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF, ".IF");
+    failures += expect_specific_unsupported_source(".code\nmain PROC\nmov ecx, 3\n.WHILE ecx > 0\nsub ecx, 1\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE, ".WHILE");
+    failures += expect_specific_unsupported_source(".code\nmain PROC\n.REPEAT\nmov eax, 1\n.UNTIL eax == 1\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT, ".REPEAT");
+    failures += expect_specific_unsupported_source(".code\nmain PROC\n.BREAK\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW, ".BREAK");
+    failures += expect_specific_unsupported_source(".code\nmain PROC\n.CONTINUE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW, ".CONTINUE");
 
     return failures;
 }
@@ -475,13 +501,15 @@ static int test_multi_diagnostic_unsupported_feature_recovery(void) {
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "multiple unsupported constructs should recover with diagnostics");
-    failures += expect_size(result.diagnostic_count, 3U, "STRUCT, INVOKE, and .IF should produce three diagnostics");
+    failures += expect_size(result.diagnostic_count, 4U, "STRUCT, INVOKE, .IF, and .ENDIF should produce diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "STRUCT diagnostic code should match");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE, "INVOKE diagnostic code should match");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".IF diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF, ".IF diagnostic code should match");
     failures += expect_string_contains(buffers.diagnostics[0].message, "STRUCT", "first diagnostic should describe STRUCT");
     failures += expect_string_contains(buffers.diagnostics[1].message, "INVOKE", "second diagnostic should describe INVOKE");
     failures += expect_string_contains(buffers.diagnostics[2].message, ".IF", "third diagnostic should describe .IF");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[3].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF, ".ENDIF diagnostic code should match");
+    failures += expect_string_contains(buffers.diagnostics[3].message, ".ENDIF", "fourth diagnostic should describe .ENDIF");
     failures += expect_u32(buffers.diagnostics[0].location.line, 2U, "STRUCT diagnostic line should be preserved");
     failures += expect_u32(buffers.diagnostics[1].location.line, 7U, "INVOKE diagnostic line should be preserved");
     failures += expect_u32(buffers.diagnostics[2].location.line, 8U, ".IF diagnostic line should be preserved");
@@ -556,8 +584,9 @@ static int test_unsupported_block_recovery_avoids_body_cascades(void) {
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported .IF block should recover");
-    failures += expect_size(result.diagnostic_count, 1U, ".IF body should not produce cascaded diagnostics");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, ".IF diagnostic code should match");
+    failures += expect_size(result.diagnostic_count, 2U, ".IF body should not produce cascaded diagnostics beyond flow markers");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF, ".IF diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF, ".ENDIF diagnostic code should match");
     failures += expect_size(result.instruction_count, 0U, ".IF body instruction should not be emitted");
 
     return failures;
@@ -630,12 +659,21 @@ static int test_block_recovery_covers_required_terminators(void) {
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "required block constructs should recover");
-    failures += expect_size(result.diagnostic_count, 5U, "UNION, MACRO, .WHILE, and both .REPEAT blocks should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 8U, "UNION, MACRO, .WHILE/.ENDW, and both .REPEAT terminator pairs should produce diagnostics");
     failures += expect_string_contains(buffers.diagnostics[0].message, "UNION", "block diagnostic should describe UNION");
     failures += expect_string_contains(buffers.diagnostics[1].message, "macro", "block diagnostic should describe MACRO");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[2].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE, ".WHILE diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[3].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW, ".ENDW diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[4].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT, "first .REPEAT diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[5].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW, ".UNTIL diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[6].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT, "second .REPEAT diagnostic code should match");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[7].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW, ".UNTILCXZ diagnostic code should match");
     failures += expect_string_contains(buffers.diagnostics[2].message, ".WHILE", "block diagnostic should describe .WHILE");
-    failures += expect_string_contains(buffers.diagnostics[3].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTIL");
-    failures += expect_string_contains(buffers.diagnostics[4].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTILCXZ");
+    failures += expect_string_contains(buffers.diagnostics[3].message, ".ENDW", "block diagnostic should describe .ENDW");
+    failures += expect_string_contains(buffers.diagnostics[4].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTIL");
+    failures += expect_string_contains(buffers.diagnostics[5].message, ".UNTIL", "block diagnostic should describe .UNTIL");
+    failures += expect_string_contains(buffers.diagnostics[6].message, ".REPEAT", "block diagnostic should describe .REPEAT .UNTILCXZ");
+    failures += expect_string_contains(buffers.diagnostics[7].message, ".UNTILCXZ", "block diagnostic should describe .UNTILCXZ");
     failures += expect_size(result.instruction_count, 0U, "unsupported block bodies should not emit instructions");
 
     return failures;
@@ -656,7 +694,7 @@ static int test_unterminated_unsupported_block_does_not_execute_body(void) {
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unterminated unsupported block should still return diagnostics");
     failures += expect_size(result.diagnostic_count, 2U, "unterminated unsupported block should report unsupported feature and missing END");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, "unterminated block first diagnostic should be unsupported-feature");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF, "unterminated block first diagnostic should be unsupported high-level .IF");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_EXPECTED_END, "unterminated block should report missing END after recovery reaches EOF");
     failures += expect_size(result.instruction_count, 0U, "unterminated unsupported block body should not emit instructions");
 
@@ -5277,6 +5315,24 @@ static int test_metadata_helpers(void) {
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY), "unsupported-masm32-library") != 0) {
         failures += record_failure("parser diagnostic helper should name MASM32 library diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF), "unsupported-high-level-if") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported high-level IF diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ELSE), "unsupported-high-level-else") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported high-level ELSE diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF), "unsupported-high-level-endif") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported high-level ENDIF diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE), "unsupported-high-level-while") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported high-level WHILE diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT), "unsupported-high-level-repeat") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported high-level REPEAT diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW), "unsupported-high-level-flow") != 0) {
+        failures += record_failure("parser diagnostic helper should name generic unsupported high-level flow diagnostics");
     }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION), "unsupported-option") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported option diagnostics");

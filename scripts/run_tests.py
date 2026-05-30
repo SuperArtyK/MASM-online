@@ -473,8 +473,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics")
-    assert_text_contains("README.md", "Phase 57G - Seeded Random Uninitialized Storage Mode")
+    assert_text_contains("README.md", "Phase 57S - Unsupported High-Level Flow Diagnostics")
+    assert_text_contains("README.md", "Phase 57G seeded uninitialized-storage visible-byte settings")
     assert_text_contains("README.md", "Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -622,7 +622,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57R INVOKE/ADDR diagnostic coverage passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 57S high-level-flow diagnostic coverage passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1404,22 +1404,22 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57r_status_and_code_policy_present() -> None:
-    """Verify Phase 57R repository/runtime status and Phase 57L policy retention."""
+def assert_phase57s_status_and_code_policy_present() -> None:
+    """Verify Phase 57S repository/runtime status and Phase 57L policy retention."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
+        "Phase 57S - Unsupported High-Level Flow Diagnostics",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
+        "Phase 57S - Unsupported High-Level Flow Diagnostics",
         "[unchanged]",
         "startup-state-notice",
     ]
     status_block = """Repository/archive milestone:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+Phase 57S - Unsupported High-Level Flow Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
+Phase 57S - Unsupported High-Level Flow Diagnostics"""
     assert_all_text_contains("README.md", required_status_fragments)
     assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
     assert_all_text_contains("docs/MILESTONE_HISTORY.md", required_status_fragments)
@@ -1438,7 +1438,13 @@ Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
+            "unsupported-high-level-if",
+            "unsupported-high-level-else",
+            "unsupported-high-level-endif",
+            "unsupported-high-level-while",
+            "unsupported-high-level-repeat",
+            "unsupported-high-level-flow",
             "Phase 57P host/path-like `INCLUDE` diagnostics remain available",
             "host include path diagnostics",
             "unsupported-host-include-path",
@@ -1453,11 +1459,11 @@ Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
             "unsupported-windows-api-library",
             "unsupported-masm32-library",
             "Zero-operand `nop` remains",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
             "Phase 57O - Explicit-Width NOP Encoding-Operand Forms keeps NOP encoding-operand behavior available",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
             "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
             "Phase 57L `.code` memory-access diagnostics",
             "unsupported-segment-symbol",
@@ -1490,6 +1496,8 @@ Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
             "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
             "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
             "Phase 57L `.code` memory-access diagnostics",
@@ -1515,6 +1523,8 @@ Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
+            "Phase 57S - Unsupported High-Level Flow Diagnostics",
             "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
             "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
             "Phase 57L `.code` memory-access diagnostics",
@@ -1541,8 +1551,9 @@ Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Phase 57R",
-            "runtime Phase 57R",
+            "Phase 57S",
+            "runtime Phase 57S",
+            "high-level MASM flow",
             "unsupported INVOKE",
             "ADDR",
             "INCLUDELIB",
@@ -1658,7 +1669,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57r_status_and_code_policy_present()
+    assert_phase57s_status_and_code_policy_present()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

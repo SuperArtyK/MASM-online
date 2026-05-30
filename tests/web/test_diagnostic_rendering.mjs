@@ -1497,6 +1497,19 @@ END main
 `,
     reason: "Multi-diagnostic stable source-order fixture."
   },
+  highLevelFlowMarkers: {
+    source: `.code
+main PROC
+    .IF eax == 0
+        mov ebx, 1
+    .ELSE
+        badinstruction eax
+    .ENDIF
+main ENDP
+END main
+`,
+    reason: "Phase 57S high-level flow marker recovery fixture."
+  },
   casemapPolicyChanged: {
     source: `OPTION CASEMAP:NONE
 OPTION CASEMAP:ALL
@@ -4551,18 +4564,73 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
     },
     {
       kind: "unsupported-feature",
-      code: "unsupported-feature",
-      message: "Unsupported feature: MASM .IF high-level flow is not supported yet.",
+      code: "unsupported-high-level-if",
+      message: ".IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.",
       line: 11,
       column: 5,
       byteOffset: 102,
       spanLength: 3
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-high-level-endif",
+      message: ".ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.",
+      line: 13,
+      column: 5,
+      byteOffset: 138,
+      spanLength: 6
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assert.equal(rendered.includes("mov ebx"), false);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.\n[unsupported-feature] unsupported-invoke line 10, column 5, byte offset 82, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-feature line 11, column 5, byte offset 102, span length 3: Unsupported feature: MASM .IF high-level flow is not supported yet.");
+  assertRenderedEquals(name, source, rawJson, rendered, `[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.
+[unsupported-feature] unsupported-invoke line 10, column 5, byte offset 82, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
+[unsupported-feature] unsupported-high-level-if line 11, column 5, byte offset 102, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
+[unsupported-feature] unsupported-high-level-endif line 13, column 5, byte offset 138, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.`);
 });
+
+
+test("renders Phase 57S high-level flow markers exactly", () => {
+  const name = "highLevelFlowMarkers";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-high-level-if",
+      message: ".IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.",
+      line: 3,
+      column: 5,
+      byteOffset: 20,
+      spanLength: 3
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-high-level-else",
+      message: ".ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.",
+      line: 5,
+      column: 5,
+      byteOffset: 56,
+      spanLength: 5
+    },
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-high-level-endif",
+      message: ".ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.",
+      line: 7,
+      column: 5,
+      byteOffset: 93,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.equal(rendered.includes("badinstruction"), false);
+  assertRenderedEquals(name, source, rawJson, rendered, `[unsupported-feature] unsupported-high-level-if line 3, column 5, byte offset 20, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
+[unsupported-feature] unsupported-high-level-else line 5, column 5, byte offset 56, span length 5: .ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.
+[unsupported-feature] unsupported-high-level-endif line 7, column 5, byte offset 93, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.`);
+});
+
 
 
 test("renders CASEMAP policy warning followed by successful execution exactly", () => {

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57R INVOKE diagnostics.
+ * @brief Tests for the Wasm-facing source execution API through Phase 57S high-level-flow diagnostics.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -1131,6 +1131,15 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "main ENDP\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", ".IF comparison sample should be classified as unsupported feature");
+    failures += expect_json_contains(masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "mov eax, 1\n"
+        ".IF eax == 1\n"
+        "mov ebx, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    ), "unsupported-high-level-if", ".IF comparison sample should expose Phase 57S high-level IF code");
 
     failures += expect_json_contains(masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -1192,7 +1201,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     failures += expect_json_contains(json, "STRUCT declarations", "source-run should include STRUCT diagnostic");
     failures += expect_json_contains(json, "unsupported-invoke", "source-run should include INVOKE diagnostic");
     failures += expect_json_contains(json, "INVOKE syntax is not implemented", "source-run should include INVOKE diagnostic text");
-    failures += expect_json_contains(json, "MASM .IF high-level flow", "source-run should include .IF diagnostic");
+    failures += expect_json_contains(json, ".IF high-level MASM flow", "source-run should include .IF diagnostic");
     failures += expect_json_contains(json, "\"line\":4", "STRUCT diagnostic line should be surfaced");
     failures += expect_json_contains(json, "\"line\":10", "INVOKE diagnostic line should be surfaced");
     failures += expect_json_contains(json, "\"line\":11", ".IF diagnostic line should be surfaced");
@@ -1203,7 +1212,39 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
     failures += expect_json_contains(json, "\"byteOffset\":102", ".IF diagnostic byte offset should be surfaced");
     failures += expect_json_contains(json, "\"spanLength\":6", "six-byte recovered diagnostic spans should be surfaced");
     failures += expect_json_contains(json, "\"spanLength\":3", ".IF recovered diagnostic span should be surfaced");
+    failures += expect_json_contains(json, "unsupported-high-level-endif", "source-run should include .ENDIF diagnostic code");
     failures += expect_json_not_contains(json, "execution-complete", "source-run should not execute when diagnostics exist");
+
+    return failures;
+}
+
+/// Verifies Phase 57S source-run JSON reports high-level-flow markers and refuses execution.
+///
+/// @return Number of failures.
+static int test_phase57s_high_level_flow_source_run_diagnostics(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    .IF eax == 1\n"
+        "        mov ebx, 2\n"
+        "    .ELSE\n"
+        "        badinstruction eax\n"
+        "    .ENDIF\n"
+        "    mov ecx, 3\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "high-level flow source should refuse execution");
+    failures += expect_json_contains(json, "unsupported-high-level-if", ".IF diagnostic code should be surfaced");
+    failures += expect_json_contains(json, "unsupported-high-level-else", ".ELSE diagnostic code should be surfaced");
+    failures += expect_json_contains(json, "unsupported-high-level-endif", ".ENDIF diagnostic code should be surfaced");
+    failures += expect_json_contains(json, ".IF high-level MASM flow is not implemented", ".IF diagnostic message should be stable");
+    failures += expect_json_not_contains(json, "badinstruction", "unsupported body instruction should not cascade");
+    failures += expect_json_not_contains(json, "execution-complete", "high-level flow diagnostics should prevent execution");
+    failures += expect_json_not_contains(json, "programConsole", "high-level flow diagnostics should not produce Program Console output");
 
     return failures;
 }
@@ -8367,8 +8408,8 @@ static int test_phase57g_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"R\"", "Phase 57R should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics\"", "Phase 57R should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"S\"", "Phase 57S should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 57S - Unsupported High-Level Flow Diagnostics\"", "Phase 57S should report the runtime phase name");
 
     return failures;
 }
@@ -8806,7 +8847,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"R\"", "Phase 57R .CONST ? fixture should report runtime suffix R");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"S\"", "Phase 57S .CONST ? fixture should report runtime suffix S");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -9498,7 +9539,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"R\"", "Phase 57R code read should report runtime suffix R");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"S\"", "Phase 57S code read should report runtime suffix S");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -9681,7 +9722,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"R\"", "Phase 57R segment diagnostics should report runtime suffix R");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"S\"", "Phase 57S segment diagnostics should report runtime suffix S");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -10126,6 +10167,7 @@ int main(void) {
     failures += test_phase57p_host_include_path_source_run_diagnostics();
     failures += test_phase57q_includelib_source_run_diagnostics();
     failures += test_phase57r_invoke_addr_external_routine_source_run_diagnostics();
+    failures += test_phase57s_high_level_flow_source_run_diagnostics();
     failures += test_phase28_additional_data_sections_source_run_programs();
     failures += test_phase30_dup_initializer_list_source_run_program();
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
@@ -10316,6 +10358,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57R INVOKE/ADDR diagnostic coverage passed.");
+    puts("Source execution tests through Phase 57S high-level-flow diagnostic coverage passed.");
     return 0;
 }

@@ -12,15 +12,15 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57R:
+Current status at Phase 57S:
 
 Repository/archive milestone:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+Phase 57S - Unsupported High-Level Flow Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics
+Phase 57S - Unsupported High-Level Flow Diagnostics
 
-Phase 57R adds clear parser/source-run diagnostics for unsupported `INVOKE` syntax, `ADDR` operands, and common external routine names. `invoke StdOut, addr titleMsg` reports `unsupported-invoke`, `unsupported-addr`, and `unsupported-masm32-runtime-routine`; `invoke crt_printf, addr numberFmt, counter` reports C runtime formatted-output diagnostics; and `invoke ExitProcess, 0` reports `unsupported-winapi-execution` rather than virtual Irvine32 `exit` behavior. Source containing these diagnostics does not execute and does not produce Program Console output. Phase 57R does not implement `INVOKE`, `ADDR`, stack setup, calling conventions, `StdOut`, `crt_printf`, `ExitProcess`, WinAPI execution, PE imports, linker behavior, or external routine execution. Phase 57Q `INCLUDELIB` linker/import-library diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 57S adds clear parser/source-run diagnostics for unsupported high-level MASM flow constructs. `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` are recognized as unsupported high-level flow where encountered. They report `unsupported-high-level-if`, `unsupported-high-level-else`, `unsupported-high-level-endif`, `unsupported-high-level-while`, `unsupported-high-level-repeat`, or `unsupported-high-level-flow`; source containing these diagnostics refuses execution, emits no `execution-complete`, and does not write to Program Console. Phase 57S does not implement high-level-flow lowering, labels, branch execution, expression parsing for conditions, loop semantics, or block execution. Phase 57R `INVOKE`/`ADDR`/external-routine diagnostics, Phase 57Q `INCLUDELIB` diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 

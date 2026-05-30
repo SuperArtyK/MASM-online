@@ -1220,11 +1220,6 @@ static const char *vm_parser_find_unsupported_feature_message(
 /// @return Static unsupported-feature message, or NULL when not recognized.
 static const char *vm_parser_unsupported_directive_message(const VmLexerToken *token, const VmLexerToken *next) {
     static const VmParserUnsupportedFeature directives[] = {
-        {".if", "Unsupported feature: MASM .IF high-level flow is not supported yet."},
-        {".while", "Unsupported feature: MASM .WHILE high-level flow is not supported yet."},
-        {".repeat", "Unsupported feature: MASM .REPEAT high-level flow is not supported yet."},
-        {".break", "Unsupported feature: MASM .BREAK high-level flow is not supported yet."},
-        {".continue", "Unsupported feature: MASM .CONTINUE high-level flow is not supported yet."},
         {".startup", "Unsupported feature: .STARTUP is not supported yet."},
         {".exit", "Unsupported feature: .EXIT is not supported yet."},
         {".dosseg", "Unsupported feature: .DOSSEG segmented-layout compatibility is not supported."},
@@ -1299,6 +1294,94 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
     };
 
     return vm_parser_find_unsupported_feature_message(token, keywords, sizeof(keywords) / sizeof(keywords[0]));
+}
+
+/// Classifies one high-level MASM flow directive for Phase 57S diagnostics.
+///
+/// @param token Candidate directive token.
+/// @return Specific parser diagnostic code for recognized high-level flow, or
+/// VM_PARSER_DIAGNOSTIC_NONE when @p token is not a high-level flow directive.
+static VmParserDiagnosticCode vm_parser_high_level_flow_diagnostic_code(const VmLexerToken *token) {
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_DIRECTIVE) {
+        return VM_PARSER_DIAGNOSTIC_NONE;
+    }
+    if (vm_parser_token_equals(token, ".if") || vm_parser_token_equals(token, ".elseif")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF;
+    }
+    if (vm_parser_token_equals(token, ".else")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ELSE;
+    }
+    if (vm_parser_token_equals(token, ".endif")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF;
+    }
+    if (vm_parser_token_equals(token, ".while")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE;
+    }
+    if (vm_parser_token_equals(token, ".repeat")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT;
+    }
+    if (vm_parser_token_equals(token, ".endw") ||
+        vm_parser_token_equals(token, ".until") ||
+        vm_parser_token_equals(token, ".untilcxz") ||
+        vm_parser_token_equals(token, ".break") ||
+        vm_parser_token_equals(token, ".continue")) {
+        return VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW;
+    }
+    return VM_PARSER_DIAGNOSTIC_NONE;
+}
+
+/// Returns a stable Phase 57S unsupported high-level flow message.
+///
+/// @param token Recognized high-level flow directive token.
+/// @return Static human-readable diagnostic message.
+static const char *vm_parser_high_level_flow_message(const VmLexerToken *token) {
+    if (token != NULL && vm_parser_token_equals(token, ".if")) {
+        return ".IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".elseif")) {
+        return ".ELSEIF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".else")) {
+        return ".ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".endif")) {
+        return ".ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".while")) {
+        return ".WHILE high-level MASM flow is not implemented; the simulator does not lower loops into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".endw")) {
+        return ".ENDW closes unsupported .WHILE flow; the simulator does not lower loops into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".repeat")) {
+        return ".REPEAT high-level MASM flow is not implemented; the simulator does not lower loops into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".until")) {
+        return ".UNTIL closes unsupported .REPEAT flow; the simulator does not lower loop conditions into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".untilcxz")) {
+        return ".UNTILCXZ closes unsupported .REPEAT flow; the simulator does not lower loop conditions into labels or branches.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".break")) {
+        return ".BREAK high-level MASM loop control is not implemented; the simulator does not lower it to a branch.";
+    }
+    if (token != NULL && vm_parser_token_equals(token, ".continue")) {
+        return ".CONTINUE high-level MASM loop control is not implemented; the simulator does not lower it to a branch.";
+    }
+    return "High-level MASM flow is not implemented; the simulator does not lower it into labels or branches.";
+}
+
+/// Emits one Phase 57S high-level flow diagnostic for a recognized directive.
+///
+/// @param state Parser state to mutate.
+/// @param token Directive token to diagnose.
+/// @return true when the diagnostic was queued.
+static bool vm_parser_add_high_level_flow_diagnostic(VmParserState *state, const VmLexerToken *token) {
+    VmParserDiagnosticCode code = vm_parser_high_level_flow_diagnostic_code(token);
+    if (code == VM_PARSER_DIAGNOSTIC_NONE) {
+        return false;
+    }
+    return vm_parser_add_diagnostic(state, code, token, vm_parser_high_level_flow_message(token));
 }
 
 
@@ -1969,6 +2052,57 @@ static void vm_parser_recover_skip_block(
     }
 }
 
+/// Skips a Phase 57S unsupported high-level flow block while reporting closing markers.
+///
+/// This recovery ignores ordinary body tokens to avoid cascades, but emits stable
+/// source-located diagnostics for recognized high-level-flow markers encountered
+/// while finding the block terminator. Nested blocks are counted only enough to
+/// avoid terminating the outer block on an inner terminator.
+///
+/// @param state Parser state to mutate.
+/// @param opener Spelling of the opening directive.
+/// @param first_terminator First accepted block terminator spelling.
+/// @param second_terminator Optional second accepted block terminator spelling.
+static void vm_parser_recover_skip_high_level_block(
+    VmParserState *state,
+    const char *opener,
+    const char *first_terminator,
+    const char *second_terminator
+) {
+    const VmLexerToken *token = NULL;
+    unsigned depth = 1U;
+
+    if (state == NULL) {
+        return;
+    }
+
+    vm_parser_recover_skip_line(state);
+    token = vm_parser_current_token(state);
+    while (token != NULL && token->kind != VM_LEXER_TOKEN_EOF) {
+        if (opener != NULL && vm_parser_recover_token_has_spelling(token, opener)) {
+            depth += 1U;
+            (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+            vm_parser_recover_skip_line(state);
+        } else if (vm_parser_recover_is_terminator(token, first_terminator, second_terminator, NULL)) {
+            (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+            vm_parser_recover_skip_line(state);
+            depth -= 1U;
+            if (depth == 0U) {
+                return;
+            }
+        } else if (vm_parser_recover_token_has_spelling(token, ".else") ||
+                   vm_parser_recover_token_has_spelling(token, ".elseif") ||
+                   vm_parser_recover_token_has_spelling(token, ".break") ||
+                   vm_parser_recover_token_has_spelling(token, ".continue")) {
+            (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+            vm_parser_recover_skip_line(state);
+        } else {
+            vm_parser_advance(state);
+        }
+        token = vm_parser_current_token(state);
+    }
+}
+
 /// Skips an unsupported section until the next known section directive or EOF.
 ///
 /// This keeps section recovery narrow: declarations inside an unsupported
@@ -2022,30 +2156,26 @@ static bool vm_parser_recover_unsupported_feature_if_recognized(VmParserState *s
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".if")) {
-        message = vm_parser_unsupported_directive_message(token, next);
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
-        vm_parser_recover_skip_block(state, ".endif", NULL, NULL);
+        (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+        vm_parser_recover_skip_high_level_block(state, ".if", ".endif", NULL);
         return true;
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".while")) {
-        message = vm_parser_unsupported_directive_message(token, next);
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
-        vm_parser_recover_skip_block(state, ".endw", NULL, NULL);
+        (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+        vm_parser_recover_skip_high_level_block(state, ".while", ".endw", NULL);
         return true;
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE && vm_parser_token_equals(token, ".repeat")) {
-        message = vm_parser_unsupported_directive_message(token, next);
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
-        vm_parser_recover_skip_block(state, ".until", ".untilcxz", NULL);
+        (void)vm_parser_add_high_level_flow_diagnostic(state, token);
+        vm_parser_recover_skip_high_level_block(state, ".repeat", ".until", ".untilcxz");
         return true;
     }
 
     if (token->kind == VM_LEXER_TOKEN_DIRECTIVE &&
-        (vm_parser_token_equals(token, ".break") || vm_parser_token_equals(token, ".continue"))) {
-        message = vm_parser_unsupported_directive_message(token, next);
-        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_FEATURE, token, message);
+        vm_parser_high_level_flow_diagnostic_code(token) != VM_PARSER_DIAGNOSTIC_NONE) {
+        (void)vm_parser_add_high_level_flow_diagnostic(state, token);
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -8394,6 +8524,18 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-masm32-runtime-routine";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE:
             return "unsupported-crt-routine";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF:
+            return "unsupported-high-level-if";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ELSE:
+            return "unsupported-high-level-else";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF:
+            return "unsupported-high-level-endif";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE:
+            return "unsupported-high-level-while";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT:
+            return "unsupported-high-level-repeat";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW:
+            return "unsupported-high-level-flow";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION:
             return "unsupported-option";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE:

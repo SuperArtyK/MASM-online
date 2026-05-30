@@ -9,7 +9,7 @@
  * initializers, OFFSET, direct symbol memory operands, constant symbol-offset
  * memory operands, signed and unsigned PTR width overrides, register-indirect
  * memory operands, TYPE, LENGTHOF, SIZEOF, packed character literals,
- * implemented instruction groups, INCLUDELIB diagnostics, INVOKE/ADDR external-routine diagnostics, explicit unsupported-feature diagnostics,
+ * implemented instruction groups, INCLUDELIB diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow diagnostics, explicit unsupported-feature diagnostics,
  * safe recovery for recognized MASM textbook constructs, specific surfaced
  * lexer diagnostics, and virtual Irvine32 registry metadata.
  */
@@ -172,6 +172,18 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE,
     /// An INVOKE target names C runtime behavior outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE,
+    /// A `.IF` or `.ELSEIF` directive used unsupported high-level MASM flow.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF,
+    /// A `.ELSE` directive used unsupported high-level MASM flow.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ELSE,
+    /// A `.ENDIF` directive used unsupported high-level MASM flow.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF,
+    /// A `.WHILE` directive used unsupported high-level MASM flow.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_WHILE,
+    /// A `.REPEAT` directive used unsupported high-level MASM flow.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_REPEAT,
+    /// Another high-level MASM flow directive is recognized but unsupported.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW,
     /// An OPTION directive used a form outside the accepted compatibility subset.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_OPTION,
     /// A bracketed memory operand used a valid register that is not yet supported as an address base.
