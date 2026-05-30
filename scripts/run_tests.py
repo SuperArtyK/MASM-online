@@ -1408,7 +1408,6 @@ def assert_phase58_status_and_code_policy_present() -> None:
         "Repository/archive milestone:",
         "Phase 58 - Code Label Table and Label Diagnostics",
         "Runtime/source-run MASM behavior phase:",
-        "Milestone 58: Code Label Table and Label Diagnostics.",
     ]
     status_block = """Repository/archive milestone:
 Phase 58 - Code Label Table and Label Diagnostics
@@ -1462,7 +1461,7 @@ Phase 58 - Code Label Table and Label Diagnostics"""
         "docs/MILESTONE_HISTORY.md",
         [
             "Phase 58 - Code Label Table and Label Diagnostics",
-            "Milestone 58: Code Label Table and Label Diagnostics.",
+            "Current status at Phase 58:",
             "Concise milestone ledger",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
@@ -1473,7 +1472,7 @@ Phase 58 - Code Label Table and Label Diagnostics"""
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Phase 58 - Code Label Table and Label Diagnostics",
-            "Milestone 58: Code Label Table and Label Diagnostics.",
+            "Runtime/source-run MASM behavior phase:",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1503,13 +1502,13 @@ Phase 58 - Code Label Table and Label Diagnostics"""
     assert_all_text_contains(
         "docs/FULL_IMPLEMENTATION_SPEC.md",
         [
-            "current reviewed source-of-truth revision through Phase 58 - Code Label Table and Label Diagnostics",
+            "current reviewed source-of-truth revision",
         ],
     )
     assert_all_text_contains(
         "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
         [
-            "current reviewed source-of-truth revision through Phase 58 - Code Label Table and Label Diagnostics",
+            "current reviewed source-of-truth revision",
         ],
     )
 
