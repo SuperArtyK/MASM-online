@@ -5,16 +5,16 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 58 - Code Label Table and Label Diagnostics
+Phase 59 - Control-Flow Instruction Limit
 
 Runtime/source-run MASM behavior phase:
-Phase 58 - Code Label Table and Label Diagnostics
+Phase 59 - Control-Flow Instruction Limit
 
-Code labels such as `start:` and procedure-entry labels such as `main PROC` are accepted as parser/source metadata. Duplicate or conflicting labels produce structured Simulator Messages diagnostics. Labels do not execute, do not create IR instructions, and do not add branch behavior.
+Phase 59 adds a source-run/test-facing `instructionLimit` watchdog. Runs count executed VM instructions, stop before executing instruction `limit + 1`, and emit `instruction-limit-exceeded` through Simulator Messages without reporting normal completion. Code labels remain parser/source metadata only: they do not execute, do not create IR instructions, and do not add branch behavior.
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md): selected data sections, MASM compatibility directives, operands, arithmetic/logic/shift/rotate/multiply/divide instructions, code-label metadata, diagnostic settings, startup notices, display markers, unsupported-feature diagnostics, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md): selected data sections, MASM compatibility directives, operands, arithmetic/logic/shift/rotate/multiply/divide instructions, code-label metadata, instruction-count limits, diagnostic settings, startup notices, display markers, unsupported-feature diagnostics, and the virtual Irvine32 `exit` terminator.
 
 For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
 

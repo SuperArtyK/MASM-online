@@ -92,7 +92,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE",
   "MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE",
   "MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE",
-  "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED"
+  "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED",
+  "MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT"
 ];
 
 /**
@@ -2139,13 +2140,47 @@ test("renders unsupported instruction diagnostic with stable wording exactly", (
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 5: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 });
 
+test("renders Phase 59 instruction-limit diagnostic exactly", () => {
+  const name = "phase59InstructionLimit";
+  const source = `.code
+main PROC
+    mov eax, 1
+    mov ebx, 2
+    mov ecx, 3
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 59);
+  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionLimit, 2);
+  assert.equal(json.executedInstructionCount, 2);
+  assert.equal(json.attemptedNextInstructionIndex, 2);
+  assert.equal(json.currentInstructionIndex, 1);
+  assert.equal(json.registers.EAX.hex, "00000001h");
+  assert.equal(json.registers.EBX.hex, "00000002h");
+  assert.equal(json.registers.ECX.hex, "00000000h");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "instruction-limit-exceeded",
+    message: "Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.",
+    line: 5,
+    column: 5,
+    byteOffset: 50,
+    spanLength: 10
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 5, column 5, byte offset 50, span length 10: Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.");
+});
+
 
 test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly", () => {
   const duplicateName = "phase58DuplicateLabel";
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 58);
+  assert.equal(duplicateResult.json.phase, 59);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -2644,7 +2679,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 58);
+  assert.equal(json.phase, 59);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -2665,7 +2700,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 58);
+  assert.equal(json.phase, 59);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",

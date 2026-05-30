@@ -51,7 +51,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     compatibilityNotices: COMPATIBILITY_NOTICES_ON,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
 
   const normalized = normalizeDiagnosticSettings(undefined);
@@ -64,7 +65,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     compatibilityNotices: 1,
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
 });
 
@@ -82,7 +84,8 @@ test("partial settings fill missing values from defaults", () => {
     compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
   assert.deepEqual(normalized.backendSettings, {
     memoryRange: 1,
@@ -91,7 +94,8 @@ test("partial settings fill missing values from defaults", () => {
     compatibilityNotices: 0,
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
 });
 
@@ -119,7 +123,8 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       compatibilityNotices: 1,
       startupRegisterFlagMode: 0,
       uninitializedStorageVisibleByteMode: 0,
-      startupStateSeed: 0
+      startupStateSeed: 0,
+      instructionLimit: 1000000
     });
   }
 });
@@ -144,7 +149,8 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       compatibilityNotices: expectedCompatibility,
       startupRegisterFlagMode: 0,
       uninitializedStorageVisibleByteMode: 0,
-      startupStateSeed: 0
+      startupStateSeed: 0,
+      instructionLimit: 1000000
     });
   }
 });
@@ -189,6 +195,16 @@ test("invalid Phase 57F startup seed returns startup ui-error diagnostic", () =>
   assert.equal(normalized.diagnostic.setting, "startupStateSeed");
 });
 
+test("invalid Phase 59 instruction limit returns source-run ui-error diagnostic", () => {
+  for (const instructionLimit of [0, -1, 2.5, "2", 4294967296]) {
+    const normalized = normalizeDiagnosticSettings({ instructionLimit });
+    assert.equal(normalized.ok, false);
+    assert.equal(normalized.diagnostic.kind, "ui-error");
+    assert.equal(normalized.diagnostic.code, "invalid-instruction-limit-setting");
+    assert.equal(normalized.diagnostic.setting, "instructionLimit");
+  }
+});
+
 test("invalid memory range setting returns ui-error diagnostic", () => {
   const normalized = normalizeDiagnosticSettings({ memoryRange: "future-provenance-mode" });
   assert.equal(normalized.ok, false);
@@ -228,7 +244,8 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
     memoryRange: 5,
@@ -237,6 +254,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     compatibilityNotices: 0,
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
-    startupStateSeed: 0
+    startupStateSeed: 0,
+    instructionLimit: 1000000
   });
 });

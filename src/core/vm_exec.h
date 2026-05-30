@@ -5,9 +5,10 @@
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, and Irvine32 exit forms
- * over the currently supported register and memory operand shapes. Control
- * flow, stack behavior, non-exit Irvine32 routines, and resource watchdogs
- * remain later milestones.
+ * over the currently supported register and memory operand shapes. Phase 59
+ * source-run code layers an instruction-count watchdog over this executor.
+ * Control flow, stack behavior, and non-exit Irvine32 routines remain later
+ * milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -55,7 +56,9 @@ typedef enum VmExecStatus {
     /// Operation stopped because a division quotient does not fit the destination register.
     VM_EXEC_STATUS_QUOTIENT_OVERFLOW,
     /// Operation stopped before consuming an architecturally undefined modeled flag.
-    VM_EXEC_STATUS_UNDEFINED_FLAG_USE
+    VM_EXEC_STATUS_UNDEFINED_FLAG_USE,
+    /// Source-run execution stopped before fetching the next instruction because the configured instruction limit was reached.
+    VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED
 } VmExecStatus;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.

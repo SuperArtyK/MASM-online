@@ -520,6 +520,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_section_capacity_validation = 0;
     int has_section_image_validation = 0;
     int has_const_uninitialized_storage_policy = 0;
+    uint32_t instruction_limit = 0U;
+    int has_instruction_limit = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -534,8 +536,13 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_STARTUP_STATE_SEED", &startup_state_seed, &has_startup_state_seed) != 0) {
         return 1;
     }
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT", &instruction_limit, &has_instruction_limit) != 0) {
+        return 1;
+    }
 
-    if (has_startup_register_flag_mode || has_uninitialized_storage_visible_byte_mode || has_startup_state_seed) {
+    if (has_instruction_limit) {
+        json = masm32_sim_wasm_run_source_json_with_instruction_limit(source, instruction_limit);
+    } else if (has_startup_register_flag_mode || has_uninitialized_storage_visible_byte_mode || has_startup_state_seed) {
         if (!diagnostic_json_producer_get_startup_state_notice_setting(&startup_state_notice_setting)) {
             startup_state_notice_setting = MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON;
         }

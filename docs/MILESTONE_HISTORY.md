@@ -12,13 +12,13 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 58:
+Current status at Phase 59:
 
 Repository/archive milestone:
-Phase 58 - Code Label Table and Label Diagnostics
+Phase 59 - Control-Flow Instruction Limit
 
 Runtime/source-run MASM behavior phase:
-Phase 58 - Code Label Table and Label Diagnostics: Code labels and procedure-entry labels are accepted as parser/source metadata. Duplicate or conflicting labels produce structured Simulator Messages diagnostics. Labels do not execute, do not create IR instructions, and do not add branch behavior.
+Phase 59 - Control-Flow Instruction Limit: Source-run/test-facing callers may use `instructionLimit` to enforce a deterministic executed-instruction watchdog. Limit failures emit `instruction-limit-exceeded` and preserve state from completed instructions. Labels remain parser/source metadata only; they do not execute, do not create IR instructions, and do not add branch behavior.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -84,13 +84,14 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57Q recognizes `INCLUDELIB` library directive tails, emits linker/import-library non-goal diagnostics instead of generic parser or lexer diagnostics, does not implement library loading, object files, imports, PE loading, a linker, WinAPI execution, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57Q.
 - Phase 57R adds unsupported `INVOKE`, `ADDR`, MASM32 runtime-style, CRT-style, and WinAPI/external routine diagnostics, refuses execution for those source lines, preserves virtual Irvine32 `exit`, does not implement invocation lowering, stack setup, calling conventions, WinAPI, CRT, MASM32 runtime, PE, linker, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57R.
 - Phase 57S adds targeted unsupported high-level MASM flow diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE`, suppresses safe body cascades, and advances runtime/source-run MASM behavior metadata to Phase 57S.
+- Phase 59 adds a source-run/test-facing executed-instruction watchdog through `instructionLimit`, emits `instruction-limit-exceeded`, and advances runtime/source-run MASM behavior metadata to Phase 59.
 - Phase 58 adds ordinary and procedure-entry code-label metadata, duplicate/conflict label diagnostics, and runtime/source-run MASM behavior metadata advancement to Phase 58 while preserving future branch/procedure behavior as unsupported.
 - Phase 57T adds realistic MASM32 playground-program diagnostic-recovery smoke fixtures and documentation while preserving runtime/source-run MASM behavior metadata at Phase 57S.
 
 
-## Phase 58 - Code Label Table and Label Diagnostics
+## Phase 59 - Control-Flow Instruction Limit
 
-Phase 58 adds a code-label table and label diagnostics. Ordinary labels such as `start:` and procedure-entry labels such as `main PROC` are accepted as parser/source metadata, including no-executable-target labels. Labels do not execute, do not create IR instructions, and do not change straight-line runtime behavior. Duplicate or conflicting labels now produce structured Simulator Messages diagnostics. Phase 58 does not implement branch parsing, branch execution, `jmp`, conditional jumps, `loop`, `call`, `ret`, stack behavior, procedure invocation, or debugger/UI label navigation.
+Phase 59 adds deterministic executed-instruction limit enforcement through the source-run/test-facing `instructionLimit` setting. Runs count completed VM instructions rather than source lines or labels. If the configured limit has been reached and another instruction would be fetched, execution stops before the next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`. Source-run JSON reports `instructionLimit`, `executedInstructionCount`, `attemptedNextInstructionIndex`, and `currentInstructionIndex`. Phase 59 does not implement branch parsing, branch execution, `jmp`, conditional jumps, `loop`, `call`, `ret`, stack behavior, procedure invocation, debugger stepping, breakpoints, or browser UI controls for the limit.
 
 ## Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
 

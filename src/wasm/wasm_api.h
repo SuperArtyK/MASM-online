@@ -144,6 +144,48 @@ int masm32_sim_wasm_milestone4_hardcoded_result(void);
 /// @return Pointer to a null-terminated JSON result string.
 const char *masm32_sim_wasm_run_source_json(const char *source);
 
+/// Parses and executes source with an explicit Phase 59 instruction-count limit.
+///
+/// This source-run/test-facing helper selects the same defaults as
+/// @ref masm32_sim_wasm_run_source_json while overriding the maximum number of
+/// VM instructions that may execute. The limit must be positive.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param instruction_limit Positive maximum executed-VM-instruction count.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_instruction_limit(
+    const char *source,
+    uint32_t instruction_limit
+);
+
+/// Parses and executes source using diagnostics, startup settings, and an instruction limit.
+///
+/// This Phase 59 browser/test-facing export extends the Phase 57G settings
+/// export with the source-run option named `instructionLimit`. Browser UI code
+/// may continue to use the default limit when no explicit setting is supplied.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Phase 57G visible-byte startup mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param instruction_limit Positive maximum executed-VM-instruction count.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_and_instruction_limit_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit
+);
+
 /// Parses and executes source using Phase 53E browser diagnostic settings.
 ///
 /// This browser-facing export maps structured UI settings to already-existing

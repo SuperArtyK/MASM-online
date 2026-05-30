@@ -1,10 +1,14 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 58 - Code Label Table and Label Diagnostics
+Phase 59 - Control-Flow Instruction Limit
 
 Runtime/source-run MASM behavior phase:
-Phase 58 - Code Label Table and Label Diagnostics: The simulator currently accepts code labels such as `start:` and procedure-entry labels such as `main PROC` as parser/source metadata. Labels do not execute, do not create IR instructions, and do not add branch behavior. Duplicate or conflicting labels produce structured Simulator Messages diagnostics.
+Phase 59 - Control-Flow Instruction Limit: The simulator enforces a source-run/test-facing executed-instruction watchdog through `instructionLimit`. Labels remain parser/source metadata only: they do not execute, do not create IR instructions, and do not add branch behavior. Duplicate or conflicting labels produce structured Simulator Messages diagnostics.
+
+### Execution limits
+
+Source-run and test-facing callers may set `instructionLimit` to a positive integer. When omitted, the default limit is 1,000,000 executed VM instructions. The simulator counts completed VM instructions, not source lines or labels. If the limit has been reached and another instruction would be fetched, execution stops before that next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`.
 
 ### Code labels
 

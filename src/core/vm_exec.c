@@ -3174,6 +3174,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "quotient-overflow";
         case VM_EXEC_STATUS_UNDEFINED_FLAG_USE:
             return "undefined-flag-use";
+        case VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED:
+            return "instruction-limit-exceeded";
         default:
             return NULL;
     }

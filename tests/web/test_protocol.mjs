@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 58);
+  assert.equal(IMPLEMENTED_PHASE, 59);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 58 - Code Label Table and Label Diagnostics");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 59 - Control-Flow Instruction Limit");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 58,
+      phase: 59,
       phaseSuffix: "",
-      phaseName: "Phase 58 - Code Label Table and Label Diagnostics"
+      phaseName: "Phase 59 - Control-Flow Instruction Limit"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 58,
+      phase: 59,
       phaseSuffix: "",
-      phaseName: "Phase 58 - Code Label Table and Label Diagnostics"
+      phaseName: "Phase 59 - Control-Flow Instruction Limit"
     }
   });
 });
@@ -98,7 +98,8 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           compatibilityNotices: 1,
           startupRegisterFlagMode: 0,
           uninitializedStorageVisibleByteMode: 0,
-          startupStateSeed: 0
+          startupStateSeed: 0,
+          instructionLimit: 1000000
         });
         return {
           ok: true,
@@ -133,7 +134,8 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
           memoryRange: MEMORY_RANGE_DECLARED_OBJECT_WARN,
           uninitializedReads: TEACHING_DIAGNOSTIC_OFF,
           undefinedFlagUse: TEACHING_DIAGNOSTIC_STRICT,
-          compatibilityNotices: COMPATIBILITY_NOTICES_OFF
+          compatibilityNotices: COMPATIBILITY_NOTICES_OFF,
+          instructionLimit: 42
         }
       }
     },
@@ -147,7 +149,8 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
           compatibilityNotices: 0,
           startupRegisterFlagMode: 0,
           uninitializedStorageVisibleByteMode: 0,
-          startupStateSeed: 0
+          startupStateSeed: 0,
+          instructionLimit: 42
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -180,7 +183,8 @@ test("RUN_SOURCE dispatches Phase 57F startup settings to runtime", () => {
           compatibilityNotices: 1,
           startupRegisterFlagMode: 1,
           uninitializedStorageVisibleByteMode: 0,
-          startupStateSeed: 123456789
+          startupStateSeed: 123456789,
+          instructionLimit: 1000000
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -213,7 +217,8 @@ test("RUN_SOURCE dispatches Phase 57G uninitialized-storage startup settings to 
           compatibilityNotices: 1,
           startupRegisterFlagMode: 0,
           uninitializedStorageVisibleByteMode: 1,
-          startupStateSeed: 123456789
+          startupStateSeed: 123456789,
+          instructionLimit: 1000000
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -274,6 +279,32 @@ test("RUN_SOURCE invalid diagnostic setting returns renderable ui-error", () => 
   assert.equal(response.payload.simulatorMessages[0].setting, "undefinedFlagUse");
 });
 
+test("RUN_SOURCE invalid instructionLimit setting returns renderable ui-error", () => {
+  for (const instructionLimit of [0, -1, 2.5, "2", 4294967296]) {
+    const response = handleWorkerRequest(
+      {
+        type: "RUN_SOURCE",
+        payload: {
+          source: ".code\nmain PROC\nEND main\n",
+          diagnosticSettings: { instructionLimit }
+        }
+      },
+      {
+        runSource() {
+          throw new Error("runtime should not be called for invalid instruction limits");
+        }
+      }
+    );
+
+    assert.equal(response.type, "RUN_RESULT");
+    assert.equal(response.payload.ok, false);
+    assert.equal(response.payload.status, "ui-error");
+    assert.equal(response.payload.simulatorMessages[0].kind, "ui-error");
+    assert.equal(response.payload.simulatorMessages[0].code, "invalid-instruction-limit-setting");
+    assert.equal(response.payload.simulatorMessages[0].setting, "instructionLimit");
+  }
+});
+
 test("RUN_SOURCE marks stale Wasm artifacts", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: "COUNT = 4 * 3" } },
@@ -295,12 +326,12 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 58 - Code Label Table and Label Diagnostics. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 59 - Control-Flow Instruction Limit. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 
-test("RUN_SOURCE marks stale Phase 58 artifacts without the expected suffix as stale", () => {
+test("RUN_SOURCE marks stale Phase 59 artifacts without the expected suffix as stale", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {

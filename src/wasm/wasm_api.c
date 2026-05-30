@@ -71,13 +71,19 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 58U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 59U
 
-/// Suffix for the current Phase 58 runtime/source-run behavior phase.
+/// Suffix for the current Phase 59 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 58 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 58 - Code Label Table and Label Diagnostics"
+/// Full name of the current Phase 59 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 59 - Control-Flow Instruction Limit"
+
+/// Default maximum number of VM instructions a source-run request may execute.
+#define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
+
+/// Largest accepted test-facing instruction-limit value.
+#define MASM32_SIM_WASM_MAX_INSTRUCTION_LIMIT UINT32_MAX
 
 /// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
@@ -423,6 +429,30 @@ typedef struct Masm32SimWasmRunStorage {
     VmFlagUseDiagnostic flag_use_violation;
     /// Whether @ref flag_use_violation contains a fatal consumer diagnostic.
     bool has_flag_use_violation;
+    /// Configured Phase 59 source-run instruction-count limit.
+    uint32_t instruction_limit;
+    /// Number of VM instructions fully executed and committed for this run.
+    uint64_t executed_instruction_count;
+    /// Instruction index that would have been fetched after the limit was reached.
+    uint32_t attempted_next_instruction_index;
+    /// Whether @ref attempted_next_instruction_index contains valid limit-failure metadata.
+    bool has_attempted_next_instruction_index;
+    /// Last fully executed instruction index for source-run accounting.
+    uint32_t current_instruction_index;
+    /// Whether @ref current_instruction_index contains a valid instruction index.
+    bool has_current_instruction_index;
+    /// Whether Phase 59 instruction-limit enforcement stopped this run.
+    bool has_instruction_limit_violation;
+    /// Source line for the blocked instruction-limit diagnostic.
+    uint32_t instruction_limit_line;
+    /// Source column for the blocked instruction-limit diagnostic.
+    uint32_t instruction_limit_column;
+    /// Source byte offset for the blocked instruction-limit diagnostic.
+    size_t instruction_limit_byte_offset;
+    /// Source span length for the blocked instruction-limit diagnostic.
+    size_t instruction_limit_span_length;
+    /// Whether source-span metadata is available for the blocked instruction.
+    bool instruction_limit_has_source_span;
     /// Original source text for calculating runtime diagnostic source spans.
     const char *source_text;
     /// Copied source text retained by IR instruction metadata.
@@ -816,6 +846,63 @@ static const char *masm32_sim_wasm_build_invalid_startup_setting_json(
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME
+        );
+    }
+
+    return g_masm32_sim_wasm_run_json;
+}
+
+
+/// Builds a renderable invalid instruction-limit setting JSON result.
+///
+/// @param instruction_limit Invalid limit value supplied by the caller.
+/// @return Pointer to the static JSON response buffer.
+static const char *masm32_sim_wasm_build_invalid_instruction_limit_json(uint32_t instruction_limit) {
+    Masm32SimJsonWriter writer;
+    const char *accepted_values = "positive integer from 1 to 4294967295";
+    char message[192];
+
+    (void)snprintf(
+        message,
+        sizeof(message),
+        "Invalid source-run setting 'instructionLimit'. Accepted values: %s.",
+        accepted_values
+    );
+
+    memset(g_masm32_sim_wasm_run_json, 0, sizeof(g_masm32_sim_wasm_run_json));
+    writer.buffer = g_masm32_sim_wasm_run_json;
+    writer.capacity = sizeof(g_masm32_sim_wasm_run_json);
+    writer.length = 0U;
+    writer.overflowed = false;
+
+    (void)masm32_sim_json_append(
+        &writer,
+        "{\"phase\":%u,\"phaseSuffix\":",
+        (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER
+    );
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX);
+    (void)masm32_sim_json_append(&writer, ",\"phaseName\":");
+    (void)masm32_sim_json_append_string(&writer, MASM32_SIM_WASM_RUNTIME_PHASE_NAME);
+    (void)masm32_sim_json_append(
+        &writer,
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"simulatorMessages\":[",
+        (unsigned int)instruction_limit
+    );
+    (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-instruction-limit-setting", message, 0U, 0U);
+    (void)masm32_sim_json_append(&writer, "],\"invalidSetting\":{");
+    (void)masm32_sim_json_append(&writer, "\"setting\":\"instructionLimit\",\"value\":%u,\"acceptedValues\":", (unsigned int)instruction_limit);
+    (void)masm32_sim_json_append_string(&writer, accepted_values);
+    (void)masm32_sim_json_append(&writer, "}}");
+
+    if (writer.overflowed) {
+        (void)snprintf(
+            g_masm32_sim_wasm_run_json,
+            sizeof(g_masm32_sim_wasm_run_json),
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
+            MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
+            MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
+            (unsigned int)instruction_limit
         );
     }
 
@@ -5050,6 +5137,113 @@ static bool masm32_sim_json_append_uninitialized_metadata(
     return masm32_sim_json_append(writer, "]}");
 }
 
+/// Appends Phase 59 instruction-limit accounting fields to a source-run JSON response.
+///
+/// @param writer Writer to mutate.
+/// @param vm VM whose execution counters should be inspected, if available.
+/// @param storage Source-run storage containing configured limit and limit-failure metadata.
+/// @return true when all fields fit without overflowing the buffer.
+static bool masm32_sim_json_append_instruction_limit_metadata(
+    Masm32SimJsonWriter *writer,
+    const Vm *vm,
+    const Masm32SimWasmRunStorage *storage
+) {
+    uint32_t instruction_limit = storage != NULL && storage->instruction_limit != 0U
+        ? storage->instruction_limit
+        : (uint32_t)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT;
+    uint64_t executed_count = vm != NULL ? vm->instruction_count : 0U;
+    bool has_current_index = false;
+    uint32_t current_index = 0U;
+
+    if (storage != NULL && storage->has_instruction_limit_violation) {
+        executed_count = storage->executed_instruction_count;
+        has_current_index = storage->has_current_instruction_index;
+        current_index = storage->current_instruction_index;
+    } else if (vm != NULL && vm->program != NULL && vm->instruction_count > 0U && vm->instruction_pointer > 0U && (vm->instruction_pointer - 1U) < vm->program_count) {
+        current_index = vm->program[vm->instruction_pointer - 1U].instruction_index;
+        has_current_index = true;
+    }
+
+    if (!masm32_sim_json_append(
+            writer,
+            "\"instructionLimit\":%u,\"executedInstructionCount\":%llu,\"attemptedNextInstructionIndex\":",
+            (unsigned int)instruction_limit,
+            (unsigned long long)executed_count
+        )) {
+        return false;
+    }
+
+    if (storage != NULL && storage->has_attempted_next_instruction_index) {
+        if (!masm32_sim_json_append(writer, "%u", (unsigned int)storage->attempted_next_instruction_index)) {
+            return false;
+        }
+    } else if (!masm32_sim_json_append(writer, "null")) {
+        return false;
+    }
+
+    if (!masm32_sim_json_append(writer, ",\"currentInstructionIndex\":")) {
+        return false;
+    }
+    if (has_current_index) {
+        if (!masm32_sim_json_append(writer, "%u", (unsigned int)current_index)) {
+            return false;
+        }
+    } else if (!masm32_sim_json_append(writer, "null")) {
+        return false;
+    }
+
+    return masm32_sim_json_append(writer, ",");
+}
+
+/// Appends the Phase 59 instruction-limit failure diagnostic.
+///
+/// @param writer Writer to mutate.
+/// @param storage Source-run storage containing limit-failure metadata.
+/// @return true when the diagnostic fit without overflowing the buffer.
+static bool masm32_sim_json_append_instruction_limit_violation(
+    Masm32SimJsonWriter *writer,
+    const Masm32SimWasmRunStorage *storage
+) {
+    char message[256];
+
+    if (storage == NULL) {
+        return masm32_sim_json_append_message_with_span(
+            writer,
+            "runtime-error",
+            "instruction-limit-exceeded",
+            "Execution stopped because the configured instruction limit was reached.",
+            0U,
+            0U,
+            0U,
+            0U,
+            false
+        );
+    }
+
+    const uint64_t display_instruction_number =
+        (uint64_t)storage->attempted_next_instruction_index + 1ULL;
+
+    (void)snprintf(
+        message,
+        sizeof(message),
+        "Instruction limit exceeded: attempted to execute instruction #%llu (limit: %u). Program stopped before executing that instruction.",
+        (unsigned long long)display_instruction_number,
+        (unsigned int)storage->instruction_limit
+    );
+
+    return masm32_sim_json_append_message_with_span(
+        writer,
+        "runtime-error",
+        "instruction-limit-exceeded",
+        message,
+        storage->instruction_limit_line,
+        storage->instruction_limit_column,
+        storage->instruction_limit_byte_offset,
+        storage->instruction_limit_span_length,
+        storage->instruction_limit_has_source_span
+    );
+}
+
 /// Builds a full JSON response into the static source-run buffer.
 ///
 /// @param outcome High-level result outcome.
@@ -5100,6 +5294,7 @@ static const char *masm32_sim_wasm_build_run_json(
     (void)masm32_sim_json_append(&writer, ",\"ok\":%s,\"status\":", ok ? "true" : "false");
     (void)masm32_sim_json_append_string(&writer, masm32_sim_wasm_run_outcome_name(outcome));
     (void)masm32_sim_json_append(&writer, ",\"instructionCount\":%llu,", (unsigned long long)instruction_count);
+    (void)masm32_sim_json_append_instruction_limit_metadata(&writer, vm, storage);
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
     (void)masm32_sim_json_append(
         &writer,
@@ -5185,6 +5380,8 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_shift_violation(&writer, &storage->shift_violation);
         } else if (storage != NULL && storage->has_flag_use_violation) {
             (void)masm32_sim_json_append_flag_use_violation(&writer, &storage->flag_use_violation);
+        } else if (storage != NULL && storage->has_instruction_limit_violation) {
+            (void)masm32_sim_json_append_instruction_limit_violation(&writer, storage);
         } else {
             (void)masm32_sim_json_append_exec_message(&writer, vm != NULL ? vm_last_diagnostic(vm) : NULL, exec_status);
         }
@@ -5211,7 +5408,13 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":57,\"phaseSuffix\":\"F\",\"phaseName\":\"Phase 57F - Seeded Random Register and Flag Startup Mode\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}"
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"executedInstructionCount\":0,\"attemptedNextInstructionIndex\":null,\"currentInstructionIndex\":null,\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
+            MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
+            MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
+            storage != NULL && storage->instruction_limit != 0U
+                ? (unsigned int)storage->instruction_limit
+                : (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT
         );
     }
 
@@ -5678,6 +5881,65 @@ static bool masm32_sim_wasm_build_declared_object_map(
     return status == VM_OBJECT_MAP_STATUS_OK;
 }
 
+/// Updates Phase 59 instruction accounting metadata from the current VM state.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM whose execution state should be copied.
+static void masm32_sim_wasm_update_instruction_accounting(Masm32SimWasmRunStorage *storage, const Vm *vm) {
+    if (storage == NULL || vm == NULL) {
+        return;
+    }
+
+    storage->executed_instruction_count = vm->instruction_count;
+    if (vm->program != NULL && vm->instruction_count > 0U && vm->instruction_pointer > 0U && (vm->instruction_pointer - 1U) < vm->program_count) {
+        storage->current_instruction_index = vm->program[vm->instruction_pointer - 1U].instruction_index;
+        storage->has_current_instruction_index = true;
+    } else {
+        storage->has_current_instruction_index = false;
+    }
+}
+
+/// Enforces the Phase 59 instruction-count limit before fetching the next instruction.
+///
+/// @param storage Source-run storage to mutate with diagnostic metadata.
+/// @param vm VM whose next instruction would be fetched.
+/// @param instruction_limit Positive maximum number of VM instructions to execute.
+/// @return OK when execution may continue, or INSTRUCTION_LIMIT_EXCEEDED before the next instruction fetch.
+static VmExecStatus masm32_sim_wasm_validate_instruction_limit_before_step(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    uint32_t instruction_limit
+) {
+    const VmIrInstruction *instruction = NULL;
+
+    if (storage == NULL || vm == NULL || vm->halted || vm->instruction_pointer >= vm->program_count || vm->program == NULL) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    storage->instruction_limit = instruction_limit;
+    masm32_sim_wasm_update_instruction_accounting(storage, vm);
+    if (vm->instruction_count < (uint64_t)instruction_limit) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    instruction = &vm->program[vm->instruction_pointer];
+    storage->has_instruction_limit_violation = true;
+    storage->attempted_next_instruction_index = instruction->instruction_index;
+    storage->has_attempted_next_instruction_index = true;
+    storage->executed_instruction_count = vm->instruction_count;
+    masm32_sim_wasm_copy_instruction_source_span(
+        instruction,
+        storage->source_text,
+        &storage->instruction_limit_column,
+        &storage->instruction_limit_byte_offset,
+        &storage->instruction_limit_span_length,
+        &storage->instruction_limit_has_source_span
+    );
+    storage->instruction_limit_line = instruction->source_line;
+
+    return VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED;
+}
+
 /// Parses, optionally applies policy-selected layout, and executes source.
 ///
 /// @param source Source text to run.
@@ -5694,6 +5956,7 @@ static bool masm32_sim_wasm_build_declared_object_map(
 /// @param startup_register_flag_mode Phase 57F register/flag startup mode.
 /// @param uninitialized_storage_visible_byte_mode Phase 57G uninitialized-storage visible-byte mode.
 /// @param startup_state_seed Deterministic shared startup seed.
+/// @param instruction_limit Positive Phase 59 source-run instruction-count limit.
 /// @param include_uninitialized_metadata Whether to include test-only initialization metadata.
 /// @return Pointer to the static JSON result buffer.
 static const char *masm32_sim_wasm_run_source_json_internal(
@@ -5712,6 +5975,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
     Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
     uint32_t startup_state_seed,
+    uint32_t instruction_limit,
     bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
@@ -5745,6 +6009,10 @@ static const char *masm32_sim_wasm_run_source_json_internal(
         );
     }
 
+    if (instruction_limit == 0U) {
+        return masm32_sim_wasm_build_invalid_instruction_limit_json(instruction_limit);
+    }
+
     if (source == NULL) {
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
     }
@@ -5758,6 +6026,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     memset(&layout_diagnostic, 0, sizeof(layout_diagnostic));
     memset(&layout_message, 0, sizeof(layout_message));
     g_masm32_sim_wasm_run_storage.source_text = source;
+    g_masm32_sim_wasm_run_storage.instruction_limit = instruction_limit;
 
     config.source = source;
     config.source_file = "main.asm";
@@ -5884,6 +6153,15 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+        exec_status = masm32_sim_wasm_validate_instruction_limit_before_step(
+            &g_masm32_sim_wasm_run_storage,
+            &vm,
+            instruction_limit
+        );
+        if (exec_status != VM_EXEC_STATUS_OK) {
+            break;
+        }
+
         exec_status = masm32_sim_wasm_validate_section_accesses_before_step(
             &g_masm32_sim_wasm_run_storage,
             &vm,
@@ -5938,6 +6216,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             }
         }
     }
+
+    masm32_sim_wasm_update_instruction_accounting(&g_masm32_sim_wasm_run_storage, &vm);
 
     if (exec_status == VM_EXEC_STATUS_HALTED) {
         exec_status = VM_EXEC_STATUS_OK;
@@ -6258,15 +6538,22 @@ static VmDiagnosticPolicyValue masm32_sim_wasm_default_const_uninitialized_stora
 }
 
 MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, false);
+}
+
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_instruction_limit(
+    const char *source,
+    uint32_t instruction_limit
+) {
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), masm32_sim_wasm_default_startup_state_notice_setting(), MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, instruction_limit, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_automatic_layout_policy(const char *source, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_AUTOMATIC, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_randomized_layout_policy(const char *source, VmLayoutMode randomized_mode, const VmLayoutPolicy *base_policy) {
-    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, false);
+    return masm32_sim_wasm_run_source_json_internal(source, randomized_mode, base_policy, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, false);
 }
 
 /// Returns whether a Phase 53E memory range setting enum value is accepted.
@@ -6441,6 +6728,7 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_and_startu
         startup_register_flag_mode,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         startup_state_seed,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6503,6 +6791,70 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_and_startu
         startup_register_flag_mode,
         uninitialized_storage_visible_byte_mode,
         startup_state_seed,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
+        false
+    );
+}
+
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_and_instruction_limit_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit
+) {
+    Masm32SimWasmMemoryValidationMode object_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    Masm32SimWasmMemoryValidationMode uninitialized_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+    Masm32SimWasmSectionValidationPolicy capacity_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+
+    {
+        VmDiagnosticPolicyValue compatibility_notice_value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+        if (!masm32_sim_wasm_map_memory_range_setting(memory_range_setting, &object_validation_mode, &capacity_policy, &image_policy) ||
+            !masm32_sim_wasm_map_uninitialized_read_setting(uninitialized_read_setting, &uninitialized_validation_mode) ||
+            !masm32_sim_wasm_map_undefined_flag_use_setting(undefined_flag_use_setting, &flag_use_policy) ||
+            !masm32_sim_wasm_map_compatibility_setting_to_policy_value(compatibility_notice_setting, &compatibility_notice_value) ||
+            !masm32_sim_wasm_map_compatibility_notice_policy_value(compatibility_notice_value, &compatibility_notice_setting)) {
+            return masm32_sim_wasm_build_run_json(
+                MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                VM_EXEC_STATUS_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                false,
+                false,
+                MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+                MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO
+            );
+        }
+    }
+
+    return masm32_sim_wasm_run_source_json_internal(
+        source,
+        VM_LAYOUT_MODE_FIXED,
+        NULL,
+        object_validation_mode,
+        uninitialized_validation_mode,
+        capacity_policy,
+        image_policy,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        flag_use_policy,
+        compatibility_notice_setting,
+        masm32_sim_wasm_default_const_uninitialized_storage_policy(),
+        masm32_sim_wasm_default_startup_state_notice_setting(),
+        startup_register_flag_mode,
+        uninitialized_storage_visible_byte_mode,
+        startup_state_seed,
+        instruction_limit,
         false
     );
 }
@@ -6544,6 +6896,7 @@ const char *masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         0U,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6586,6 +6939,7 @@ const char *masm32_sim_wasm_run_source_json_with_startup_modes(
         startup_register_flag_mode,
         uninitialized_storage_visible_byte_mode,
         startup_state_seed,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6602,7 +6956,7 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
@@ -6614,7 +6968,7 @@ const char *masm32_sim_wasm_run_source_json_with_shift_validation_mode(
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, false, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, false);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, masm32_sim_wasm_default_uninitialized_read_mode(), MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, shift_mode, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, false);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
@@ -6643,6 +6997,7 @@ const char *masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         0U,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6697,6 +7052,7 @@ const char *masm32_sim_wasm_run_source_json_with_section_validation_modes(
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         0U,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6730,6 +7086,7 @@ const char *masm32_sim_wasm_run_source_json_with_automatic_layout_and_section_va
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         0U,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6774,6 +7131,7 @@ const char *masm32_sim_wasm_run_source_json_with_const_uninitialized_storage_pol
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
         0U,
+        MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT,
         false
     );
 }
@@ -6790,11 +7148,11 @@ const char *masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitial
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, true, false, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO);
     }
 
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, validation_mode, validation_mode, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, masm32_sim_wasm_default_undefined_flag_use_policy(), masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, true);
 }
 
 const char *masm32_sim_wasm_run_source_json_with_uninitialized_metadata(const char *source) {
-    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, true);
+    return masm32_sim_wasm_run_source_json_internal(source, VM_LAYOUT_MODE_FIXED, NULL, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SECTION_VALIDATION_OFF, MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS, MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF, masm32_sim_wasm_default_compatibility_notice_setting(), masm32_sim_wasm_default_const_uninitialized_storage_policy(), MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF, MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO, MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO, 0U, MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT, true);
 }
 
 MASM32_SIM_EXPORT int masm32_sim_wasm_copy_version(char *out_buffer, unsigned long out_buffer_size) {

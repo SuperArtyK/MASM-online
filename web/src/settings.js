@@ -4,7 +4,9 @@
  *
  * Phase 53E exposes already-implemented backend validation and teaching
  * diagnostic policies through structured browser settings. Phases 57F and 57G
- * add test/protocol-facing startup settings without adding browser UI controls.
+ * add test/protocol-facing startup settings, and Phase 59 adds the
+ * test/protocol-facing instructionLimit setting, without adding browser UI
+ * controls.
  * This module keeps the accepted string values, defaults, and
  * Wasm argument mapping in one place so the main thread, worker protocol,
  * and Node tests use the same rules.
@@ -47,8 +49,13 @@ export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO = "zero";
 /** Phase 57G deterministic seeded uninitialized-storage visible-byte startup option. */
 export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM = "seeded-random";
 
-/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number}} DiagnosticSettings */
-/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number}} BackendDiagnosticSettings */
+/** Default Phase 59 source-run instruction-count limit. */
+export const DEFAULT_INSTRUCTION_LIMIT = 1000000;
+/** Maximum accepted Phase 59 source-run instruction-count limit. */
+export const MAX_INSTRUCTION_LIMIT = 0xFFFFFFFF;
+
+/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number}} DiagnosticSettings */
+/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number}} BackendDiagnosticSettings */
 
 /** Default browser diagnostic and Phase 57F/57G startup settings. */
 export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
@@ -58,7 +65,8 @@ export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
   compatibilityNotices: COMPATIBILITY_NOTICES_ON,
   startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
   uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
-  startupStateSeed: 0
+  startupStateSeed: 0,
+  instructionLimit: DEFAULT_INSTRUCTION_LIMIT
 });
 
 /** Accepted memory range setting values. */
@@ -181,6 +189,24 @@ function createInvalidStartupSettingDiagnostic(field, value, acceptedValues) {
 }
 
 /**
+ * Creates a structured UI diagnostic for an invalid Phase 59 instruction limit.
+ *
+ * @param {unknown} value Invalid value supplied by the caller.
+ * @returns {{kind: string, code: string, message: string, setting: string, value: unknown, acceptedValues: string[]}} Structured UI diagnostic.
+ */
+function createInvalidInstructionLimitDiagnostic(value) {
+  const acceptedValues = ["positive integer from 1 to 4294967295"];
+  return {
+    kind: "ui-error",
+    code: "invalid-instruction-limit-setting",
+    message: `Invalid source-run setting 'instructionLimit'. Accepted values: ${acceptedValues.join(", ")}.`,
+    setting: "instructionLimit",
+    value,
+    acceptedValues
+  };
+}
+
+/**
  * Validates and normalizes one setting field.
  *
  * @param {Record<string, unknown>} source Source settings object.
@@ -224,6 +250,27 @@ function normalizeStartupStateSeed(source) {
 }
 
 /**
+ * Normalizes the Phase 59 source-run instruction-count limit.
+ *
+ * @param {Record<string, unknown>} source Source settings object.
+ * @returns {{ok: true, value: number} | {ok: false, diagnostic: ReturnType<typeof createInvalidInstructionLimitDiagnostic>}} Normalization result.
+ */
+function normalizeInstructionLimit(source) {
+  const value = Object.prototype.hasOwnProperty.call(source, "instructionLimit")
+    ? source.instructionLimit
+    : DEFAULT_DIAGNOSTIC_SETTINGS.instructionLimit;
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > MAX_INSTRUCTION_LIMIT) {
+    return {
+      ok: false,
+      diagnostic: createInvalidInstructionLimitDiagnostic(value)
+    };
+  }
+
+  return { ok: true, value };
+}
+
+/**
  * Reads diagnostic settings from browser select controls.
  *
  * Collapsed panels keep their controls in the DOM, so hidden presentation state
@@ -249,7 +296,8 @@ export function readDiagnosticSettingsFromControls(
     compatibilityNotices: compatibilityNoticesControl.value || defaults.compatibilityNotices,
     startupRegisterFlagMode: defaults.startupRegisterFlagMode,
     uninitializedStorageVisibleByteMode: defaults.uninitializedStorageVisibleByteMode,
-    startupStateSeed: defaults.startupStateSeed
+    startupStateSeed: defaults.startupStateSeed,
+    instructionLimit: defaults.instructionLimit
   };
 }
 
@@ -261,7 +309,7 @@ export function readDiagnosticSettingsFromControls(
  * Simulator Messages.
  *
  * @param {unknown} settings Candidate settings from a worker RUN_SOURCE payload.
- * @returns {{ok: true, settings: DiagnosticSettings, backendSettings: BackendDiagnosticSettings} | {ok: false, diagnostic: ReturnType<typeof createInvalidSettingDiagnostic> | ReturnType<typeof createInvalidStartupSettingDiagnostic>}} Normalization result.
+ * @returns {{ok: true, settings: DiagnosticSettings, backendSettings: BackendDiagnosticSettings} | {ok: false, diagnostic: ReturnType<typeof createInvalidSettingDiagnostic> | ReturnType<typeof createInvalidStartupSettingDiagnostic> | ReturnType<typeof createInvalidInstructionLimitDiagnostic>}} Normalization result.
  */
 export function normalizeDiagnosticSettings(settings) {
   const source = settings === undefined || settings === null ? {} : settings;
@@ -313,6 +361,11 @@ export function normalizeDiagnosticSettings(settings) {
     return startupStateSeed;
   }
 
+  const instructionLimit = normalizeInstructionLimit(source);
+  if (!instructionLimit.ok) {
+    return instructionLimit;
+  }
+
   const normalizedSettings = {
     memoryRange: memoryRange.value,
     uninitializedReads: uninitializedReads.value,
@@ -320,7 +373,8 @@ export function normalizeDiagnosticSettings(settings) {
     compatibilityNotices: compatibilityNotices.value,
     startupRegisterFlagMode: startupRegisterFlagMode.value,
     uninitializedStorageVisibleByteMode: uninitializedStorageVisibleByteMode.value,
-    startupStateSeed: startupStateSeed.value
+    startupStateSeed: startupStateSeed.value,
+    instructionLimit: instructionLimit.value
   };
 
   return {
@@ -331,7 +385,7 @@ export function normalizeDiagnosticSettings(settings) {
 }
 
 /**
- * Converts normalized settings to Phase 53E diagnostic and Phase 57F/57G startup Wasm enum arguments.
+ * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, and Phase 59 instruction-limit Wasm arguments.
  *
  * @param {DiagnosticSettings} settings Normalized diagnostic settings.
  * @returns {BackendDiagnosticSettings} Integer enum values passed to the C/Wasm export.
@@ -349,6 +403,7 @@ export function diagnosticSettingsToBackendArguments(settings) {
     compatibilityNotices: BACKEND_COMPATIBILITY_NOTICES[normalized.compatibilityNotices],
     startupRegisterFlagMode: BACKEND_STARTUP_REGISTER_FLAG_MODE[normalized.startupRegisterFlagMode],
     uninitializedStorageVisibleByteMode: BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE[normalized.uninitializedStorageVisibleByteMode],
-    startupStateSeed: normalized.startupStateSeed >>> 0
+    startupStateSeed: normalized.startupStateSeed >>> 0,
+    instructionLimit: normalized.instructionLimit >>> 0
   };
 }
