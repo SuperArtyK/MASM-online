@@ -1,80 +1,32 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+Phase 58 - Code Label Table and Label Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57S - Unsupported High-Level Flow Diagnostics
+Phase 58 - Code Label Table and Label Diagnostics: The simulator currently accepts code labels such as `start:` and procedure-entry labels such as `main PROC` as parser/source metadata. Labels do not execute, do not create IR instructions, and do not add branch behavior. Duplicate or conflicting labels produce structured Simulator Messages diagnostics.
 
-Phase 57S adds clear parser/source-run diagnostics for unsupported high-level MASM flow constructs. `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` are recognized as unsupported high-level flow where encountered. They report `unsupported-high-level-if`, `unsupported-high-level-else`, `unsupported-high-level-endif`, `unsupported-high-level-while`, `unsupported-high-level-repeat`, or `unsupported-high-level-flow`; source containing these diagnostics refuses execution, emits no `execution-complete`, and does not write to Program Console. Phase 57S does not implement high-level-flow lowering, labels, branch execution, expression parsing for conditions, loop semantics, or block execution. Phase 57R `INVOKE`/`ADDR`/external-routine diagnostics, Phase 57Q `INCLUDELIB` diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+### Code labels
 
-### Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+Ordinary code labels (`name:`) and procedure-entry labels (`name PROC`) are accepted and recorded as parser/source metadata. Consecutive labels before one executable instruction target the same following instruction. Labels before `ENDP`, `END`, or another non-executable boundary are accepted as no-executable-target metadata.
 
-Phase 57T adds regression fixtures and documentation for realistic unsupported MASM32 playground programs. These fixtures verify that common host/Windows MASM32 samples produce concise Simulator Messages diagnostics for host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, external MASM32/CRT/WinAPI routines, high-level MASM flow, and still-unsupported `CALL`, `RET`, `CMP`, and conditional-jump syntax. The phase does not add executable behavior for those features; runtime/source-run MASM behavior remains Phase 57S.
+Branch consumers remain future work: `jmp label`, conditional jumps, `loop`, `call`, `ret`, and stack/procedure execution remain unsupported.
 
-### Phase 57S - Unsupported High-Level Flow Diagnostics
+### Unsupported high-level flow diagnostics
 
-High-level MASM flow constructs are recognized but not executable. The parser/source-run path reports source-located unsupported-feature diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` where they are encountered. Recognized unsupported high-level-flow blocks are skipped for recovery where safe so body instructions do not execute and do not produce unrelated cascaded diagnostics. The simulator does not lower these constructs to labels, jumps, or branches; later branch/control-flow phases own lower-level control-flow behavior.
+High-level MASM flow constructs are recognized but not executable. The parser/source-run path reports source-located unsupported-feature diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` where they are encountered. Recognized unsupported high-level-flow blocks are skipped for recovery where safe so body instructions do not execute and do not produce unrelated cascaded diagnostics. The simulator does not lower these constructs to labels, jumps, or branches.
 
-The executable arithmetic instruction subset remains implemented through Phase 57 - Signed IDIV, with later diagnostic, display, startup, and status phases layered on top.
+### Segment/group and `.code` memory diagnostics
 
-Historical infrastructure note: Milestone 32 adds fixed memory-layout policy infrastructure only; later layout, diagnostic, and startup settings build on that infrastructure without changing the current instruction subset unless their phase explicitly says so.
+The simulator executes internal IR and source metadata. It does not expose `.code` as user-readable or user-writable simulated program memory, does not emit real x86 opcode bytes, and does not model a PE `.text` image. Attempts to access `.code` through memory operands produce `unsupported-code-memory-access` or, for cross-region protected overlaps, `region-boundary-crossing`.
 
-### Phase 57M - MASM Segment and Group Symbol Diagnostics and Phase 57L `.code` memory diagnostics
+MASM segment/group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` are linker/object concepts, not aliases for simulator memory regions. They produce targeted `unsupported-segment-symbol` diagnostics where recognized.
 
-Phase 57L enforces the v1 `.code` memory access policy at runtime/source-run level. The simulator executes internal IR and source metadata. It does not expose `.code` as user-readable or user-writable simulated program memory, does not emit real x86 opcode bytes, and does not model a PE `.text` image. If an existing source form reaches a `.code` address through register-indirect or displacement memory operands after loading a `.code` address into a register, the access now fails before reading a value or mutating memory. Wholly contained `.code` reads and writes report `unsupported-code-memory-access`; cross-region `.code` overlaps report `region-boundary-crossing`. The rendered diagnostic explains that `.CODE/_TEXT` is not exposed as an accessible memory region and that the program stopped before access. This is diagnostic wording only: `_TEXT` remains an unsupported MASM/object segment symbol and is not an addressable alias for the simulator's internal `.code` region.
+### Startup and data diagnostics
 
-Phase 57M implements the MASM segment/group symbol policy with targeted `unsupported-segment-symbol` diagnostics. `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DGROUP`, and `FLAT` are MASM/object/linker concepts, not aliases for simulator regions. They must not be used to access `.code`, `.data`, `.DATA?`, `.CONST`, stack, heap, or any internal VM region. Users should declare ordinary data labels and use `OFFSET label` for simulator data addresses. Segment/group definition forms such as `_TEXT SEGMENT`, `_DATA ENDS`, and `DGROUP GROUP _DATA, _BSS` are diagnosed instead of creating simulator symbols or linker metadata. Under the default `CASEMAP:ALL`, case variants such as `_text` and `dgroup` are diagnosed as the recognized unsupported names. Under `OPTION CASEMAP:NONE`, exact recognized spellings are diagnosed, while different-case ordinary user labels such as `_text` may be used as normal data symbols.
+Default successful browser/source-run execution keeps deterministic zero-startup behavior: registers, modeled flags, and visible bytes of uninitialized storage start at zero while uninitialized-origin metadata is preserved. The `startup-state-notice` remains non-fatal and is emitted through Simulator Messages by default.
 
-### Phase 57F, Phase 57G, Phase 57I, and Phase 57J startup/data diagnostics
-
-Runtime/source-run MASM behavior phase Phase 57S preserves the independent source-run/test-facing startup settings added by Phase 57F and Phase 57G:
-
-```text
-startup_register_flag_mode = zero | seeded-random
-uninitialized_storage_visible_byte_mode = zero | seeded-random
-startup_state_seed = <u32>
-```
-
-Default successful browser/source-run execution keeps the deterministic zero-startup behavior: registers, modeled flags, and visible bytes of uninitialized storage start at zero, while uninitialized-origin metadata is preserved for code-quality diagnostics. The `startup-state-notice` remains non-fatal, is emitted only through Simulator Messages, and can be disabled through the diagnostic policy path.
-
-When `startup_register_flag_mode` is `seeded-random`, the simulator initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the currently modeled flags CF, ZF, SF, and OF from a deterministic pseudo-random stream derived from `startup_state_seed`. EIP remains zero, unmodeled EFLAGS bits remain zero, and modeled flag-validity metadata remains valid.
-
-When `uninitialized_storage_visible_byte_mode` is `seeded-random`, the simulator initializes only visible bytes of storage that still carry uninitialized-origin metadata, including `.DATA?`, scalar `?`, `DUP(?)`, and Phase 57I accepted `.CONST ?` / `.CONST DUP(?)` storage. The same source, settings, seed, and input produce the same visible bytes. Different seeds are expected to produce at least one different byte in targeted fixtures.
-
-Initialized `.data` and initialized `.CONST` bytes are not randomized. Uninitialized-origin metadata remains preserved, so reads from randomized uninitialized-origin bytes still emit uninitialized-read diagnostics according to the selected policy. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only even when seeded visible bytes are enabled. The `const-uninitialized-storage` declaration diagnostic is independent from read-time `uninitialized-read`: the default is `warn`, `off` suppresses only the declaration diagnostic, and `error` rejects execution before runtime.
-
-### Phase 57-CORR1 memory diagnostic clarification
-
-Repository/archive milestone Phase 57-CORR1 clarifies one runtime memory diagnostic without adding MASM syntax or changing the runtime/source-run MASM behavior phase.
-
-Runtime/source-run MASM behavior remains:
-
-```text
-Phase 57 - Signed IDIV
-```
-
-Diagnostic behavior clarified by Phase 57-CORR1:
-
-- a cross-region memory read or write whose requested final byte range intersects protected `.CONST` storage reports `region-boundary-crossing`;
-- the rendered message identifies the access kind, attempted address, byte count, final byte range, `.CONST`, and the runtime `.CONST` base address;
-- the `.CONST` base address in the diagnostic must come from active layout metadata and must not be hardcoded to the fixed-layout default;
-- a direct or wholly-contained write into `.CONST` remains `permission-denied`;
-- a wholly-contained read from `.CONST` remains allowed when otherwise valid;
-- unrelated cross-region failures remain ordinary Level 1 region/range diagnostics unless they intersect a known protected region;
-- the simulator still never stitches one memory access across independent VM regions.
-
-## Implemented now
-
-- Milestone 53 adds unsigned one-operand `mul` for 8-bit, 16-bit, and 32-bit register or unambiguous memory sources. It uses the implicit accumulator forms `AL * r/m8 -> AX`, `AX * r/m16 -> DX:AX`, and `EAX * r/m32 -> EDX:EAX`; updates `CF` and `OF` according to whether the upper product half is nonzero; preserves `ZF` and `SF`; and uses checked memory reads without producing memory-change rows for source-only memory operands.
-- Milestone 53A clarifies memory validation as Level 1 region-only validation by default and existing Level 4 declared-object validation for allocated-object warning/strict modes. Symbol-offset operands such as `DWORD PTR [x+1]` or `mul [x+1]` are no longer assembly errors merely because the inferred access crosses a declared object, section image, section capacity, or fixed-layout slack; final byte ranges are controlled by checked runtime memory helpers and enabled validation modes.
-- Milestone 53B implements opt-in Level 2 section-capacity and Level 3 section-image validation for local tests/source-run configuration. `warn` mode emits `section-capacity-violation` or `section-image-violation` simulator warnings and continues. `strict` mode emits the same codes as runtime errors before mutation. Default browser/source execution still leaves section-capacity and section-image validation off; no browser UI controls were added by Phase 53B.
-- Milestone 53C changes omitted/default browser source-run behavior so reads from uninitialized-origin bytes emit non-fatal `uninitialized-read` warnings and consumers of invalid modeled flags emit non-fatal `undefined-flag-use` warnings. Execution remains deterministic and continues in warning mode. Explicit region-only/off policies preserve prior silent behavior, and strict/error policies remain opt-in.
-- Milestone 53D adds default non-fatal `simulator-notice` messages for accepted MASM compatibility constructs whose real MASM behavior is no-op, metadata-only, virtual-only, or limited in the simulator. Notices do not write Program Console output and do not change execution semantics.
-- Milestone 53E adds browser UI settings for existing memory range validation, uninitialized-read diagnostics, undefined-flag-use diagnostics, and compatibility notices. Defaults remain region-only memory validation, uninitialized-read warn, undefined-flag-use warn, and compatibility notices on. The settings do not add new runtime validation semantics, new MASM syntax, or new diagnostic categories; they route to already-implemented backend policies.
-- Milestone 52A adds signed decimal interpretations to existing known-width final register and memory-change displays while preserving existing hexadecimal and unsigned decimal display. Final registers use aligned grouped rows for register families, and memory changes use aligned old/new blocks. This display-only milestone adds no accepted syntax, parser behavior, VM semantics, diagnostics, Program Console output, or Simulator Messages text.
-- Milestone 52 adds `lea` for effective-address computation into a 32-bit register. Milestone 51 added no accepted syntax and expanded aggregate local-test reporting and smoke coverage for post-30 memory, diagnostic, Irvine32 `exit`, CASEMAP, and instruction-family regressions.
-
+Source-run/test-facing settings can opt into deterministic seeded startup for general-purpose registers, modeled flags, and visible bytes of uninitialized-origin storage. Initialized `.data` and initialized `.CONST` bytes are not randomized. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only, and its declaration diagnostic is controlled separately from read-time `uninitialized-read` diagnostics.
 
 ### Sections and procedure shape
 
@@ -100,7 +52,7 @@ Supported structural forms:
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
-- Labels are accepted syntactically, but control-flow target resolution is not implemented yet.
+- Labels are accepted as parser/source metadata, but control-flow target resolution is not implemented yet.
 
 ### MASM32 header compatibility directives
 
@@ -109,9 +61,9 @@ Accepted before `.data` or `.code` as compatibility no-ops, metadata-only direct
 - `.386`, `.486`, `.586`, `.686` processor compatibility declarations.
 - `.model flat, stdcall`. Other `.model` forms report `unsupported-model`.
 - `.stack` and `.stack size`, where the optional size is stored as parser metadata. In automatic layout selected by tests/configuration, the parsed size controls stack region capacity metadata. Fixed-layout browser execution and runtime stack behavior are still deferred.
-- `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. `INCLUDE Irvine32.inc` registers known Irvine32 names as virtual metadata for classification and diagnostics. It also enables the zero-operand virtual `exit` terminator. It does not implement `call`, `ret`, ExitProcess behavior, stack behavior, Program Console routines, other Irvine32 bodies, Windows API behavior, linking, or host include loading. `INCLUDE Macros.inc` remains a virtual no-op and does not populate the Irvine32 registry. `INCLUDELIB` directives are not virtual includes and are not accepted as no-ops; they report Phase 57Q linker/library diagnostics such as `unsupported-includelib`, `unsupported-masm32-library`, or `unsupported-windows-api-library`. Basename-only unsupported include files report `unsupported-include`. Host/path-like include operands such as `include \masm32\include\masm32.inc`, `include C:\masm32\include\kernel32.inc`, `include ..\include\file.inc`, `include .\local.inc`, and `include /usr/local/include/file.inc` report Phase 57P diagnostics such as `unsupported-host-include-path`, `unsupported-masm32-library-include`, or `unsupported-windows-api-include` instead of repeated lexer path-separator errors.
+- `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. `INCLUDE Irvine32.inc` registers known Irvine32 names as virtual metadata for classification and diagnostics. It also enables the zero-operand virtual `exit` terminator. It does not implement `call`, `ret`, ExitProcess behavior, stack behavior, Program Console routines, other Irvine32 bodies, Windows API behavior, linking, or host include loading. `INCLUDE Macros.inc` remains a virtual no-op and does not populate the Irvine32 registry. `INCLUDELIB` directives are not virtual includes and are not accepted as no-ops; they report linker/library diagnostics such as `unsupported-includelib`, `unsupported-masm32-library`, or `unsupported-windows-api-library`. Basename-only unsupported include files report `unsupported-include`. Host/path-like include operands such as `include \masm32\include\masm32.inc`, `include C:\masm32\include\kernel32.inc`, `include ..\include\file.inc`, `include .\local.inc`, and `include /usr/local/include/file.inc` report host/path diagnostics such as `unsupported-host-include-path`, `unsupported-masm32-library-include`, or `unsupported-windows-api-include` instead of repeated lexer path-separator errors.
 
-Phase 57R `INVOKE` diagnostics: `INVOKE` remains unsupported and is not lowered into calls or stack arguments. `ADDR` operands remain unsupported. `StdOut` is diagnosed as an external MASM32 runtime-style routine, `crt_printf` as a C runtime routine, and `ExitProcess` as WinAPI/external process behavior outside the simulator boundary. These diagnostics are emitted through Simulator Messages, refuse execution, and do not write to Program Console.
+Unsupported `INVOKE` diagnostics: `INVOKE` remains unsupported and is not lowered into calls or stack arguments. `ADDR` operands remain unsupported. `StdOut` is diagnosed as an external MASM32 runtime-style routine, `crt_printf` as a C runtime routine, and `ExitProcess` as WinAPI/external process behavior outside the simulator boundary. These diagnostics are emitted through Simulator Messages, refuse execution, and do not write to Program Console.
 - `OPTION CASEMAP:ALL` as an explicit selection of the default user-symbol case-insensitive policy.
 - `OPTION CASEMAP:NONE` as an exact-case user-symbol policy from that directive forward.
 - `OPTION CASEMAP:NOTPUBLIC` is recognized but reports `unsupported-option` because public/external linkage semantics are not implemented.
@@ -127,27 +79,13 @@ Case policy:
 - Switching between supported CASEMAP policies emits a non-fatal `casemap-policy-changed` warning when it changes a previously selected supported policy.
 - If `CASEMAP:ALL` lookup matches multiple valid exact-case symbols created under `CASEMAP:NONE`, lookup fails with `ambiguous-symbol` rather than choosing one.
 
-Backend metadata note:
+Memory diagnostics and optional validation policies:
 
-- Milestone 36 builds a declared-object allocation map for `.data`, `.DATA?`, and `.CONST` symbols after selected layout placement. It records object address ranges, declaration metadata, permissions, source locations, and a `not-tracked` initialization-origin placeholder for later diagnostics. It does not add object-bounds warnings, strict object errors, provenance checks, uninitialized-read diagnostics, or UI memory visualization.
-- Milestone 37 adds a tests/configuration-facing allocated-object warning mode. When explicitly selected, valid-region memory accesses outside declared objects, partially overlapping object boundaries, or spanning adjacent objects emit `object-bounds-warning` simulator warnings and continue execution.
-- Milestone 38 adds a tests/configuration-facing allocated-object strict mode. When explicitly selected, the same valid-region object-boundary escapes stop execution with runtime diagnostic code `object-bounds-violation`. Accesses wholly inside another declared object remain valid. Default region-only mode emits no object warnings or strict object errors. Provenance diagnostics remain deferred. Milestone 53E exposes declared-object warning/strict validation as an optional browser memory range setting without changing default region-only behavior.
-- Milestone 39 adds uninitialized-origin byte metadata and write tracking for `.data` and `.DATA?` storage. Explicit initializer bytes start initialized; `?` and `DUP(?)` bytes start uninitialized-origin but remain deterministic zero-filled at runtime; successful writes mark only the written bytes initialized. This metadata is exposed only through test/internal inspection paths. It does not change default runtime values.
-- Milestone 40 adds tests/configuration-facing uninitialized-read warning and strict modes. Warning mode emits `uninitialized-read` simulator warnings and continues; strict mode stops before the read with runtime diagnostic code `uninitialized-read`. Milestone 53C makes omitted/default browser source-run behavior use warning mode, while explicit off preserves prior silent deterministic-zero reads. Milestone 53E exposes uninitialized-read warn/off/strict choices in the browser UI. Provenance diagnostics remain deferred.
-- Milestone 53A documents the active memory-validation levels and keeps default execution as Level 1 region-only validation. The current runtime stores `.data` and `.DATA?` together in one writable data VM region and `.CONST` in a separate read-only const VM region. The parser does not use object, section-image, or section-capacity bounds to reject otherwise valid symbol-offset memory operands; final byte-range, permission, `.CONST`, Level 4, uninitialized-read, and unaligned diagnostics are runtime concerns.
-- Milestone 53B implements Level 2 section-capacity and Level 3 section-image validation as opt-in local test/source-run policies with `off`, `warn`, and `strict` behavior. Warning mode emits `section-capacity-violation` or `section-image-violation` simulator warnings and continues. Strict mode emits the same codes as runtime errors before mutation. Default browser/source execution still leaves section-capacity, section-image, and allocated-object validation off; existing allocated-object warning/strict modes remain Level 4 declared-object validation.
-- Milestone 41 adds a parser/source-run virtual Irvine32 symbol registry. Known names such as `WriteString`, `ReadInt`, `DumpRegs`, and `RandomRange` are classified for later routine milestones. Bare executable use of a known not-yet-executable Irvine32 name after `INCLUDE Irvine32.inc` reports `unsupported-irvine32-routine`.
-- Milestone 42 adds the zero-operand Irvine32 `exit` virtual terminator when `INCLUDE Irvine32.inc` is active. `exit` terminates execution successfully, mutates no registers/flags/memory/Program Console state, and prevents later instructions from executing. Without the include, `exit` reports `unknown-instruction` with guidance to add `INCLUDE Irvine32.inc`; operands report `invalid-instruction-operands`. `CALL` target classification, Program Console routines, stack behavior, and Windows/API execution remain deferred.
-- Milestone 43 adds `inc` and `dec` for 8-bit, 16-bit, and 32-bit register and unambiguous memory destinations. They update `ZF`, `SF`, and `OF`, preserve `CF`, and use checked memory read/write helpers for memory destinations.
-- Milestone 44 adds `and`, `or`, and `xor` for compatible register, immediate, and unambiguous memory forms. They store the logical result, update `ZF` and `SF`, clear `CF` and `OF`, reject memory-to-memory and ambiguous memory/immediate forms, and use checked memory read/write helpers for memory operands.
-- Milestone 45 adds `not` for register and unambiguous memory destinations. It stores the bitwise complement at the selected width, preserves `CF`, `ZF`, `SF`, and `OF`, rejects ambiguous memory-width forms, and uses checked memory read/write helpers for memory operands.
-- Milestone 46 adds `shl` and `sal` for register and unambiguous memory destinations with immediate byte counts or `CL`. `sal` is an alias of `shl`; counts use `raw_count & 31`; count zero is a no-op; default undefined modeled-flag cases emit `undefined-shift-flag` warnings and continue; strict test/configuration mode reports `undefined-shift-flag` as a runtime error before mutation.
-- Milestone 47 adds `shr` for the same register and unambiguous memory destination/count forms. `shr` shifts logically right, fills high bits with zero, sets `OF` from the original sign bit for a one-bit shift, and uses the same deterministic `undefined-shift-flag` warning/strict policy as the Phase 46 shifts.
-- Milestone 48 adds `sar` for the same register and unambiguous memory destination/count forms. `sar` shifts arithmetically right, fills high bits with the original sign bit, clears `OF` for a one-bit shift, and uses the same deterministic `undefined-shift-flag` warning/strict policy as the other shift instructions.
-- Milestone 49 adds `rol` for the same register and unambiguous memory destination/count forms. `rol` rotates bits left within the selected width, updates `CF` from the least significant bit of the rotated result, preserves `ZF` and `SF`, defines `OF` only for one-bit rotates, and emits `undefined-modeled-flag` warnings for non-one nonzero counts without using strict shift validation.
-- Milestone 50 adds `ror` for the same register and unambiguous memory destination/count forms. `ror` rotates bits right within the selected width, updates `CF` from the most significant bit of the rotated result, preserves `ZF` and `SF`, defines `OF` only for one-bit rotates, and emits `undefined-modeled-flag` warnings for non-one nonzero counts without using strict shift validation.
-- Milestone 50A adds internal validity metadata for the currently modeled flags: `CF`, `ZF`, `SF`, and `OF`. Defined flag writes mark the flag valid, architecturally preserved flags preserve validity metadata, and undefined shift/rotate flag cases mark the affected flag invalid while preserving the deterministic fallback bit value. This metadata is for later flag-consumer diagnostics; default source-run output and Simulator Messages remain unchanged.
-- Milestone 50B adds consumer-side diagnostics for using architecturally undefined modeled flags. The current implementation checks already-supported `CF` consumers (`adc`, `sbb`, and `cmc`) when the source-run/API policy is set to `warn` or `error`. Warning mode emits `undefined-flag-use` and continues with the deterministic fallback flag bit. Error mode emits `undefined-flag-use` and stops before the consumer uses the invalid flag. Milestone 53C makes omitted/default browser source-run behavior use warning mode, while explicit off preserves prior silent consumer behavior.
+- The default memory validation mode is region-only: final byte ranges, permissions, `.CONST` protection, uninitialized-origin reads, and unaligned accesses are runtime concerns routed through checked VM memory helpers.
+- Optional source-run/test-facing validation policies can report declared-object, section-capacity, and section-image warnings or strict errors without changing the default browser behavior.
+- Uninitialized-origin metadata is tracked for `.DATA?`, `?`, `DUP(?)`, and accepted `.CONST ?` / `.CONST DUP(?)` storage. Default source-run behavior warns on uninitialized reads while preserving deterministic visible bytes.
+- The virtual Irvine32 registry recognizes known routine names for classification and diagnostics. Only the zero-operand virtual `exit` terminator is executable in the current subset; other Irvine32 routines, `CALL`, stack behavior, and Windows/API execution remain deferred or outside scope.
+- The current instruction subset includes the arithmetic, logic, shift, rotate, multiply, divide, conversion, exchange, negation, NOP, and effective-address forms listed below.
 
 
 ### Numeric equates and extended constant expressions

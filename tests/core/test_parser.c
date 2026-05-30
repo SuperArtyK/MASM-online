@@ -1,11 +1,11 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 57S diagnostics.
+ * @brief Unit and integration tests for the parser through Phase 58 code-label diagnostics.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
- * error diagnostics for unsupported syntax, INCLUDELIB non-goal diagnostics,
- * INVOKE/ADDR external-routine diagnostics, and integration with the current
- * executor without adding future execution behavior.
+ * Phase 58 code-label metadata and diagnostics, unsupported syntax,
+ * INCLUDELIB non-goal diagnostics, INVOKE/ADDR external-routine diagnostics,
+ * and integration with the current executor without adding future execution behavior.
  */
 
 #include <stdbool.h>
@@ -34,6 +34,9 @@
 /// Number of data symbols available to parser tests that include .data.
 #define TEST_SYMBOL_CAPACITY 16U
 
+/// Number of code labels available to parser tests.
+#define TEST_CODE_LABEL_CAPACITY 16U
+
 /// Number of .data/.DATA? image bytes available to parser tests.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
@@ -54,6 +57,8 @@ typedef struct ParserTestBuffers {
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
     /// Data symbols emitted from optional .data declarations.
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
+    /// Code labels emitted from .code labels and PROC entries.
+    VmCodeLabel code_labels[TEST_CODE_LABEL_CAPACITY];
     /// Data image emitted from optional .data/.DATA? declarations.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Constant image emitted from optional .CONST declarations.
@@ -69,6 +74,20 @@ typedef struct ParserTestBuffers {
 static int record_failure(const char *message) {
     fprintf(stderr, "FAIL: %s\n", message);
     return 1;
+}
+
+/// Verifies that a boolean condition is true.
+///
+/// @param condition Condition expected to be true.
+/// @param message Failure message when condition is false.
+/// @return Zero on success, otherwise one failure.
+static int expect_bool(bool condition, const char *message) {
+    if (!condition) {
+        fprintf(stderr, "FAIL: %s\n", message);
+        return 1;
+    }
+
+    return 0;
 }
 
 /// Verifies that two size values are equal.
@@ -220,6 +239,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
     config.symbols = buffers->symbols;
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.code_labels = buffers->code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
@@ -371,6 +392,232 @@ static int test_labels_blank_lines_comments_and_crlf(void) {
     failures += expect_size(result.instruction_count, 1U, "label sample should emit one instruction");
     failures += expect_u32(buffers.instructions[0].source_line, 5U, "instruction after labels should preserve line number");
     failures += expect_string(buffers.instructions[0].source_text, "next: mov eax, 7 ; comment", "label-line source text should be preserved");
+
+    return failures;
+}
+
+
+/// Verifies Phase 58 code-label metadata for ordinary, procedure-entry, and no-target labels.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_code_label_metadata(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "start:\n"
+        "    mov eax, 1\n"
+        "done:\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 58 label metadata source should parse");
+    failures += expect_size(result.instruction_count, 1U, "Phase 58 label metadata source should emit one instruction");
+    failures += expect_size(result.code_label_count, 3U, "Phase 58 should record procedure, executable, and no-target labels");
+
+    failures += expect_string(buffers.code_labels[0].name, "main", "PROC label should preserve spelling");
+    failures += expect_u32((uint32_t)buffers.code_labels[0].declaration_kind, (uint32_t)VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY, "main should be a procedure-entry declaration");
+    failures += expect_u32((uint32_t)buffers.code_labels[0].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_PROCEDURE_ENTRY, "main should target the procedure entry instruction");
+    failures += expect_size(buffers.code_labels[0].target_instruction_index, 0U, "main should target instruction index 0");
+    failures += expect_u32(buffers.code_labels[0].source_location.line, 2U, "main label line should be recorded");
+    failures += expect_u32(buffers.code_labels[0].source_location.column, 1U, "main label column should be recorded");
+    failures += expect_size(buffers.code_labels[0].source_location.offset, 6U, "main label byte offset should be recorded");
+    failures += expect_size(buffers.code_labels[0].source_span_length, 4U, "main label span should be recorded");
+
+    failures += expect_string(buffers.code_labels[1].name, "start", "ordinary label should preserve spelling");
+    failures += expect_u32((uint32_t)buffers.code_labels[1].declaration_kind, (uint32_t)VM_CODE_LABEL_DECLARATION_ORDINARY, "start should be an ordinary label declaration");
+    failures += expect_u32((uint32_t)buffers.code_labels[1].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION, "start should target an executable instruction");
+    failures += expect_size(buffers.code_labels[1].target_instruction_index, 0U, "start should target instruction index 0");
+    failures += expect_u32(buffers.code_labels[1].source_location.line, 3U, "start label line should be recorded");
+    failures += expect_u32(buffers.code_labels[1].source_location.column, 1U, "start label column should be recorded");
+    failures += expect_size(buffers.code_labels[1].source_location.offset, 16U, "start label byte offset should be recorded");
+    failures += expect_size(buffers.code_labels[1].source_span_length, 5U, "start label span should be recorded");
+
+    failures += expect_string(buffers.code_labels[2].name, "done", "no-target label should preserve spelling");
+    failures += expect_u32((uint32_t)buffers.code_labels[2].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET, "done should have no executable target");
+    failures += expect_bool(!buffers.code_labels[2].has_target_instruction_index, "done should not have a target instruction index");
+    failures += expect_size(buffers.code_labels[2].source_location.offset, 38U, "done label byte offset should be recorded");
+
+    return failures;
+}
+
+/// Verifies consecutive labels before one instruction point to the same target and are non-executable.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_multiple_labels_share_target(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "first:\n"
+        "second:\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "consecutive label source should parse");
+    failures += expect_size(result.instruction_count, 1U, "consecutive labels should not emit extra instructions");
+    failures += expect_size(result.code_label_count, 3U, "procedure plus two labels should be recorded");
+    failures += expect_size(buffers.code_labels[1].target_instruction_index, 0U, "first label should target instruction 0");
+    failures += expect_size(buffers.code_labels[2].target_instruction_index, 0U, "second label should target instruction 0");
+    failures += expect_u32((uint32_t)buffers.code_labels[1].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION, "first label target kind should be executable");
+    failures += expect_u32((uint32_t)buffers.code_labels[2].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION, "second label target kind should be executable");
+
+    return failures;
+}
+
+/// Verifies empty and adjacent procedures keep procedure-entry targets separate.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_empty_and_adjacent_procedure_labels(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "Empty PROC\n"
+        "Empty ENDP\n"
+        "Real PROC\n"
+        "    mov eax, 1\n"
+        "Real ENDP\n"
+        "END Real\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "adjacent procedures should parse");
+    failures += expect_size(result.instruction_count, 1U, "adjacent procedure source should emit one instruction");
+    failures += expect_size(result.code_label_count, 2U, "adjacent procedures should record two procedure-entry labels");
+    failures += expect_string(buffers.code_labels[0].name, "Empty", "empty procedure spelling should be preserved");
+    failures += expect_u32((uint32_t)buffers.code_labels[0].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET, "empty procedure should have no executable target");
+    failures += expect_bool(!buffers.code_labels[0].has_target_instruction_index, "empty procedure should not target later procedure instruction");
+    failures += expect_string(buffers.code_labels[1].name, "Real", "real procedure spelling should be preserved");
+    failures += expect_u32((uint32_t)buffers.code_labels[1].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_PROCEDURE_ENTRY, "real procedure should target its body instruction");
+    failures += expect_size(buffers.code_labels[1].target_instruction_index, 0U, "real procedure should target instruction 0");
+
+    return failures;
+}
+
+/// Verifies procedure bodies with accepted non-executable metadata do not create fake label targets.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_non_executable_procedure_metadata_has_no_target(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "Meta PROC\n"
+        "OPTION CASEMAP:ALL\n"
+        "Meta ENDP\n"
+        "END Meta\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "metadata-only procedure body should parse");
+    failures += expect_size(result.instruction_count, 0U, "metadata-only procedure body should emit no executable instructions");
+    failures += expect_size(result.code_label_count, 1U, "metadata-only procedure should record one procedure-entry label");
+    failures += expect_string(buffers.code_labels[0].name, "Meta", "metadata-only procedure spelling should be preserved");
+    failures += expect_u32((uint32_t)buffers.code_labels[0].target_kind, (uint32_t)VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET, "metadata-only procedure should have no executable target");
+    failures += expect_bool(!buffers.code_labels[0].has_target_instruction_index, "metadata-only procedure should not synthesize a target instruction");
+
+    return failures;
+}
+
+
+/// Verifies Phase 58 CASEMAP behavior for code labels.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_label_casemap_policy(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\nLoop:\n    mov eax, 1\nloop:\n    mov ebx, 2\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "default CASEMAP should reject folded duplicate labels");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "folded duplicate label diagnostic should match");
+    failures += expect_bool(buffers.diagnostics[0].has_related_location, "folded duplicate should include prior-definition metadata");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 3U, "folded duplicate prior line should point at Loop");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "case-insensitive", "folded duplicate message should mention CASEMAP behavior");
+    failures += expect_size(result.code_label_count, 2U, "rejected folded duplicate should not be inserted");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:ALL\n.code\nmain PROC\nLoop:\n    mov eax, 1\nloop:\n    mov ebx, 2\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "explicit CASEMAP:ALL should reject folded duplicate labels");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "explicit ALL folded duplicate diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n.code\nmain PROC\nLoop:\nloop:\n    MoV eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should allow labels that differ only by case while keywords remain case-insensitive");
+    failures += expect_size(result.code_label_count, 3U, "CASEMAP:NONE should record main, Loop, and loop labels");
+
+    return failures;
+}
+
+/// Verifies Phase 58 duplicate and cross-symbol label conflict diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase58_label_conflict_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\nstart:\n    mov eax, 1\nstart:\n    mov ebx, 2\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "duplicate ordinary label should be diagnosed");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "duplicate ordinary label diagnostic should match");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 5U, "duplicate diagnostic should point at second start");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 3U, "duplicate diagnostic should record first start");
+    failures += expect_size(result.code_label_count, 2U, "duplicate ordinary label should not be inserted");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\nValue DWORD 1\n.code\nmain PROC\nvalue:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "code label should conflict with folded data symbol");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT, "data-symbol conflict diagnostic should match");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 5U, "data conflict diagnostic should point at label");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 2U, "data conflict prior metadata should point at data symbol");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "data symbol", "data conflict message should identify data-symbol category");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n.data\nValue DWORD 1\n.code\nmain PROC\nvalue:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should allow data symbol and label that differ by case");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\nmain:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "ordinary label should conflict with existing PROC label");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "PROC then ordinary conflict diagnostic should match");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 2U, "PROC then ordinary prior metadata should point at PROC");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nstart:\nstart PROC\n    mov eax, 1\nstart ENDP\nEND start\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "PROC label should conflict with existing ordinary label");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "ordinary then PROC conflict diagnostic should match");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 2U, "ordinary then PROC prior metadata should point at ordinary label");
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 4\n.code\nmain PROC\nCOUNT:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "code label should conflict with numeric equate");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT, "numeric-equate conflict diagnostic should match");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 1U, "numeric-equate prior metadata should point at equate");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "numeric equate", "numeric-equate conflict message should identify category");
 
     return failures;
 }
@@ -723,6 +970,8 @@ static int test_recovery_diagnostic_capacity_failure_is_fatal(void) {
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = 2U;
 
@@ -848,6 +1097,8 @@ static int test_capacity_and_invalid_arguments(void) {
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
     failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_LEXER_FAILED, "small token buffer should surface lexer failure");
@@ -864,6 +1115,8 @@ static int test_capacity_and_invalid_arguments(void) {
     config.instruction_capacity = 0U;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
     failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_INSTRUCTION_CAPACITY_EXCEEDED, "small instruction buffer should produce diagnostic");
@@ -880,6 +1133,8 @@ static int test_capacity_and_invalid_arguments(void) {
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = 4U;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
     failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_SOURCE_TEXT_CAPACITY_EXCEEDED, "small source-text buffer should produce diagnostic");
@@ -896,6 +1151,8 @@ static int test_capacity_and_invalid_arguments(void) {
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = NULL;
     config.diagnostic_capacity = 0U;
     failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_DIAGNOSTIC_CAPACITY_EXCEEDED, "missing diagnostic capacity should be reported when needed");
@@ -976,6 +1233,8 @@ static int test_lexer_capacity_failure_is_distinct(void) {
     config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
     config.source_text_storage = buffers.source_text;
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.diagnostics = buffers.diagnostics;
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
@@ -5411,6 +5670,12 @@ int main(void) {
     failures += test_parsed_ir_executes_to_eax_42();
     failures += test_register_register_and_mixed_case();
     failures += test_labels_blank_lines_comments_and_crlf();
+    failures += test_phase58_code_label_metadata();
+    failures += test_phase58_multiple_labels_share_target();
+    failures += test_phase58_empty_and_adjacent_procedure_labels();
+    failures += test_phase58_non_executable_procedure_metadata_has_no_target();
+    failures += test_phase58_label_casemap_policy();
+    failures += test_phase58_label_conflict_diagnostics();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();
     failures += test_textbook_unsupported_directives_are_stable();

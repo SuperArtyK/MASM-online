@@ -3,9 +3,10 @@
  * @brief Parser for the currently implemented MASM32 educational subset.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
- * .DATA?, and .CONST images with symbols, and emits only the minimal IR supported by the current
- * executor. Control flow, stack behavior, scaled-index addressing, Irvine32 routine bodies,
- * and full MASM expression parsing remain later milestones. The parser records
+ * .DATA?, and .CONST images with symbols, records Phase 58 code-label metadata,
+ * and emits only the minimal IR supported by the current executor. Control flow,
+ * stack behavior, scaled-index addressing, Irvine32 routine bodies, and full
+ * MASM expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -26,6 +27,9 @@
 
 /// Maximum numeric equates retained during one parse operation.
 #define VM_PARSER_EQUATE_CAPACITY 128U
+
+/// Maximum code-label declarations that can wait for the next executable target.
+#define VM_PARSER_PENDING_CODE_LABEL_CAPACITY 128U
 
 
 /// Formats an unsigned integer with comma group separators for diagnostics.
@@ -112,6 +116,10 @@ typedef struct VmParserEquate {
     bool is_invalid;
     /// Whether this equate is currently being evaluated.
     bool is_resolving;
+    /// Source location of the equate name.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the equate name in bytes.
+    size_t source_span_length;
 } VmParserEquate;
 
 /// Carries the result of a compile-time constant-expression parse.
@@ -160,6 +168,10 @@ typedef struct VmParserState {
     VmParserUserSymbolCasePolicy user_symbol_case_policy;
     /// Whether a supported OPTION CASEMAP directive has been seen.
     bool has_explicit_casemap_policy;
+    /// Code-label table indexes that should resolve to the next executable instruction.
+    size_t pending_code_label_indices[VM_PARSER_PENDING_CODE_LABEL_CAPACITY];
+    /// Number of valid entries in @ref pending_code_label_indices.
+    size_t pending_code_label_count;
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
@@ -284,6 +296,12 @@ static bool vm_parser_parse_option_directive(VmParserState *state);
 static bool vm_parser_has_conflicting_data_symbol(VmParserState *state, const VmLexerToken *token);
 
 static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *state, const VmLexerToken *token);
+
+static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *name_token, VmCodeLabelDeclarationKind declaration_kind);
+
+static void vm_parser_resolve_pending_code_labels(VmParserState *state, size_t target_instruction_index);
+
+static void vm_parser_finalize_pending_code_labels_without_target(VmParserState *state);
 
 /// Encodes a signed or unsigned lexer number token for an operand width.
 ///
@@ -580,6 +598,369 @@ static bool vm_parser_set_equate_name(VmParserEquate *equate, const VmLexerToken
     memcpy(equate->name, token->lexeme, token->lexeme_length);
     equate->name[token->lexeme_length] = '\0';
     return true;
+}
+
+/// Copies a source token spelling into one code-label slot.
+///
+/// @param label Destination label slot.
+/// @param token Source token containing the label name.
+/// @return true when the label name fit and was copied.
+static bool vm_parser_set_code_label_name(VmCodeLabel *label, const VmLexerToken *token) {
+    if (label == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER ||
+        token->lexeme_length == 0U || token->lexeme_length >= (size_t)VM_SYMBOL_NAME_CAPACITY) {
+        return false;
+    }
+
+    memcpy(label->name, token->lexeme, token->lexeme_length);
+    label->name[token->lexeme_length] = '\0';
+    return true;
+}
+
+/// Compares a code-label slot name with a source token under a CASEMAP policy.
+///
+/// @param label Label slot to inspect.
+/// @param token Source token containing the candidate name.
+/// @param policy Active user-symbol case policy.
+/// @return true when the names match under @p policy.
+static bool vm_parser_code_label_name_equals(const VmCodeLabel *label, const VmLexerToken *token, VmParserUserSymbolCasePolicy policy) {
+    size_t index = 0U;
+
+    if (label == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (policy == VM_PARSER_USER_SYMBOL_CASEMAP_NONE) {
+        return strlen(label->name) == token->lexeme_length && memcmp(label->name, token->lexeme, token->lexeme_length) == 0;
+    }
+
+    while (index < token->lexeme_length && label->name[index] != '\0') {
+        if (vm_parser_ascii_lower(label->name[index]) != vm_parser_ascii_lower(token->lexeme[index])) {
+            return false;
+        }
+        index += 1U;
+    }
+
+    return index == token->lexeme_length && label->name[index] == '\0';
+}
+
+/// Finds an accepted code-label declaration by active CASEMAP policy.
+///
+/// @param state Parser state whose label table should be searched.
+/// @param token Source token containing the candidate name.
+/// @return Matching label slot, or NULL when no match exists.
+static VmCodeLabel *vm_parser_find_code_label(VmParserState *state, const VmLexerToken *token) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->code_labels == NULL || token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->result->code_label_count; index += 1U) {
+        if (vm_parser_code_label_name_equals(&state->config->code_labels[index], token, state->user_symbol_case_policy)) {
+            return &state->config->code_labels[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Finds a data symbol by active CASEMAP policy for conflict diagnostics.
+///
+/// @param state Parser state whose data symbols should be searched.
+/// @param token Source token containing the candidate name.
+/// @return Matching data symbol, or NULL when no single match exists.
+static const VmSymbol *vm_parser_find_data_symbol_for_conflict(VmParserState *state, const VmLexerToken *token) {
+    if (state == NULL || state->config == NULL || token == NULL) {
+        return NULL;
+    }
+
+    return vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        token->lexeme,
+        token->lexeme_length,
+        vm_parser_symbol_case_policy(state->user_symbol_case_policy),
+        NULL
+    );
+}
+
+/// Returns a label declaration noun for diagnostics.
+///
+/// @param kind Code-label declaration kind.
+/// @return Static noun phrase.
+static const char *vm_parser_code_label_declaration_noun(VmCodeLabelDeclarationKind kind) {
+    return kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY ? "procedure-entry label" : "code label";
+}
+
+/// Returns whether a current label declaration differs from a prior spelling only by case.
+///
+/// @param current Current label token.
+/// @param prior_name Prior accepted symbol name.
+/// @return true when exact spelling differs but folded spelling matches.
+static bool vm_parser_label_conflict_is_folded_case(const VmLexerToken *current, const char *prior_name) {
+    size_t index = 0U;
+    size_t prior_length = 0U;
+
+    if (current == NULL || current->lexeme == NULL || prior_name == NULL) {
+        return false;
+    }
+
+    prior_length = strlen(prior_name);
+    if (prior_length != current->lexeme_length) {
+        return false;
+    }
+    if (memcmp(prior_name, current->lexeme, current->lexeme_length) == 0) {
+        return false;
+    }
+
+    for (index = 0U; index < current->lexeme_length; index += 1U) {
+        if (vm_parser_ascii_lower(prior_name[index]) != vm_parser_ascii_lower(current->lexeme[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/// Records a label diagnostic and annotates it with prior-definition metadata.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Current rejected declaration token.
+/// @param related_location Prior definition location.
+/// @param related_span_length Prior definition span length in bytes.
+/// @param format printf-style diagnostic message.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_label_related_diagnostic(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    VmLexerSourceLocation related_location,
+    size_t related_span_length,
+    const char *format,
+    ...
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+    va_list args;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || format == NULL) {
+        return false;
+    }
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+    diagnostic->related_location = related_location;
+    diagnostic->related_span_length = related_span_length;
+    diagnostic->has_related_location = related_location.line > 0U;
+
+    va_start(args, format);
+    (void)vsnprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), format, args);
+    va_end(args);
+    diagnostic->message = diagnostic->message_storage;
+
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Adds one pending label-table index to resolve at the next executable instruction.
+///
+/// @param state Parser state to mutate.
+/// @param label_index Code-label table index to track.
+/// @return true when the pending index was stored.
+static bool vm_parser_add_pending_code_label(VmParserState *state, size_t label_index) {
+    if (state == NULL) {
+        return false;
+    }
+    if (state->pending_code_label_count >= (size_t)VM_PARSER_PENDING_CODE_LABEL_CAPACITY) {
+        state->stop_status = VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED;
+        return false;
+    }
+    state->pending_code_label_indices[state->pending_code_label_count] = label_index;
+    state->pending_code_label_count += 1U;
+    return true;
+}
+
+/// Resolves all pending code labels to an executable IR instruction index.
+///
+/// @param state Parser state to mutate.
+/// @param target_instruction_index Zero-based target IR instruction index.
+static void vm_parser_resolve_pending_code_labels(VmParserState *state, size_t target_instruction_index) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->code_labels == NULL) {
+        return;
+    }
+
+    for (index = 0U; index < state->pending_code_label_count; index += 1U) {
+        size_t label_index = state->pending_code_label_indices[index];
+        if (label_index < state->result->code_label_count) {
+            VmCodeLabel *label = &state->config->code_labels[label_index];
+            label->has_target_instruction_index = true;
+            label->target_instruction_index = target_instruction_index;
+            label->target_kind = label->declaration_kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY ?
+                VM_CODE_LABEL_TARGET_PROCEDURE_ENTRY : VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION;
+        }
+    }
+    state->pending_code_label_count = 0U;
+}
+
+/// Marks pending code labels as declarations without an executable target.
+///
+/// @param state Parser state to mutate.
+static void vm_parser_finalize_pending_code_labels_without_target(VmParserState *state) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->code_labels == NULL) {
+        if (state != NULL) {
+            state->pending_code_label_count = 0U;
+        }
+        return;
+    }
+
+    for (index = 0U; index < state->pending_code_label_count; index += 1U) {
+        size_t label_index = state->pending_code_label_indices[index];
+        if (label_index < state->result->code_label_count) {
+            VmCodeLabel *label = &state->config->code_labels[label_index];
+            label->has_target_instruction_index = false;
+            label->target_instruction_index = 0U;
+            label->target_kind = VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET;
+        }
+    }
+    state->pending_code_label_count = 0U;
+}
+
+/// Adds an accepted code-label declaration after duplicate/conflict checks.
+///
+/// @param state Parser state to mutate.
+/// @param name_token Source token containing the label name.
+/// @param declaration_kind Ordinary label or procedure-entry label.
+/// @return true when the declaration was accepted.
+static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *name_token, VmCodeLabelDeclarationKind declaration_kind) {
+    VmCodeLabel *existing_label = NULL;
+    const VmSymbol *existing_symbol = NULL;
+    VmParserEquate *existing_equate = NULL;
+    VmCodeLabel *new_label = NULL;
+    size_t new_index = 0U;
+    const char *declaration_noun = vm_parser_code_label_declaration_noun(declaration_kind);
+
+    if (state == NULL || name_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    existing_label = vm_parser_find_code_label(state, name_token);
+    if (existing_label != NULL) {
+        if (state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_ALL &&
+            vm_parser_label_conflict_is_folded_case(name_token, existing_label->name)) {
+            (void)vm_parser_add_label_related_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL,
+                name_token,
+                existing_label->source_location,
+                existing_label->source_span_length,
+                "%s `%.*s` conflicts with `%s` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line %u, column %u.",
+                declaration_noun,
+                (int)name_token->lexeme_length,
+                name_token->lexeme,
+                existing_label->name,
+                existing_label->source_location.line,
+                existing_label->source_location.column
+            );
+            return false;
+        }
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL,
+            name_token,
+            existing_label->source_location,
+            existing_label->source_span_length,
+            "Duplicate %s `%.*s`; first defined at line %u, column %u.",
+            declaration_noun,
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing_label->source_location.line,
+            existing_label->source_location.column
+        );
+        return false;
+    }
+
+    existing_symbol = vm_parser_find_data_symbol_for_conflict(state, name_token);
+    if (existing_symbol != NULL) {
+        const bool folded_case = state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_ALL &&
+            vm_parser_label_conflict_is_folded_case(name_token, existing_symbol->name);
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
+            name_token,
+            existing_symbol->source_location,
+            existing_symbol->source_span_length,
+            folded_case ?
+                "%s `%.*s` conflicts with existing data symbol `%s` because user-defined symbols are case-insensitive under the active CASEMAP policy; data symbol defined at line %u, column %u." :
+                "%s `%.*s` conflicts with existing data symbol `%s` defined at line %u, column %u.",
+            declaration_noun,
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing_symbol->name,
+            existing_symbol->source_location.line,
+            existing_symbol->source_location.column
+        );
+        return false;
+    }
+
+    existing_equate = vm_parser_find_equate(state, name_token);
+    if (existing_equate != NULL) {
+        const bool folded_case = state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_ALL &&
+            vm_parser_label_conflict_is_folded_case(name_token, existing_equate->name);
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
+            name_token,
+            existing_equate->source_location,
+            existing_equate->source_span_length,
+            folded_case ?
+                "%s `%.*s` conflicts with existing numeric equate `%s` because user-defined symbols are case-insensitive under the active CASEMAP policy; equate defined at line %u, column %u." :
+                "%s `%.*s` conflicts with existing numeric equate `%s` defined at line %u, column %u.",
+            declaration_noun,
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing_equate->name,
+            existing_equate->source_location.line,
+            existing_equate->source_location.column
+        );
+        return false;
+    }
+
+    if (state->config->code_labels == NULL || state->result->code_label_count >= state->config->code_label_capacity) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED, name_token, "Code label capacity exceeded.");
+        state->stop_status = VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED;
+        return false;
+    }
+
+    new_index = state->result->code_label_count;
+    new_label = &state->config->code_labels[new_index];
+    memset(new_label, 0, sizeof(*new_label));
+    if (!vm_parser_set_code_label_name(new_label, name_token)) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, name_token, "Code label name is too long for the current fixed label table.");
+        return false;
+    }
+    new_label->declaration_kind = declaration_kind;
+    new_label->target_kind = VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET;
+    new_label->case_policy = vm_parser_symbol_case_policy(state->user_symbol_case_policy);
+    new_label->source_location = name_token->location;
+    new_label->source_span_length = name_token->lexeme_length;
+    state->result->code_label_count += 1U;
+
+    return vm_parser_add_pending_code_label(state, new_index);
 }
 
 /// Converts a lexer number token to a signed 64-bit expression value.
@@ -3458,8 +3839,9 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
     }
 
     if (vm_parser_has_conflicting_data_symbol(state, name_token) ||
-        vm_parser_find_equate(state, name_token) != NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate data symbol or numeric equate name.");
+        vm_parser_find_equate(state, name_token) != NULL ||
+        vm_parser_find_code_label(state, name_token) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate data symbol, numeric equate, or code label name.");
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -6857,6 +7239,7 @@ static bool vm_parser_emit_instruction(
     }
 
     instruction_index = (uint32_t)state->result->instruction_count;
+    vm_parser_resolve_pending_code_labels(state, (size_t)instruction_index);
     instruction = &state->config->instructions[state->result->instruction_count];
     *instruction = vm_ir_instruction(
         opcode,
@@ -7255,11 +7638,13 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
         return false;
     }
 
-    if (!state->procedure_name.is_set) {
-        state->procedure_name.lexeme = name_token->lexeme;
-        state->procedure_name.length = name_token->lexeme_length;
-        state->procedure_name.is_set = true;
+    if (!vm_parser_add_code_label(state, name_token, VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY)) {
+        return false;
     }
+
+    state->procedure_name.lexeme = name_token->lexeme;
+    state->procedure_name.length = name_token->lexeme_length;
+    state->procedure_name.is_set = true;
 
     vm_parser_advance(state);
     vm_parser_advance(state);
@@ -7273,6 +7658,8 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
 static bool vm_parser_parse_endp_line(VmParserState *state) {
     const VmLexerToken *name_token = vm_parser_current_token(state);
     const VmLexerToken *endp_token = vm_parser_peek_token(state, 1U);
+
+    vm_parser_finalize_pending_code_labels_without_target(state);
 
     if (name_token == NULL || endp_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(endp_token, "ENDP")) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_ENDP, name_token, "Expected procedure name followed by ENDP.");
@@ -7292,6 +7679,9 @@ static bool vm_parser_parse_endp_line(VmParserState *state) {
 
     vm_parser_advance(state);
     vm_parser_advance(state);
+    state->procedure_name.lexeme = NULL;
+    state->procedure_name.length = 0U;
+    state->procedure_name.is_set = false;
     return vm_parser_expect_line_end(state);
 }
 
@@ -7308,13 +7698,11 @@ static bool vm_parser_parse_end_line(VmParserState *state) {
         return false;
     }
 
-    if (state->procedure_name.is_set) {
-        VmLexerToken procedure_token;
-        memset(&procedure_token, 0, sizeof(procedure_token));
-        procedure_token.lexeme = state->procedure_name.lexeme;
-        procedure_token.lexeme_length = state->procedure_name.length;
-        if (!vm_parser_user_symbol_tokens_equal(state, &procedure_token, entry_token)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, entry_token, "END entry point does not match the parsed procedure name under the active CASEMAP policy.");
+    vm_parser_finalize_pending_code_labels_without_target(state);
+    {
+        VmCodeLabel *entry_label = vm_parser_find_code_label(state, entry_token);
+        if (entry_label == NULL || entry_label->declaration_kind != VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, entry_token, "END entry point does not match an accepted procedure-entry label under the active CASEMAP policy.");
             return false;
         }
     }
@@ -7358,6 +7746,7 @@ static bool vm_parser_parse_label_prefix(VmParserState *state) {
         return false;
     }
 
+    (void)vm_parser_add_code_label(state, name_token, VM_CODE_LABEL_DECLARATION_ORDINARY);
     vm_parser_advance(state);
     vm_parser_advance(state);
     return true;
@@ -7401,6 +7790,7 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
     }
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && next != NULL && vm_parser_token_equals(next, "PROC")) {
+        vm_parser_finalize_pending_code_labels_without_target(state);
         return vm_parser_parse_proc_line(state);
     }
 
@@ -7925,8 +8315,9 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
     }
 
     if (vm_parser_find_equate(state, name_token) != NULL ||
-        vm_parser_has_conflicting_data_symbol(state, name_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate numeric equate or data symbol name.");
+        vm_parser_has_conflicting_data_symbol(state, name_token) ||
+        vm_parser_find_code_label(state, name_token) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_DUPLICATE_SYMBOL, name_token, "Duplicate numeric equate, data symbol, or code label name.");
         vm_parser_recover_skip_line(state);
         return true;
     }
@@ -7944,6 +8335,8 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         vm_parser_recover_skip_line(state);
         return true;
     }
+    equate->source_location = name_token->location;
+    equate->source_span_length = name_token->lexeme_length;
     state->equate_count += 1U;
 
     vm_parser_advance(state);
@@ -8179,6 +8572,7 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->instructions == NULL && config->instruction_capacity > 0U) ||
         (config->source_text_storage == NULL && config->source_text_capacity > 0U) ||
         (config->symbols == NULL && config->symbol_capacity > 0U) ||
+        (config->code_labels == NULL && config->code_label_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
         (config->data_initialized_mask == NULL && config->data_initialized_mask_capacity > 0U) ||
         (config->const_image == NULL && config->const_image_capacity > 0U) ||
@@ -8215,6 +8609,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
 
     if (config->symbols != NULL && config->symbol_capacity > 0U) {
         memset(config->symbols, 0, sizeof(config->symbols[0]) * config->symbol_capacity);
+    }
+    if (config->code_labels != NULL && config->code_label_capacity > 0U) {
+        memset(config->code_labels, 0, sizeof(config->code_labels[0]) * config->code_label_capacity);
     }
     if (config->data_image != NULL && config->data_image_capacity > 0U) {
         memset(config->data_image, 0, config->data_image_capacity);
@@ -8375,6 +8772,31 @@ const char *vm_parser_irvine32_symbol_class_name(VmIrvine32SymbolClass symbol_cl
     }
 }
 
+
+const char *vm_code_label_declaration_kind_name(VmCodeLabelDeclarationKind kind) {
+    switch (kind) {
+        case VM_CODE_LABEL_DECLARATION_ORDINARY:
+            return "ordinary";
+        case VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY:
+            return "procedure-entry";
+        default:
+            return NULL;
+    }
+}
+
+const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind) {
+    switch (kind) {
+        case VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION:
+            return "executable-instruction-target";
+        case VM_CODE_LABEL_TARGET_PROCEDURE_ENTRY:
+            return "procedure-entry-target";
+        case VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET:
+            return "no-executable-target";
+        default:
+            return NULL;
+    }
+}
+
 const char *vm_parser_status_name(VmParserStatus status) {
     switch (status) {
         case VM_PARSER_STATUS_OK:
@@ -8395,6 +8817,8 @@ const char *vm_parser_status_name(VmParserStatus status) {
             return "data-capacity-exceeded";
         case VM_PARSER_STATUS_SYMBOL_CAPACITY_EXCEEDED:
             return "symbol-capacity-exceeded";
+        case VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED:
+            return "code-label-capacity-exceeded";
         default:
             return NULL;
     }
@@ -8572,6 +8996,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "compatibility-metadata-only";
         case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED:
             return "compatibility-limited";
+        case VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL:
+            return "duplicate-label";
+        case VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT:
+            return "label-symbol-conflict";
+        case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:
+            return "code-label-capacity-exceeded";
         default:
             return NULL;
     }

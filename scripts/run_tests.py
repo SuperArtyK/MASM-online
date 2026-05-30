@@ -473,10 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures")
-    assert_text_contains("README.md", "Phase 57G seeded uninitialized-storage visible-byte settings")
-    assert_text_contains("README.md", "Phase 57 - Signed IDIV")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "through Phase 57 - Signed IDIV")
+    assert_text_contains("README.md", "Phase 58 - Code Label Table and Label Diagnostics")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -554,7 +551,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 57")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 58")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -622,7 +619,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through repository Phase 57T playground diagnostic fixtures and runtime Phase 57S behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 58 code label table and label diagnostics passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -685,7 +682,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/diagnostic_json_producer.c", "masm32_sim_wasm_run_source_json")
     assert_text_contains("README.md", "docs/FULL_IMPLEMENTATION_SPEC.md")
     assert_text_contains("README.md", "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Milestone 32 adds fixed memory-layout policy infrastructure only")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "The default memory validation mode is region-only")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "casemap-policy-changed")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "ambiguous-symbol")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED")
@@ -1404,30 +1401,28 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase57t_status_and_code_policy_present() -> None:
-    """Verify Phase 57T repository status, Phase 57S runtime status, and Phase 57L policy retention."""
+def assert_phase58_status_and_code_policy_present() -> None:
+    """Verify concise Phase 58 status text and public-facing policy summaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
+        "Phase 58 - Code Label Table and Label Diagnostics",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 57S - Unsupported High-Level Flow Diagnostics",
-        "[unchanged]",
-        "startup-state-notice",
+        "Milestone 58: Code Label Table and Label Diagnostics.",
     ]
     status_block = """Repository/archive milestone:
-Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+Phase 58 - Code Label Table and Label Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57S - Unsupported High-Level Flow Diagnostics"""
-    assert_all_text_contains("README.md", required_status_fragments)
-    assert_all_text_contains("docs/SUPPORTED_SYNTAX.md", required_status_fragments)
-    assert_all_text_contains("docs/MILESTONE_HISTORY.md", required_status_fragments)
-    assert_all_text_contains("docs/BUILDING_AND_DEVELOPMENT.md", required_status_fragments)
-    assert_text_contains("README.md", status_block)
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", status_block)
-    assert_text_contains("docs/MILESTONE_HISTORY.md", status_block)
-    assert_text_contains("docs/BUILDING_AND_DEVELOPMENT.md", status_block)
+Phase 58 - Code Label Table and Label Diagnostics"""
+    for path in [
+        "README.md",
+        "docs/SUPPORTED_SYNTAX.md",
+        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+    ]:
+        assert_all_text_contains(path, required_status_fragments)
+        assert_text_contains(path, status_block)
 
     assert_all_text_contains(
         "README.md",
@@ -1438,46 +1433,10 @@ Phase 57S - Unsupported High-Level Flow Diagnostics"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "playground-program diagnostic-recovery",
-            "runtime/source-run MASM behavior metadata remains Phase 57S",
-            "Phase 57S - Unsupported High-Level Flow Diagnostics",
-            "unsupported-high-level-if",
-            "unsupported-high-level-else",
-            "unsupported-high-level-endif",
-            "unsupported-high-level-while",
-            "unsupported-high-level-repeat",
-            "unsupported-high-level-flow",
-            "Phase 57P host/path-like `INCLUDE` diagnostics remain available",
-            "host include path diagnostics",
-            "unsupported-host-include-path",
-            "unsupported-windows-api-include",
-            "unsupported-masm32-library-include",
-            "unsupported-invoke",
-            "unsupported-addr",
-            "unsupported-masm32-runtime-routine",
-            "unsupported-crt-routine",
-            "unsupported-winapi-execution",
-            "unsupported-includelib",
-            "unsupported-windows-api-library",
-            "unsupported-masm32-library",
-            "Zero-operand `nop` remains",
-            "Phase 57S - Unsupported High-Level Flow Diagnostics",
-            "Phase 57O - Explicit-Width NOP Encoding-Operand Forms keeps NOP encoding-operand behavior available",
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "Phase 57S - Unsupported High-Level Flow Diagnostics",
-            "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
-            "Phase 57L `.code` memory-access diagnostics",
-            "unsupported-segment-symbol",
-            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
-            "unsupported-code-memory-access",
-            "unsupported",
-            "_TEXT",
-            "DGROUP",
-            ".CONST ?",
-            "final-register `[unchanged]` display markers",
-            "seeded uninitialized-storage visible-byte settings",
+            "Code labels such as `start:`",
+            "procedure-entry labels such as `main PROC`",
+            "Duplicate or conflicting labels",
+            "Labels do not execute",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1486,6 +1445,9 @@ Phase 57S - Unsupported High-Level Flow Diagnostics"""
     assert_all_text_not_contains(
         "README.md",
         [
+            "Preserved diagnostic/code-policy highlights",
+            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
+            "unsupported-high-level-if",
             "The repository state includes runtime MASM behavior implemented through",
             "Milestone 32 memory layout policy infrastructure",
             "Native diagnostic rendering harness",
@@ -1499,45 +1461,19 @@ Phase 57S - Unsupported High-Level Flow Diagnostics"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "Phase 57S - Unsupported High-Level Flow Diagnostics",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
-            "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
-            "Phase 57L `.code` memory-access diagnostics",
-            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
-            "Phase 57I - .CONST Uninitialized Storage Acceptance",
-            "Phase 57H - Register Unchanged Display Markers",
-            "Phase 57G - Seeded Random Uninitialized Storage Mode",
-            "Phase 57E - Startup State Notice and Zero-Default Documentation",
-            "Phase 57D - Existing Diagnostic Policy Migration",
-            "Phase 57C - Diagnostic Policy Registry Design",
-            "Phase 57B - Milestone History and Build Documentation Extraction",
+            "Phase 58 - Code Label Table and Label Diagnostics",
+            "Milestone 58: Code Label Table and Label Diagnostics.",
             "Concise milestone ledger",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
-            "Phase 57A - README Landing Page Cleanup",
-            "Preserved README milestone summary before Phase 57A",
-            "Preserved current-scope history before Phase 57A",
-            "Milestone 57 signed `idiv` instruction behavior",
-            "Phase 57-CORR2 compact negative register-indirect displacement correction",
         ],
     )
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "Phase 57S - Unsupported High-Level Flow Diagnostics",
-            "Phase 57R - Unsupported INVOKE, ADDR, and External Routine Diagnostics",
-            "Phase 57O - Explicit-Width NOP Encoding-Operand Forms",
-            "Phase 57L `.code` memory-access diagnostics",
-            "unsupported-segment-symbol",
-            "Phase 57J - .CONST Uninitialized Storage Diagnostics and Policy",
-            ".code",
-            "unsupported-code-memory-access",
-            ".CONST ?",
-            "final-register `[unchanged]` display markers",
-            "seeded uninitialized-storage visible-byte settings",
+            "Phase 58 - Code Label Table and Label Diagnostics",
+            "Milestone 58: Code Label Table and Label Diagnostics.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1554,18 +1490,26 @@ Phase 57S - Unsupported High-Level Flow Diagnostics"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Phase 57T",
-            "runtime Phase 57S",
-            "high-level MASM flow",
-            "unsupported INVOKE",
-            "ADDR",
-            "INCLUDELIB",
-            "host/path-like INCLUDE",
-            "zero-operand nop",
-            "MASM segment/group names",
-            "targeted Simulator Messages diagnostics",
-            ".CONST",
-            "[unchanged]",
+            "Milestone 58: Code Label Table and Label Diagnostics",
+            "Code labels",
+            "procedure-entry labels",
+            "Simulator Messages diagnostics",
+            "Labels do not create executable instructions or branch behavior",
+            "final-registers",
+            "Program Console",
+        ],
+    )
+
+    assert_all_text_contains(
+        "docs/FULL_IMPLEMENTATION_SPEC.md",
+        [
+            "current reviewed source-of-truth revision through Phase 58 - Code Label Table and Label Diagnostics",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        [
+            "current reviewed source-of-truth revision through Phase 58 - Code Label Table and Label Diagnostics",
         ],
     )
 
@@ -1576,7 +1520,7 @@ def assert_phase57m_segment_and_code_policy_documented() -> None:
     phase57l_fragments = [
         "unsupported-code-memory-access",
         "unsupported-segment-symbol",
-        "`.code` memory access",
+        "`.code` memory",
         "internal IR",
         "PE `.text`",
         "x86",
@@ -1587,7 +1531,6 @@ def assert_phase57m_segment_and_code_policy_documented() -> None:
         "STACK",
         "DGROUP",
         "FLAT",
-        "Phase 57M - MASM Segment and Group Symbol Diagnostics",
     ]
     assert_all_text_contains("docs/FULL_IMPLEMENTATION_SPEC.md", phase57l_fragments)
     assert_all_text_contains("docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md", phase57l_fragments)
@@ -1672,7 +1615,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase57t_status_and_code_policy_present()
+    assert_phase58_status_and_code_policy_present()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

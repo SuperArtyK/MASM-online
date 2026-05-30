@@ -33,6 +33,8 @@
 #define TEST_OBJECT_INSTRUCTIONS 128U
 /// Maximum symbols used by object-map parser fixtures.
 #define TEST_OBJECT_SYMBOLS 64U
+/// Maximum code labels used by object-map parser fixtures.
+#define TEST_OBJECT_CODE_LABELS 64U
 /// Maximum object-map entries used by object-map tests.
 #define TEST_OBJECTS 64U
 /// Source text storage bytes used by object-map parser fixtures.
@@ -56,6 +58,8 @@ typedef struct ObjectMapTestBuffers {
     VmIrInstruction instructions[TEST_OBJECT_INSTRUCTIONS];
     /// Data symbols emitted during parsing.
     VmSymbol symbols[TEST_OBJECT_SYMBOLS];
+    /// Code labels emitted during parsing.
+    VmCodeLabel code_labels[TEST_OBJECT_CODE_LABELS];
     /// Declared-object map entries emitted during tests.
     VmObjectMapEntry objects[TEST_OBJECTS];
     /// Parser-owned instruction source text copies.
@@ -168,6 +172,8 @@ static VmParserStatus parse_for_object_map_test(const char *source, ObjectMapTes
     config.source_text_capacity = TEST_OBJECT_SOURCE_TEXT;
     config.symbols = buffers->symbols;
     config.symbol_capacity = TEST_OBJECT_SYMBOLS;
+    config.code_labels = buffers->code_labels;
+    config.code_label_capacity = TEST_OBJECT_CODE_LABELS;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_OBJECT_DATA_BYTES;
     config.data_initialized_mask = buffers->data_initialized_mask;

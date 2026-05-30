@@ -36,6 +36,9 @@
 /// Number of data symbols available to each Milestone 30 parser test.
 #define TEST_SYMBOL_CAPACITY 32U
 
+/// Number of code labels available to each Milestone 30 parser test.
+#define TEST_CODE_LABEL_CAPACITY 32U
+
 /// Number of data image bytes available to each Milestone 30 parser test.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
@@ -54,6 +57,8 @@ typedef struct DataSectionTestBuffers {
     VmIrInstruction instructions[TEST_INSTRUCTION_CAPACITY];
     /// Emitted data symbols.
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
+    /// Emitted code labels.
+    VmCodeLabel code_labels[TEST_CODE_LABEL_CAPACITY];
     /// Emitted .data/.DATA? image bytes.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Emitted .CONST image bytes.
@@ -225,6 +230,8 @@ static VmParserStatus parse_for_test(const char *source, DataSectionTestBuffers 
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
     config.symbols = buffers->symbols;
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.code_labels = buffers->code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
@@ -1548,7 +1555,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "all-GPR response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "all-GPR response should identify Phase 58");
     failures += expect_json_contains(json, "\"ok\":true", "all-GPR register-indirect source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000050h\",\"unsigned\":80}", "all-GPR register-indirect read should set EAX = 80");
     failures += expect_json_contains(json, "\"address\":\"0050001Ch\"", "ESP-based write should reach nums + 28");
@@ -1573,7 +1580,7 @@ static int test_symbol_register_memory_forms_execute(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "response should identify Phase 58");
     failures += expect_json_contains(json, "\"ok\":true", "symbol/register source should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "symbol/register read should set EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "symbol/register write should resolve to nums + 8");
@@ -1710,7 +1717,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "response should identify Phase 58");
     failures += expect_json_contains(json, "\"ok\":true", "PTR JSON source should execute");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500003h\",\"widthBits\":8,\"byteOffset\":3,\"dataType\":\"BYTE\"", "BYTE PTR change should report BYTE access width");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500005h\",\"widthBits\":16,\"byteOffset\":5,\"dataType\":\"WORD\"", "WORD PTR change should report WORD access width");
@@ -1735,7 +1742,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "response should identify Phase 58");
     failures += expect_json_contains(json, "\"ok\":true", "acceptance source should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[{\"symbol\":\"var\"", "memory changes should include var symbol");
     failures += expect_json_contains(json, "\"oldHex\":\"00h\"", "memory change should include old byte hex");
@@ -1953,7 +1960,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "END main\n"
     );
 
-    failures += expect_json_contains(read_copy, "\"phase\":57", "signed PTR read response should identify Phase 57");
+    failures += expect_json_contains(read_copy, "\"phase\":58", "signed PTR read response should identify Phase 58");
     failures += expect_json_contains(read_copy, "\"ok\":true", "signed PTR read source should execute");
     failures += expect_json_contains(read_copy, "\"EAX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "SBYTE PTR read into AL should not sign-extend");
     failures += expect_json_contains(read_copy, "\"EBX\":{\"hex\":\"0000FFFEh\",\"unsigned\":65534}", "SWORD PTR read into BX should preserve raw 16-bit value");
@@ -2112,7 +2119,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
     }
 
     acceptance_json = masm32_sim_wasm_run_source_json(source);
-    failures += expect_json_contains(acceptance_json, "\"phase\":57", "additional data source-run should identify Phase 57");
+    failures += expect_json_contains(acceptance_json, "\"phase\":58", "additional data source-run should identify Phase 58");
     failures += expect_json_contains(acceptance_json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "source-run should report SIZEOF buf in EAX");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "source-run should report .CONST read in EBX");
 
@@ -2261,7 +2268,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "END main\n"
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
-    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"S\"", ".CONST uninitialized source-run should report Phase 57S");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"\"", ".CONST uninitialized source-run should report unsuffixed Phase 58");
     failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
     failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
     failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");
@@ -2483,7 +2490,7 @@ static int test_phase29_extended_constant_expressions(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 29 acceptance source should execute");
-    failures += expect_json_contains(json, "\"phase\":57", "response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "response should identify Phase 58");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "COUNT should fold to 12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000080h\",\"unsigned\":128}", "MASK should fold to 128");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00005678h\",\"unsigned\":22136}", "LOWWORD should fold to 5678h");
@@ -2533,7 +2540,7 @@ static int test_phase30_nested_dup_acceptance_program(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 30 acceptance source should execute");
-    failures += expect_json_contains(json, "\"phase\":57", "response should identify Phase 57");
+    failures += expect_json_contains(json, "\"phase\":58", "response should identify Phase 58");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "LENGTHOF matrix should be 12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000030h\",\"unsigned\":48}", "SIZEOF matrix should be 48");
 

@@ -12,15 +12,13 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 57T:
+Current status at Phase 58:
 
 Repository/archive milestone:
-Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
+Phase 58 - Code Label Table and Label Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 57S - Unsupported High-Level Flow Diagnostics
-
-Phase 57S adds clear parser/source-run diagnostics for unsupported high-level MASM flow constructs. `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` are recognized as unsupported high-level flow where encountered. They report `unsupported-high-level-if`, `unsupported-high-level-else`, `unsupported-high-level-endif`, `unsupported-high-level-while`, `unsupported-high-level-repeat`, or `unsupported-high-level-flow`; source containing these diagnostics refuses execution, emits no `execution-complete`, and does not write to Program Console. Phase 57S does not implement high-level-flow lowering, labels, branch execution, expression parsing for conditions, loop semantics, or block execution. Phase 57R `INVOKE`/`ADDR`/external-routine diagnostics, Phase 57Q `INCLUDELIB` diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
+Phase 58 - Code Label Table and Label Diagnostics: Code labels and procedure-entry labels are accepted as parser/source metadata. Duplicate or conflicting labels produce structured Simulator Messages diagnostics. Labels do not execute, do not create IR instructions, and do not add branch behavior.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -86,8 +84,13 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57Q recognizes `INCLUDELIB` library directive tails, emits linker/import-library non-goal diagnostics instead of generic parser or lexer diagnostics, does not implement library loading, object files, imports, PE loading, a linker, WinAPI execution, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57Q.
 - Phase 57R adds unsupported `INVOKE`, `ADDR`, MASM32 runtime-style, CRT-style, and WinAPI/external routine diagnostics, refuses execution for those source lines, preserves virtual Irvine32 `exit`, does not implement invocation lowering, stack setup, calling conventions, WinAPI, CRT, MASM32 runtime, PE, linker, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57R.
 - Phase 57S adds targeted unsupported high-level MASM flow diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE`, suppresses safe body cascades, and advances runtime/source-run MASM behavior metadata to Phase 57S.
+- Phase 58 adds ordinary and procedure-entry code-label metadata, duplicate/conflict label diagnostics, and runtime/source-run MASM behavior metadata advancement to Phase 58 while preserving future branch/procedure behavior as unsupported.
 - Phase 57T adds realistic MASM32 playground-program diagnostic-recovery smoke fixtures and documentation while preserving runtime/source-run MASM behavior metadata at Phase 57S.
 
+
+## Phase 58 - Code Label Table and Label Diagnostics
+
+Phase 58 adds a code-label table and label diagnostics. Ordinary labels such as `start:` and procedure-entry labels such as `main PROC` are accepted as parser/source metadata, including no-executable-target labels. Labels do not execute, do not create IR instructions, and do not change straight-line runtime behavior. Duplicate or conflicting labels now produce structured Simulator Messages diagnostics. Phase 58 does not implement branch parsing, branch execution, `jmp`, conditional jumps, `loop`, `call`, `ret`, stack behavior, procedure invocation, or debugger/UI label navigation.
 
 ## Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
 

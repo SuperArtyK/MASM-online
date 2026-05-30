@@ -1637,6 +1637,63 @@ END main
 `,
     reason: "CASEMAP folded ambiguous numeric equate diagnostic fixture."
   },
+  phase58DuplicateLabel: {
+    source: `.code
+main PROC
+start:
+    mov eax, 1
+start:
+    mov ebx, 2
+main ENDP
+END main
+`,
+    reason: "Phase 58 duplicate code-label diagnostic fixture."
+  },
+  phase58FoldedDuplicateLabel: {
+    source: `.code
+main PROC
+Loop:
+    mov eax, 1
+loop:
+    mov ebx, 2
+main ENDP
+END main
+`,
+    reason: "Phase 58 folded CASEMAP code-label diagnostic fixture."
+  },
+  phase58LabelDataConflict: {
+    source: `.data
+value DWORD 1
+.code
+main PROC
+value:
+    mov eax, 1
+main ENDP
+END main
+`,
+    reason: "Phase 58 code-label versus data-symbol conflict diagnostic fixture."
+  },
+  phase58ProcedureThenOrdinaryLabelConflict: {
+    source: `.code
+main PROC
+main:
+    mov eax, 1
+main ENDP
+END main
+`,
+    reason: "Phase 58 procedure-entry versus later ordinary-label conflict diagnostic fixture."
+  },
+  phase58ProcedureLabelConflict: {
+    source: `.code
+main PROC
+other:
+main ENDP
+other PROC
+other ENDP
+END main
+`,
+    reason: "Phase 58 procedure-entry versus ordinary-label conflict diagnostic fixture."
+  },
   casemapInvalidValue: {
     source: `OPTION CASEMAP:LOWER
 .code
@@ -2082,6 +2139,120 @@ test("renders unsupported instruction diagnostic with stable wording exactly", (
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 5: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 });
 
+
+test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly", () => {
+  const duplicateName = "phase58DuplicateLabel";
+  const duplicateSource = fixtureSource(duplicateName);
+  const duplicateResult = runFixture(duplicateName, duplicateSource);
+  assertRunStatus(duplicateResult.json, false, "parse-error");
+  assert.equal(duplicateResult.json.phase, 58);
+  assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "duplicate-label",
+    message: "Duplicate code label `start`; first defined at line 3, column 1.",
+    line: 5,
+    column: 1,
+    byteOffset: 38,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(duplicateResult.json.simulatorMessages);
+  assertRenderedEquals(
+    duplicateName,
+    duplicateSource,
+    duplicateResult.rawJson,
+    duplicateResult.rendered,
+    "[assembly-error] duplicate-label line 5, column 1, byte offset 38, span length 5: Duplicate code label `start`; first defined at line 3, column 1."
+  );
+
+  const foldedDuplicateName = "phase58FoldedDuplicateLabel";
+  const foldedDuplicateSource = fixtureSource(foldedDuplicateName);
+  const foldedDuplicateResult = runFixture(foldedDuplicateName, foldedDuplicateSource);
+  assertRunStatus(foldedDuplicateResult.json, false, "parse-error");
+  assertMessageEquals(foldedDuplicateResult.json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "duplicate-label",
+    message: "code label `loop` conflicts with `Loop` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1.",
+    line: 5,
+    column: 1,
+    byteOffset: 37,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(foldedDuplicateResult.json.simulatorMessages);
+  assertRenderedEquals(
+    foldedDuplicateName,
+    foldedDuplicateSource,
+    foldedDuplicateResult.rawJson,
+    foldedDuplicateResult.rendered,
+    "[assembly-error] duplicate-label line 5, column 1, byte offset 37, span length 4: code label `loop` conflicts with `Loop` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1."
+  );
+
+  const dataConflictName = "phase58LabelDataConflict";
+  const dataConflictSource = fixtureSource(dataConflictName);
+  const dataConflictResult = runFixture(dataConflictName, dataConflictSource);
+  assertRunStatus(dataConflictResult.json, false, "parse-error");
+  assertMessageEquals(dataConflictResult.json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "label-symbol-conflict",
+    message: "code label `value` conflicts with existing data symbol `value` defined at line 2, column 1.",
+    line: 5,
+    column: 1,
+    byteOffset: 36,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(dataConflictResult.json.simulatorMessages);
+  assertRenderedEquals(
+    dataConflictName,
+    dataConflictSource,
+    dataConflictResult.rawJson,
+    dataConflictResult.rendered,
+    "[assembly-error] label-symbol-conflict line 5, column 1, byte offset 36, span length 5: code label `value` conflicts with existing data symbol `value` defined at line 2, column 1."
+  );
+
+  const procedureThenOrdinaryName = "phase58ProcedureThenOrdinaryLabelConflict";
+  const procedureThenOrdinarySource = fixtureSource(procedureThenOrdinaryName);
+  const procedureThenOrdinaryResult = runFixture(procedureThenOrdinaryName, procedureThenOrdinarySource);
+  assertRunStatus(procedureThenOrdinaryResult.json, false, "parse-error");
+  assertMessageEquals(procedureThenOrdinaryResult.json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "duplicate-label",
+    message: "Duplicate code label `main`; first defined at line 2, column 1.",
+    line: 3,
+    column: 1,
+    byteOffset: 16,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(procedureThenOrdinaryResult.json.simulatorMessages);
+  assertRenderedEquals(
+    procedureThenOrdinaryName,
+    procedureThenOrdinarySource,
+    procedureThenOrdinaryResult.rawJson,
+    procedureThenOrdinaryResult.rendered,
+    "[assembly-error] duplicate-label line 3, column 1, byte offset 16, span length 4: Duplicate code label `main`; first defined at line 2, column 1."
+  );
+
+  const procedureConflictName = "phase58ProcedureLabelConflict";
+  const procedureConflictSource = fixtureSource(procedureConflictName);
+  const procedureConflictResult = runFixture(procedureConflictName, procedureConflictSource);
+  assertRunStatus(procedureConflictResult.json, false, "parse-error");
+  assertMessageEquals(procedureConflictResult.json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "duplicate-label",
+    message: "Duplicate procedure-entry label `other`; first defined at line 3, column 1.",
+    line: 5,
+    column: 1,
+    byteOffset: 33,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(procedureConflictResult.json.simulatorMessages);
+  assertRenderedEquals(
+    procedureConflictName,
+    procedureConflictSource,
+    procedureConflictResult.rawJson,
+    procedureConflictResult.rendered,
+    "[assembly-error] duplicate-label line 5, column 1, byte offset 33, span length 5: Duplicate procedure-entry label `other`; first defined at line 3, column 1."
+  );
+});
+
 test("renders post-code section diagnostic with stable wording exactly", () => {
   const name = "postCodeSection";
   const source = fixtureSource(name);
@@ -2473,7 +2644,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 57);
+  assert.equal(json.phase, 58);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -2494,7 +2665,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 57);
+  assert.equal(json.phase, 58);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",

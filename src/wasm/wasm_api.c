@@ -58,6 +58,9 @@
 /// Maximum data symbols retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_SYMBOLS 128U
 
+/// Maximum code labels retained by the source-run API.
+#define MASM32_SIM_WASM_MAX_RUN_CODE_LABELS 128U
+
 /// Maximum declared-object map entries retained by one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES MASM32_SIM_WASM_MAX_RUN_SYMBOLS
 
@@ -68,13 +71,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 57U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 58U
 
-/// Suffix for the current Phase 57S runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "S"
+/// Suffix for the current Phase 58 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 57S runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 57S - Unsupported High-Level Flow Diagnostics"
+/// Full name of the current Phase 58 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 58 - Code Label Table and Label Diagnostics"
 
 /// Stable diagnostic code for startup-state notices.
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
@@ -350,6 +353,8 @@ typedef struct Masm32SimWasmRunStorage {
     VmIrInstruction instructions[MASM32_SIM_WASM_MAX_RUN_INSTRUCTIONS];
     /// Data symbols emitted by the parser.
     VmSymbol symbols[MASM32_SIM_WASM_MAX_RUN_SYMBOLS];
+    /// Code labels emitted by the parser.
+    VmCodeLabel code_labels[MASM32_SIM_WASM_MAX_RUN_CODE_LABELS];
     /// Declared-object map entries built from final selected-layout symbols.
     VmObjectMapEntry object_map_entries[MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES];
     /// Number of valid declared-object map entries.
@@ -5766,6 +5771,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     config.source_text_capacity = (size_t)MASM32_SIM_WASM_RUN_SOURCE_TEXT_BYTES;
     config.symbols = g_masm32_sim_wasm_run_storage.symbols;
     config.symbol_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_SYMBOLS;
+    config.code_labels = g_masm32_sim_wasm_run_storage.code_labels;
+    config.code_label_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_CODE_LABELS;
     config.data_image = g_masm32_sim_wasm_run_storage.data_image;
     config.data_image_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
     config.data_initialized_mask = g_masm32_sim_wasm_run_storage.data_initialized_mask;

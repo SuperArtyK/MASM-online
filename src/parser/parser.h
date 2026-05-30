@@ -3,15 +3,17 @@
  * @brief Parser API for the currently implemented MASM32 educational subset.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
- * and the minimal IR currently supported by the executor. It intentionally
- * remains limited to implemented writable, uninitialized, and constant data
- * declarations, numeric equates, extended constant expressions, nested DUP
- * initializers, OFFSET, direct symbol memory operands, constant symbol-offset
- * memory operands, signed and unsigned PTR width overrides, register-indirect
- * memory operands, TYPE, LENGTHOF, SIZEOF, packed character literals,
- * implemented instruction groups, INCLUDELIB diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow diagnostics, explicit unsupported-feature diagnostics,
- * safe recovery for recognized MASM textbook constructs, specific surfaced
- * lexer diagnostics, and virtual Irvine32 registry metadata.
+ * Phase 58 code-label metadata, and the minimal IR currently supported by the
+ * executor. It intentionally remains limited to implemented writable,
+ * uninitialized, and constant data declarations, numeric equates, extended
+ * constant expressions, nested DUP initializers, OFFSET, direct symbol memory
+ * operands, constant symbol-offset memory operands, signed and unsigned PTR
+ * width overrides, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF,
+ * packed character literals, implemented instruction groups, INCLUDELIB
+ * diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow
+ * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
+ * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
+ * and virtual Irvine32 registry metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -45,7 +47,9 @@ typedef enum VmParserStatus {
     /// Parsing stopped because the caller-provided .data image buffer was full.
     VM_PARSER_STATUS_DATA_CAPACITY_EXCEEDED,
     /// Parsing stopped because the caller-provided symbol table was full.
-    VM_PARSER_STATUS_SYMBOL_CAPACITY_EXCEEDED
+    VM_PARSER_STATUS_SYMBOL_CAPACITY_EXCEEDED,
+    /// Parsing stopped because the caller-provided code-label table was full.
+    VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED
 } VmParserStatus;
 
 /// Identifies one structured parser diagnostic code for the implemented grammar.
@@ -220,6 +224,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
     /// An accepted compatibility construct provides limited virtual behavior only.
     VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED,
+    /// A code label declaration duplicates an existing code label or procedure-entry label.
+    VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL,
+    /// A code label declaration conflicts with another user-defined symbol category.
+    VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
+    /// The caller-provided code-label table was full.
+    VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -238,6 +248,57 @@ typedef enum VmIrvine32SymbolClass {
     /// The name represents Windows API, external-linkage, or host-environment behavior.
     VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL
 } VmIrvine32SymbolClass;
+
+
+/// Identifies how a code label was declared in source.
+typedef enum VmCodeLabelDeclarationKind {
+    /// Ordinary `name:` code-label declaration.
+    VM_CODE_LABEL_DECLARATION_ORDINARY = 0,
+    /// Procedure-entry code label recorded from `name PROC`.
+    VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY
+} VmCodeLabelDeclarationKind;
+
+/// Identifies the Phase 58 target classification of a code label.
+typedef enum VmCodeLabelTargetKind {
+    /// The label targets an executable IR instruction.
+    VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION = 0,
+    /// The label is a procedure entry targeting the procedure body's first executable instruction.
+    VM_CODE_LABEL_TARGET_PROCEDURE_ENTRY,
+    /// The label has no following executable instruction target in this phase.
+    VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET
+} VmCodeLabelTargetKind;
+
+/// Describes one accepted Phase 58 code-label declaration.
+typedef struct VmCodeLabel {
+    /// Null-terminated original source spelling of the label.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// How the label was declared in source.
+    VmCodeLabelDeclarationKind declaration_kind;
+    /// Target classification resolved by parser metadata.
+    VmCodeLabelTargetKind target_kind;
+    /// Active CASEMAP policy at the declaration location.
+    VmSymbolCasePolicy case_policy;
+    /// Zero-based target IR instruction index when a target exists.
+    size_t target_instruction_index;
+    /// Whether @ref target_instruction_index identifies a real IR instruction.
+    bool has_target_instruction_index;
+    /// Source location of the label name token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the label name in bytes.
+    size_t source_span_length;
+} VmCodeLabel;
+
+/// Returns a stable display name for a code-label declaration kind.
+///
+/// @param kind Declaration kind to inspect.
+/// @return Static declaration-kind name, or NULL for invalid values.
+const char *vm_code_label_declaration_kind_name(VmCodeLabelDeclarationKind kind);
+
+/// Returns a stable display name for a code-label target kind.
+///
+/// @param kind Target kind to inspect.
+/// @return Static target-kind name, or NULL for invalid values.
+const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind);
 
 /// Identifies whether a parser diagnostic blocks execution.
 typedef enum VmParserDiagnosticSeverity {
@@ -266,6 +327,12 @@ typedef struct VmParserDiagnostic {
     size_t lexeme_length;
     /// Human-readable diagnostic summary. Points to static storage or @ref message_storage.
     const char *message;
+    /// Source location of a prior related definition when available.
+    VmLexerSourceLocation related_location;
+    /// Source span length of the prior related definition in bytes.
+    size_t related_span_length;
+    /// Whether @ref related_location and @ref related_span_length identify a prior related definition.
+    bool has_related_location;
     /// Caller-owned storage used when a diagnostic needs parse-specific values.
     char message_storage[VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY];
 } VmParserDiagnostic;
@@ -296,6 +363,10 @@ typedef struct VmParserConfig {
     VmSymbol *symbols;
     /// Number of entries available in @ref symbols.
     size_t symbol_capacity;
+    /// Caller-owned output code-label table. May be NULL only when code-label capacity is zero.
+    VmCodeLabel *code_labels;
+    /// Number of entries available in @ref code_labels.
+    size_t code_label_capacity;
     /// Caller-owned .data/.DATA? image bytes laid out from VM_MEMORY_DEFAULT_DATA_BASE.
     uint8_t *data_image;
     /// Number of bytes available in @ref data_image.
@@ -346,6 +417,8 @@ typedef struct VmParserResult {
     size_t lexer_diagnostic_count;
     /// Number of data symbols written to the configured symbol buffer.
     size_t symbol_count;
+    /// Number of code labels written to the configured code-label buffer.
+    size_t code_label_count;
     /// Number of bytes written to the configured .data/.DATA? image buffer.
     size_t data_size;
     /// Number of bytes written to the configured .CONST image buffer.
@@ -382,7 +455,9 @@ typedef struct VmParserResult {
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
 /// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
 /// storage with metadata; `.CONST` storage is read-only once loaded into VM
-/// memory.
+/// memory. Code labels and procedure-entry labels are recorded as parser/source
+/// metadata only; they do not emit executable IR instructions or enable branch
+/// execution.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

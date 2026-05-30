@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 57);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "S");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 57S - Unsupported High-Level Flow Diagnostics");
+  assert.equal(IMPLEMENTED_PHASE, 58);
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 58 - Code Label Table and Label Diagnostics");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 57,
-      phaseSuffix: "S",
-      phaseName: "Phase 57S - Unsupported High-Level Flow Diagnostics"
+      phase: 58,
+      phaseSuffix: "",
+      phaseName: "Phase 58 - Code Label Table and Label Diagnostics"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 57,
-      phaseSuffix: "S",
-      phaseName: "Phase 57S - Unsupported High-Level Flow Diagnostics"
+      phase: 58,
+      phaseSuffix: "",
+      phaseName: "Phase 58 - Code Label Table and Label Diagnostics"
     }
   });
 });
@@ -295,23 +295,23 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 57S - Unsupported High-Level Flow Diagnostics. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 58 - Code Label Table and Label Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 
-test("RUN_SOURCE marks Phase 57 artifacts without Phase 57S suffix as stale", () => {
+test("RUN_SOURCE marks stale Phase 58 artifacts without the expected suffix as stale", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 57, ok: true, simulatorMessages: [] };
+        return { phase: 58, phaseSuffix: "S", ok: true, simulatorMessages: [] };
       }
     }
   );
 
   assert.equal(response.type, "RUN_RESULT");
-  assert.equal(response.payload.phase, 57);
+  assert.equal(response.payload.phase, 58);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
 });
 
