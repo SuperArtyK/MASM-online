@@ -1510,6 +1510,93 @@ END main
 `,
     reason: "Phase 57S high-level flow marker recovery fixture."
   },
+  phase57tPlaygroundDiagnosticRecovery: {
+    source: `.386
+.model flat, stdcall
+option casemap:none
+
+include \\masm32\\include\\masm32.inc
+include \\masm32\\include\\kernel32.inc
+
+includelib \\masm32\\lib\\masm32.lib
+includelib \\masm32\\lib\\kernel32.lib
+
+.data
+    titleMsg   db "=== MASM32 Playground ===",13,10,0
+    startMsg   db "Counting from 1 to 5",13,10,0
+    evenMsg    db " -> even number",13,10,0
+    oddMsg     db " -> odd number",13,10,0
+    numberFmt  db "Number: %d",13,10,0
+    counter    dd 1
+    total      dd 0
+
+.code
+main PROC
+    invoke StdOut, addr titleMsg
+    invoke StdOut, addr startMsg
+    invoke crt_printf, addr numberFmt, counter
+
+    mov eax, counter
+    and eax, 1
+
+    .IF eax == 0
+        invoke StdOut, addr evenMsg
+    .ELSE
+        invoke StdOut, addr oddMsg
+    .ENDIF
+
+    mov eax, counter
+    call AddToTotal
+
+    inc counter
+
+    cmp counter, 6
+    jl main_loop
+
+    invoke crt_printf, addr numberFmt, total
+    invoke ExitProcess, 0
+main ENDP
+END main
+`,
+    reason: "Phase 57T realistic MASM32 playground diagnostic-recovery fixture."
+  },
+  phase57tRetUnsupported: {
+    source: `.code
+main PROC
+    ret
+main ENDP
+END main
+`,
+    reason: "Phase 57T RET unsupported-instruction diagnostic fixture."
+  },
+  phase57tCmpUnsupported: {
+    source: `.code
+main PROC
+    cmp eax, 6
+main ENDP
+END main
+`,
+    reason: "Phase 57T CMP unsupported-instruction diagnostic fixture."
+  },
+  phase57tConditionalJumpUnsupported: {
+    source: `.code
+main PROC
+    jl main_loop
+main ENDP
+END main
+`,
+    reason: "Phase 57T conditional jump unsupported-instruction diagnostic fixture."
+  },
+  phase57tExitProcessUnsupported: {
+    source: `INCLUDE Irvine32.inc
+.code
+main PROC
+    invoke ExitProcess, 0
+main ENDP
+END main
+`,
+    reason: "Phase 57T WinAPI ExitProcess unsupported-feature diagnostic fixture."
+  },
   casemapPolicyChanged: {
     source: `OPTION CASEMAP:NONE
 OPTION CASEMAP:ALL
@@ -4632,6 +4719,68 @@ test("renders Phase 57S high-level flow markers exactly", () => {
 });
 
 
+
+
+test("Phase 57T renders realistic playground diagnostics exactly", () => {
+  const name = "phase57tPlaygroundDiagnosticRecovery";
+  const source = fixtureSource(name);
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.equal(JSON.stringify(json).includes("programConsole"), false);
+  assert.equal(rendered.includes("unexpected-character"), false);
+  assert.equal(rendered.includes("lexer-failed"), false);
+  assert.equal(rendered.includes("missing local file"), false);
+  assertRenderedEquals(name, source, rawJson, rendered, `[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .386 is accepted for MASM compatibility but does not change the simulator CPU mode.
+[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.
+[unsupported-feature] unsupported-masm32-library-include line 5, column 9, byte offset 55, span length 26: Host filesystem include path '\\masm32\\include\\masm32.inc' is not supported. This browser simulator does not read the local MASM32 SDK; use supported virtual includes only.
+[unsupported-feature] unsupported-windows-api-include line 6, column 9, byte offset 90, span length 28: Windows API include path '\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.
+[unsupported-feature] unsupported-masm32-library line 8, column 12, byte offset 131, span length 22: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library '\\masm32\\lib\\masm32.lib' requires external library linking.
+[unsupported-feature] unsupported-windows-api-library line 9, column 12, byte offset 165, span length 24: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library '\\masm32\\lib\\kernel32.lib' requires PE imports and WinAPI execution.
+[unsupported-feature] unsupported-invoke line 22, column 5, byte offset 487, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
+[unsupported-feature] unsupported-addr line 22, column 20, byte offset 502, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
+[unsupported-feature] unsupported-masm32-runtime-routine line 22, column 12, byte offset 494, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
+[unsupported-feature] unsupported-invoke line 23, column 5, byte offset 520, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
+[unsupported-feature] unsupported-addr line 23, column 20, byte offset 535, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
+[unsupported-feature] unsupported-masm32-runtime-routine line 23, column 12, byte offset 527, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
+[unsupported-feature] unsupported-invoke line 24, column 5, byte offset 553, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
+[unsupported-feature] unsupported-addr line 24, column 24, byte offset 572, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
+[unsupported-feature] unsupported-crt-routine line 24, column 12, byte offset 560, span length 10: crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.
+[unsupported-feature] unsupported-high-level-if line 29, column 5, byte offset 638, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
+[unsupported-feature] unsupported-high-level-else line 31, column 5, byte offset 691, span length 5: .ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.
+[unsupported-feature] unsupported-high-level-endif line 33, column 5, byte offset 736, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.
+[assembly-error] unsupported-instruction line 36, column 5, byte offset 769, span length 4: CALL is not supported yet.`);
+});
+
+test("Phase 57T renders RET, CMP, conditional jump, and WinAPI unsupported diagnostics exactly", () => {
+  const retName = "phase57tRetUnsupported";
+  const retSource = fixtureSource(retName);
+  const retResult = runFixture(retName, retSource);
+  assertRunStatus(retResult.json, false, "parse-error");
+  assertNoExecutionComplete(retResult.json.simulatorMessages);
+  assertRenderedEquals(retName, retSource, retResult.rawJson, retResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 3: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+
+  const cmpName = "phase57tCmpUnsupported";
+  const cmpSource = fixtureSource(cmpName);
+  const cmpResult = runFixture(cmpName, cmpSource);
+  assertRunStatus(cmpResult.json, false, "parse-error");
+  assertNoExecutionComplete(cmpResult.json.simulatorMessages);
+  assertRenderedEquals(cmpName, cmpSource, cmpResult.rawJson, cmpResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 3: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+
+  const jumpName = "phase57tConditionalJumpUnsupported";
+  const jumpSource = fixtureSource(jumpName);
+  const jumpResult = runFixture(jumpName, jumpSource);
+  assertRunStatus(jumpResult.json, false, "parse-error");
+  assertNoExecutionComplete(jumpResult.json.simulatorMessages);
+  assertRenderedEquals(jumpName, jumpSource, jumpResult.rawJson, jumpResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 2: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+
+  const exitProcessName = "phase57tExitProcessUnsupported";
+  const exitProcessSource = fixtureSource(exitProcessName);
+  const exitProcessResult = runFixture(exitProcessName, exitProcessSource);
+  assertRunStatus(exitProcessResult.json, false, "parse-error");
+  assertNoExecutionComplete(exitProcessResult.json.simulatorMessages);
+  assertRenderedEquals(exitProcessName, exitProcessSource, exitProcessResult.rawJson, exitProcessResult.rendered, "[unsupported-feature] unsupported-invoke line 4, column 5, byte offset 41, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-winapi-execution line 4, column 12, byte offset 48, span length 11: ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.");
+});
 
 test("renders CASEMAP policy warning followed by successful execution exactly", () => {
   const name = "casemapPolicyChanged";

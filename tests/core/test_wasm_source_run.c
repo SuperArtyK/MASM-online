@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 57S high-level-flow diagnostics.
+ * @brief Tests for the Wasm-facing source execution API through repository Phase 57T playground diagnostics and runtime Phase 57S behavior.
  *
  * These tests verify the narrow browser-facing C export that parses and runs a
  * minimal `.code` and `.data` programs, reports final registers and memory
@@ -8396,10 +8396,158 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
     return failures;
 }
 
-/// Verifies Phase 57G status metadata is emitted by source-run JSON.
+
+/// Verifies Phase 57T realistic playground-program diagnostics stay concise.
 ///
 /// @return Number of failures.
-static int test_phase57g_source_run_phase_metadata(void) {
+static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
+    char playground_copy[12000];
+    char call_copy[4096];
+    char ret_copy[4096];
+    char cmp_copy[4096];
+    char conditional_jump_copy[4096];
+    char exitprocess_copy[4096];
+    int failures = 0;
+
+    copy_source_run_json(playground_copy, sizeof(playground_copy), masm32_sim_wasm_run_source_json(
+        ".386\n"
+        ".model flat, stdcall\n"
+        "option casemap:none\n"
+        "\n"
+        "include \\masm32\\include\\masm32.inc\n"
+        "include \\masm32\\include\\kernel32.inc\n"
+        "\n"
+        "includelib \\masm32\\lib\\masm32.lib\n"
+        "includelib \\masm32\\lib\\kernel32.lib\n"
+        "\n"
+        ".data\n"
+        "    titleMsg   db \"=== MASM32 Playground ===\",13,10,0\n"
+        "    startMsg   db \"Counting from 1 to 5\",13,10,0\n"
+        "    evenMsg    db \" -> even number\",13,10,0\n"
+        "    oddMsg     db \" -> odd number\",13,10,0\n"
+        "    numberFmt  db \"Number: %d\",13,10,0\n"
+        "    counter    dd 1\n"
+        "    total      dd 0\n"
+        "\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke StdOut, addr titleMsg\n"
+        "    invoke StdOut, addr startMsg\n"
+        "    invoke crt_printf, addr numberFmt, counter\n"
+        "\n"
+        "    mov eax, counter\n"
+        "    and eax, 1\n"
+        "\n"
+        "    .IF eax == 0\n"
+        "        invoke StdOut, addr evenMsg\n"
+        "    .ELSE\n"
+        "        invoke StdOut, addr oddMsg\n"
+        "    .ENDIF\n"
+        "\n"
+        "    mov eax, counter\n"
+        "    call AddToTotal\n"
+        "\n"
+        "    inc counter\n"
+        "\n"
+        "    cmp counter, 6\n"
+        "    jl main_loop\n"
+        "\n"
+        "    invoke crt_printf, addr numberFmt, total\n"
+        "    invoke ExitProcess, 0\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    copy_source_run_json(call_copy, sizeof(call_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call AddToTotal\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(ret_copy, sizeof(ret_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(cmp_copy, sizeof(cmp_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    cmp eax, 6\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(conditional_jump_copy, sizeof(conditional_jump_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    jl main_loop\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    copy_source_run_json(exitprocess_copy, sizeof(exitprocess_copy), masm32_sim_wasm_run_source_json(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    invoke ExitProcess, 0\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(playground_copy, "\"ok\":false", "Phase 57T playground fixture should refuse execution");
+    failures += expect_json_contains(playground_copy, "unsupported-masm32-library-include", "Phase 57T playground fixture should classify MASM32 host include");
+    failures += expect_json_contains(playground_copy, "unsupported-windows-api-include", "Phase 57T playground fixture should classify Windows host include");
+    failures += expect_json_contains(playground_copy, "unsupported-masm32-library", "Phase 57T playground fixture should classify MASM32 INCLUDELIB");
+    failures += expect_json_contains(playground_copy, "unsupported-windows-api-library", "Phase 57T playground fixture should classify Windows INCLUDELIB");
+    failures += expect_json_contains(playground_copy, "does not link objects, load .lib files, process PE imports, or execute external routines", "Phase 57T INCLUDELIB wording should remain linker/import-library non-goal wording");
+    failures += expect_json_contains(playground_copy, "unsupported-invoke", "Phase 57T playground fixture should classify INVOKE");
+    failures += expect_json_contains(playground_copy, "unsupported-addr", "Phase 57T playground fixture should classify ADDR operands");
+    failures += expect_json_contains(playground_copy, "unsupported-masm32-runtime-routine", "Phase 57T playground fixture should classify StdOut as external MASM32 runtime");
+    failures += expect_json_contains(playground_copy, "unsupported-crt-routine", "Phase 57T playground fixture should classify crt_printf as CRT routine");
+    failures += expect_json_contains(playground_copy, "unsupported-high-level-if", "Phase 57T playground fixture should classify .IF high-level flow");
+    failures += expect_json_contains(playground_copy, "unsupported-high-level-else", "Phase 57T playground fixture should classify .ELSE high-level flow");
+    failures += expect_json_contains(playground_copy, "unsupported-high-level-endif", "Phase 57T playground fixture should classify .ENDIF high-level flow");
+    failures += expect_json_contains(playground_copy, "CALL is not supported yet", "Phase 57T playground fixture should reach lower-level CALL unsupported diagnostic");
+    failures += expect_json_not_contains(playground_copy, "unexpected-character", "Phase 57T playground fixture should not flood path separators as character diagnostics");
+    failures += expect_json_not_contains(playground_copy, "lexer-failed", "Phase 57T playground fixture should not collapse into lexer-failed");
+    failures += expect_json_not_contains(playground_copy, "execution-complete", "Phase 57T playground fixture should not report execution completion");
+    failures += expect_json_not_contains(playground_copy, "programConsole", "Phase 57T playground fixture should not produce Program Console output");
+    failures += expect_json_not_contains(playground_copy, "missing local file", "Phase 57T INCLUDELIB diagnostics should not imply local file probing");
+
+    failures += expect_json_contains(call_copy, "unsupported-instruction", "Phase 57T CALL fixture should use current unsupported-instruction classification");
+    failures += expect_json_contains(call_copy, "CALL is not supported yet", "Phase 57T CALL fixture should report CALL as unsupported");
+    failures += expect_json_not_contains(call_copy, "execution-complete", "Phase 57T CALL fixture should not execute");
+    failures += expect_json_not_contains(call_copy, "programConsole", "Phase 57T CALL fixture should not produce Program Console output");
+
+    failures += expect_json_contains(ret_copy, "unsupported-instruction", "Phase 57T RET fixture should use current unsupported-instruction classification");
+    failures += expect_json_contains(ret_copy, "Unsupported instruction. This mnemonic has no executable behavior", "Phase 57T RET fixture should report current unsupported-instruction text");
+    failures += expect_json_not_contains(ret_copy, "execution-complete", "Phase 57T RET fixture should not execute");
+    failures += expect_json_not_contains(ret_copy, "programConsole", "Phase 57T RET fixture should not produce Program Console output");
+
+    failures += expect_json_contains(cmp_copy, "unsupported-instruction", "Phase 57T CMP fixture should use current unsupported-instruction classification");
+    failures += expect_json_contains(cmp_copy, "Unsupported instruction. This mnemonic has no executable behavior", "Phase 57T CMP fixture should report current unsupported-instruction text");
+    failures += expect_json_not_contains(cmp_copy, "execution-complete", "Phase 57T CMP fixture should not execute");
+    failures += expect_json_not_contains(cmp_copy, "programConsole", "Phase 57T CMP fixture should not produce Program Console output");
+
+    failures += expect_json_contains(conditional_jump_copy, "unsupported-instruction", "Phase 57T conditional-jump fixture should use current unsupported-instruction classification");
+    failures += expect_json_contains(conditional_jump_copy, "spanLength\":2", "Phase 57T JL fixture should preserve the conditional jump mnemonic span");
+    failures += expect_json_not_contains(conditional_jump_copy, "execution-complete", "Phase 57T conditional-jump fixture should not execute");
+    failures += expect_json_not_contains(conditional_jump_copy, "programConsole", "Phase 57T conditional-jump fixture should not produce Program Console output");
+
+    failures += expect_json_contains(exitprocess_copy, "unsupported-winapi-execution", "Phase 57T WinAPI fixture should classify ExitProcess as WinAPI boundary");
+    failures += expect_json_contains(exitprocess_copy, "not the virtual Irvine32 exit", "Phase 57T WinAPI fixture should distinguish ExitProcess from virtual exit");
+    failures += expect_json_not_contains(exitprocess_copy, "execution-complete", "Phase 57T WinAPI fixture should not execute");
+    failures += expect_json_not_contains(exitprocess_copy, "programConsole", "Phase 57T WinAPI fixture should not produce Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 57S runtime status metadata is emitted by source-run JSON.
+///
+/// @return Number of failures.
+static int test_phase57s_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -8407,7 +8555,7 @@ static int test_phase57g_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":57", "Phase 57I should preserve numeric phase compatibility");
+    failures += expect_json_contains(json, "\"phase\":57", "Runtime metadata should preserve numeric phase 57 compatibility");
     failures += expect_json_contains(json, "\"phaseSuffix\":\"S\"", "Phase 57S should report the suffix field");
     failures += expect_json_contains(json, "\"phaseName\":\"Phase 57S - Unsupported High-Level Flow Diagnostics\"", "Phase 57S should report the runtime phase name");
 
@@ -10168,6 +10316,7 @@ int main(void) {
     failures += test_phase57q_includelib_source_run_diagnostics();
     failures += test_phase57r_invoke_addr_external_routine_source_run_diagnostics();
     failures += test_phase57s_high_level_flow_source_run_diagnostics();
+    failures += test_phase57t_playground_diagnostic_recovery_smoke_fixtures();
     failures += test_phase28_additional_data_sections_source_run_programs();
     failures += test_phase30_dup_initializer_list_source_run_program();
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
@@ -10318,7 +10467,7 @@ int main(void) {
     failures += test_phase57h_register_write_metadata_same_value_parent_write();
     failures += test_phase57h_register_write_metadata_alias_writes();
     failures += test_phase57h_seeded_startup_not_counted_as_program_write();
-    failures += test_phase57g_source_run_phase_metadata();
+    failures += test_phase57s_source_run_phase_metadata();
     failures += test_phase57f_zero_mode_seed_does_not_randomize();
     failures += test_phase57f_seeded_startup_is_deterministic();
     failures += test_phase57f_different_seeds_change_startup_state();
@@ -10358,6 +10507,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 57S high-level-flow diagnostic coverage passed.");
+    puts("Source execution tests through repository Phase 57T playground diagnostic fixtures and runtime Phase 57S behavior passed.");
     return 0;
 }

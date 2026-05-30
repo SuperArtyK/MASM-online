@@ -5,10 +5,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 57S - Unsupported High-Level Flow Diagnostics
+Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
 
 Runtime/source-run MASM behavior phase:
 Phase 57S - Unsupported High-Level Flow Diagnostics
+
+Phase 57T adds realistic MASM32 playground-program diagnostic-recovery smoke fixtures and documentation. It verifies that common AI/tutorial-style MASM32 samples containing host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, WinAPI/external routine names, high-level MASM flow, `CALL`, `RET`, `CMP`, and conditional jumps produce concise Simulator Messages diagnostics instead of low-level lexer/parser noise. Phase 57T does not implement any of those unsupported features, and runtime/source-run MASM behavior metadata remains Phase 57S.
 
 Phase 57S adds clear parser/source-run diagnostics for unsupported high-level MASM flow constructs. `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE` are recognized as unsupported high-level flow where encountered. They report `unsupported-high-level-if`, `unsupported-high-level-else`, `unsupported-high-level-endif`, `unsupported-high-level-while`, `unsupported-high-level-repeat`, or `unsupported-high-level-flow`; source containing these diagnostics refuses execution, emits no `execution-complete`, and does not write to Program Console. Phase 57S does not implement high-level-flow lowering, labels, branch execution, expression parsing for conditions, loop semantics, or block execution. Phase 57R `INVOKE`/`ADDR`/external-routine diagnostics, Phase 57Q `INCLUDELIB` diagnostics, Phase 57P host/path-like `INCLUDE` diagnostics, Phase 57O NOP encoding-operand behavior, Phase 57M segment/group-symbol diagnostics, Phase 57L `.code` memory-access diagnostics, Phase 57J `.CONST ?` / `.CONST DUP(?)` declaration diagnostics, Phase 57H final-register `[unchanged]` display markers, Phase 57G seeded uninitialized-storage visible-byte settings, and Phase 57F seeded register/flag startup remain available.
 
