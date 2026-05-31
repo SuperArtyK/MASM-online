@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 59 - Control-Flow Instruction Limit")
+    assert_text_contains("README.md", "Phase 60 - Direct JMP Parsing and Target Lowering")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -551,7 +551,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 59")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 60")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -619,7 +619,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 59 control-flow instruction limit passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 60 direct JMP parsing and target lowering passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1401,19 +1401,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase59_status_and_code_policy_present() -> None:
-    """Verify concise Phase 59 status text and public-facing policy summaries."""
+def assert_phase60_status_and_code_policy_present() -> None:
+    """Verify concise Phase 60 status text and public-facing policy summaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 59 - Control-Flow Instruction Limit",
+        "Phase 60 - Direct JMP Parsing and Target Lowering",
         "Runtime/source-run MASM behavior phase:",
     ]
     status_block = """Repository/archive milestone:
-Phase 59 - Control-Flow Instruction Limit
+Phase 60 - Direct JMP Parsing and Target Lowering
 
 Runtime/source-run MASM behavior phase:
-Phase 59 - Control-Flow Instruction Limit"""
+Phase 60 - Direct JMP Parsing and Target Lowering"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1434,8 +1434,8 @@ Phase 59 - Control-Flow Instruction Limit"""
             "docs/BUILDING_AND_DEVELOPMENT.md",
             "`instructionLimit` watchdog",
             "`instruction-limit-exceeded`",
-            "Code labels remain parser/source metadata",
-            "do not create IR instructions",
+            "direct `jmp label` forms",
+            "branch-runtime-deferred",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1460,8 +1460,8 @@ Phase 59 - Control-Flow Instruction Limit"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Phase 59 - Control-Flow Instruction Limit",
-            "Current status at Phase 59:",
+            "Phase 60 - Direct JMP Parsing and Target Lowering",
+            "Current status at Phase 60:",
             "instructionLimit",
             "instruction-limit-exceeded",
             "Concise milestone ledger",
@@ -1473,7 +1473,7 @@ Phase 59 - Control-Flow Instruction Limit"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 59 - Control-Flow Instruction Limit",
+            "Phase 60 - Direct JMP Parsing and Target Lowering",
             "Runtime/source-run MASM behavior phase:",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1491,10 +1491,11 @@ Phase 59 - Control-Flow Instruction Limit"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 59: Control-Flow Instruction Limit",
-            "instruction-count watchdog",
-            "labels remain parser metadata",
-            "do not create executable instructions or branch behavior",
+            "Milestone 60: Direct JMP Parsing and Target Lowering",
+            "Direct jmp label forms are parsed and lowered",
+            "runtime branch transfer remains deferred",
+            "jmp done",
+            "done:",
             "final-registers",
             "Program Console",
         ],
@@ -1615,7 +1616,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase59_status_and_code_policy_present()
+    assert_phase60_status_and_code_policy_present()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

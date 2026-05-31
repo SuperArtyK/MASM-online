@@ -64,7 +64,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 59 instruction-limit settings. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 59 instruction-limit settings required by the current Phase 60 UI. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},

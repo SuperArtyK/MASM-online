@@ -5,16 +5,16 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 59 - Control-Flow Instruction Limit
+Phase 60 - Direct JMP Parsing and Target Lowering
 
 Runtime/source-run MASM behavior phase:
-Phase 59 - Control-Flow Instruction Limit
+Phase 60 - Direct JMP Parsing and Target Lowering
 
-Phase 59 adds a source-run/test-facing `instructionLimit` watchdog. Runs count executed VM instructions, stop before executing instruction `limit + 1`, and emit `instruction-limit-exceeded` through Simulator Messages without reporting normal completion. Code labels remain parser/source metadata only: they do not execute, do not create IR instructions, and do not add branch behavior.
+Phase 60 parses, classifies, and lowers direct `jmp label` forms that target executable code labels or procedure-entry labels. Runtime branch transfer remains deferred to Phase 61; when execution reaches a lowered direct `jmp`, the simulator emits `branch-runtime-deferred`, preserves already-committed state, and stops without reporting normal completion. Phase 59 `instructionLimit` watchdog behavior remains available and still reports `instruction-limit-exceeded` when a configured limit blocks the next instruction.
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md): selected data sections, MASM compatibility directives, operands, arithmetic/logic/shift/rotate/multiply/divide instructions, code-label metadata, instruction-count limits, diagnostic settings, startup notices, display markers, unsupported-feature diagnostics, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md): selected data sections, MASM compatibility directives, operands, arithmetic/logic/shift/rotate/multiply/divide instructions, code-label metadata, direct JMP target lowering, instruction-count limits, diagnostic settings, startup notices, display markers, unsupported-feature diagnostics, and the virtual Irvine32 `exit` terminator.
 
 For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
 

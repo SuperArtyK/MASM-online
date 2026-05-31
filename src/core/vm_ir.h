@@ -90,6 +90,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IDIV,
     /// Compute an effective address into a 32-bit register without reading memory.
     VM_IR_OPCODE_LEA,
+    /// Direct JMP branch target metadata lowered by Phase 60 without runtime branch execution.
+    VM_IR_OPCODE_JMP,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.
@@ -107,7 +109,9 @@ typedef enum VmIrOperandKind {
     /// Absolute simulated memory address operand.
     VM_IR_OPERAND_MEMORY_ADDRESS,
     /// Runtime memory address computed from an optional static base, a base register, and displacement.
-    VM_IR_OPERAND_MEMORY_REGISTER
+    VM_IR_OPERAND_MEMORY_REGISTER,
+    /// Zero-based direct branch target instruction index resolved from a code label.
+    VM_IR_OPERAND_BRANCH_TARGET
 } VmIrOperandKind;
 
 
@@ -195,6 +199,16 @@ VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits);
 /// @param width_bits Operand width in bits, or zero when parser validation will infer it.
 /// @return Register-indirect memory operand descriptor.
 VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t displacement, uint32_t static_address, uint8_t width_bits);
+
+/// Returns a direct branch target operand.
+///
+/// Phase 60 stores the resolved target instruction index as metadata for later
+/// runtime branch phases. The Phase 60 executor diagnoses this operand before
+/// applying any branch transfer.
+///
+/// @param target_instruction_index Zero-based target IR instruction index.
+/// @return Direct branch target operand descriptor.
+VmIrOperand vm_ir_operand_branch_target(uint32_t target_instruction_index);
 
 /// Returns a copy of an operand marked with address relocation metadata.
 ///

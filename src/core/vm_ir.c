@@ -65,6 +65,15 @@ VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t disp
     return operand;
 }
 
+VmIrOperand vm_ir_operand_branch_target(uint32_t target_instruction_index) {
+    VmIrOperand operand = vm_ir_operand_none();
+
+    operand.kind = VM_IR_OPERAND_BRANCH_TARGET;
+    operand.immediate = target_instruction_index;
+
+    return operand;
+}
+
 
 /// Returns an operand copy with relocation metadata applied.
 ///
@@ -172,6 +181,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "idiv";
         case VM_IR_OPCODE_LEA:
             return "lea";
+        case VM_IR_OPCODE_JMP:
+            return "jmp";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

@@ -4,11 +4,12 @@
  *
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
- * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, and Irvine32 exit forms
- * over the currently supported register and memory operand shapes. Phase 59
- * source-run code layers an instruction-count watchdog over this executor.
- * Control flow, stack behavior, and non-exit Irvine32 routines remain later
- * milestones.
+ * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
+ * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 60
+ * direct-JMP deferred-runtime diagnostics, and Irvine32 exit forms over the
+ * currently supported operand shapes. Phase 59 source-run code layers an
+ * instruction-count watchdog over this executor. Runtime branch transfer,
+ * stack behavior, and non-exit Irvine32 routines remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -58,7 +59,9 @@ typedef enum VmExecStatus {
     /// Operation stopped before consuming an architecturally undefined modeled flag.
     VM_EXEC_STATUS_UNDEFINED_FLAG_USE,
     /// Source-run execution stopped before fetching the next instruction because the configured instruction limit was reached.
-    VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED
+    VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED,
+    /// Phase 60 stopped after reaching a lowered direct JMP before runtime branch execution exists.
+    VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
 } VmExecStatus;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.

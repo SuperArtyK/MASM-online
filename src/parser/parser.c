@@ -3,8 +3,9 @@
  * @brief Parser for the currently implemented MASM32 educational subset.
  *
  * This implementation consumes the lexer token stream, lays out small .data,
- * .DATA?, and .CONST images with symbols, records Phase 58 code-label metadata,
- * and emits only the minimal IR supported by the current executor. Control flow,
+ * .DATA?, and .CONST images with symbols, records code-label metadata,
+ * lowers Phase 60 direct JMP branch-target metadata, and emits only the minimal
+ * IR supported by the current executor. Runtime control-flow transfer,
  * stack behavior, scaled-index addressing, Irvine32 routine bodies, and full
  * MASM expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -30,6 +31,9 @@
 
 /// Maximum code-label declarations that can wait for the next executable target.
 #define VM_PARSER_PENDING_CODE_LABEL_CAPACITY 128U
+
+/// Maximum direct branch fixups retained during one parse operation.
+#define VM_PARSER_BRANCH_FIXUP_CAPACITY 128U
 
 
 /// Formats an unsigned integer with comma group separators for diagnostics.
@@ -130,6 +134,16 @@ typedef struct VmParserConstantExpression {
     const VmLexerToken *start_token;
 } VmParserConstantExpression;
 
+/// Describes one lowered direct-branch target that must be resolved after labels are known.
+typedef struct VmParserBranchFixup {
+    /// Emitted JMP instruction index to patch with the resolved target.
+    size_t instruction_index;
+    /// Copied source token naming the branch target operand.
+    VmLexerToken target_token;
+    /// User-symbol CASEMAP policy active at the target reference.
+    VmParserUserSymbolCasePolicy case_policy;
+} VmParserBranchFixup;
+
 /// Owns mutable parser state for one parse operation.
 typedef struct VmParserState {
     /// Caller-provided parse configuration.
@@ -172,6 +186,10 @@ typedef struct VmParserState {
     size_t pending_code_label_indices[VM_PARSER_PENDING_CODE_LABEL_CAPACITY];
     /// Number of valid entries in @ref pending_code_label_indices.
     size_t pending_code_label_count;
+    /// Direct JMP target references awaiting final code-label resolution.
+    VmParserBranchFixup branch_fixups[VM_PARSER_BRANCH_FIXUP_CAPACITY];
+    /// Number of valid entries in @ref branch_fixups.
+    size_t branch_fixup_count;
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
@@ -568,6 +586,35 @@ static VmParserEquate *vm_parser_find_equate(VmParserState *state, const VmLexer
     return vm_parser_find_equate_with_ambiguity(state, token, NULL);
 }
 
+/// Finds a numeric equate by source token name using an explicit CASEMAP policy.
+///
+/// @param state Parser state whose equate table should be searched.
+/// @param token Source token containing the equate name.
+/// @param policy Reference-time user-symbol case policy.
+/// @return Matching equate slot, or NULL when no single equate matches.
+static VmParserEquate *vm_parser_find_equate_with_policy(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmParserUserSymbolCasePolicy policy
+) {
+    size_t index = 0U;
+    VmParserEquate *match = NULL;
+    size_t match_count = 0U;
+
+    if (state == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->equate_count; index += 1U) {
+        if (vm_parser_equate_name_equals(&state->equates[index], token, policy)) {
+            match = &state->equates[index];
+            match_count += 1U;
+        }
+    }
+
+    return match_count == 1U ? match : NULL;
+}
+
 /// Returns whether a token should be parsed as a numeric equate expression.
 ///
 /// @param state Parser state whose equate table should be searched.
@@ -657,6 +704,35 @@ static VmCodeLabel *vm_parser_find_code_label(VmParserState *state, const VmLexe
 
     for (index = 0U; index < state->result->code_label_count; index += 1U) {
         if (vm_parser_code_label_name_equals(&state->config->code_labels[index], token, state->user_symbol_case_policy)) {
+            return &state->config->code_labels[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Finds an accepted code-label declaration using a reference-time CASEMAP policy.
+///
+/// Direct branch operands must be resolved using the CASEMAP policy active at
+/// the branch source location, not the policy left active at end of parsing.
+///
+/// @param state Parser state whose label table should be searched.
+/// @param token Source token containing the candidate name.
+/// @param policy Reference-time user-symbol case policy.
+/// @return Matching label slot, or NULL when no match exists.
+static VmCodeLabel *vm_parser_find_code_label_with_policy(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmParserUserSymbolCasePolicy policy
+) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->code_labels == NULL || token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->result->code_label_count; index += 1U) {
+        if (vm_parser_code_label_name_equals(&state->config->code_labels[index], token, policy)) {
             return &state->config->code_labels[index];
         }
     }
@@ -4077,6 +4153,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_LEA;
         return true;
     }
+    if (vm_parser_token_equals(token, "jmp")) {
+        *out_opcode = VM_IR_OPCODE_JMP;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -7012,6 +7092,197 @@ static bool vm_parser_validate_explicit_imul_operands(
     return true;
 }
 
+/// Returns whether a token is a Phase 60 rejected branch distance or type override word.
+///
+/// @param token Token to inspect.
+/// @return true for SHORT, NEAR, or FAR.
+static bool vm_parser_token_is_branch_distance_override(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           (vm_parser_token_equals(token, "SHORT") ||
+            vm_parser_token_equals(token, "NEAR") ||
+            vm_parser_token_equals(token, "FAR"));
+}
+
+/// Returns whether an identifier is reserved as a recognized instruction mnemonic.
+///
+/// @param token Token to inspect.
+/// @return true when the identifier names an implemented or explicitly known future instruction family.
+static bool vm_parser_token_names_instruction_mnemonic(const VmLexerToken *token) {
+    VmIrOpcode opcode = VM_IR_OPCODE_MOV;
+
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (vm_parser_parse_opcode(token, &opcode)) {
+        return true;
+    }
+
+    return vm_parser_token_equals(token, "call") ||
+           vm_parser_token_equals(token, "ret") ||
+           vm_parser_token_equals(token, "loop");
+}
+
+/// Adds a Phase 60 direct-branch diagnostic at the target operand.
+///
+/// @param state Parser state to mutate.
+/// @param code Diagnostic code to emit.
+/// @param token Branch operand token that owns the primary diagnostic span.
+/// @param message Stable user-facing diagnostic text.
+/// @return false so callers can use the helper in failure returns.
+static bool vm_parser_reject_branch_target(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+) {
+    vm_parser_add_diagnostic(state, code, token, message);
+    return false;
+}
+
+/// Records one Phase 60 direct-branch target fixup.
+///
+/// The target may be declared later in source, so final label classification and
+/// IR target patching happen after code parsing completes.
+///
+/// @param state Parser state to mutate.
+/// @param instruction_index Emitted JMP instruction index.
+/// @param target_token Source token naming the branch target.
+/// @return true when the fixup was retained.
+static bool vm_parser_add_branch_fixup(VmParserState *state, size_t instruction_index, const VmLexerToken *target_token) {
+    VmParserBranchFixup *fixup = NULL;
+
+    if (state == NULL || target_token == NULL) {
+        return false;
+    }
+    if (state->branch_fixup_count >= (size_t)VM_PARSER_BRANCH_FIXUP_CAPACITY) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INSTRUCTION_CAPACITY_EXCEEDED, target_token, "Direct branch target fixup capacity exceeded.");
+        return false;
+    }
+
+    fixup = &state->branch_fixups[state->branch_fixup_count];
+    fixup->instruction_index = instruction_index;
+    fixup->target_token = *target_token;
+    fixup->case_policy = state->user_symbol_case_policy;
+    state->branch_fixup_count += 1U;
+    return true;
+}
+
+/// Parses and lowers one Phase 60 direct JMP instruction.
+///
+/// Phase 60 accepts only direct label targets and defers runtime branch
+/// execution. The parser emits a JMP instruction with a placeholder target and
+/// resolves the target after all code labels have been seen.
+///
+/// @param state Parser state to mutate.
+/// @param mnemonic_token JMP mnemonic token used for emitted source metadata.
+/// @return true when the instruction was parsed and a fixup was retained.
+static bool vm_parser_parse_jmp_instruction(VmParserState *state, const VmLexerToken *mnemonic_token) {
+    const VmLexerToken *target_token = vm_parser_current_token(state);
+    size_t instruction_index = 0U;
+    VmIrOperand target_operand = vm_ir_operand_branch_target(0U);
+
+    if (state == NULL || state->result == NULL || mnemonic_token == NULL) {
+        return false;
+    }
+
+    if (target_token == NULL || vm_parser_is_line_end_token(target_token)) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
+            target_token != NULL ? target_token : mnemonic_token,
+            "JMP requires a direct code-label target operand."
+        );
+    }
+
+    if (vm_parser_token_is_branch_distance_override(target_token)) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+            target_token,
+            "JMP distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target."
+        );
+    }
+
+    if (vm_parser_current_token_starts_ptr_width(state) || vm_parser_current_token_is_malformed_ptr_prefix(state) ||
+        target_token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+            target_token,
+            "JMP memory targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_REGISTER) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+            target_token,
+            "JMP register targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_NUMBER || target_token->kind == VM_LEXER_TOKEN_PLUS ||
+        target_token->kind == VM_LEXER_TOKEN_MINUS || target_token->kind == VM_LEXER_TOKEN_CHARACTER ||
+        target_token->kind == VM_LEXER_TOKEN_LEFT_PAREN) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+            target_token,
+            "JMP immediate numeric targets are not supported. Use a direct code label target."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+            target_token,
+            "JMP target cannot be a directive name. Use a code label with an executable target instruction."
+        );
+    }
+
+    if (target_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
+            target_token,
+            "JMP requires a direct code-label target operand."
+        );
+    }
+
+    if (vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length) != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+            target_token,
+            "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
+        );
+    }
+
+    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
+        return vm_parser_reject_branch_target(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+            target_token,
+            "JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction."
+        );
+    }
+
+    vm_parser_advance(state);
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    instruction_index = state->result->instruction_count;
+    if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_JMP, target_operand, vm_ir_operand_none(), mnemonic_token)) {
+        return false;
+    }
+
+    return vm_parser_add_branch_fixup(state, instruction_index, target_token);
+}
+
 /// Parses one IMUL instruction, including Phase 54 and Phase 55 forms.
 ///
 /// One-operand IMUL keeps the implicit-accumulator behavior implemented in
@@ -7330,6 +7601,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     vm_parser_advance(state);
+    if (opcode == VM_IR_OPCODE_JMP) {
+        return vm_parser_parse_jmp_instruction(state, mnemonic_token);
+    }
     if (opcode == VM_IR_OPCODE_NOP) {
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             const VmLexerToken *nop_operand_token = vm_parser_current_token(state);
@@ -7554,6 +7828,101 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+}
+
+/// Classifies and applies one retained direct branch fixup.
+///
+/// The final classifier is shared by direct JMP parsing and future direct branch
+/// phases. It accepts only code labels and procedure-entry labels that resolve
+/// to executable IR instruction indexes, and it rejects data symbols, equates,
+/// Irvine32/external names, instruction names, and unknown identifiers.
+///
+/// @param state Parser state to mutate.
+/// @param fixup Fixup to classify and apply.
+/// @return true when the fixup was accepted and the emitted instruction patched.
+static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmParserBranchFixup *fixup) {
+    VmIrInstruction *instruction = NULL;
+    VmCodeLabel *label = NULL;
+    const VmSymbol *symbol = NULL;
+    VmSymbolLookupStatus symbol_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    const VmLexerToken *target_token = fixup != NULL ? &fixup->target_token : NULL;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || fixup == NULL || target_token == NULL) {
+        return false;
+    }
+
+    if (fixup->instruction_index >= state->result->instruction_count || state->config->instructions == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "Internal direct JMP target metadata is invalid.");
+        return false;
+    }
+
+    if (vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length) != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels.");
+        return false;
+    }
+
+    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction.");
+        return false;
+    }
+
+    symbol = vm_symbol_find_by_name_with_policy(
+        state->config->symbols,
+        state->result->symbol_count,
+        target_token->lexeme,
+        target_token->lexeme_length,
+        vm_parser_symbol_case_policy(fixup->case_policy),
+        &symbol_status
+    );
+    if (symbol_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is ambiguous among data symbols under CASEMAP:ALL. Direct JMP accepts only an unambiguous code label target.");
+        return false;
+    }
+    if (symbol != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a data symbol. Direct JMP accepts only code labels with executable instruction targets.");
+        return false;
+    }
+
+    if (vm_parser_find_equate_with_policy(state, target_token, fixup->case_policy) != NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels.");
+        return false;
+    }
+
+    label = vm_parser_find_code_label_with_policy(state, target_token, fixup->case_policy);
+    if (label == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is not a known code label or procedure-entry label.");
+        return false;
+    }
+
+    if (!label->has_target_instruction_index || label->target_kind == VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target label has no executable instruction target.");
+        return false;
+    }
+
+    instruction = &state->config->instructions[fixup->instruction_index];
+    instruction->destination = vm_ir_operand_branch_target((uint32_t)label->target_instruction_index);
+    return true;
+}
+
+/// Resolves every retained Phase 60 direct branch fixup.
+///
+/// @param state Parser state to mutate.
+/// @return true when all fixups resolved successfully.
+static bool vm_parser_resolve_branch_fixups(VmParserState *state) {
+    size_t index = 0U;
+    bool ok = true;
+
+    if (state == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < state->branch_fixup_count; index += 1U) {
+        if (!vm_parser_resolve_one_branch_fixup(state, &state->branch_fixups[index])) {
+            ok = false;
+        }
+    }
+
+    return ok;
 }
 
 /// Parses a .code directive line.
@@ -8729,6 +9098,7 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
 
     if (state.saw_end) {
         (void)vm_parser_expect_no_tokens_after_end(&state);
+        (void)vm_parser_resolve_branch_fixups(&state);
     }
 
     out_result->status = vm_parser_finalize_status(&state);
@@ -8918,6 +9288,10 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "ambiguous-memory-width";
         case VM_PARSER_DIAGNOSTIC_CONST_WRITE:
             return "const-write";
+        case VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET:
+            return "invalid-branch-target";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM:
+            return "unsupported-branch-target-form";
         case VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE:
             return "const-uninitialized-storage";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MODEL:

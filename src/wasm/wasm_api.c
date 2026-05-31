@@ -9,8 +9,9 @@
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
  * instructions, accumulator conversions, exchange/negation/no-op
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
- * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, unsigned
- * MUL, one-operand signed IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, and recovered
+ * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, Phase 60
+ * direct JMP parser/lowering diagnostics, unsigned MUL, one-operand signed
+ * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -71,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 59U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 60U
 
-/// Suffix for the current Phase 59 runtime/source-run behavior phase.
+/// Suffix for the current Phase 60 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 59 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 59 - Control-Flow Instruction Limit"
+/// Full name of the current Phase 60 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 60 - Direct JMP Parsing and Target Lowering"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -4925,6 +4926,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     if (diagnostic != NULL && diagnostic->has_instruction) {
         line = diagnostic->instruction.source_line;
         if (status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
+            status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED ||
             (diagnostic->status == VM_EXEC_STATUS_MEMORY_ERROR &&
              (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS ||
               (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING && diagnostic->memory_diagnostic.has_code_overlap)))) {
@@ -4956,6 +4958,9 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
             quotient_overflow_message,
             sizeof(quotient_overflow_message)
         );
+    } else if (status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
+        message_code = "branch-runtime-deferred";
+        message_text = "Direct JMP was parsed and resolved, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution. Execution stopped before applying the jump.";
     }
 
     return masm32_sim_json_append_message_with_span(
@@ -5155,7 +5160,7 @@ static bool masm32_sim_json_append_instruction_limit_metadata(
     bool has_current_index = false;
     uint32_t current_index = 0U;
 
-    if (storage != NULL && storage->has_instruction_limit_violation) {
+    if (storage != NULL && (storage->has_instruction_limit_violation || storage->has_attempted_next_instruction_index)) {
         executed_count = storage->executed_instruction_count;
         has_current_index = storage->has_current_instruction_index;
         current_index = storage->current_instruction_index;
@@ -6218,6 +6223,13 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     }
 
     masm32_sim_wasm_update_instruction_accounting(&g_masm32_sim_wasm_run_storage, &vm);
+    if (exec_status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED &&
+        vm.program != NULL &&
+        vm.instruction_pointer < vm.program_count) {
+        g_masm32_sim_wasm_run_storage.attempted_next_instruction_index = vm.program[vm.instruction_pointer].instruction_index;
+        g_masm32_sim_wasm_run_storage.has_attempted_next_instruction_index = true;
+        g_masm32_sim_wasm_run_storage.executed_instruction_count = vm.instruction_count;
+    }
 
     if (exec_status == VM_EXEC_STATUS_HALTED) {
         exec_status = VM_EXEC_STATUS_OK;

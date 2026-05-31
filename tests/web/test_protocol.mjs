@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 59);
+  assert.equal(IMPLEMENTED_PHASE, 60);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 59 - Control-Flow Instruction Limit");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 60 - Direct JMP Parsing and Target Lowering");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 59,
+      phase: 60,
       phaseSuffix: "",
-      phaseName: "Phase 59 - Control-Flow Instruction Limit"
+      phaseName: "Phase 60 - Direct JMP Parsing and Target Lowering"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 59,
+      phase: 60,
       phaseSuffix: "",
-      phaseName: "Phase 59 - Control-Flow Instruction Limit"
+      phaseName: "Phase 60 - Direct JMP Parsing and Target Lowering"
     }
   });
 });
@@ -326,12 +326,12 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 59 - Control-Flow Instruction Limit. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 60 - Direct JMP Parsing and Target Lowering. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
 
-test("RUN_SOURCE marks stale Phase 59 artifacts without the expected suffix as stale", () => {
+test("RUN_SOURCE marks stale pre-Phase 60 artifacts without the expected suffix as stale", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {

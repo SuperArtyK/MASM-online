@@ -1,10 +1,10 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 59 - Control-Flow Instruction Limit
+Phase 60 - Direct JMP Parsing and Target Lowering
 
 Runtime/source-run MASM behavior phase:
-Phase 59 - Control-Flow Instruction Limit: The simulator enforces a source-run/test-facing executed-instruction watchdog through `instructionLimit`. Labels remain parser/source metadata only: they do not execute, do not create IR instructions, and do not add branch behavior. Duplicate or conflicting labels produce structured Simulator Messages diagnostics.
+Phase 60 - Direct JMP Parsing and Target Lowering: The simulator parses, classifies, and lowers direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. Runtime branch transfer remains deferred to Phase 61; reaching a lowered direct `jmp` emits `branch-runtime-deferred` and stops before applying the jump. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
 
 ### Execution limits
 
@@ -14,7 +14,7 @@ Source-run and test-facing callers may set `instructionLimit` to a positive inte
 
 Ordinary code labels (`name:`) and procedure-entry labels (`name PROC`) are accepted and recorded as parser/source metadata. Consecutive labels before one executable instruction target the same following instruction. Labels before `ENDP`, `END`, or another non-executable boundary are accepted as no-executable-target metadata.
 
-Branch consumers remain future work: `jmp label`, conditional jumps, `loop`, `call`, `ret`, and stack/procedure execution remain unsupported.
+Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata, but runtime branch transfer is still deferred: reaching the instruction emits `branch-runtime-deferred` and stops before applying the jump. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register/memory jumps, distance overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain unsupported.
 
 ### Unsupported high-level flow diagnostics
 
@@ -56,7 +56,7 @@ Supported structural forms:
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
-- Labels are accepted as parser/source metadata, but control-flow target resolution is not implemented yet.
+- Labels are accepted as parser/source metadata. Phase 60 resolves direct `jmp label` targets for lowering metadata only; runtime branch transfer remains deferred to Phase 61.
 
 ### MASM32 header compatibility directives
 

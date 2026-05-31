@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 59: Control-Flow Instruction Limit.
+  Milestone 60: Direct JMP Parsing and Target Lowering.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,14 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 59: Control-Flow Instruction Limit. Source-run/test callers can enforce an instruction-count watchdog; labels remain parser metadata and do not create executable instructions or branch behavior.</p>
+        <p class="muted">Milestone 60: Direct JMP Parsing and Target Lowering. Direct jmp label forms are parsed and lowered; runtime branch transfer remains deferred to Phase 61.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, -100
-    cdq
-    mov ebx, 7
-    idiv ebx
+    mov eax, 1
+    jmp done
+    mov ebx, 2
+done:
+    mov ecx, 3
 main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

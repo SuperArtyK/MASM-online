@@ -3,8 +3,9 @@
  * @brief Parser API for the currently implemented MASM32 educational subset.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
- * Phase 58 code-label metadata, and the minimal IR currently supported by the
- * executor. It intentionally remains limited to implemented writable,
+ * Phase 58 code-label metadata, Phase 60 direct-JMP lowering metadata, and
+ * the minimal IR currently supported by the executor. It intentionally remains
+ * limited to implemented writable,
  * uninitialized, and constant data declarations, numeric equates, extended
  * constant expressions, nested DUP initializers, OFFSET, direct symbol memory
  * operands, constant symbol-offset memory operands, signed and unsigned PTR
@@ -146,6 +147,10 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH,
     /// A statically known instruction destination attempts to write read-only `.CONST` storage.
     VM_PARSER_DIAGNOSTIC_CONST_WRITE,
+    /// A direct branch target resolved to a symbol or label that cannot be branched to.
+    VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+    /// A direct branch operand used a form reserved for a later branch phase.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
     /// An accepted `.CONST ?` or `.CONST DUP(?)` declaration reserves uninitialized read-only storage.
     VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE,
     /// A .model directive used a form outside `.model flat, stdcall`.
@@ -258,7 +263,7 @@ typedef enum VmCodeLabelDeclarationKind {
     VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY
 } VmCodeLabelDeclarationKind;
 
-/// Identifies the Phase 58 target classification of a code label.
+/// Identifies the Phase 58/60 target classification of a code label.
 typedef enum VmCodeLabelTargetKind {
     /// The label targets an executable IR instruction.
     VM_CODE_LABEL_TARGET_EXECUTABLE_INSTRUCTION = 0,
@@ -268,7 +273,7 @@ typedef enum VmCodeLabelTargetKind {
     VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET
 } VmCodeLabelTargetKind;
 
-/// Describes one accepted Phase 58 code-label declaration.
+/// Describes one accepted code-label declaration used by label metadata and direct branches.
 typedef struct VmCodeLabel {
     /// Null-terminated original source spelling of the label.
     char name[VM_SYMBOL_NAME_CAPACITY];
@@ -451,13 +456,15 @@ typedef struct VmParserResult {
 /// signed/unsigned PTR width overrides on supported memory operands; destination
 /// operands may use registers, direct symbols, constant symbol-offset memory
 /// operands, register-indirect memory operands, or signed/unsigned PTR width
-/// overrides on supported memory operands. MASM32 header directives accepted in
+/// overrides on supported memory operands. Direct JMP operands may target
+/// executable code labels or procedure-entry labels, but runtime branch transfer
+/// remains deferred until Phase 61. MASM32 header directives accepted in
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
 /// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
 /// storage with metadata; `.CONST` storage is read-only once loaded into VM
 /// memory. Code labels and procedure-entry labels are recorded as parser/source
-/// metadata only; they do not emit executable IR instructions or enable branch
-/// execution.
+/// metadata; Phase 60 direct JMP lowering may consume that metadata, but branch
+/// execution remains deferred.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

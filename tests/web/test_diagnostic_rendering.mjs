@@ -2140,7 +2140,7 @@ test("renders unsupported instruction diagnostic with stable wording exactly", (
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 5: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 });
 
-test("renders Phase 59 instruction-limit diagnostic exactly", () => {
+test("renders Phase 59 instruction-limit diagnostic under Phase 60 exactly", () => {
   const name = "phase59InstructionLimit";
   const source = `.code
 main PROC
@@ -2152,7 +2152,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 59);
+  assert.equal(json.phase, 60);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2174,13 +2174,334 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 5, column 5, byte offset 50, span length 10: Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.");
 });
 
+test("renders Phase 60 deferred direct JMP runtime diagnostic exactly", () => {
+  const name = "phase60BranchRuntimeDeferred";
+  const source = `.code
+main PROC
+    mov eax, 1
+    jmp done
+    mov ebx, 2
+done:
+    mov ecx, 3
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 60);
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.executedInstructionCount, 1);
+  assert.equal(json.attemptedNextInstructionIndex, 1);
+  assert.equal(json.currentInstructionIndex, 0);
+  assert.equal(json.registers.EAX.hex, "00000001h");
+  assert.equal(json.registers.EBX.hex, "00000000h");
+  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "branch-runtime-deferred",
+    message: "Direct JMP was parsed and resolved, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution. Execution stopped before applying the jump.",
+    line: 4,
+    column: 5,
+    byteOffset: 35,
+    spanLength: 8
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] branch-runtime-deferred line 4, column 5, byte offset 35, span length 8: Direct JMP was parsed and resolved, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution. Execution stopped before applying the jump.");
+});
+
+test("renders Phase 60 invalid direct JMP data-target diagnostic exactly", () => {
+  const name = "phase60InvalidBranchDataTarget";
+  const source = `.data
+value DWORD 1
+.code
+main PROC
+    jmp value
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 60);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-branch-target",
+    message: "JMP target cannot be a data symbol. Direct JMP accepts only code labels with executable instruction targets.",
+    line: 5,
+    column: 9,
+    byteOffset: 44,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-branch-target line 5, column 9, byte offset 44, span length 5: JMP target cannot be a data symbol. Direct JMP accepts only code labels with executable instruction targets.");
+});
+
+
+test("renders Phase 60 unsupported direct JMP register-target diagnostic exactly", () => {
+  const name = "phase60UnsupportedBranchRegisterTarget";
+  const source = `.code
+main PROC
+    jmp eax
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 60);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-branch-target-form",
+    message: "JMP register targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-branch-target-form line 3, column 9, byte offset 24, span length 3: JMP register targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase.");
+});
+
+test("renders Phase 60 missing direct JMP target diagnostic exactly", () => {
+  const name = "phase60MissingBranchTarget";
+  const source = `.code
+main PROC
+    jmp
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 60);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "expected-operand",
+    message: "JMP requires a direct code-label target operand.",
+    line: 3,
+    column: 8,
+    byteOffset: 23,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] expected-operand line 3, column 8, byte offset 23, span length 1: JMP requires a direct code-label target operand.");
+});
+
+
+test("renders every Phase 60 rejected direct JMP target class exactly", () => {
+  const cases = [
+    {
+      name: "phase60InvalidBranchEquateTarget",
+      source: `COUNT = 1
+.code
+main PROC
+    jmp COUNT
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels.",
+        line: 4,
+        column: 9,
+        byteOffset: 34,
+        spanLength: 5
+      },
+      rendered: "[assembly-error] invalid-branch-target line 4, column 9, byte offset 34, span length 5: JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels."
+    },
+    {
+      name: "phase60InvalidBranchUnknownTarget",
+      source: `.code
+main PROC
+    jmp missing
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target is not a known code label or procedure-entry label.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 7
+      },
+      rendered: "[assembly-error] invalid-branch-target line 3, column 9, byte offset 24, span length 7: JMP target is not a known code label or procedure-entry label."
+    },
+    {
+      name: "phase60InvalidBranchNoExecutableTarget",
+      source: `.code
+main PROC
+    jmp empty
+empty:
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target label has no executable instruction target.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 5
+      },
+      rendered: "[assembly-error] invalid-branch-target line 3, column 9, byte offset 24, span length 5: JMP target label has no executable instruction target."
+    },
+    {
+      name: "phase60InvalidBranchIrvineTarget",
+      source: `INCLUDE Irvine32.inc
+.code
+main PROC
+    jmp exit
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels.",
+        line: 4,
+        column: 9,
+        byteOffset: 45,
+        spanLength: 4
+      },
+      rendered: "[assembly-error] invalid-branch-target line 4, column 9, byte offset 45, span length 4: JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
+    },
+    {
+      name: "phase60UnsupportedBranchMemoryTarget",
+      source: `.code
+main PROC
+    jmp DWORD PTR [eax]
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "unsupported-branch-target-form",
+        message: "JMP memory targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 5
+      },
+      rendered: "[assembly-error] unsupported-branch-target-form line 3, column 9, byte offset 24, span length 5: JMP memory targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+    },
+    {
+      name: "phase60UnsupportedBranchDistanceTarget",
+      source: `.code
+main PROC
+    jmp SHORT target
+target:
+    mov eax, 1
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "unsupported-branch-target-form",
+        message: "JMP distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 5
+      },
+      rendered: "[assembly-error] unsupported-branch-target-form line 3, column 9, byte offset 24, span length 5: JMP distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target."
+    },
+    {
+      name: "phase60UnsupportedBranchImmediateTarget",
+      source: `.code
+main PROC
+    jmp 42
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "unsupported-branch-target-form",
+        message: "JMP immediate numeric targets are not supported. Use a direct code label target.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 2
+      },
+      rendered: "[assembly-error] unsupported-branch-target-form line 3, column 9, byte offset 24, span length 2: JMP immediate numeric targets are not supported. Use a direct code label target."
+    },
+    {
+      name: "phase60InvalidBranchDirectiveTarget",
+      source: `.code
+main PROC
+    jmp .data
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target cannot be a directive name. Use a code label with an executable target instruction.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 5
+      },
+      rendered: "[assembly-error] invalid-branch-target line 3, column 9, byte offset 24, span length 5: JMP target cannot be a directive name. Use a code label with an executable target instruction."
+    },
+    {
+      name: "phase60InvalidBranchInstructionTarget",
+      source: `.code
+main PROC
+    jmp mov
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 3
+      },
+      rendered: "[assembly-error] invalid-branch-target line 3, column 9, byte offset 24, span length 3: JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction."
+    },
+    {
+      name: "phase60InvalidBranchWindowsApiTarget",
+      source: `.code
+main PROC
+    jmp ExitProcess
+main ENDP
+END main
+`,
+      expected: {
+        kind: "assembly-error",
+        code: "invalid-branch-target",
+        message: "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels.",
+        line: 3,
+        column: 9,
+        byteOffset: 24,
+        spanLength: 11
+      },
+      rendered: "[assembly-error] invalid-branch-target line 3, column 9, byte offset 24, span length 11: JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
+    }
+  ];
+
+  for (const item of cases) {
+    const { json, rawJson, rendered } = runFixture(item.name, item.source);
+    assertRunStatus(json, false, "parse-error");
+    assert.equal(json.phase, 60);
+    assertMessageEquals(json.simulatorMessages[0], item.expected);
+    assertNoExecutionComplete(json.simulatorMessages);
+    assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
+  }
+});
+
 
 test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly", () => {
   const duplicateName = "phase58DuplicateLabel";
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 59);
+  assert.equal(duplicateResult.json.phase, 60);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -2679,7 +3000,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 59);
+  assert.equal(json.phase, 60);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -2700,7 +3021,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 59);
+  assert.equal(json.phase, 60);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",

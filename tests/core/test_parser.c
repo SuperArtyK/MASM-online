@@ -1,11 +1,12 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 58 code-label diagnostics.
+ * @brief Unit and integration tests for the parser through Phase 60 direct JMP lowering.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
- * Phase 58 code-label metadata and diagnostics, unsupported syntax,
- * INCLUDELIB non-goal diagnostics, INVOKE/ADDR external-routine diagnostics,
- * and integration with the current executor without adding future execution behavior.
+ * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
+ * parsing and target classification, unsupported syntax, INCLUDELIB non-goal
+ * diagnostics, INVOKE/ADDR external-routine diagnostics, and integration with
+ * the current executor without adding future execution behavior.
  */
 
 #include <stdbool.h>
@@ -5660,9 +5661,222 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all parser regression tests through Milestone 57.
+/// Runs all parser regression tests through Phase 60 direct JMP parsing and target lowering.
 ///
 /// @return Zero on success, otherwise one.
+
+/// Verifies Phase 60 direct JMP lowers code-label and procedure-entry targets.
+///
+/// @return Number of failures.
+static int test_phase60_jmp_parse_to_ir(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    jmp target\n"
+        "target:\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "other PROC\n"
+        "    mov ebx, 2\n"
+        "other ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 60 direct JMP source should parse");
+    failures += expect_size(result.instruction_count, 3U, "Phase 60 source should emit JMP plus two MOV instructions");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_JMP, "first instruction should be lowered JMP");
+    failures += expect_u32((uint32_t)buffers.instructions[0].destination.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "JMP destination should be a branch target operand");
+    failures += expect_u32(buffers.instructions[0].destination.immediate, 1U, "JMP should target the target label MOV instruction index");
+
+    return failures;
+}
+
+/// Verifies Phase 60 direct JMP accepts procedure-entry labels as direct targets only.
+///
+/// @return Number of failures.
+static int test_phase60_jmp_procedure_entry_target(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    jmp other\n"
+        "main ENDP\n"
+        "other PROC\n"
+        "    mov eax, 7\n"
+        "other ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "JMP to procedure entry should parse");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_JMP, "first instruction should be JMP");
+    failures += expect_u32(buffers.instructions[0].destination.immediate, 1U, "procedure-entry JMP should target the first executable instruction in the target procedure");
+
+    return failures;
+}
+
+/// Verifies Phase 60 direct JMP target-class diagnostics.
+///
+/// @return Number of failures.
+static int test_phase60_jmp_target_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    jmp value\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "data-symbol JMP target should use invalid-branch-target");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 5U, "data-symbol target diagnostic line should point at operand");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 9U, "data-symbol target diagnostic column should point at operand");
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    jmp COUNT\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to equate should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "equate JMP target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    jmp missing\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to unknown label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "unknown JMP target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "empty:\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "No-target label declaration alone should remain valid");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    jmp empty\n"
+        "empty:\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to no-target label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "no-target JMP label should use invalid-branch-target");
+
+    return failures;
+}
+
+/// Verifies Phase 60 direct JMP rejects non-direct branch operand forms.
+///
+/// @return Number of failures.
+static int test_phase60_jmp_form_rejections(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp eax\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP register target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "register JMP target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp DWORD PTR [eax]\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP memory target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "memory JMP target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp SHORT target\ntarget:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP SHORT distance override should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "SHORT distance override should use unsupported branch form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "deferred to a later branch phase", "distance override diagnostic should use stable future-phase wording");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp NEAR PTR target\ntarget:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP NEAR PTR distance override should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "NEAR PTR distance override should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp FAR PTR target\ntarget:\n    mov eax, 1\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP FAR PTR distance override should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "FAR PTR distance override should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp 42\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP immediate numeric target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "immediate JMP target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp .data\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP directive-name target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "directive JMP target should use invalid branch target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp mov\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP instruction-name target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "instruction-name JMP target should use invalid branch target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP with missing target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, "missing JMP target should use expected-operand");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Irvine32.inc\n.code\nmain PROC\n    jmp exit\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to Irvine32 exit should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "Irvine32 JMP target should use invalid branch target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    jmp ExitProcess\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JMP to Windows/API external symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "Windows/API external JMP target should use invalid branch target");
+
+    return failures;
+}
+
 int main(void) {
     int failures = 0;
 
@@ -5676,6 +5890,10 @@ int main(void) {
     failures += test_phase58_non_executable_procedure_metadata_has_no_target();
     failures += test_phase58_label_casemap_policy();
     failures += test_phase58_label_conflict_diagnostics();
+    failures += test_phase60_jmp_parse_to_ir();
+    failures += test_phase60_jmp_procedure_entry_target();
+    failures += test_phase60_jmp_target_diagnostics();
+    failures += test_phase60_jmp_form_rejections();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();
     failures += test_textbook_unsupported_directives_are_stable();
