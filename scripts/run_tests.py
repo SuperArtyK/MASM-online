@@ -1402,16 +1402,16 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase61_status_and_code_policy_present() -> None:
-    """Verify Phase 61B repository status and direct-JMP watchdog boundaries."""
+    """Verify Phase 61C repository status and direct-JMP scope boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
+        "Phase 61C - Branch Debugger Dependency Cleanup",
         "Runtime/source-run MASM behavior phase:",
         "Phase 61 - Direct JMP Runtime Execution",
     ]
     status_block = """Repository/archive milestone:
-Phase 61B - Branch Runtime Watchdog Scope Cleanup
+Phase 61C - Branch Debugger Dependency Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution"""
@@ -1437,6 +1437,8 @@ Phase 61 - Direct JMP Runtime Execution"""
             "`instruction-limit-exceeded`",
             "direct `jmp label` forms",
             "Direct JMP Runtime Execution",
+            "Phase 61C clarifies that preserving branch source metadata and lowered target metadata does not implement debugger/editor behavior.",
+            "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1461,10 +1463,13 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 61B:",
-            "runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP watchdog documentation",
+            "Current status at Phase 61C:",
+            "runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP debugger/editor dependency documentation",
+            "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
+            "Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "instructionLimit",
             "instruction-limit-exceeded",
@@ -1477,10 +1482,13 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
+            "Phase 61C clarifies that preserving branch source metadata and lowered target metadata does not implement debugger/editor behavior.",
+            "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1508,8 +1516,11 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 61B clarifies the direct-JMP watchdog boundary",
+            "Phase 61C clarifies the debugger/editor dependency boundary",
+            "Phase 61B",
             "Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog.",
+            "Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior.",
+            "Executable direct `jmp` does not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label.",
             "Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.",
@@ -1518,6 +1529,7 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "## Phase 61C - Branch Debugger Dependency Cleanup",
             "## Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 59 - Control-Flow Instruction Limit",
             "Active-time watchdog behavior is not implemented in Phase 61, Phase 61A, or Phase 61B",
@@ -1542,16 +1554,15 @@ Phase 61 - Direct JMP Runtime Execution"""
         ],
     )
 
-
 def assert_phase61b_watchdog_scope_documented() -> None:
     """Verify Phase 61B keeps active-time watchdog behavior deferred to Phase 200."""
 
     required_boundary_fragments = [
-        "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
+        "Phase 61B",
         "direct `jmp label`",
         "Phase 59",
         "instruction-count watchdog",
-        "Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B",
+        "Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B",
         "Phase 200 - Active Time Watchdog and Worker Responsiveness",
     ]
     for path in [
@@ -1576,6 +1587,7 @@ def assert_phase61b_watchdog_scope_documented() -> None:
         "Phase 61 implements active-time watchdog",
         "Phase 61A implements active-time watchdog",
         "Phase 61B implements active-time watchdog",
+        "Phase 61C implements active-time watchdog",
         "active-time-limit-exceeded",
     ]
     for path in [
@@ -1585,6 +1597,67 @@ def assert_phase61b_watchdog_scope_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
     ]:
         assert_all_text_not_contains(path, forbidden_active_time_current_status_fragments)
+
+
+def assert_phase61c_debugger_dependency_documented() -> None:
+    """Verify Phase 61C keeps direct-JMP runtime separate from debugger/editor behavior."""
+
+    required_current_status_fragments = [
+        "Phase 61C - Branch Debugger Dependency Cleanup",
+        "Phase 61 - Direct JMP Runtime Execution",
+        "debugger/editor",
+        "does not implement debugger",
+        "breakpoint binding",
+        "editor source navigation",
+        "current-instruction highlighting",
+        "CodeMirror gutter behavior",
+        "branch-target editor highlighting",
+    ]
+    for path in [
+        "README.md",
+        "docs/SUPPORTED_SYNTAX.md",
+        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+    ]:
+        assert_all_text_contains(path, required_current_status_fragments)
+
+    assert_all_text_contains(
+        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        [
+            "## 65C. Phase 61C - Branch Debugger Dependency Cleanup",
+            "direct-JMP runtime execution and debugger/editor behavior are separate systems",
+            "Breakpoint binding to target line remains valid in later debugger tests.",
+            "future debugger regression requirement, not as a Phase 61 implementation or acceptance requirement",
+            "direct-JMP target labels from Phase 60 and direct-JMP runtime transfer from Phase 61 are part of the branch/source-map regression corpus for debugger phases",
+            "breakpoint binding to a branch target line is tested when breakpoint binding exists",
+            "branch target highlighting and source navigation are tested when editor navigation exists",
+            "those later debugger/editor tests must not be backported into Phase 61",
+            "Phase 61C branch-target regression note: direct-JMP target labels from Phase 60 - Direct JMP Parsing and Target Lowering and direct-JMP runtime transfer from Phase 61 - Direct JMP Runtime Execution are part of the branch/source-map regression corpus for debugger phases.",
+            "Branch target highlighting and source navigation are tested only when editor navigation exists; those tests must not be backported into Phase 61.",
+            "branch target gutter binding for direct-JMP labels from Phase 60 - Direct JMP Parsing and Target Lowering and direct-JMP runtime transfer from Phase 61 - Direct JMP Runtime Execution belongs to this future editor/debugger binding phase, not to Phase 61.",
+        ],
+    )
+
+    phase61_current_docs = [
+        "README.md",
+        "docs/SUPPORTED_SYNTAX.md",
+        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+    ]
+    forbidden_current_status_fragments = [
+        "Phase 61 implements debugger stepping",
+        "Phase 61 implements breakpoint",
+        "Phase 61A implements debugger stepping",
+        "Phase 61A implements breakpoint",
+        "Phase 61B implements debugger stepping",
+        "Phase 61B implements breakpoint",
+        "Phase 61C implements debugger stepping",
+        "Phase 61C implements breakpoint",
+        "executing `jmp` enables debugger source navigation",
+        "direct `jmp` enables debugger source navigation",
+    ]
+    for path in phase61_current_docs:
+        assert_all_text_not_contains(path, forbidden_current_status_fragments)
 
 
 def assert_phase57m_segment_and_code_policy_documented() -> None:
@@ -1690,6 +1763,7 @@ def run_static_tests() -> None:
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase61_status_and_code_policy_present()
     assert_phase61b_watchdog_scope_documented()
+    assert_phase61c_debugger_dependency_documented()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

@@ -22534,6 +22534,7 @@ Add source-line breakpoint storage and line-to-IR mapping without stopping execu
    - data declaration line;
    - multi-instruction source line if supported;
    - high-level lowered line when available.
+8. Phase 61C branch-target regression note: direct-JMP target labels from Phase 60 - Direct JMP Parsing and Target Lowering and direct-JMP runtime transfer from Phase 61 - Direct JMP Runtime Execution are part of the branch/source-map regression corpus for debugger phases. Breakpoint binding to a branch target line is tested here only because this phase introduces breakpoint binding; those tests must not be backported into Phase 61.
 
 ### Acceptance Criteria
 
@@ -23124,6 +23125,7 @@ Add the tested mapping layer between backend byte spans and editor positions, an
    - instruction index;
    - stop reason.
 5. Add tests for ASCII source, non-ASCII in comments, non-ASCII in strings, CRLF input source, invalid byte span, multi-byte UTF-8 before the highlighted instruction, and one-past-end/no-current-instruction states.
+6. Phase 61C branch-target regression note: direct-JMP target labels from Phase 60 - Direct JMP Parsing and Target Lowering and direct-JMP runtime transfer from Phase 61 - Direct JMP Runtime Execution are part of the branch/source-map regression corpus for source mapping and current-instruction highlight phases. Branch target highlighting and source navigation are tested only when editor navigation exists; those tests must not be backported into Phase 61.
 
 ### Acceptance Criteria
 
@@ -25630,7 +25632,8 @@ UI/backend state bridge.
 4. A line with multiple executable instructions binds to the first executable instruction for v1.
 5. Source edits invalidate bindings until reload.
 6. Rebinding is line-number based only; content-aware movement is out of scope.
-7. Breakpoint state includes:
+7. Phase 61C branch-target regression note: branch target gutter binding for direct-JMP labels from Phase 60 - Direct JMP Parsing and Target Lowering and direct-JMP runtime transfer from Phase 61 - Direct JMP Runtime Execution belongs to this future editor/debugger binding phase, not to Phase 61.
+8. Breakpoint state includes:
 
 ```text
 breakpointId
