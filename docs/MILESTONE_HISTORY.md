@@ -12,16 +12,16 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 61A:
+Current status at Phase 61B:
 
 Repository/archive milestone:
-Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution: Direct `jmp label` forms are parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
 
 Status interpretation:
-Phase 61A is newer than the runtime/source-run MASM behavior phase because it hardens Phase 61 direct-JMP accounting, documentation, static checks, and regression coverage. It does not add a new MASM syntax family or a new runtime/source-run behavior phase.
+Phase 61B is newer than the runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP watchdog documentation and static checks. It does not add a new MASM syntax family or a new runtime/source-run behavior phase. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -51,6 +51,7 @@ Those reports are implementation history and evidence. They are useful for chang
 
 ## Concise milestone ledger
 
+- Phase 61B clarifies that Phase 61 direct-JMP runtime execution is governed by the Phase 59 instruction-count watchdog only. Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B; Phase 200 - Active Time Watchdog and Worker Responsiveness remains its owner. Runtime/source-run MASM behavior metadata remains Phase 61.
 - Phase 0 through Phase 7 established the static browser scaffold, C99 core boundary, CPU/flag/memory basics, minimal IR/executor, lexer/parser path, and browser source-run path.
 - Phase 8 through Phase 14 implemented `.data`, symbols, constant symbol offsets, `PTR` overrides, register-indirect operands, `TYPE`, `LENGTHOF`, `SIZEOF`, and character literal behavior.
 - Phase 15 through Phase 17 improved unsupported-feature classification, lexer/parser diagnostic surfacing, and multi-diagnostic recovery.
@@ -94,6 +95,10 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 61 executes already-lowered direct `jmp label` forms by transferring to the resolved VM instruction index, counting JMP as one executed instruction, preserving modeled flags, and producing no memory-change row.
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
+
+## Phase 61B - Branch Runtime Watchdog Scope Cleanup
+
+Phase 61B is a documentation/static-check cleanup phase for the watchdog boundary around direct-JMP runtime execution. It clarifies that Phase 61 backward direct-JMP loops stop through the Phase 59 - Control-Flow Instruction Limit instruction-count watchdog. Active-time watchdog behavior is not implemented in Phase 61, Phase 61A, or Phase 61B; Phase 200 - Active Time Watchdog and Worker Responsiveness remains the future owner. Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution. No C runtime, worker, UI, settings, protocol, source-run JSON, or Simulator Messages behavior changes were made by Phase 61B.
 
 ## Phase 61A - Direct JMP Runtime Accounting and Status Hardening
 

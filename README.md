@@ -5,15 +5,15 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution
 
 Status interpretation:
-The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because Phase 61A hardened behavior, tests, and documentation for behavior already owned by Phase 61. It did not add a new MASM syntax family or a new runtime/source-run behavior phase.
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because Phase 61B clarifies documentation and static checks for behavior already owned by Phase 61. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages behavior.
 
-Phase 61 executes already-lowered direct `jmp label` forms that target executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, produces no memory-change row, and respects the Phase 59 `instructionLimit` watchdog, which still reports `instruction-limit-exceeded` when a configured limit blocks the next instruction. Phase 61A adds direct-JMP accounting/status hardening and regression coverage while preserving the Phase 61 runtime/source-run metadata. Conditional jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, `call`, `ret`, stack behavior, procedure invocation, branch-distance/type overrides, debugger stepping, breakpoints, and UI label navigation remain future work.
+Phase 61 executes already-lowered direct `jmp label` forms that target executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, produces no memory-change row, and respects the Phase 59 `instructionLimit` watchdog, which still reports `instruction-limit-exceeded` when a configured limit blocks the next instruction. Phase 61B clarifies that this is an instruction-count watchdog boundary only. Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness. Conditional jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, `call`, `ret`, stack behavior, procedure invocation, branch-distance/type overrides, debugger stepping, breakpoints, and UI label navigation remain future work.
 
 ## Current simulator scope
 

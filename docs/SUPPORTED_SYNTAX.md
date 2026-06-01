@@ -1,17 +1,17 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution: The simulator parses, classifies, lowers, and executes direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, and produces no memory-change row. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
 
 Status interpretation:
-Phase 61A hardens direct-JMP accounting, status wording, and regression coverage without adding a new MASM syntax family or advancing runtime/source-run behavior metadata beyond Phase 61.
+Phase 61B clarifies the direct-JMP watchdog boundary without adding a new MASM syntax family or advancing runtime/source-run behavior metadata beyond Phase 61. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ### Execution limits
 
-Source-run and test-facing callers may set `instructionLimit` to a positive integer. When omitted, the default limit is 1,000,000 executed VM instructions. The simulator counts completed VM instructions, not source lines or labels. If the limit has been reached and another instruction would be fetched, execution stops before that next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`.
+Source-run and test-facing callers may set `instructionLimit` to a positive integer. When omitted, the default limit is 1,000,000 executed VM instructions. The simulator counts completed VM instructions, not source lines or labels. If the limit has been reached and another instruction would be fetched, execution stops before that next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`. This is the watchdog used for direct-JMP loops after Phase 61. Active-time watchdog behavior is separate future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ### Code labels
 

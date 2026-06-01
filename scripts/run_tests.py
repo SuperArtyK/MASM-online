@@ -1402,16 +1402,16 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase61_status_and_code_policy_present() -> None:
-    """Verify concise Phase 61A repository status and Phase 61 runtime summaries."""
+    """Verify Phase 61B repository status and direct-JMP watchdog boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
+        "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
         "Runtime/source-run MASM behavior phase:",
         "Phase 61 - Direct JMP Runtime Execution",
     ]
     status_block = """Repository/archive milestone:
-Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution"""
@@ -1461,10 +1461,11 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
+            "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 61A:",
-            "runtime/source-run MASM behavior phase because it hardens Phase 61 direct-JMP accounting",
+            "Current status at Phase 61B:",
+            "runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP watchdog documentation",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "instructionLimit",
             "instruction-limit-exceeded",
             "Concise milestone ledger",
@@ -1476,8 +1477,9 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
+            "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1506,7 +1508,9 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 61A hardens direct-JMP accounting",
+            "Phase 61B clarifies the direct-JMP watchdog boundary",
+            "Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog.",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label.",
             "Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.",
         ],
@@ -1514,6 +1518,10 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "## Phase 61B - Branch Runtime Watchdog Scope Cleanup",
+            "Phase 59 - Control-Flow Instruction Limit",
+            "Active-time watchdog behavior is not implemented in Phase 61, Phase 61A, or Phase 61B",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness remains the future owner",
             "## Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
             "valid direct JMP never emits `branch-runtime-deferred`",
             "immediate-target jumps, branch-distance/type overrides",
@@ -1533,6 +1541,50 @@ Phase 61 - Direct JMP Runtime Execution"""
             "current reviewed source-of-truth revision",
         ],
     )
+
+
+def assert_phase61b_watchdog_scope_documented() -> None:
+    """Verify Phase 61B keeps active-time watchdog behavior deferred to Phase 200."""
+
+    required_boundary_fragments = [
+        "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
+        "direct `jmp label`",
+        "Phase 59",
+        "instruction-count watchdog",
+        "Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B",
+        "Phase 200 - Active Time Watchdog and Worker Responsiveness",
+    ]
+    for path in [
+        "README.md",
+        "docs/SUPPORTED_SYNTAX.md",
+        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+    ]:
+        assert_all_text_contains(path, required_boundary_fragments)
+
+    assert_all_text_contains(
+        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        [
+            "## 65B. Phase 61B - Branch Runtime Watchdog Scope Cleanup",
+            "Phase 61 direct-JMP execution must respect the existing Phase 59 - Control-Flow Instruction Limit instruction-count watchdog.",
+            "Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B.",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
+        ],
+    )
+
+    forbidden_active_time_current_status_fragments = [
+        "Phase 61 implements active-time watchdog",
+        "Phase 61A implements active-time watchdog",
+        "Phase 61B implements active-time watchdog",
+        "active-time-limit-exceeded",
+    ]
+    for path in [
+        "README.md",
+        "docs/SUPPORTED_SYNTAX.md",
+        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+    ]:
+        assert_all_text_not_contains(path, forbidden_active_time_current_status_fragments)
 
 
 def assert_phase57m_segment_and_code_policy_documented() -> None:
@@ -1637,6 +1689,7 @@ def run_static_tests() -> None:
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase61_status_and_code_policy_present()
+    assert_phase61b_watchdog_scope_documented()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()
