@@ -1,11 +1,11 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 61A direct JMP accounting hardening.
+ * @brief Tests for the Wasm-facing source execution API through Phase 61D source-run capacity hardening.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
  * memory changes as JSON, and returns structured simulator messages for parse,
- * argument, layout, linker/library, label-diagnostic, and runtime errors.
+ * argument, layout, linker/library, label-diagnostic, capacity, and runtime errors.
  */
 
 #include <stdio.h>
@@ -117,6 +117,31 @@ static int expect_json_contains_once(const char *json, const char *fragment, con
         return 1;
     }
 
+    return 0;
+}
+
+/// Appends one text fragment to a generated source buffer.
+///
+/// @param destination Destination buffer.
+/// @param capacity Destination capacity in bytes.
+/// @param length Current write offset, updated on success.
+/// @param fragment Null-terminated fragment to append.
+/// @return Zero on success, otherwise one failure.
+static int append_source_fragment(char *destination, size_t capacity, size_t *length, const char *fragment) {
+    size_t fragment_length = 0U;
+
+    if (destination == NULL || length == NULL || fragment == NULL) {
+        return record_failure("source fixture builder received an invalid argument");
+    }
+
+    fragment_length = strlen(fragment);
+    if (*length + fragment_length + 1U > capacity) {
+        return record_failure("source fixture builder capacity is too small");
+    }
+
+    memcpy(destination + *length, fragment, fragment_length);
+    *length += fragment_length;
+    destination[*length] = '\0';
     return 0;
 }
 
@@ -371,13 +396,13 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".data\n"
         "nums DWORD 10 DUP(0)\n"
-        "ch   BYTE 'A'\n"
+        "chr  BYTE 'A'\n"
         "pair WORD 'AB'\n"
         "tag  DWORD 'ABCD'\n"
         ".code\n"
         "main PROC\n"
         "    mov eax, SIZEOF nums\n"
-        "    mov bl, ch\n"
+        "    mov bl, chr\n"
         "    mov cx, pair\n"
         "    mov edx, 'ABCD'\n"
         "main ENDP\n"
@@ -389,7 +414,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
     failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
-    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000041h\",\"unsigned\":65}", "mov bl, ch should expose BL byte value through EBX = 65");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000041h\",\"unsigned\":65}", "mov bl, chr should expose BL byte value through EBX = 65");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00004241h\",\"unsigned\":16961}", "mov cx, pair should expose packed WORD value");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"44434241h\",\"unsigned\":1145258561}", "mov edx, 'ABCD' should expose packed DWORD value");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "SIZEOF acceptance should complete successfully");
@@ -2629,6 +2654,120 @@ static int test_phase30_large_dup_count_capacity_diagnostic_source_run_program(v
     failures += expect_json_contains(json, "DUP expansion requires 4,294,967,295 bytes", "huge DUP count diagnostic should show required expansion size");
     failures += expect_json_contains(json, "only 1,048,576 bytes", "huge DUP count diagnostic should show source-run capacity");
     failures += expect_json_not_contains(json, "invalid-dup", "huge in-range numeric count should not report invalid-dup");
+
+    return failures;
+}
+
+/// Verifies Phase 61D token-capacity failures surface as structured source-run diagnostics.
+///
+/// @return Number of failures.
+static int test_phase61d_token_capacity_diagnostic_source_run_program(void) {
+    char source[4096];
+    size_t length = 0U;
+    int failures = 0;
+    int index = 0;
+    const char *json = NULL;
+
+    failures += append_source_fragment(source, sizeof(source), &length, ".code\nmain PROC\n");
+    for (index = 0; index < 200; ++index) {
+        failures += append_source_fragment(source, sizeof(source), &length, "    mov eax, 1\n");
+    }
+    failures += append_source_fragment(source, sizeof(source), &length, "main ENDP\nEND main\n");
+    if (failures != 0) {
+        return failures;
+    }
+
+    json = masm32_sim_wasm_run_source_json(source);
+    failures += expect_json_contains(json, "\"ok\":false", "token-capacity source should fail");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "token-capacity source should report parse-error status");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "token-capacity source should not report lowered instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "token-capacity source should not execute instructions");
+    failures += expect_json_contains(json, "\"kind\":\"assembly-error\"", "token-capacity source should report assembly-error");
+    failures += expect_json_contains(json, "\"code\":\"token-capacity-exceeded\"", "token-capacity source should report stable capacity code");
+    failures += expect_json_contains(json, "token buffer capacity exceeded", "token-capacity source should name the exhausted capacity");
+    failures += expect_json_contains(json, "\"line\":104", "token-capacity source should preserve source line");
+    failures += expect_json_contains(json, "\"column\":12", "token-capacity source should preserve source column");
+    failures += expect_json_contains(json, "\"byteOffset\":1542", "token-capacity source should preserve byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":1", "token-capacity source should preserve span length");
+    failures += expect_json_not_contains(json, "execution-complete", "token-capacity source should not complete execution");
+    failures += expect_json_not_contains(json, "instruction-limit-exceeded", "token-capacity source should not be reported as runtime instruction limit");
+    failures += expect_json_not_contains(json, "programConsole", "token-capacity source should not produce Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 61D source-text capacity failures are structured and pre-runtime.
+///
+/// @return Number of failures.
+static int test_phase61d_source_text_capacity_diagnostic_source_run_program(void) {
+    char source[9000];
+    size_t length = 0U;
+    size_t index = 0U;
+    int failures = 0;
+    const char *json = NULL;
+
+    failures += append_source_fragment(source, sizeof(source), &length, ".code\nmain PROC\n    mov eax, 1 ; ");
+    for (index = 0U; index < 8300U; ++index) {
+        failures += append_source_fragment(source, sizeof(source), &length, "x");
+    }
+    failures += append_source_fragment(source, sizeof(source), &length, "\nmain ENDP\nEND main\n");
+    if (failures != 0) {
+        return failures;
+    }
+
+    json = masm32_sim_wasm_run_source_json(source);
+    failures += expect_json_contains(json, "\"ok\":false", "source-text capacity source should fail");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "source-text capacity source should report parse-error status");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "source-text capacity source should not report lowered instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "source-text capacity source should not execute instructions");
+    failures += expect_json_contains(json, "\"code\":\"source-text-capacity-exceeded\"", "source-text capacity source should report stable capacity code");
+    failures += expect_json_contains(json, "Instruction source-text storage capacity exceeded.", "source-text capacity diagnostic should name exhausted storage");
+    failures += expect_json_contains(json, "\"line\":3", "source-text capacity source should preserve source line");
+    failures += expect_json_contains(json, "\"column\":5", "source-text capacity source should preserve source column");
+    failures += expect_json_contains(json, "\"byteOffset\":20", "source-text capacity source should preserve byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":3", "source-text capacity source should preserve span length");
+    failures += expect_json_not_contains(json, "execution-complete", "source-text capacity source should not complete execution");
+    failures += expect_json_not_contains(json, "instruction-limit-exceeded", "source-text capacity source should not be reported as runtime instruction limit");
+    failures += expect_json_not_contains(json, "programConsole", "source-text capacity source should not produce Program Console output");
+
+    return failures;
+}
+
+/// Verifies Phase 61D code-label capacity failures are structured source-run diagnostics.
+///
+/// @return Number of failures.
+static int test_phase61d_code_label_capacity_diagnostic_source_run_program(void) {
+    char source[2048];
+    char line[32];
+    size_t length = 0U;
+    int failures = 0;
+    int index = 0;
+    const char *json = NULL;
+
+    failures += append_source_fragment(source, sizeof(source), &length, ".code\nmain PROC\n");
+    for (index = 0; index < 130; ++index) {
+        (void)snprintf(line, sizeof(line), "L%d:\n", index);
+        failures += append_source_fragment(source, sizeof(source), &length, line);
+    }
+    failures += append_source_fragment(source, sizeof(source), &length, "main ENDP\nEND main\n");
+    if (failures != 0) {
+        return failures;
+    }
+
+    json = masm32_sim_wasm_run_source_json(source);
+    failures += expect_json_contains(json, "\"ok\":false", "code-label capacity source should fail");
+    failures += expect_json_contains(json, "\"status\":\"parse-error\"", "code-label capacity source should report parse-error status");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "code-label capacity source should not report lowered instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "code-label capacity source should not execute instructions");
+    failures += expect_json_contains(json, "\"code\":\"code-label-capacity-exceeded\"", "code-label capacity source should report stable capacity code");
+    failures += expect_json_contains(json, "Code label capacity exceeded.", "code-label capacity diagnostic should name exhausted capacity");
+    failures += expect_json_contains(json, "\"line\":130", "code-label capacity source should preserve first failing source line");
+    failures += expect_json_contains(json, "\"column\":1", "code-label capacity source should preserve source column");
+    failures += expect_json_contains(json, "\"byteOffset\":668", "code-label capacity source should preserve byte offset");
+    failures += expect_json_contains(json, "\"spanLength\":4", "code-label capacity source should preserve span length");
+    failures += expect_json_not_contains(json, "execution-complete", "code-label capacity source should not complete execution");
+    failures += expect_json_not_contains(json, "instruction-limit-exceeded", "code-label capacity source should not be reported as runtime instruction limit");
+    failures += expect_json_not_contains(json, "programConsole", "code-label capacity source should not produce Program Console output");
 
     return failures;
 }
@@ -5994,7 +6133,7 @@ static int test_phase57corr2_compact_negative_displacement_write_source_run(void
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 write response should report runtime Phase 61 metadata");
+    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 write response should report numeric runtime Phase 61E metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement write should execute");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement write should update x and load EBX = 10");
     failures += expect_json_contains(json, "\"symbol\":\"x\",\"address\":\"00500000h\"", "compact negative displacement write should resolve memory change to x base");
@@ -6021,7 +6160,7 @@ static int test_phase57corr2_compact_negative_displacement_read_source_run(void)
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 read response should report runtime Phase 61 metadata");
+    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 read response should report numeric runtime Phase 61E metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement read should execute");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "compact negative displacement read should load EBX = 10");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "compact negative displacement read should complete successfully");
@@ -6046,7 +6185,7 @@ static int test_phase57corr2_compact_negative_displacement_lea_source_run(void) 
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 LEA response should report runtime Phase 61 metadata");
+    failures += expect_json_contains(json, "\"phase\":61", "Phase 57-CORR2 LEA response should report numeric runtime Phase 61E metadata");
     failures += expect_json_contains(json, "\"ok\":true", "compact negative displacement LEA should execute");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "compact negative displacement LEA should compute x base address");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "compact negative displacement LEA should not create memory-change rows");
@@ -8630,8 +8769,8 @@ static int test_phase58_label_source_run_behavior(void) {
         )
     );
 
-    failures += expect_json_contains(labeled_copy, "\"phase\":61", "Labeled source should report numeric Phase 61 metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 61 - Direct JMP Runtime Execution\"", "Labeled source should report Phase 61 runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phase\":61", "Labeled source should report numeric Phase 61E metadata");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 61E - Reserved Word Symbol Diagnostics\"", "Labeled source should report Phase 61E runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":2", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -8657,14 +8796,14 @@ static int test_phase58_label_source_run_behavior(void) {
     failures += expect_json_not_contains(jmp_copy, "unsupported-instruction", "jmp label source should no longer use unsupported-instruction diagnostic");
     failures += expect_json_contains(jmp_copy, "execution-complete", "jmp label source should execute branch behavior");
 
-    failures += expect_json_contains(loop_copy, "\"ok\":false", "loop label source should remain unsupported");
-    failures += expect_json_contains(loop_copy, "unsupported-instruction", "loop label source should use existing unsupported-instruction diagnostic");
-    failures += expect_json_not_contains(loop_copy, "execution-complete", "loop label source should not execute loop behavior");
+    failures += expect_json_contains(loop_copy, "\"ok\":false", "LOOP instruction source should remain unsupported");
+    failures += expect_json_contains(loop_copy, "unsupported-instruction", "LOOP instruction source should use existing unsupported-instruction diagnostic");
+    failures += expect_json_not_contains(loop_copy, "execution-complete", "LOOP instruction source should not execute LOOP behavior");
 
     return failures;
 }
 
-/// Verifies Phase 61 runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies Phase 61E runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
 static int test_phase59_source_run_phase_metadata(void) {
@@ -8675,9 +8814,9 @@ static int test_phase59_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":61", "Runtime metadata should report numeric Phase 61 metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 61 should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 61 - Direct JMP Runtime Execution\"", "Phase 61 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phase\":61", "Runtime metadata should report numeric Phase 61E metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"E\"", "Phase 61E should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 61E - Reserved Word Symbol Diagnostics\"", "Phase 61E should report the runtime phase name");
 
     return failures;
 }
@@ -9207,7 +9346,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"\"", ".CONST ? fixture should report the current unsuffixed runtime phase");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"E\"", ".CONST ? fixture should report the current Phase 61E runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -9899,7 +10038,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"\"", ".code read should report the current unsuffixed runtime phase");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"E\"", ".code read should report the current Phase 61E runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -10082,7 +10221,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"\"", "segment diagnostics should report the current unsuffixed runtime phase");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"E\"", "segment diagnostics should report the current Phase 61E runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -10479,7 +10618,7 @@ static int test_phase61_jmp_executes_after_prior_instruction(void) {
     int failures = 0;
 
     copy_source_run_json(json_copy, sizeof(json_copy), json);
-    failures += expect_json_contains(json_copy, "\"phase\":61", "Phase 61 JMP response should report numeric phase metadata");
+    failures += expect_json_contains(json_copy, "\"phase\":61", "Phase 61E JMP response should report numeric phase metadata");
     failures += expect_json_contains(json_copy, "\"ok\":true", "valid direct JMP should execute successfully");
     failures += expect_json_contains(json_copy, "\"status\":\"ok\"", "valid direct JMP should report OK status");
     failures += expect_json_contains(json_copy, "\"instructionCount\":3", "JMP program should count committed MOV, JMP, and target MOV");
@@ -10604,14 +10743,10 @@ static int test_phase61_backward_jmp_reaches_instruction_limit(void) {
     return failures;
 }
 
-/// Verifies Phase 61 keeps MASM-reserved instruction mnemonics invalid as direct JMP targets.
-///
-/// Reserved-word declaration diagnostics belong to a later MASM-compatibility
-/// phase; until then, a source label spelled like LOOP must not make `jmp loop`
-/// executable.
+/// Verifies Phase 61E rejects MASM-reserved instruction mnemonic labels before execution.
 ///
 /// @return Number of failures.
-static int test_phase61_jmp_label_named_loop_is_reserved_target(void) {
+static int test_phase61e_reserved_loop_label_source_run_diagnostic(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_instruction_limit(
         ".code\n"
         "main PROC\n"
@@ -10630,12 +10765,12 @@ static int test_phase61_jmp_label_named_loop_is_reserved_target(void) {
 
     failures += expect_json_contains(json, "\"ok\":false", "label named loop should fail before execution in current MASM-compatible scope");
     failures += expect_json_contains(json, "\"status\":\"parse-error\"", "label named loop should remain an assembly-time failure");
-    failures += expect_json_contains(json, "\"code\":\"invalid-branch-target\"", "jmp loop should be classified as an invalid instruction-mnemonic target");
-    failures += expect_json_contains(json, "JMP target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.", "reserved-word target diagnostic should be explicit");
+    failures += expect_json_contains(json, "\"code\":\"reserved-word-symbol\"", "loop declaration should be classified as a reserved-word symbol");
+    failures += expect_json_contains(json, "reserved MASM instruction mnemonic", "reserved-word declaration diagnostic should be explicit");
     failures += expect_json_contains(json, "\"instructionCount\":0", "reserved-word target parse failure should not execute instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":0", "reserved-word target parse failure should not commit instructions");
-    failures += expect_json_not_contains(json, "instruction-limit-exceeded", "reserved-word target should not reach the instruction limit");
-    failures += expect_json_not_contains(json, "branch-runtime-deferred", "reserved-word target should not emit deferred branch diagnostics");
+    failures += expect_json_not_contains(json, "instruction-limit-exceeded", "reserved-word declaration should not reach the instruction limit");
+    failures += expect_json_not_contains(json, "branch-runtime-deferred", "reserved-word declaration should not emit deferred branch diagnostics");
 
     return failures;
 }
@@ -10683,8 +10818,8 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
-    failures += expect_json_contains(json, "\"phase\":61", "Phase 61A hardening should preserve runtime Phase 61 metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 61 - Direct JMP Runtime Execution\"", "Phase 61A hardening should not rename the runtime phase");
+    failures += expect_json_contains(json, "\"phase\":61", "Phase 61E should preserve the numeric Phase 61 family metadata");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 61E - Reserved Word Symbol Diagnostics\"", "Phase 61E should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -10804,6 +10939,9 @@ int main(void) {
     failures += test_phase30_dup_initializer_list_source_run_program();
     failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
     failures += test_phase30_large_dup_count_capacity_diagnostic_source_run_program();
+    failures += test_phase61d_token_capacity_diagnostic_source_run_program();
+    failures += test_phase61d_source_text_capacity_diagnostic_source_run_program();
+    failures += test_phase61d_code_label_capacity_diagnostic_source_run_program();
     failures += test_phase32_fixed_layout_source_run_regression_program();
     failures += test_phase33_automatic_layout_source_run_program();
     failures += test_phase33_automatic_layout_const_write_rejected();
@@ -10957,7 +11095,7 @@ int main(void) {
     failures += test_phase61_jmp_to_immediately_following_instruction();
     failures += test_phase61_jmp_to_procedure_entry_executes_as_direct_branch();
     failures += test_phase61_backward_jmp_reaches_instruction_limit();
-    failures += test_phase61_jmp_label_named_loop_is_reserved_target();
+    failures += test_phase61e_reserved_loop_label_source_run_diagnostic();
     failures += test_phase61_jmp_respects_instruction_limit_precedence();
     failures += test_phase61a_jmp_skips_memory_write_and_keeps_console_empty();
     failures += test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation();

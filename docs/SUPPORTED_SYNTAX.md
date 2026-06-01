@@ -1,17 +1,37 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 61C - Branch Debugger Dependency Cleanup
+Phase 61E - Reserved Word Symbol Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 61 - Direct JMP Runtime Execution: The simulator parses, classifies, lowers, and executes direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, and produces no memory-change row. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
+Phase 61E - Reserved Word Symbol Diagnostics: The simulator rejects user-defined declarations whose names conflict with simulator-recognized MASM reserved words. This applies to data symbols, numeric equates, code labels, and procedure names. Reserved-word matching is case-insensitive and is separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols.
 
 Status interpretation:
-Phase 61C clarifies the debugger/editor dependency boundary without adding a new MASM syntax family or advancing runtime/source-run behavior metadata beyond Phase 61. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61B clarified that watchdog boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, or Phase 61C; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 61E adds parser/source-run diagnostics for reserved-word declarations and advances runtime/source-run behavior metadata from Phase 61 to Phase 61E. Phase 61E preserves executable direct `jmp label` behavior from Phase 61 - Direct JMP Runtime Execution. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61D documents and tests source-run/parser capacity behavior; capacity diagnostics remain separate from runtime `instructionLimit` failures. Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, or Phase 61E; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+
+### Reserved words and user-defined symbols
+
+MASM reserved words are not valid user-defined symbols by default. The current simulator rejects declarations whose names conflict with words it already recognizes as reserved, including implemented or recognized instruction mnemonics, registers and aliases, directives, operators, data type names, `PTR` width names, signed `PTR` aliases, virtual include names where recognized, and Irvine32 registry names.
+
+Rejected declaration categories include data symbols, numeric equates, code labels, and procedure names. The diagnostic code is `reserved-word-symbol`, and it points at the declaration name when source location is available. A rejected reserved-word declaration is not inserted into the user-symbol tables.
+
+`OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as symbols, and reserved-word matching remains case-insensitive. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase; it must not be treated as enabling reserved-word identifiers.
 
 ### Execution limits
 
 Source-run and test-facing callers may set `instructionLimit` to a positive integer. When omitted, the default limit is 1,000,000 executed VM instructions. The simulator counts completed VM instructions, not source lines or labels. If the limit has been reached and another instruction would be fetched, execution stops before that next instruction, emits `instruction-limit-exceeded`, preserves state from completed instructions, and omits `execution-complete`. This is the watchdog used for direct-JMP loops after Phase 61. Active-time watchdog behavior is separate future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+
+### Parser and source-run capacity limits
+
+The source-run path is intentionally bounded. Parser/source-run capacity limits are separate from the runtime `instructionLimit` watchdog. A capacity diagnostic such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `instruction-capacity-exceeded`, `code-label-capacity-exceeded`, `symbol-capacity-exceeded`, `diagnostic-capacity-exceeded`, or `data-capacity-exceeded` occurs while lexing, parsing, lowering, or preparing the source-run result before VM execution begins. These diagnostics are not MASM syntax errors unless malformed source also produced a syntax diagnostic, and they are not evidence that a runtime loop exceeded `instructionLimit`.
+
+When the simulator controls the failure path, capacity failures are reported through structured Simulator Messages with stable diagnostic codes, source line/column/byte-offset/span fields where the failing source token or declaration is known, no Program Console output, no `execution-complete` message, and no hidden partial VM execution. Source-run JSON/result output also has finite buffers; if a result cannot be fully produced, the source-run layer should report a structured capacity or infrastructure error rather than relying on a generic worker failure.
+
+Memory-region capacity limits are distinct from parser/source-run capacity. Data-image expansion such as a very large `DUP` may report `data-capacity-exceeded` during layout before execution, while optional section-capacity and section-image validation policies can later warn or stop for runtime memory accesses that leave a configured section boundary.
+
+Program Console output limits and Simulator Messages output limits are separate UI/result-surface concerns. Program Console is simulated program I/O; Simulator Messages are diagnostics, notices, runtime errors, and execution-status messages. A parser/source-run capacity failure must not write Program Console output.
+
+Worker/browser hard failures are not a supported diagnostic surface. If a failure is caused by a known simulator-owned capacity, it should be represented as a structured source-run or Simulator Messages diagnostic. The simulator remains an educational small-program environment and does not claim arbitrary large MASM program support. Larger-program support requires an explicit later capacity-expansion phase rather than silently removing bounded C99-core capacities.
 
 ### Code labels
 

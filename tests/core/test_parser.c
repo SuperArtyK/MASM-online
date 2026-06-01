@@ -534,29 +534,29 @@ static int test_phase58_label_casemap_policy(void) {
     VmParserResult result;
 
     failures += expect_parser_status(parse_for_test(
-        ".code\nmain PROC\nLoop:\n    mov eax, 1\nloop:\n    mov ebx, 2\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\nSpin:\n    mov eax, 1\nspin:\n    mov ebx, 2\nmain ENDP\nEND main\n",
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "default CASEMAP should reject folded duplicate labels");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "folded duplicate label diagnostic should match");
     failures += expect_bool(buffers.diagnostics[0].has_related_location, "folded duplicate should include prior-definition metadata");
-    failures += expect_u32(buffers.diagnostics[0].related_location.line, 3U, "folded duplicate prior line should point at Loop");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 3U, "folded duplicate prior line should point at Spin");
     failures += expect_string_contains(buffers.diagnostics[0].message, "case-insensitive", "folded duplicate message should mention CASEMAP behavior");
     failures += expect_size(result.code_label_count, 2U, "rejected folded duplicate should not be inserted");
 
     failures += expect_parser_status(parse_for_test(
-        "OPTION CASEMAP:ALL\n.code\nmain PROC\nLoop:\n    mov eax, 1\nloop:\n    mov ebx, 2\nmain ENDP\nEND main\n",
+        "OPTION CASEMAP:ALL\n.code\nmain PROC\nSpin:\n    mov eax, 1\nspin:\n    mov ebx, 2\nmain ENDP\nEND main\n",
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "explicit CASEMAP:ALL should reject folded duplicate labels");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "explicit ALL folded duplicate diagnostic should match");
 
     failures += expect_parser_status(parse_for_test(
-        "OPTION CASEMAP:NONE\n.code\nmain PROC\nLoop:\nloop:\n    MoV eax, 1\nmain ENDP\nEND main\n",
+        "OPTION CASEMAP:NONE\n.code\nmain PROC\nSpin:\nspin:\n    MoV eax, 1\nmain ENDP\nEND main\n",
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should allow labels that differ only by case while keywords remain case-insensitive");
-    failures += expect_size(result.code_label_count, 3U, "CASEMAP:NONE should record main, Loop, and loop labels");
+    failures += expect_size(result.code_label_count, 3U, "CASEMAP:NONE should record main, Spin, and spin labels");
 
     return failures;
 }
@@ -5603,6 +5603,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_CONST_WRITE), "const-write") != 0) {
         failures += record_failure("parser diagnostic helper should name const-write diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL), "reserved-word-symbol") != 0) {
+        failures += record_failure("parser diagnostic helper should name reserved-word symbol diagnostics");
+    }
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL), "ambiguous-symbol") != 0) {
         failures += record_failure("parser diagnostic helper should name ambiguous symbol diagnostics");
     }
@@ -5877,6 +5880,82 @@ static int test_phase60_jmp_form_rejections(void) {
     return failures;
 }
 
+/// Verifies Phase 61E rejects simulator-recognized reserved words as user symbols.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase61e_reserved_word_symbol_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "loop:\n"
+        "    inc eax\n"
+        "    jmp loop\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "reserved instruction mnemonic label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "loop label should use reserved-word-symbol");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 3U, "reserved label diagnostic should point at declaration line");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 1U, "reserved label diagnostic should point at declaration name column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "reserved label diagnostic span should cover only loop");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "reserved MASM instruction mnemonic", "reserved label message should classify instruction mnemonic");
+    failures += expect_size(result.code_label_count, 1U, "reserved loop label should not be inserted; only main PROC remains");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nLOOP:\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "uppercase LOOP label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "uppercase LOOP label should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nLoop:\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "mixed-case Loop label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "mixed-case Loop label should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:NONE\n.code\nmain PROC\nloop:\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should not permit reserved labels");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "CASEMAP:NONE reserved label should use reserved-word-symbol");
+    if (strstr(buffers.diagnostics[0].message, "CASEMAP") != NULL) {
+        failures += record_failure("reserved-word message should not blame CASEMAP");
+    }
+
+    failures += expect_parser_status(parse_for_test(".data\nmov DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "instruction mnemonic data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "mov data symbol should use reserved-word-symbol");
+    failures += expect_size(result.symbol_count, 0U, "reserved data symbol should not be inserted");
+
+    failures += expect_parser_status(parse_for_test(".data\neax DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "register data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "eax data symbol should use reserved-word-symbol");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "reserved MASM register name", "register data symbol should classify register name");
+
+    failures += expect_parser_status(parse_for_test(".data\nDWORD DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "data type name data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "DWORD data symbol should use reserved-word-symbol");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "reserved MASM data type name", "data type symbol should classify data type");
+
+    failures += expect_parser_status(parse_for_test(".data\nOFFSET DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "operator data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "OFFSET data symbol should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test("add EQU 2\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "instruction mnemonic equate should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "add equate should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".data\nPROC DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "procedure directive data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "PROC data symbol should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".code\nloop PROC\nloop ENDP\nEND loop\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "reserved procedure name should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "reserved procedure name should use reserved-word-symbol");
+    failures += expect_size(result.code_label_count, 0U, "reserved procedure name should not be inserted");
+
+    failures += expect_parser_status(parse_for_test("INCLUDE Irvine32.inc\n.code\nmain PROC\nexit:\n    nop\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Irvine32 registry label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "Irvine32 registry label should use reserved-word-symbol");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Irvine32 registry name", "Irvine32 label should use registry classification");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\nloopCount DWORD 0\nagain DWORD 1\n.code\nmain PROC\n    mov eax, 0\nagain_label:\n    inc eax\n    jmp again_label\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "nearby non-reserved labels and data symbols should still parse");
+
+    return failures;
+}
+
 int main(void) {
     int failures = 0;
 
@@ -5894,6 +5973,7 @@ int main(void) {
     failures += test_phase60_jmp_procedure_entry_target();
     failures += test_phase60_jmp_target_diagnostics();
     failures += test_phase60_jmp_form_rejections();
+    failures += test_phase61e_reserved_word_symbol_diagnostics();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();
     failures += test_textbook_unsupported_directives_are_stable();

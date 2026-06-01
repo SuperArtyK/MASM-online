@@ -1402,19 +1402,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase61_status_and_code_policy_present() -> None:
-    """Verify Phase 61C repository status and direct-JMP scope boundaries."""
+    """Verify Phase 61E repository/runtime status, reserved-word scope, and capacity boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 61C - Branch Debugger Dependency Cleanup",
+        "Phase 61E - Reserved Word Symbol Diagnostics",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 61 - Direct JMP Runtime Execution",
+        "Phase 61E - Reserved Word Symbol Diagnostics",
     ]
     status_block = """Repository/archive milestone:
-Phase 61C - Branch Debugger Dependency Cleanup
+Phase 61E - Reserved Word Symbol Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 61 - Direct JMP Runtime Execution"""
+Phase 61E - Reserved Word Symbol Diagnostics"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1437,7 +1437,15 @@ Phase 61 - Direct JMP Runtime Execution"""
             "`instruction-limit-exceeded`",
             "direct `jmp label` forms",
             "Direct JMP Runtime Execution",
-            "Phase 61C clarifies that preserving branch source metadata and lowered target metadata does not implement debugger/editor behavior.",
+            "Reserved Word Symbol Diagnostics",
+            "reserved-word-symbol",
+            "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
+            "`OPTION NOKEYWORD` remains unsupported",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
+            "`token-capacity-exceeded`",
+            "`source-text-capacity-exceeded`",
+            "`code-label-capacity-exceeded`",
+            "`data-capacity-exceeded`",
             "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
@@ -1463,11 +1471,14 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 61E - Reserved Word Symbol Diagnostics",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 61C:",
-            "runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP debugger/editor dependency documentation",
+            "Current status at Phase 61E:",
+            "Phase 61E advances both repository/archive milestone and runtime/source-run MASM behavior phase",
+            "Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures",
             "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
             "Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
@@ -1482,12 +1493,19 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 61E - Reserved Word Symbol Diagnostics",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 61C clarifies that preserving branch source metadata and lowered target metadata does not implement debugger/editor behavior.",
+            "reserved-word-symbol",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
+            "`token-capacity-exceeded`",
+            "`source-text-capacity-exceeded`",
+            "`code-label-capacity-exceeded`",
+            "`data-capacity-exceeded`",
             "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1516,7 +1534,13 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 61C clarifies the debugger/editor dependency boundary",
+            "Phase 61E adds parser/source-run diagnostics for reserved-word declarations",
+            "### Reserved words and user-defined symbols",
+            "reserved-word-symbol",
+            "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
+            "`OPTION NOKEYWORD` remains unsupported",
+            "Phase 61D documents and tests source-run/parser capacity behavior",
+            "Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary",
             "Phase 61B",
             "Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog.",
             "Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior.",
@@ -1588,6 +1612,7 @@ def assert_phase61b_watchdog_scope_documented() -> None:
         "Phase 61A implements active-time watchdog",
         "Phase 61B implements active-time watchdog",
         "Phase 61C implements active-time watchdog",
+        "Phase 61D implements active-time watchdog",
         "active-time-limit-exceeded",
     ]
     for path in [
@@ -1658,6 +1683,95 @@ def assert_phase61c_debugger_dependency_documented() -> None:
     ]
     for path in phase61_current_docs:
         assert_all_text_not_contains(path, forbidden_current_status_fragments)
+
+
+def assert_phase61d_capacity_documented() -> None:
+    """Verify Phase 61D documents source-run capacity behavior separately from runtime limits."""
+
+    assert_all_text_contains(
+        "docs/SUPPORTED_SYNTAX.md",
+        [
+            "Phase 61D documents and tests source-run/parser capacity behavior",
+            "### Parser and source-run capacity limits",
+            "Parser/source-run capacity limits are separate from the runtime `instructionLimit` watchdog",
+            "`token-capacity-exceeded`",
+            "`source-text-capacity-exceeded`",
+            "`instruction-capacity-exceeded`",
+            "`code-label-capacity-exceeded`",
+            "`symbol-capacity-exceeded`",
+            "`diagnostic-capacity-exceeded`",
+            "`data-capacity-exceeded`",
+            "not MASM syntax errors unless malformed source also produced a syntax diagnostic",
+            "not evidence that a runtime loop exceeded `instructionLimit`",
+            "no Program Console output",
+            "no `execution-complete` message",
+            "Memory-region capacity limits are distinct from parser/source-run capacity",
+            "Program Console output limits and Simulator Messages output limits are separate UI/result-surface concerns",
+            "Worker/browser hard failures are not a supported diagnostic surface",
+            "does not claim arbitrary large MASM program support",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/MILESTONE_HISTORY.md",
+        [
+            "## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "lexer token capacity",
+            "parser diagnostic capacity",
+            "instruction/source-text buffers",
+            "data symbols",
+            "code labels",
+            "data image bytes",
+            "source-run JSON/result buffers",
+            "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
+            "Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.",
+        ],
+    )
+    assert_all_text_contains(
+        "README.md",
+        [
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
+            "`token-capacity-exceeded`",
+            "runtime `instructionLimit` failures",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+        [
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "the documentation/static-check and regression-test hardening phase for parser/source-run capacity behavior",
+            "capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded`",
+            "runtime `instructionLimit` watchdog",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/core/test_wasm_source_run.c",
+        [
+            "test_phase61d_token_capacity_diagnostic_source_run_program",
+            "test_phase61d_source_text_capacity_diagnostic_source_run_program",
+            "test_phase61d_code_label_capacity_diagnostic_source_run_program",
+            "instruction-limit-exceeded",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/web/test_diagnostic_rendering.mjs",
+        [
+            "Phase 61D renders token capacity diagnostic exactly",
+            "token-capacity-exceeded",
+            "instruction-limit-exceeded",
+        ],
+    )
+
+    for path in ["docs/SUPPORTED_SYNTAX.md", "README.md", "docs/MILESTONE_HISTORY.md", "docs/BUILDING_AND_DEVELOPMENT.md"]:
+        assert_all_text_not_contains(
+            path,
+            [
+                "capacity diagnostics prove arbitrary large MASM program support",
+                "token-capacity-exceeded is an instruction-limit failure",
+                "source-text-capacity-exceeded is an instruction-limit failure",
+                "code-label-capacity-exceeded is an instruction-limit failure",
+            ],
+        )
 
 
 def assert_phase57m_segment_and_code_policy_documented() -> None:
@@ -1764,6 +1878,7 @@ def run_static_tests() -> None:
     assert_phase61_status_and_code_policy_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
+    assert_phase61d_capacity_documented()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

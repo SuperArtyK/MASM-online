@@ -31,8 +31,8 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 61);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 61 - Direct JMP Runtime Execution");
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "E");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 61E - Reserved Word Symbol Diagnostics");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -43,8 +43,8 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       },
       wasmTestValue: 32,
       phase: 61,
-      phaseSuffix: "",
-      phaseName: "Phase 61 - Direct JMP Runtime Execution"
+      phaseSuffix: "E",
+      phaseName: "Phase 61E - Reserved Word Symbol Diagnostics"
     }
   });
 });
@@ -61,8 +61,8 @@ test("ready message supports not-built wasm status", () => {
       },
       wasmTestValue: null,
       phase: 61,
-      phaseSuffix: "",
-      phaseName: "Phase 61 - Direct JMP Runtime Execution"
+      phaseSuffix: "E",
+      phaseName: "Phase 61E - Reserved Word Symbol Diagnostics"
     }
   });
 });
@@ -326,7 +326,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 61 - Direct JMP Runtime Execution. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 61E - Reserved Word Symbol Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });

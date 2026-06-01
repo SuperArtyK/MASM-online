@@ -226,6 +226,22 @@ typedef struct VmParserUnsupportedSegmentSymbol {
     const char *message;
 } VmParserUnsupportedSegmentSymbol;
 
+/// Describes one reserved-word table entry used by declaration diagnostics.
+typedef struct VmParserReservedWord {
+    /// Reserved spelling matched case-insensitively.
+    const char *spelling;
+    /// User-facing reserved-word category for diagnostics.
+    const char *kind;
+} VmParserReservedWord;
+
+/// Describes a reserved-word classification result.
+typedef struct VmParserReservedWordClassification {
+    /// Whether the inspected source token is reserved.
+    bool is_reserved;
+    /// User-facing reserved-word category for diagnostics.
+    const char *kind;
+} VmParserReservedWordClassification;
+
 /// Describes one known name in the virtual Irvine32 registry.
 typedef struct VmParserIrvine32RegistryEntry {
     /// Canonical Irvine32 routine, pseudo-instruction, or external name.
@@ -316,6 +332,12 @@ static bool vm_parser_has_conflicting_data_symbol(VmParserState *state, const Vm
 static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *state, const VmLexerToken *token);
 
 static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *name_token, VmCodeLabelDeclarationKind declaration_kind);
+
+static bool vm_parser_reject_reserved_symbol_declaration(
+    VmParserState *state,
+    const VmLexerToken *name_token,
+    const char *symbol_kind
+);
 
 static void vm_parser_resolve_pending_code_labels(VmParserState *state, size_t target_instruction_index);
 
@@ -931,6 +953,14 @@ static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *n
     const char *declaration_noun = vm_parser_code_label_declaration_noun(declaration_kind);
 
     if (state == NULL || name_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (vm_parser_reject_reserved_symbol_declaration(
+            state,
+            name_token,
+            declaration_kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY ? "procedure name" : "code label"
+        )) {
         return false;
     }
 
@@ -3899,6 +3929,11 @@ static bool vm_parser_parse_data_declaration(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_reject_reserved_symbol_declaration(state, name_token, "data symbol")) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
     if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, name_token)) {
         vm_parser_recover_skip_line(state);
         return true;
@@ -4464,14 +4499,15 @@ static bool vm_parser_compact_negative_register_displacement_to_i32(const VmLexe
     return true;
 }
 
-/// Returns whether a token can carry a data symbol name.
+/// Returns whether a token has a spelling that can participate in data-symbol lookup.
 ///
-/// The lexer classifies register-looking words such as `ch` as register tokens.
-/// The character-literal acceptance program uses `ch` as a data symbol, so parser
-/// symbol lookup accepts both identifier and register tokens as symbol names.
+/// The lexer classifies register-looking words as register tokens. Phase 61E
+/// rejects register spellings as declarations, but lookup still accepts both
+/// identifier and register tokens so older symbol references can be diagnosed
+/// through the ordinary symbol path instead of lexer token-kind artifacts.
 ///
 /// @param token Token to inspect.
-/// @return true when the token can be used as a data symbol name.
+/// @return true when the token can carry a data-symbol spelling.
 static bool vm_parser_token_can_name_data_symbol(const VmLexerToken *token) {
     return token != NULL &&
            (token->kind == VM_LEXER_TOKEN_IDENTIFIER || token->kind == VM_LEXER_TOKEN_REGISTER);
@@ -7123,6 +7159,169 @@ static bool vm_parser_token_names_instruction_mnemonic(const VmLexerToken *token
            vm_parser_token_equals(token, "loop");
 }
 
+/// Looks up a reserved-word category in a small case-insensitive table.
+///
+/// @param token Candidate token to classify.
+/// @param words Reserved-word table.
+/// @param word_count Number of entries in @p words.
+/// @return Matching reserved-word kind, or NULL when the token is not listed.
+static const char *vm_parser_find_reserved_word_kind(
+    const VmLexerToken *token,
+    const VmParserReservedWord *words,
+    size_t word_count
+) {
+    size_t index = 0U;
+
+    if (token == NULL || words == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < word_count; index += 1U) {
+        if (vm_parser_token_equals(token, words[index].spelling)) {
+            return words[index].kind;
+        }
+    }
+
+    return NULL;
+}
+
+/// Classifies whether a token is a simulator-recognized reserved word.
+///
+/// This classifier intentionally covers the current parser-recognized keyword
+/// surface instead of importing the complete MASM reserved-word table. Irvine32
+/// names are delegated to the Phase 41 virtual registry.
+///
+/// @param token Candidate declaration-name token.
+/// @return Reserved-word classification for declaration diagnostics.
+static VmParserReservedWordClassification vm_parser_classify_reserved_word(const VmLexerToken *token) {
+    static const VmParserReservedWord fixed_words[] = {
+        {"PROC", "procedure directive"},
+        {"ENDP", "procedure directive"},
+        {"END", "directive"},
+        {"INCLUDE", "directive"},
+        {"INCLUDELIB", "directive"},
+        {"OPTION", "directive"},
+        {"TITLE", "listing directive"},
+        {"SUBTITLE", "listing directive"},
+        {"PAGE", "listing directive"},
+        {"MODEL", "directive"},
+        {"STACK", "directive or segment keyword"},
+        {"EQU", "equate directive"},
+        {"DUP", "data-initializer keyword"},
+        {"PTR", "PTR width keyword"},
+        {"OFFSET", "operator"},
+        {"TYPE", "operator"},
+        {"LENGTHOF", "operator"},
+        {"SIZEOF", "operator"},
+        {"HIGH", "operator"},
+        {"LOW", "operator"},
+        {"HIGHWORD", "operator"},
+        {"LOWWORD", "operator"},
+        {"MOD", "operator"},
+        {"SHORT", "branch-distance keyword"},
+        {"NEAR", "branch-distance keyword"},
+        {"FAR", "branch-distance keyword"},
+        {"ADDR", "operator"},
+        {"INVOKE", "procedure-call keyword"},
+        {"IRVINE32", "virtual include name"},
+        {"MACROS", "virtual include name"}
+    };
+    VmParserReservedWordClassification result;
+    VmSymbolDataType data_type = VM_SYMBOL_DATA_TYPE_BYTE;
+    const char *kind = NULL;
+
+    memset(&result, 0, sizeof(result));
+
+    if (token == NULL) {
+        return result;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_REGISTER) {
+        result.is_reserved = true;
+        result.kind = "register name";
+        return result;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        result.is_reserved = true;
+        result.kind = "directive";
+        return result;
+    }
+
+    if (token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return result;
+    }
+
+    if (vm_parser_token_names_instruction_mnemonic(token)) {
+        result.is_reserved = true;
+        result.kind = "instruction mnemonic";
+        return result;
+    }
+
+    if (vm_symbol_parse_data_type(token->lexeme, token->lexeme_length, &data_type)) {
+        result.is_reserved = true;
+        result.kind = "data type name";
+        return result;
+    }
+
+    kind = vm_parser_find_reserved_word_kind(token, fixed_words, sizeof(fixed_words) / sizeof(fixed_words[0]));
+    if (kind != NULL) {
+        result.is_reserved = true;
+        result.kind = kind;
+        return result;
+    }
+
+    if (vm_parser_unsupported_keyword_message(token) != NULL) {
+        result.is_reserved = true;
+        result.kind = "deferred MASM keyword";
+        return result;
+    }
+
+    if (vm_parser_token_is_deferred_condition_operator(token)) {
+        result.is_reserved = true;
+        result.kind = "condition operator";
+        return result;
+    }
+
+    if (vm_parser_classify_irvine32_symbol(token->lexeme, token->lexeme_length) != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        result.is_reserved = true;
+        result.kind = "Irvine32 registry name";
+        return result;
+    }
+
+    return result;
+}
+
+/// Emits a reserved-word declaration diagnostic when a symbol name is reserved.
+///
+/// @param state Parser state to mutate.
+/// @param name_token Declaration-name token.
+/// @param symbol_kind User-symbol category being declared.
+/// @return true when the declaration was rejected as a reserved word.
+static bool vm_parser_reject_reserved_symbol_declaration(
+    VmParserState *state,
+    const VmLexerToken *name_token,
+    const char *symbol_kind
+) {
+    VmParserReservedWordClassification classification = vm_parser_classify_reserved_word(name_token);
+
+    if (!classification.is_reserved) {
+        return false;
+    }
+
+    (void)vm_parser_add_formatted_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL,
+        name_token,
+        "'%.*s' is a reserved MASM %s and cannot be used as a %s.",
+        (int)(name_token != NULL ? name_token->lexeme_length : 0U),
+        name_token != NULL && name_token->lexeme != NULL ? name_token->lexeme : "",
+        classification.kind != NULL ? classification.kind : "keyword",
+        symbol_kind != NULL ? symbol_kind : "user-defined symbol"
+    );
+    return true;
+}
+
 /// Adds a Phase 60 direct-branch diagnostic at the target operand.
 ///
 /// @param state Parser state to mutate.
@@ -8670,6 +8869,11 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         return false;
     }
 
+    if (vm_parser_reject_reserved_symbol_declaration(state, name_token, "numeric equate")) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
     if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, name_token)) {
         vm_parser_recover_skip_line(state);
         return true;
@@ -9364,6 +9568,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "compatibility-limited";
         case VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL:
             return "duplicate-label";
+        case VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL:
+            return "reserved-word-symbol";
         case VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT:
             return "label-symbol-conflict";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:

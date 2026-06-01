@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 61;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "";
+export const IMPLEMENTED_PHASE_SUFFIX = "E";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 61 - Direct JMP Runtime Execution";
+export const IMPLEMENTED_PHASE_NAME = "Phase 61E - Reserved Word Symbol Diagnostics";
 
 /**
  * Creates the initial worker readiness response.

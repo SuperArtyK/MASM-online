@@ -12,16 +12,16 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 61C:
+Current status at Phase 61E:
 
 Repository/archive milestone:
-Phase 61C - Branch Debugger Dependency Cleanup
+Phase 61E - Reserved Word Symbol Diagnostics
 
 Runtime/source-run MASM behavior phase:
-Phase 61 - Direct JMP Runtime Execution: Direct `jmp label` forms are parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
+Phase 61E - Reserved Word Symbol Diagnostics: Reserved-word user-symbol declarations are rejected for data symbols, numeric equates, code labels, and procedure names. Direct `jmp label` forms from Phase 61 remain parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
 
 Status interpretation:
-Phase 61C is newer than the runtime/source-run MASM behavior phase because it clarifies Phase 61 direct-JMP debugger/editor dependency documentation and static checks. It does not add a new MASM syntax family, a new runtime/source-run behavior phase, debugger stepping, breakpoint behavior, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 61E advances both repository/archive milestone and runtime/source-run MASM behavior phase because it changes accepted/rejected source behavior. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -51,6 +51,8 @@ Those reports are implementation history and evidence. They are useful for chang
 
 ## Concise milestone ledger
 
+- Phase 61E rejects simulator-recognized MASM reserved words as user-defined data symbols, numeric equates, code labels, and procedure names. Reserved-word matching is case-insensitive and independent of `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not enable reserved-word identifiers. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase.
+- Phase 61D documents and tests parser/source-run capacity behavior. Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures, not runtime `instructionLimit` failures. Runtime/source-run MASM behavior metadata remains Phase 61.
 - Phase 61C clarifies that Phase 61 direct-JMP runtime execution and later debugger/editor behavior are separate systems. Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Runtime/source-run MASM behavior metadata remains Phase 61.
 - Phase 61B clarifies that Phase 61 direct-JMP runtime execution is governed by the Phase 59 instruction-count watchdog only. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, or Phase 61C; Phase 200 - Active Time Watchdog and Worker Responsiveness remains its owner. Runtime/source-run MASM behavior metadata remains Phase 61.
 - Phase 0 through Phase 7 established the static browser scaffold, C99 core boundary, CPU/flag/memory basics, minimal IR/executor, lexer/parser path, and browser source-run path.
@@ -96,6 +98,14 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 61 executes already-lowered direct `jmp label` forms by transferring to the resolved VM instruction index, counting JMP as one executed instruction, preserving modeled flags, and producing no memory-change row.
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
+
+## Phase 61E - Reserved Word Symbol Diagnostics
+
+Phase 61E is a parser/source-run MASM behavior phase. It rejects simulator-recognized MASM reserved words when they are declared as user-defined data symbols, numeric equates, code labels, or procedure names. The primary diagnostic is `reserved-word-symbol`, points at the declaration token where possible, and prevents the rejected declaration from entering user-symbol tables. Reserved-word matching is case-insensitive and separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words usable as symbols. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Runtime/source-run MASM behavior metadata advances to Phase 61E - Reserved Word Symbol Diagnostics. Phase 62 - CMP Register and Immediate Forms remains the next ordinary instruction milestone.
+
+## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
+
+Phase 61D is a documentation, static-check, and regression-test cleanup phase for source-run capacity behavior. It documents that lexer token capacity, parser diagnostic capacity, instruction/source-text buffers, data symbols, code labels, data image bytes, and source-run JSON/result buffers are bounded. Simulator-controlled capacity failures should produce structured diagnostics and rendered Simulator Messages where possible, should not write Program Console output, should not emit `execution-complete`, and should not be confused with Phase 59 runtime `instructionLimit` failures. Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution. Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.
 
 ## Phase 61C - Branch Debugger Dependency Cleanup
 

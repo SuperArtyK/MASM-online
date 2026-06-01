@@ -1664,9 +1664,9 @@ END main
   phase58FoldedDuplicateLabel: {
     source: `.code
 main PROC
-Loop:
+Spin:
     mov eax, 1
-loop:
+spin:
     mov ebx, 2
 main ENDP
 END main
@@ -2185,6 +2185,173 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 5, column 5, byte offset 50, span length 10: Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.");
 });
 
+
+test("renders Phase 61E reserved code-label diagnostic exactly", () => {
+  const name = "phase61eReservedCodeLabel";
+  const source = `.code
+main PROC
+loop:
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phaseName, "Phase 61E - Reserved Word Symbol Diagnostics");
+  assert.equal(json.instructionCount, 0);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "reserved-word-symbol",
+    message: "'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.",
+    line: 3,
+    column: 1,
+    byteOffset: 16,
+    spanLength: 4
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 3, column 1, byte offset 16, span length 4: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.");
+});
+
+test("renders Phase 61E reserved data-symbol diagnostic exactly", () => {
+  const name = "phase61eReservedDataSymbol";
+  const source = `.data
+mov DWORD 1
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.instructionCount, 0);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "reserved-word-symbol",
+    message: "'mov' is a reserved MASM instruction mnemonic and cannot be used as a data symbol.",
+    line: 2,
+    column: 1,
+    byteOffset: 6,
+    spanLength: 3
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 2, column 1, byte offset 6, span length 3: 'mov' is a reserved MASM instruction mnemonic and cannot be used as a data symbol.");
+});
+
+test("renders Phase 61E CASEMAP:NONE reserved-label diagnostic exactly", () => {
+  const name = "phase61eCasemapNoneReservedLabel";
+  const source = `OPTION CASEMAP:NONE
+.code
+main PROC
+LOOP:
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "reserved-word-symbol",
+    message: "'LOOP' is a reserved MASM instruction mnemonic and cannot be used as a code label.",
+    line: 4,
+    column: 1,
+    byteOffset: 36,
+    spanLength: 4
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 4, column 1, byte offset 36, span length 4: 'LOOP' is a reserved MASM instruction mnemonic and cannot be used as a code label.");
+});
+
+test("renders Phase 61E reserved equate diagnostic exactly", () => {
+  const name = "phase61eReservedEquate";
+  const source = `add EQU 2
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "reserved-word-symbol",
+    message: "'add' is a reserved MASM instruction mnemonic and cannot be used as a numeric equate.",
+    line: 1,
+    column: 1,
+    byteOffset: 0,
+    spanLength: 3
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 1, column 1, byte offset 0, span length 3: 'add' is a reserved MASM instruction mnemonic and cannot be used as a numeric equate.");
+});
+
+test("renders Phase 61E reserved procedure-name diagnostic exactly", () => {
+  const name = "phase61eReservedProcedureName";
+  const source = `.code
+loop PROC
+loop ENDP
+END loop
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "reserved-word-symbol",
+    message: "'loop' is a reserved MASM instruction mnemonic and cannot be used as a procedure name.",
+    line: 2,
+    column: 1,
+    byteOffset: 6,
+    spanLength: 4
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 2, column 1, byte offset 6, span length 4: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a procedure name.");
+});
+
+test("renders Phase 61E OPTION NOKEYWORD remains unsupported with reserved label", () => {
+  const name = "phase61eOptionNoKeywordStillUnsupported";
+  const source = `OPTION NOKEYWORD:<LOOP>
+.code
+main PROC
+loop:
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseSuffix, "E");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "unsupported-option",
+      message: "Unsupported OPTION form. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.",
+      line: 1,
+      column: 1,
+      byteOffset: 0,
+      spanLength: 6
+    },
+    {
+      kind: "assembly-error",
+      code: "reserved-word-symbol",
+      message: "'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.",
+      line: 4,
+      column: 1,
+      byteOffset: 40,
+      spanLength: 4
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-option line 1, column 1, byte offset 0, span length 6: Unsupported OPTION form. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.\n[assembly-error] reserved-word-symbol line 4, column 1, byte offset 40, span length 4: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.");
+});
+
 test("renders Phase 61 direct JMP success exactly", () => {
   const name = "phase61DirectJmpSuccess";
   const source = `.code
@@ -2231,7 +2398,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 61);
-  assert.equal(json.phaseName, "Phase 61 - Direct JMP Runtime Execution");
+  assert.equal(json.phaseName, "Phase 61E - Reserved Word Symbol Diagnostics");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2570,7 +2737,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   assertMessageEquals(foldedDuplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
-    message: "code label `loop` conflicts with `Loop` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1.",
+    message: "code label `spin` conflicts with `Spin` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1.",
     line: 5,
     column: 1,
     byteOffset: 37,
@@ -2582,7 +2749,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
     foldedDuplicateSource,
     foldedDuplicateResult.rawJson,
     foldedDuplicateResult.rendered,
-    "[assembly-error] duplicate-label line 5, column 1, byte offset 37, span length 4: code label `loop` conflicts with `Loop` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1."
+    "[assembly-error] duplicate-label line 5, column 1, byte offset 37, span length 4: code label `spin` conflicts with `Spin` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 3, column 1."
   );
 
   const dataConflictName = "phase58LabelDataConflict";
@@ -6148,6 +6315,31 @@ END main
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals("phase57m-text-segment-definition", source, rawJson, rendered, "[unsupported-feature] unsupported-segment-symbol line 1, column 1, byte offset 0, span length 5: `_TEXT` is a MASM/object segment symbol. MASM32 Educational Mode does not expose linker segment symbols or readable `.code` / section images.");
+});
+
+test("Phase 61D renders token capacity diagnostic exactly", () => {
+  const source = `.code
+main PROC
+${"    mov eax, 1\n".repeat(200)}main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase61d-token-capacity", source);
+  assert.equal(json.ok, false, rawJson);
+  assert.equal(json.instructionCount, 0, rawJson);
+  assert.equal(json.executedInstructionCount, 0, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "token-capacity-exceeded",
+    message: "token buffer capacity exceeded",
+    line: 104,
+    column: 12,
+    byteOffset: 1542,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.equal(rawJson.includes("instruction-limit-exceeded"), false, rawJson);
+  assert.equal(rawJson.includes("programConsole"), false, rawJson);
+  assertRenderedEquals("phase61d-token-capacity", source, rawJson, rendered, "[assembly-error] token-capacity-exceeded line 104, column 12, byte offset 1542, span length 1: token buffer capacity exceeded");
 });
 
 test("Phase 57L renders code memory read diagnostic exactly", () => {

@@ -875,13 +875,13 @@ static int test_sizeof_operator_and_character_literal_acceptance_program(void) {
     const char *source =
         ".data\n"
         "nums DWORD 10 DUP(0)\n"
-        "ch   BYTE 'A'\n"
+        "chr  BYTE 'A'\n"
         "pair WORD 'AB'\n"
         "tag  DWORD 'ABCD'\n"
         ".code\n"
         "main PROC\n"
         "    mov eax, SIZEOF nums\n"
-        "    mov bl, ch\n"
+        "    mov bl, chr\n"
         "    mov cx, pair\n"
         "    mov edx, 'ABCD'\n"
         "main ENDP\n"
@@ -905,7 +905,7 @@ static int test_sizeof_operator_and_character_literal_acceptance_program(void) {
     failures += load_data_image_for_test(&vm, &buffers, &result) ? 0 : record_failure("SIZEOF acceptance data image should load");
     failures += vm_load_program(&vm, buffers.instructions, result.instruction_count) == VM_EXEC_STATUS_OK ? 0 : record_failure("SIZEOF acceptance program should load");
     failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("SIZEOF nums mov should execute");
-    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("mov bl, ch should execute");
+    failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("mov bl, chr should execute");
     failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("mov cx, pair should execute");
     failures += vm_step(&vm) == VM_EXEC_STATUS_OK ? 0 : record_failure("mov edx, packed literal should execute");
     failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX should be readable after SIZEOF mov");
@@ -913,7 +913,7 @@ static int test_sizeof_operator_and_character_literal_acceptance_program(void) {
     failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &ecx) ? 0 : record_failure("ECX should be readable after packed WORD mov");
     failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX should be readable after packed DWORD mov");
     failures += expect_u32(eax, 40U, "SIZEOF nums should leave EAX = 40");
-    failures += expect_u32(ebx & 0xFFU, 65U, "mov bl, ch should leave BL = 65");
+    failures += expect_u32(ebx & 0xFFU, 65U, "mov bl, chr should leave BL = 65");
     failures += expect_u32(ecx & 0xFFFFU, 0x4241U, "mov cx, pair should leave CX = 4241h");
     failures += expect_u32(edx, 0x44434241U, "mov edx, 'ABCD' should pack little-endian");
     vm_deinit(&vm);
@@ -964,7 +964,7 @@ static int test_character_literal_data_and_source_contexts(void) {
         "d BYTE '\\''\n"
         "seq BYTE 'AB', 0\n"
         "pair WORD 'AB'\n"
-        "short WORD 'A'\n"
+        "shortVal WORD 'A'\n"
         "tag DWORD 'ABCD'\n"
         "wide QWORD 'ABCDEFGH'\n"
         ".code\n"
@@ -2268,7 +2268,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "END main\n"
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
-    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"\"", ".CONST uninitialized source-run should report the current unsuffixed runtime phase");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"E\"", ".CONST uninitialized source-run should report the current Phase 61E runtime phase suffix");
     failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
     failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
     failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");
