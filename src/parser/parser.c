@@ -4076,6 +4076,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_SUB;
         return true;
     }
+    if (vm_parser_token_equals(token, "cmp")) {
+        *out_opcode = VM_IR_OPCODE_CMP;
+        return true;
+    }
     if (vm_parser_token_equals(token, "movsx")) {
         *out_opcode = VM_IR_OPCODE_MOVSX;
         return true;
@@ -4355,6 +4359,14 @@ static bool vm_parser_opcode_is_exchange(VmIrOpcode opcode) {
 /// @return true for TEST.
 static bool vm_parser_opcode_is_test(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_TEST;
+}
+
+/// Returns whether an opcode uses CMP register/immediate validation rules.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for CMP.
+static bool vm_parser_opcode_is_cmp(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_CMP;
 }
 
 /// Returns whether an opcode uses logical binary destination-mutation rules.
@@ -6725,6 +6737,52 @@ static bool vm_parser_validate_test_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
+/// Validates Phase 62 CMP register/register and register/immediate operands.
+///
+/// Phase 62 intentionally accepts only register first operands and register or
+/// immediate second operands. CMP memory forms are owned by Phase 63 - CMP
+/// Memory Operand Forms and must remain rejected here.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination First CMP operand.
+/// @param source Second CMP operand.
+/// @param destination_token Token associated with the first operand for diagnostics.
+/// @param source_token Token associated with the second operand for diagnostics.
+/// @return true when the CMP operand pair is supported.
+static bool vm_parser_validate_cmp_operands(
+    VmParserState *state,
+    const VmIrOperand *destination,
+    VmIrOperand *source,
+    const VmLexerToken *destination_token,
+    const VmLexerToken *source_token
+) {
+    if (state == NULL || destination == NULL || source == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
+            destination_token,
+            "CMP Phase 62 accepts only a register first operand. CMP memory operand forms are deferred to Phase 63 - CMP Memory Operand Forms."
+        );
+        return false;
+    }
+
+    if (source->kind != VM_IR_OPERAND_REGISTER && source->kind != VM_IR_OPERAND_IMMEDIATE) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
+            source_token,
+            "CMP Phase 62 accepts only register or immediate second operands. CMP memory operand forms are deferred to Phase 63 - CMP Memory Operand Forms."
+        );
+        return false;
+    }
+
+    return vm_parser_validate_source_width(state, destination, source, source_token);
+}
+
 /// Returns the uppercase mnemonic for a logical binary instruction.
 ///
 /// @param opcode Opcode to classify.
@@ -7970,6 +8028,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         if (!vm_parser_validate_exchange_operands(state, &destination, &source, source_token)) {
             return false;
         }
+    } else if (vm_parser_opcode_is_cmp(opcode)) {
+        if (!vm_parser_validate_cmp_operands(state, &destination, &source, destination_token, source_token)) {
+            return false;
+        }
     } else if (vm_parser_opcode_is_test(opcode)) {
         if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
             return false;
@@ -8001,9 +8063,11 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         return false;
     }
 
-    if ((vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+    if ((vm_parser_opcode_is_cmp(opcode) || vm_parser_opcode_is_logical_binary(opcode) || vm_parser_opcode_is_shift(opcode) || vm_parser_opcode_is_lea(opcode)) && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
         char message[96];
-        if (vm_parser_opcode_is_logical_binary(opcode)) {
+        if (vm_parser_opcode_is_cmp(opcode)) {
+            (void)snprintf(message, sizeof(message), "CMP takes exactly two operands.");
+        } else if (vm_parser_opcode_is_logical_binary(opcode)) {
             (void)snprintf(message, sizeof(message), "%s takes exactly two operands.", vm_parser_logical_binary_mnemonic(opcode));
         } else if (vm_parser_opcode_is_lea(opcode)) {
             (void)snprintf(message, sizeof(message), "LEA takes exactly two operands.");

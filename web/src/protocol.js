@@ -16,13 +16,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 61;
+export const IMPLEMENTED_PHASE = 62;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "E";
+export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 61E - Reserved Word Symbol Diagnostics";
+export const IMPLEMENTED_PHASE_NAME = "Phase 62 - CMP Register and Immediate Forms";
 
 /**
  * Creates the initial worker readiness response.

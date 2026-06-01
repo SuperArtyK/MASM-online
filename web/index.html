@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 61: Direct JMP Runtime Execution.
+  Milestone 62: CMP Register and Immediate Forms.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,15 +18,14 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 61: Direct JMP Runtime Execution. Direct jmp label forms are parsed, lowered, and executed for code-label and procedure-entry targets.</p>
+        <p class="muted">Milestone 62: CMP Register and Immediate Forms. CMP register/register and register/immediate forms update flags without mutating operands; CMP memory operands remain deferred to Phase 63.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, 1
-    jmp done
-    mov ebx, 2
-done:
-    mov ecx, 3
+    mov eax, 6
+    mov ebx, 6
+    cmp eax, ebx
+    cmp eax, 7
 main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

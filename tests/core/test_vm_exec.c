@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 61 direct JMP runtime execution.
+ * @brief Unit tests for the VM executor through Phase 62 CMP register/immediate execution.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -3815,6 +3815,100 @@ static int test_phase61_invalid_jmp_metadata(void) {
     return failures;
 }
 
+/// Verifies CMP register/register updates subtraction flags without mutating operands.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase62_cmp_register_register_flags_and_non_mutation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp eax, ebx", 0U}
+    };
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CMP reg/reg");
+    failures += expect_status(vm_load_program(&vm, program, 1U), VM_EXEC_STATUS_OK, "CMP reg/reg program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 5U) ? 0 : record_failure("EAX setup should succeed for CMP reg/reg"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 5U) ? 0 : record_failure("EBX setup should succeed for CMP reg/reg"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP reg/reg should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after CMP"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after CMP"));
+    failures += expect_u32(eax, 5U, "CMP should not mutate destination register");
+    failures += expect_u32(ebx, 5U, "CMP should not mutate source register");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "equal CMP should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "equal CMP should set ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "equal CMP should clear SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "equal CMP should clear OF");
+    delta = vm_last_delta(&vm);
+    if (delta == NULL) {
+        failures += record_failure("CMP should produce a delta");
+    } else {
+        failures += expect_size(delta->register_change_count, 0U, "CMP should not report register changes");
+        failures += expect_size(delta->memory_change_count, 0U, "CMP should not report memory changes");
+        if (find_flag_change(delta, VM_FLAG_ZF) == NULL) {
+            failures += record_failure("CMP delta should include ZF change");
+        }
+    }
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies CMP immediate edge cases for alias carry and 32-bit overflow.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase62_cmp_immediate_alias_and_overflow_edges(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 8U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp al, 1", 0U},
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "cmp eax, 1", 1U}
+    };
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CMP immediate");
+    failures += expect_status(vm_load_program(&vm, program, 2U), VM_EXEC_STATUS_OK, "CMP immediate program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x80000000U) ? 0 : record_failure("EAX setup should succeed for CMP immediate"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP AL, imm should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "8-bit 0 - 1 CMP should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "8-bit 0 - 1 CMP should clear ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "8-bit 0 - 1 CMP should set SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, false, "8-bit 0 - 1 CMP should clear OF");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP EAX, imm should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after CMP immediate"));
+    failures += expect_u32(eax, 0x80000000U, "CMP immediate should not mutate EAX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "32-bit 80000000h - 1 CMP should clear CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "32-bit overflow CMP result sign bit should be clear");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "32-bit 80000000h - 1 CMP should set OF");
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies CMP rejects unsupported executor operand shapes.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase62_cmp_error_paths(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction bad_destination[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp 1, eax", 0U}
+    };
+    const VmIrInstruction width_mismatch[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp eax, al", 0U}
+    };
+    const VmIrInstruction memory_source[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp eax, value", 0U}
+    };
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CMP error paths");
+    failures += expect_status(vm_load_program(&vm, bad_destination, 1U), VM_EXEC_STATUS_OK, "bad CMP destination program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CMP immediate destination should fail");
+    failures += expect_status(vm_load_program(&vm, width_mismatch, 1U), VM_EXEC_STATUS_OK, "CMP width mismatch program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CMP width mismatch should fail");
+    failures += expect_status(vm_load_program(&vm, memory_source, 1U), VM_EXEC_STATUS_OK, "CMP memory source program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "Phase 62 CMP memory source should fail in executor");
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3872,6 +3966,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_IMUL_IMMEDIATE), "imul") != 0) {
         failures += record_failure("three-operand IMUL opcode name should be imul");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_CMP), "cmp") != 0) {
+        failures += record_failure("CMP opcode name should be cmp");
+    }
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_DIV), "div") != 0) {
         failures += record_failure("DIV opcode name should be div");
     }
@@ -3910,7 +4007,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 61.
+/// Runs all executor tests through Phase 62.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3944,6 +4041,9 @@ int main(void) {
     failures += test_test_alias_sign_flag_edge_case();
     failures += test_test_memory_forms_and_non_mutation();
     failures += test_test_error_paths();
+    failures += test_phase62_cmp_register_register_flags_and_non_mutation();
+    failures += test_phase62_cmp_immediate_alias_and_overflow_edges();
+    failures += test_phase62_cmp_error_paths();
     failures += test_inc_dec_register_flags_and_carry_preservation();
     failures += test_inc_dec_memory_destinations_and_errors();
     failures += test_logical_binary_register_flags();
@@ -3985,6 +4085,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 61 passed.");
+    puts("Executor tests through Phase 62 passed.");
     return 0;
 }

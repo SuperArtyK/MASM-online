@@ -3,7 +3,7 @@
  * @brief IR executor for the MASM32 educational VM core.
  *
  * This module executes caller-provided IR instruction arrays. It supports the
- * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
+ * currently implemented mov, add, sub, cmp, movsx, movzx, cbw, cwde, cwd, cdq,
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, and Irvine32 exit forms over the currently

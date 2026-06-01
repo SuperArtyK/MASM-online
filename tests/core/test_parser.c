@@ -5947,11 +5947,83 @@ static int test_phase61e_reserved_word_symbol_diagnostics(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "Irvine32 registry label should use reserved-word-symbol");
     failures += expect_string_contains(buffers.diagnostics[0].message, "Irvine32 registry name", "Irvine32 label should use registry classification");
 
+    failures += expect_parser_status(parse_for_test(".data\ncmp DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP data symbol should diagnose after Phase 62");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "CMP data symbol should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\ncmp:\n    nop\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP code label should diagnose after Phase 62");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "CMP code label should use reserved-word-symbol");
+
     failures += expect_parser_status(parse_for_test(
         ".data\nloopCount DWORD 0\nagain DWORD 1\n.code\nmain PROC\n    mov eax, 0\nagain_label:\n    inc eax\n    jmp again_label\nmain ENDP\nEND main\n",
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK, "nearby non-reserved labels and data symbols should still parse");
+
+    return failures;
+}
+
+
+/// Verifies Phase 62 CMP register/register and register/immediate parsing.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase62_cmp_instruction_parses_to_ir(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    cmp al, bl\n"
+        "    cmp ax, bx\n"
+        "    cmp eax, ebx\n"
+        "    cmp al, -1\n"
+        "    cmp ax, 0FFFFh\n"
+        "    cmp eax, 80000000h\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 62 CMP forms should parse");
+    failures += expect_size(result.instruction_count, 6U, "Phase 62 CMP source should emit six instructions");
+    if (result.instruction_count >= 6U) {
+        failures += (buffers.instructions[0].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("first CMP opcode should match"));
+        failures += (buffers.instructions[1].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("second CMP opcode should match"));
+        failures += (buffers.instructions[2].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("third CMP opcode should match"));
+        failures += (buffers.instructions[3].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP AL immediate should parse"));
+        failures += (buffers.instructions[4].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP AX immediate should parse"));
+        failures += (buffers.instructions[5].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP EAX immediate should parse"));
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 62 CMP parser diagnostics and memory-form deferral.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase62_cmp_instruction_parse_error_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    cmp eax, al\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP width mismatch should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "CMP width mismatch diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    cmp al, 256\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP immediate overflow should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_IMMEDIATE_OUT_OF_RANGE, "CMP immediate overflow diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    cmp eax eax\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP missing comma should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_EXPECTED_COMMA, "CMP missing comma diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    cmp eax, ebx, ecx\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP extra operand should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "CMP extra operand diagnostic should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "CMP takes exactly two operands", "CMP extra operand message should name CMP");
+
+    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    cmp eax, value\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory source should remain deferred");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CMP memory source diagnostic should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 63", "CMP memory source message should name Phase 63 owner");
+
+    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    cmp value, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory destination should remain deferred");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CMP memory destination diagnostic should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "register first operand", "CMP memory destination message should describe Phase 62 first-operand rule");
 
     return failures;
 }
@@ -6004,6 +6076,8 @@ int main(void) {
     failures += test_phase21_instruction_parse_error_paths();
     failures += test_phase22_test_instruction_parses_to_ir();
     failures += test_phase22_test_instruction_parse_error_paths();
+    failures += test_phase62_cmp_instruction_parses_to_ir();
+    failures += test_phase62_cmp_instruction_parse_error_paths();
     failures += test_phase25_global_memory_width_resolution_parses_to_ir();
     failures += test_phase25_symbol_metadata_width_precedence();
     failures += test_phase25_explicit_ptr_overrides_symbol_metadata();

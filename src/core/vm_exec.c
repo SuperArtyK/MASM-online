@@ -3,7 +3,7 @@
  * @brief Executor for implemented MASM32 simulator IR programs.
  *
  * The executor intentionally supports only a staged vertical slice: mov, add,
- * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
+ * sub, cmp, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * and Irvine32 exit over the currently supported register and memory operand forms. It records last-step
@@ -643,6 +643,44 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
     }
 
     return status;
+}
+
+/// Executes one CMP instruction and updates flags from a transient subtraction result.
+///
+/// CMP reads two supported register/immediate operands at the selected width,
+/// updates the modeled subtraction flags, and deliberately does not write the
+/// transient result back to either operand. Phase 62 does not accept CMP memory
+/// operands.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction to execute.
+/// @param width_bits Execution width in bits.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_cmp(Vm *vm, const VmIrInstruction *instruction, uint8_t width_bits) {
+    uint32_t left = 0U;
+    uint32_t right = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL || instruction->destination.kind != VM_IR_OPERAND_REGISTER ||
+        (instruction->source.kind != VM_IR_OPERAND_REGISTER && instruction->source.kind != VM_IR_OPERAND_IMMEDIATE)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->destination, width_bits, &left);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, width_bits, &right);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (!vm_cpu_update_cmp_flags(&vm->cpu, left, right, width_bits)) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 /// Executes one TEST instruction and updates flags from a bitwise AND result.
@@ -2936,6 +2974,7 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_MOV:
         case VM_IR_OPCODE_ADD:
         case VM_IR_OPCODE_SUB:
+        case VM_IR_OPCODE_CMP:
         case VM_IR_OPCODE_ADC:
         case VM_IR_OPCODE_SBB:
         case VM_IR_OPCODE_TEST:
@@ -2959,6 +2998,9 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             }
             if (instruction->opcode == VM_IR_OPCODE_SUB) {
                 return vm_exec_execute_sub(vm, instruction, width_bits);
+            }
+            if (instruction->opcode == VM_IR_OPCODE_CMP) {
+                return vm_exec_execute_cmp(vm, instruction, width_bits);
             }
             if (instruction->opcode == VM_IR_OPCODE_ADC) {
                 return vm_exec_execute_adc(vm, instruction, width_bits);

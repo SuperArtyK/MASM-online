@@ -1,13 +1,13 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 61E - Reserved Word Symbol Diagnostics
+Phase 62 - CMP Register and Immediate Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 61E - Reserved Word Symbol Diagnostics: The simulator rejects user-defined declarations whose names conflict with simulator-recognized MASM reserved words. This applies to data symbols, numeric equates, code labels, and procedure names. Reserved-word matching is case-insensitive and is separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols.
+Phase 62 - CMP Register and Immediate Forms: The simulator supports `cmp` for register/register and register/immediate forms. `cmp` updates modeled subtraction flags without mutating operands or producing memory-change rows. Phase 62 also preserves Phase 61E reserved-word diagnostics: user-defined declarations whose names conflict with simulator-recognized MASM reserved words are rejected.
 
 Status interpretation:
-Phase 61E adds parser/source-run diagnostics for reserved-word declarations and advances runtime/source-run behavior metadata from Phase 61 to Phase 61E. Phase 61E preserves executable direct `jmp label` behavior from Phase 61 - Direct JMP Runtime Execution. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61D documents and tests source-run/parser capacity behavior; capacity diagnostics remain separate from runtime `instructionLimit` failures. Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, or Phase 61E; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 62 advances runtime/source-run behavior metadata because it adds executable `cmp` register/register and register/immediate forms. Phase 62 does not implement `cmp` memory operands; those are deferred to Phase 63 - CMP Memory Operand Forms. Phase 62 preserves executable direct `jmp label` behavior from Phase 61 - Direct JMP Runtime Execution. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61D documents and tests source-run/parser capacity behavior; capacity diagnostics remain separate from runtime `instructionLimit` failures. Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, Phase 61E, or Phase 62; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ### Reserved words and user-defined symbols
 
@@ -15,7 +15,7 @@ MASM reserved words are not valid user-defined symbols by default. The current s
 
 Rejected declaration categories include data symbols, numeric equates, code labels, and procedure names. The diagnostic code is `reserved-word-symbol`, and it points at the declaration name when source location is available. A rejected reserved-word declaration is not inserted into the user-symbol tables.
 
-`OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as symbols, and reserved-word matching remains case-insensitive. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase; it must not be treated as enabling reserved-word identifiers.
+`OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols, and reserved-word matching remains case-insensitive. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase; it must not be treated as enabling reserved-word identifiers.
 
 ### Execution limits
 

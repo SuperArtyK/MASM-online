@@ -551,7 +551,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 61")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 62")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1401,20 +1401,20 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase61_status_and_code_policy_present() -> None:
-    """Verify Phase 61E repository/runtime status, reserved-word scope, and capacity boundaries."""
+def assert_phase62_status_and_code_policy_present() -> None:
+    """Verify Phase 62 repository/runtime status, CMP scope, and preserved capacity boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 61E - Reserved Word Symbol Diagnostics",
+        "Phase 62 - CMP Register and Immediate Forms",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 61E - Reserved Word Symbol Diagnostics",
+        "Phase 62 - CMP Register and Immediate Forms",
     ]
     status_block = """Repository/archive milestone:
-Phase 61E - Reserved Word Symbol Diagnostics
+Phase 62 - CMP Register and Immediate Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 61E - Reserved Word Symbol Diagnostics"""
+Phase 62 - CMP Register and Immediate Forms"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1437,8 +1437,12 @@ Phase 61E - Reserved Word Symbol Diagnostics"""
             "`instruction-limit-exceeded`",
             "direct `jmp label` forms",
             "Direct JMP Runtime Execution",
+            "CMP Register and Immediate Forms",
             "Reserved Word Symbol Diagnostics",
             "reserved-word-symbol",
+            "`cmp`",
+            "register/immediate",
+            "Phase 63 - CMP Memory Operand Forms",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
@@ -1471,16 +1475,16 @@ Phase 61E - Reserved Word Symbol Diagnostics"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Phase 61E - Reserved Word Symbol Diagnostics",
+            "Phase 62 - CMP Register and Immediate Forms",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 61E:",
-            "Phase 61E advances both repository/archive milestone and runtime/source-run MASM behavior phase",
+            "Current status at Phase 62:",
+            "Phase 62 advances both repository/archive milestone and runtime/source-run MASM behavior phase",
             "Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures",
             "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
-            "Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.",
+            "Phase 63 - CMP Memory Operand Forms remains the next CMP expansion milestone.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "instructionLimit",
             "instruction-limit-exceeded",
@@ -1493,7 +1497,7 @@ Phase 61E - Reserved Word Symbol Diagnostics"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 61E - Reserved Word Symbol Diagnostics",
+            "Phase 62 - CMP Register and Immediate Forms",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
@@ -1523,10 +1527,11 @@ Phase 61E - Reserved Word Symbol Diagnostics"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 61: Direct JMP Runtime Execution",
-            "Direct jmp label forms are parsed, lowered, and executed",
-            "jmp done",
-            "done:",
+            "Milestone 62: CMP Register and Immediate Forms",
+            "CMP register/register and register/immediate forms update flags without mutating operands",
+            "CMP memory operands remain deferred to Phase 63",
+            "cmp eax, ebx",
+            "cmp eax, 7",
             "final-registers",
             "Program Console",
         ],
@@ -1534,9 +1539,12 @@ Phase 61E - Reserved Word Symbol Diagnostics"""
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 61E adds parser/source-run diagnostics for reserved-word declarations",
+            "Phase 62 advances runtime/source-run behavior metadata because it adds executable `cmp` register/register and register/immediate forms",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
+            "`cmp`",
+            "register/immediate",
+            "Phase 63 - CMP Memory Operand Forms",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D documents and tests source-run/parser capacity behavior",
@@ -1723,7 +1731,7 @@ def assert_phase61d_capacity_documented() -> None:
             "data image bytes",
             "source-run JSON/result buffers",
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
-            "Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup chain.",
+            "Phase 63 - CMP Memory Operand Forms remains the next CMP expansion milestone.",
         ],
     )
     assert_all_text_contains(
@@ -1875,7 +1883,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase61_status_and_code_policy_present()
+    assert_phase62_status_and_code_policy_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

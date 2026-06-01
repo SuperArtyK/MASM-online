@@ -115,6 +115,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "add";
         case VM_IR_OPCODE_SUB:
             return "sub";
+        case VM_IR_OPCODE_CMP:
+            return "cmp";
         case VM_IR_OPCODE_MOVSX:
             return "movsx";
         case VM_IR_OPCODE_MOVZX:

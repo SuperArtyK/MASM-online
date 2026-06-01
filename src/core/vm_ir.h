@@ -24,6 +24,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_ADD,
     /// Subtract source operand from destination operand and update arithmetic flags.
     VM_IR_OPCODE_SUB,
+    /// Compare two register/immediate operands by updating subtraction flags without storing a result.
+    VM_IR_OPCODE_CMP,
     /// Sign-extend an 8-bit or 16-bit source operand into a wider register destination.
     VM_IR_OPCODE_MOVSX,
     /// Zero-extend an 8-bit or 16-bit source operand into a wider register destination.

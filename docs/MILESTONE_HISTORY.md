@@ -12,16 +12,16 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 61E:
+Current status at Phase 62:
 
 Repository/archive milestone:
-Phase 61E - Reserved Word Symbol Diagnostics
+Phase 62 - CMP Register and Immediate Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 61E - Reserved Word Symbol Diagnostics: Reserved-word user-symbol declarations are rejected for data symbols, numeric equates, code labels, and procedure names. Direct `jmp label` forms from Phase 61 remain parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
+Phase 62 - CMP Register and Immediate Forms: `cmp` register/register and register/immediate forms execute by updating modeled subtraction flags without mutating operands or producing memory-change rows. Direct `jmp label` forms from Phase 61 remain parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
 
 Status interpretation:
-Phase 61E advances both repository/archive milestone and runtime/source-run MASM behavior phase because it changes accepted/rejected source behavior. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 62 advances both repository/archive milestone and runtime/source-run MASM behavior phase because it adds executable `cmp` register/register and register/immediate forms. Phase 63 - CMP Memory Operand Forms remains future work. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -51,6 +51,7 @@ Those reports are implementation history and evidence. They are useful for chang
 
 ## Concise milestone ledger
 
+- Phase 62 implements `cmp` register/register and register/immediate forms. CMP updates modeled subtraction flags only, preserves operands, produces no memory-change rows, and leaves CMP memory operands to Phase 63 - CMP Memory Operand Forms.
 - Phase 61E rejects simulator-recognized MASM reserved words as user-defined data symbols, numeric equates, code labels, and procedure names. Reserved-word matching is case-insensitive and independent of `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not enable reserved-word identifiers. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase.
 - Phase 61D documents and tests parser/source-run capacity behavior. Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures, not runtime `instructionLimit` failures. Runtime/source-run MASM behavior metadata remains Phase 61.
 - Phase 61C clarifies that Phase 61 direct-JMP runtime execution and later debugger/editor behavior are separate systems. Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Runtime/source-run MASM behavior metadata remains Phase 61.
@@ -101,7 +102,7 @@ Those reports are implementation history and evidence. They are useful for chang
 
 ## Phase 61E - Reserved Word Symbol Diagnostics
 
-Phase 61E is a parser/source-run MASM behavior phase. It rejects simulator-recognized MASM reserved words when they are declared as user-defined data symbols, numeric equates, code labels, or procedure names. The primary diagnostic is `reserved-word-symbol`, points at the declaration token where possible, and prevents the rejected declaration from entering user-symbol tables. Reserved-word matching is case-insensitive and separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words usable as symbols. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Runtime/source-run MASM behavior metadata advances to Phase 61E - Reserved Word Symbol Diagnostics. Phase 62 - CMP Register and Immediate Forms remains the next ordinary instruction milestone.
+Phase 61E is a parser/source-run MASM behavior phase. It rejects simulator-recognized MASM reserved words when they are declared as user-defined data symbols, numeric equates, code labels, or procedure names. The primary diagnostic is `reserved-word-symbol`, points at the declaration token where possible, and prevents the rejected declaration from entering user-symbol tables. Reserved-word matching is case-insensitive and separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words usable as symbols. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Runtime/source-run MASM behavior metadata advances to Phase 61E - Reserved Word Symbol Diagnostics. Phase 62 - CMP Register and Immediate Forms is implemented; Phase 63 - CMP Memory Operand Forms remains the next CMP expansion milestone.
 
 ## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
 
