@@ -79,6 +79,38 @@ Phase 56 - Unsigned DIV
 
 Do not update runtime/source-run phase metadata merely because a maintenance-only phase has advanced the repository/archive milestone. Runtime/source-run phase metadata advances only when the target phase explicitly changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
 
+For split feature families, current-status wording must identify which layer is implemented.
+
+Examples:
+
+- A parser/lowering phase may make syntax accepted and lower metadata without making the runtime behavior executable.
+- A later runtime phase may execute already-lowered metadata without adding new syntax.
+- A maintenance phase may add tests, documentation, or report hardening for an already implemented behavior without advancing runtime/source-run MASM behavior phase metadata.
+- A debugger/editor phase may add source navigation, current-instruction highlighting, breakpoint binding, or editor marker behavior for an already executable instruction without changing the MASM syntax subset.
+
+Do not collapse these layers into a broad feature label.
+
+For branch/control-flow features, avoid vague statements such as:
+
+```text
+control flow is supported
+control flow is unsupported
+branches are implemented
+branches are not implemented
+```
+
+Use behavior-specific wording instead. For example:
+
+```text
+Direct `jmp label` parser/lowering is implemented.
+Direct `jmp label` runtime execution is implemented.
+Conditional jumps remain future work.
+Debugger breakpoint binding for branch target lines remains future work.
+```
+
+This rule prevents assistants from treating parser support, runtime execution, debugger behavior, and editor navigation as the same milestone.
+
+
 Historical milestone reports may retain milestone-relative wording because they document what was true at the time. Current documentation, current supported-syntax text, live diagnostics, current browser status text, current protocol status text, current handoff/status summaries, and current tests must use stable behavior-specific wording.
 
 Target complete-v1 user capabilities, not necessarily current implementation:
@@ -583,6 +615,128 @@ main ENDP
 END main
 ```
 
+
+#### 8.1.3A Reserved Words and User-Defined Symbols
+
+MASM reserved words are not valid user-defined symbols by default.
+
+This rule is separate from `OPTION CASEMAP`.
+
+`OPTION CASEMAP` controls case-sensitive or case-insensitive lookup for accepted user-defined symbols. It does not make reserved words available as user-defined symbols. It also does not make instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, or recognized Irvine32 routine names case-sensitive.
+
+Reserved-word matching is case-insensitive. For example, `loop:`, `LOOP:`, and `Loop:` all conflict with the `LOOP` instruction mnemonic.
+
+This specification does not require the simulator to import or fully reproduce the complete MASM reserved-word table in one step. Instead, the simulator must reject names that conflict with words it already recognizes as reserved.
+
+Reserved words include, at minimum:
+
+- every instruction mnemonic currently implemented by the simulator;
+- every planned instruction mnemonic that the current parser already recognizes as an instruction keyword, branch keyword, or unsupported instruction-family keyword;
+- registers and register aliases;
+- directives recognized by the parser, including accepted, metadata-only, no-op, unsupported, deferred, and non-goal directives;
+- operators recognized by the parser;
+- data type names;
+- `PTR` width names and signed `PTR` width aliases;
+- virtual include names where parsed as include targets;
+- recognized Irvine32 routine and terminator names classified by the Phase 41 - Virtual Irvine32 Symbol Registry or its direct successor as simulator-visible routine names;
+- other MASM or simulator-recognized keywords that the parser treats as reserved for diagnostics or compatibility classification.
+
+A future phase that adds a new recognized keyword, instruction mnemonic, directive, operator, data type, `PTR` width name, virtual include name, or Irvine32 registry name must update the reserved-word classification path at the same time unless the phase explicitly documents a different MASM-compatible rule.
+
+Do not hardcode a second independent Irvine32 reserved-name list in the parser. Reserved-name checks for Irvine32 routine and terminator names must use the centralized Phase 41 - Virtual Irvine32 Symbol Registry or a small documented reserved-word query wrapper over that registry.
+
+By default, these declarations must be rejected:
+
+```asm
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+```asm
+.data
+mov DWORD 1
+eax DWORD 1
+DWORD DWORD 1
+OFFSET DWORD 1
+```
+
+The diagnostic should point at the declaration token whenever possible and explain that the name is reserved.
+
+Suggested diagnostic code:
+
+```text
+reserved-word-symbol
+```
+
+Suggested wording shape:
+
+```text
+'<name>' is a reserved MASM <reserved-kind> and cannot be used as a <symbol-kind>.
+```
+
+Examples:
+
+```text
+'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.
+'eax' is a reserved MASM register name and cannot be used as a data symbol.
+'OFFSET' is a reserved MASM operator and cannot be used as an equate name.
+```
+
+A reserved-word declaration must not be inserted into any user-symbol table. If parser recovery continues, later references to that spelling may produce follow-on diagnostics such as `unknown-symbol`, `invalid-branch-target`, or parser-specific keyword diagnostics. The declaration-site `reserved-word-symbol` diagnostic is the primary diagnostic and should be present whenever the parser can identify the declaration.
+
+Normal non-reserved labels and symbols remain valid:
+
+```asm
+.code
+main PROC
+again:
+    inc eax
+    jmp again
+main ENDP
+END main
+```
+
+`OPTION CASEMAP:NONE` does not make reserved words available as symbols. These remain rejected:
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+LOOP:
+main ENDP
+END main
+```
+
+`OPTION NOKEYWORD` remains unsupported until a later phase explicitly implements it. Until such a phase is accepted, `OPTION NOKEYWORD` must not be treated as silently enabling reserved-word identifiers.
+
+A future `OPTION NOKEYWORD` phase must explicitly define all of the following before changing this behavior:
+
+- accepted `OPTION NOKEYWORD` syntax;
+- source-order behavior;
+- whether disabled keywords can still be used as instructions, directives, or operators;
+- whether disabled keywords can be used only as user-defined symbols;
+- interaction with `OPTION CASEMAP:ALL`;
+- interaction with `OPTION CASEMAP:NONE`;
+- interaction with code labels, procedure names, data symbols, equates, macros, user-defined types, and future local labels;
+- diagnostics for ambiguous parsing after a keyword is disabled;
+- whether keyword recognition can be restored;
+- whether disabling one keyword affects aliases or related instructions;
+- exact structured and rendered diagnostics.
+
 #### 8.1.4 Recognized Unsupported or Deferred Directives
 
 Unsupported or deferred directives should produce explicit diagnostics rather than generic syntax errors.
@@ -622,7 +776,7 @@ Recognized unsupported or deferred directives include:
 - `FOR`
 - `FORC`
 - `GOTO`
-- `OPTION NOKEYWORD`
+- `OPTION NOKEYWORD`, including forms such as `OPTION NOKEYWORD:<LOOP>`, until a future keyword-control phase explicitly implements reserved-word disabling behavior.
 - `OPTION DOTNAME` and `OPTION NODOTNAME`
 - unsupported `OPTION LANGUAGE` forms
 - conditional assembly directives such as `IF`, `IF2`, `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ELSEIF`, and `ENDIF`
@@ -630,6 +784,9 @@ Recognized unsupported or deferred directives include:
 - listing-control directives such as `.LIST`, `.NOLIST`, `.CREF`, `.NOCREF`, and `.TFCOND`, unless later accepted as no-ops
 - advanced processor/vector directives such as `.387`, `.MMX`, `.XMM`, and `.K3D`
 - safety/object-format directives such as `.SAFESEH`, `.FPO`, `PUSHCONTEXT`, and `POPCONTEXT`
+
+
+`OPTION NOKEYWORD` is broader than ordinary option parsing because it can change whether a reserved word is recognized as a keyword or accepted as a user-defined symbol. Until a future phase explicitly implements that behavior, the simulator must continue to reject reserved-word user-symbol declarations by default.
 
 Unsupported directive diagnostics should include the directive name, source line, column, byte offset, span length, and a short explanation.
 
@@ -3495,6 +3652,61 @@ The simulator distinguishes:
 - rendered Simulator Messages byte or message limits according to the configured message-limit policy.
 
 Resource-limit diagnostics must be deterministic and must not leave hidden partial state except for explicitly defined partial-progress instructions.
+
+
+
+### 17.6 Parser, Lowering, and Source-Run Capacity Limits
+
+The simulator must keep deterministic bounded behavior across lexing, parsing, lowering, loading, execution, diagnostics, and JSON/result formatting.
+
+Runtime execution limits are not the only resource limits. The implementation may also impose bounded capacities before execution begins, including but not limited to:
+
+- source text bytes;
+- lexer tokens;
+- parser diagnostics;
+- symbol-table entries;
+- data symbols;
+- code labels;
+- equates;
+- lowered IR instructions;
+- data image bytes;
+- source-run JSON/result bytes;
+- rendered diagnostic/message counts where applicable.
+
+These parser/source-run capacities are distinct from the runtime instruction-count watchdog.
+
+A parser/source-run capacity failure occurs before VM execution begins or before a result can be fully produced. It must not be reported as an instruction-limit failure unless the runtime instruction-count watchdog actually fired during execution.
+
+Capacity failures under simulator control should produce structured diagnostics or structured infrastructure errors with stable codes. The diagnostic should identify the exhausted capacity and include source line, column, byte offset, and span length when the failing source location is known.
+
+Examples of capacity diagnostic families include:
+
+```text
+token-capacity-exceeded
+diagnostic-capacity-exceeded
+source-text-capacity-exceeded
+instruction-capacity-exceeded
+symbol-capacity-exceeded
+label-capacity-exceeded
+equate-capacity-exceeded
+data-capacity-exceeded
+json-capacity-exceeded
+```
+
+The exact public code names are owned by the implementation and diagnostic tests. Existing stable public codes must not be renamed merely to match this list.
+
+A parser/source-run capacity failure must preserve these user-visible guarantees where applicable:
+
+- no Program Console output from a program that never began execution;
+- no `execution-complete` message;
+- no hidden partial VM execution;
+- no successful memory-change rows caused by a program that did not run;
+- a clear Simulator Messages entry or structured worker/source-run error;
+- no browser crash or unbounded diagnostic output for capacity failures that are detected by the simulator.
+
+The simulator is an educational small-program environment. The existence of source-run capacity limits is not a defect by itself. However, generic worker failures should be replaced with structured capacity diagnostics whenever the failure is caused by a known simulator-owned capacity.
+
+Large-program support must be implemented through explicit roadmap phases. Future assistants must not silently remove bounded capacities, add unbounded allocation, or expand browser memory use without an owning phase, tests, and documentation.
 
 ## 18. Memory Configuration and Safety Tiers
 

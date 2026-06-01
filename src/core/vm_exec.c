@@ -5,7 +5,7 @@
  * The executor intentionally supports only a staged vertical slice: mov, add,
  * sub, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
- * lea, mul, imul, div, idiv, Phase 60 direct-JMP deferred-runtime diagnostics,
+ * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * and Irvine32 exit over the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
@@ -2867,22 +2867,29 @@ static VmExecStatus vm_exec_execute_exit(Vm *vm, const VmIrInstruction *instruct
     return VM_EXEC_STATUS_OK;
 }
 
-/// Handles one Phase 60 lowered direct JMP before runtime branch execution exists.
+/// Validates one Phase 61 lowered direct JMP before instruction-pointer transfer.
 ///
-/// A lowered direct JMP is valid parser/lowering metadata in Phase 60, but the
-/// executor must stop before applying instruction-pointer mutation until
-/// Phase 61 implements runtime direct-JMP transfer.
+/// A direct JMP is valid only when Phase 60 lowering produced a branch-target
+/// operand whose target index is inside the loaded instruction array. This
+/// helper performs validation only; @ref vm_step applies the transfer after it
+/// knows the instruction committed successfully and can increment instruction
+/// accounting exactly once.
 ///
+/// @param vm VM instance containing the loaded program bounds.
 /// @param instruction JMP instruction descriptor to validate.
-/// @return BRANCH_RUNTIME_DEFERRED for a valid lowered direct JMP, otherwise an executor status.
-static VmExecStatus vm_exec_execute_jmp_deferred(const VmIrInstruction *instruction) {
-    if (instruction == NULL) {
+/// @return OK for a valid direct JMP, otherwise an executor status.
+static VmExecStatus vm_exec_validate_jmp_target(const Vm *vm, const VmIrInstruction *instruction) {
+    if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
     if (instruction->destination.kind != VM_IR_OPERAND_BRANCH_TARGET || instruction->source.kind != VM_IR_OPERAND_NONE) {
-        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        return VM_EXEC_STATUS_INVALID_BRANCH_TARGET;
     }
-    return VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED;
+    if ((size_t)instruction->destination.immediate >= vm->program_count) {
+        return VM_EXEC_STATUS_INVALID_BRANCH_TARGET;
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 /// Executes LEA effective-address computation.
@@ -3019,7 +3026,7 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_LEA:
             return vm_exec_execute_lea(vm, instruction);
         case VM_IR_OPCODE_JMP:
-            return vm_exec_execute_jmp_deferred(instruction);
+            return vm_exec_validate_jmp_target(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:
@@ -3147,7 +3154,11 @@ VmExecStatus vm_step(Vm *vm) {
         return status;
     }
 
-    vm->instruction_pointer += 1U;
+    if (instruction->opcode == VM_IR_OPCODE_JMP) {
+        vm->instruction_pointer = (size_t)instruction->destination.immediate;
+    } else {
+        vm->instruction_pointer += 1U;
+    }
     vm->instruction_count += 1U;
     if (vm->instruction_pointer >= vm->program_count) {
         vm->halted = true;
@@ -3196,6 +3207,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "undefined-flag-use";
         case VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED:
             return "instruction-limit-exceeded";
+        case VM_EXEC_STATUS_INVALID_BRANCH_TARGET:
+            return "invalid-branch-target";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:
             return "branch-runtime-deferred";
         default:

@@ -1,10 +1,10 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 60 - Direct JMP Parsing and Target Lowering
+Phase 61 - Direct JMP Runtime Execution
 
 Runtime/source-run MASM behavior phase:
-Phase 60 - Direct JMP Parsing and Target Lowering: The simulator parses, classifies, and lowers direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. Runtime branch transfer remains deferred to Phase 61; reaching a lowered direct `jmp` emits `branch-runtime-deferred` and stops before applying the jump. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
+Phase 61 - Direct JMP Runtime Execution: The simulator parses, classifies, lowers, and executes direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, and produces no memory-change row. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
 
 ### Execution limits
 
@@ -14,7 +14,7 @@ Source-run and test-facing callers may set `instructionLimit` to a positive inte
 
 Ordinary code labels (`name:`) and procedure-entry labels (`name PROC`) are accepted and recorded as parser/source metadata. Consecutive labels before one executable instruction target the same following instruction. Labels before `ENDP`, `END`, or another non-executable boundary are accepted as no-executable-target metadata.
 
-Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata, but runtime branch transfer is still deferred: reaching the instruction emits `branch-runtime-deferred` and stops before applying the jump. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register/memory jumps, distance overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain unsupported.
+Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata and executes by transferring to the resolved VM instruction index. Procedure-entry targets are direct branch targets only; they do not imply `CALL`, `RET`, stack mutation, argument handling, frames, or calling-convention behavior. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register/memory jumps, distance overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain unsupported.
 
 ### Unsupported high-level flow diagnostics
 
@@ -56,7 +56,7 @@ Supported structural forms:
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
-- Labels are accepted as parser/source metadata. Phase 60 resolves direct `jmp label` targets for lowering metadata only; runtime branch transfer remains deferred to Phase 61.
+- Labels are accepted as parser/source metadata. Phase 60 resolves direct `jmp label` targets for lowering metadata, and Phase 61 executes those already-lowered direct branch targets.
 
 ### MASM32 header compatibility directives
 
@@ -390,4 +390,4 @@ Expression parser expansion tracked for later compatibility work:
 
 ## Still deferred
 
-Deferred systems include control flow, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility.
+Deferred systems include conditional control flow, `loop`, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility.

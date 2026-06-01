@@ -1,12 +1,12 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Milestone 57.
+ * @brief Unit tests for the VM executor through Phase 61 direct JMP runtime execution.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
- * stepping, supported straight-line instruction semantics, CPU and memory
- * integration, and last-step delta capture. They intentionally avoid parser,
- * control-flow, stack, Irvine32 routine bodies, and browser UI behavior except
- * for the Phase 42 virtual exit terminator.
+ * stepping, supported instruction semantics, CPU and memory integration, direct
+ * JMP runtime transfer, and last-step delta capture. They intentionally avoid
+ * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
+ * the Phase 42 virtual exit terminator.
  */
 
 #include <stdbool.h>
@@ -34,6 +34,21 @@ static int record_failure(const char *message) {
 static int expect_u32(uint32_t actual, uint32_t expected, const char *message) {
     if (actual != expected) {
         fprintf(stderr, "FAIL: %s (actual=0x%08X expected=0x%08X)\n", message, actual, expected);
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Verifies that two unsigned 64-bit values are equal.
+///
+/// @param actual Actual value produced by the test.
+/// @param expected Expected value.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_u64(uint64_t actual, uint64_t expected, const char *message) {
+    if (actual != expected) {
+        fprintf(stderr, "FAIL: %s (actual=%llu expected=%llu)\n", message, (unsigned long long)actual, (unsigned long long)expected);
         return 1;
     }
 
@@ -3716,6 +3731,90 @@ static int test_phase57_idiv_semantics_and_errors(void) {
     return failures;
 }
 
+/// Verifies Phase 61 direct JMP runtime transfer and flag preservation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase61_direct_jmp_runtime_transfer(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_JMP, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 3U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "jmp done", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 2", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 3U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov ebx, 3", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 61 direct JMP test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "direct JMP program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("seed CF before JMP should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("seed ZF before JMP should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("seed OF validity before JMP should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "MOV before JMP should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JMP should execute and transfer control");
+    failures += expect_size(vm.instruction_pointer, 3U, "JMP should set next instruction pointer to branch target");
+    failures += expect_u64(vm.instruction_count, 2U, "JMP should count as one executed instruction");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "JMP should not produce register changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "JMP should not produce flag changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "JMP should not produce memory changes");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "JMP should preserve CF value");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "JMP should preserve ZF value");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "JMP should preserve OF validity metadata");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "target instruction after JMP should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after JMP");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after JMP");
+    failures += expect_u32(eax, 1U, "JMP should skip fall-through MOV to EAX");
+    failures += expect_u32(ebx, 3U, "JMP target MOV should execute");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase61_invalid_jmp_metadata(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction invalid_target[] = {
+        {VM_IR_OPCODE_JMP, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 99U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "jmp broken", 0U}
+    };
+    const VmIrInstruction invalid_shape[] = {
+        {VM_IR_OPCODE_JMP, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "jmp broken", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid JMP metadata test");
+    failures += expect_status(vm_load_program(&vm, invalid_target, sizeof(invalid_target) / sizeof(invalid_target[0])), VM_EXEC_STATUS_OK, "invalid target JMP program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 123U) ? 0 : record_failure("seed EAX before invalid JMP should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("seed CF before invalid JMP should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_BRANCH_TARGET, "out-of-range JMP target should fail");
+    failures += expect_size(vm.instruction_pointer, 0U, "invalid JMP target should not advance instruction pointer");
+    failures += expect_u64(vm.instruction_count, 0U, "invalid JMP target should not increment instruction count");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "invalid JMP target should preserve flags");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "invalid JMP target should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "invalid JMP target should not record memory changes");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_INVALID_BRANCH_TARGET || !diagnostic->has_instruction || diagnostic->instruction.source_line != 7U) {
+        failures += record_failure("invalid JMP target diagnostic should preserve instruction context");
+    }
+
+    failures += expect_status(vm_load_program(&vm, invalid_shape, sizeof(invalid_shape) / sizeof(invalid_shape[0])), VM_EXEC_STATUS_OK, "invalid shape JMP program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_BRANCH_TARGET, "malformed JMP operand shape should fail as invalid branch target metadata");
+    failures += expect_size(vm.instruction_pointer, 0U, "malformed JMP should not advance instruction pointer");
+    failures += expect_u64(vm.instruction_count, 0U, "malformed JMP should not increment instruction count");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -3800,6 +3899,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_QUOTIENT_OVERFLOW), "quotient-overflow") != 0) {
         failures += record_failure("quotient-overflow status name should match");
     }
+    if (strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_BRANCH_TARGET), "invalid-branch-target") != 0) {
+        failures += record_failure("invalid-branch-target status name should match");
+    }
 
     if (vm_exec_status_name((VmExecStatus)99) != NULL) {
         failures += record_failure("invalid executor status name should be NULL");
@@ -3808,7 +3910,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Milestone 57.
+/// Runs all executor tests through Phase 61.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -3874,6 +3976,8 @@ int main(void) {
     failures += test_phase55_explicit_imul_semantics();
     failures += test_phase56_div_semantics_and_errors();
     failures += test_phase57_idiv_semantics_and_errors();
+    failures += test_phase61_direct_jmp_runtime_transfer();
+    failures += test_phase61_invalid_jmp_metadata();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -3881,6 +3985,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Milestone 57 passed.");
+    puts("Executor tests through Phase 61 passed.");
     return 0;
 }

@@ -457,14 +457,14 @@ typedef struct VmParserResult {
 /// operands may use registers, direct symbols, constant symbol-offset memory
 /// operands, register-indirect memory operands, or signed/unsigned PTR width
 /// overrides on supported memory operands. Direct JMP operands may target
-/// executable code labels or procedure-entry labels, but runtime branch transfer
-/// remains deferred until Phase 61. MASM32 header directives accepted in
+/// executable code labels or procedure-entry labels and are lowered to Phase 61
+/// runtime branch metadata. MASM32 header directives accepted in
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
 /// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
 /// storage with metadata; `.CONST` storage is read-only once loaded into VM
 /// memory. Code labels and procedure-entry labels are recorded as parser/source
-/// metadata; Phase 60 direct JMP lowering may consume that metadata, but branch
-/// execution remains deferred.
+/// metadata; Phase 60 direct JMP lowering consumes that metadata, and Phase 61
+/// executes the resolved direct branch target.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

@@ -90,7 +90,7 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_IDIV,
     /// Compute an effective address into a 32-bit register without reading memory.
     VM_IR_OPCODE_LEA,
-    /// Direct JMP branch target metadata lowered by Phase 60 without runtime branch execution.
+    /// Direct JMP branch target metadata lowered by Phase 60 and executed by Phase 61.
     VM_IR_OPCODE_JMP,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
@@ -202,9 +202,8 @@ VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t disp
 
 /// Returns a direct branch target operand.
 ///
-/// Phase 60 stores the resolved target instruction index as metadata for later
-/// runtime branch phases. The Phase 60 executor diagnoses this operand before
-/// applying any branch transfer.
+/// Phase 60 stores the resolved target instruction index as metadata. Phase 61
+/// consumes this metadata directly during runtime branch execution.
 ///
 /// @param target_instruction_index Zero-based target IR instruction index.
 /// @return Direct branch target operand descriptor.

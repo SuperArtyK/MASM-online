@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 60: Direct JMP Parsing and Target Lowering.
+  Milestone 61: Direct JMP Runtime Execution.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 60: Direct JMP Parsing and Target Lowering. Direct jmp label forms are parsed and lowered; runtime branch transfer remains deferred to Phase 61.</p>
+        <p class="muted">Milestone 61: Direct JMP Runtime Execution. Direct jmp label forms are parsed, lowered, and executed for code-label and procedure-entry targets.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC

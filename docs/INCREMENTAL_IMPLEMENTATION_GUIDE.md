@@ -224,6 +224,38 @@ Historical reports that predate this exact wording do not need to be rewritten u
 
 When a milestone is a runtime behavior milestone and the two values match, the report should still include both labels if the immediately preceding repository/archive milestone was maintenance-only. This prevents the assistant from losing the distinction at the point where runtime metadata intentionally advances again.
 
+
+
+### 2.4c-1 Branch-Phase Milestone Report Requirements
+
+Every milestone report for a branch or control-flow phase must include a branch-status block.
+
+Use this shape:
+
+```text
+Branch/control-flow status:
+- Branch forms executable in this phase:
+- Branch forms parsed/lowered but not executable:
+- Branch forms rejected:
+- Branch forms still future work:
+- Instruction-count watchdog behavior:
+- Active-time watchdog behavior:
+- Debugger/editor branch behavior:
+- Runtime/source-run MASM behavior phase advanced: yes/no
+```
+
+Rules:
+
+- If a phase implements direct `jmp` execution, say that direct `jmp label` executes.
+- If a phase only parses or lowers a branch form, say that runtime execution is still deferred.
+- If conditional jumps are not implemented, say so explicitly.
+- If `loop` is not implemented, say so explicitly.
+- If stack/procedure control transfer is not implemented, say so explicitly.
+- If indirect jumps are not implemented, say so explicitly.
+- If active-time watchdog behavior is not implemented, say so explicitly.
+- If debugger/editor branch behavior is not implemented, say so explicitly.
+- Do not write broad summaries such as "control flow is implemented" unless all listed control-flow families are actually implemented.
+
 ### 2.4d Standing Rule: Modeled-Flag Consumers Must Use the Shared Undefined-Flag-Use Helper
 
 Every instruction, Irvine32 routine, debugger action, or future semantic feature that consumes a modeled flag value for behavior must use the shared undefined-flag-use checking path introduced by Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers.
@@ -397,6 +429,43 @@ END main
 The two data symbols must remain distinct because user-symbol lookup is exact-case under `OPTION CASEMAP:NONE`. The `EXIT` virtual Irvine32 terminator must still be recognized case-insensitively because Irvine32 routine/terminator matching is not governed by user-symbol CASEMAP policy.
 
 Future tests that combine Irvine32 names and mixed-case user symbols must prove both halves of this rule.
+
+
+### 2.4e-1 Standing Rule: Reserved Words Are Not User Symbols by Default
+
+`OPTION CASEMAP` controls lookup for accepted user-defined symbols. It does not make reserved words available as user-defined symbols.
+
+Instruction mnemonics, directives, registers, register aliases, operators, data type names, `PTR` width names, virtual include names, simulator-recognized Irvine32 routine names, and other simulator-recognized reserved words must not be accepted as user-defined symbols by default.
+
+Reserved-word matching is case-insensitive.
+
+Examples that must be rejected after the reserved-word diagnostics phase:
+
+```asm
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+```asm
+.data
+mov DWORD 1
+eax DWORD 1
+OFFSET DWORD 1
+```
+
+`OPTION CASEMAP:NONE` does not change this rule.
+
+`OPTION NOKEYWORD` remains unsupported unless a later phase explicitly implements it. Future phases must not silently treat `OPTION NOKEYWORD` as enabled behavior.
+
+Any future phase that adds a new recognized instruction mnemonic, directive, operator, type name, register name, virtual include name, or Irvine32 routine name must either:
+
+1. add it to the reserved-word classification path; or
+2. explicitly document why MASM-compatible behavior allows that name as a user-defined symbol in that context.
+
+Irvine32 routine and terminator names must use the centralized Phase 41 - Virtual Irvine32 Symbol Registry or a documented wrapper over it. Do not add independent parser string checks for Irvine32 reserved-name behavior.
 
 ### 2.4f Standing Rule: Irvine32 Routine Recognition Must Use the Phase 41 Virtual Registry
 
@@ -15007,6 +15076,1014 @@ Execute already-lowered direct branch instructions.
 - Jump to procedure entry executes as a direct branch only.
 - Runtime diagnostic for malformed target metadata.
 - Breakpoint binding to target line remains valid in later debugger tests.
+
+
+
+
+### Post-Phase-61 Cleanup and Hotfix Ordering
+
+The phases inserted after Phase 61 and before Phase 62 are cleanup/hotfix phases. They exist to correct documentation ambiguity, harden direct-JMP behavior, document source-run capacity limits, and fix MASM-compatibility gaps discovered during Phase 61 development.
+
+They do not renumber Phase 62 or later phases.
+
+Use this order:
+
+```text
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
+Phase 61C - Branch Debugger Dependency Cleanup
+Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
+Phase 61E - Reserved Word Symbol Diagnostics
+Phase 62  - CMP Register and Immediate Forms
+```
+
+These phases are intentionally inserted as non-renumbering suffix phases. Do not rename Phase 62. Do not move CMP register/immediate work into any Phase 61 suffix phase.
+
+Phase 61E should happen before Phase 62 because Phase 62 and later conditional-branch phases will add more instruction and branch keywords. Stabilizing reserved-word rejection first reduces parser and symbol-table ambiguity for later comparison and branch phases.
+
+These cleanup/hotfix phases must not be used to implement future instruction families, conditional jumps, the `loop` instruction, stack/procedure behavior, debugger/editor behavior, active-time watchdog behavior, or `OPTION NOKEYWORD`.
+
+## 65A. Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+
+### Goal
+
+Harden source-run accounting, status-surface wording, milestone-report wording, and regression coverage for direct `jmp` after Phase 61 - Direct JMP Runtime Execution.
+
+This is a post-Phase-61 hardening phase. It exists because Phase 61 may already have been implemented from the earlier guide wording. Do not reopen or broaden Phase 61 merely to add these checks. Phase 61 remains the phase that first executes already-lowered direct `jmp` branch targets.
+
+Phase 61A must not add new MASM branch syntax. It must not add conditional jumps, `loop`, `call`, `ret`, indirect branches, register-target jumps, memory-target jumps, immediate-target jumps, distance/type override handling, stack behavior, procedure-call behavior, debugger stepping, editor navigation, breakpoint behavior, or active-time watchdog behavior.
+
+### Dependencies
+
+- Phase 59 - Control-Flow Instruction Limit
+- Phase 60 - Direct JMP Parsing and Target Lowering
+- Phase 61 - Direct JMP Runtime Execution
+
+### Scope
+
+Phase 61A owns verification and, if needed, narrowly scoped correction for public source-run accounting after direct `jmp` execution.
+
+Phase 60 represented a reached direct `jmp` as an attempted but not committed instruction because runtime branch execution was deferred. After Phase 61, a valid direct `jmp` is a committed instruction. Phase 61A must make that transition explicit in tests, documentation, and milestone reports.
+
+If Phase 61 implementation already satisfies all required accounting behavior, Phase 61A is a test, documentation, static-check, and report-hardening phase only.
+
+If Phase 61 implementation has a mismatch in direct-JMP accounting, Phase 61A may make the smallest implementation correction needed to align the implementation with the already intended Phase 61 behavior. Such a correction should be described as Phase 61 compliance hardening, not as a new branch feature.
+
+### Required behavior
+
+For a successful direct `jmp` executed after Phase 61:
+
+- the direct `jmp` counts as one committed VM instruction;
+- `executedInstructionCount` includes the committed `jmp`;
+- if the program later completes normally, `attemptedNextInstructionIndex` is `null`;
+- if the program later stops because of the Phase 59 instruction-count watchdog, `attemptedNextInstructionIndex` is the instruction index that would have been fetched next and was blocked by the limit;
+- `currentInstructionIndex` is the index of the last VM instruction that fully executed and committed state, or `null` if no VM instruction executed;
+- `branch-runtime-deferred` is not emitted for valid direct `jmp label` instructions after Phase 61;
+- `execution-complete` is emitted only when the run actually reaches normal completion;
+- instructions skipped by the `jmp` do not execute;
+- modeled flags are preserved by the `jmp`;
+- Phase 50A flag-validity metadata is preserved by the `jmp`;
+- memory is unchanged by the `jmp`;
+- Program Console output is unchanged by the `jmp` itself;
+- no memory-change row is produced by the `jmp`.
+
+For a backward direct `jmp` that reaches the Phase 59 instruction-count watchdog:
+
+- the stop reason remains `instruction-limit-exceeded` or the existing stable diagnostic code for the Phase 59 watchdog;
+- the diagnostic must not be replaced by `branch-runtime-deferred`;
+- committed prior instructions remain committed;
+- no uncommitted instruction mutates state after the limit is reached;
+- source-run accounting fields must describe completed instructions and the blocked attempted next instruction according to the established source-run schema;
+- active-time watchdog behavior is not required and must not be implemented in Phase 61A.
+
+### Runtime/source-run MASM behavior phase metadata
+
+Phase 61A is expected to advance the repository/archive milestone only.
+
+The normal status after this phase is:
+
+```text
+Repository/archive milestone:
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+
+Runtime/source-run MASM behavior phase:
+Phase 61 - Direct JMP Runtime Execution
+```
+
+Do not advance runtime/source-run MASM behavior phase metadata merely because Phase 61A adds tests, documentation, static checks, milestone-report hardening, or bug fixes that bring the implementation into compliance with the already intended Phase 61 behavior.
+
+Runtime/source-run behavior phase metadata may advance to Phase 61A only if this phase deliberately introduces a new externally visible runtime/source-run behavior that was not already required by Phase 61. Examples include a new public source-run JSON field, a new diagnostic code, or a deliberately changed rendered Simulator Messages category. Such a change should be avoided unless the guide is intentionally updated to require it.
+
+If Phase 61A finds an implementation mismatch, prefer to describe the work as a Phase 61 compliance hardening fix:
+
+```text
+Repository/archive milestone:
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+
+Runtime/source-run MASM behavior phase:
+Phase 61 - Direct JMP Runtime Execution
+
+Status interpretation:
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because Phase 61A corrected or hardened behavior that Phase 61 already owned. It did not add a new MASM syntax family or a new runtime/source-run behavior phase. Do not update runtime/source-run phase metadata, supported-syntax runtime wording, or tests that assert runtime phase values unless this phase explicitly introduces a new runtime-visible behavior.
+```
+
+### Required tests
+
+Add source-run tests for:
+
+- forward direct `jmp` that skips one or more instructions;
+- direct `jmp` as the first executable instruction;
+- direct `jmp` after one ordinary committed instruction;
+- direct `jmp` to a procedure-entry target, treated as a direct branch only;
+- backward direct `jmp` loop that reaches the Phase 59 instruction-count watchdog deterministically;
+- source-run accounting after a successful committed `jmp`;
+- source-run accounting after instruction-limit failure in a backward direct-`jmp` loop;
+- `attemptedNextInstructionIndex` is `null` after normal completion;
+- `attemptedNextInstructionIndex` identifies the blocked next instruction after an instruction-limit stop;
+- `currentInstructionIndex` identifies the last committed instruction, or `null` if no VM instruction committed;
+- absence of `branch-runtime-deferred` for valid direct `jmp label`;
+- absence of successful memory-change rows produced by the `jmp`;
+- no mutation of modeled flags or Phase 50A flag-validity metadata by the `jmp`.
+
+Add rendered Simulator Messages tests for:
+
+- successful direct-`jmp` completion where the program eventually completes;
+- instruction-limit failure from a backward direct-`jmp` loop;
+- malformed branch-target metadata, if Phase 61 exposes a runtime diagnostic for malformed lowered branch metadata.
+
+Add static/documentation checks for:
+
+- current supported-syntax text says direct `jmp label` executes only after Phase 61 is accepted;
+- supported-syntax text still says conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, and branch-distance overrides remain future work unless their own later phases have implemented them;
+- milestone reports for Phase 61 and Phase 61A state which branch forms execute, which forms are rejected, which forms remain future work, and whether runtime/source-run behavior phase metadata advanced.
+
+### Acceptance criteria
+
+- Valid direct `jmp label` instructions execute using already-lowered Phase 60 target metadata.
+- Source-run accounting distinguishes Phase 60 deferred attempted-JMP behavior from Phase 61 committed-JMP behavior.
+- Backward direct-`jmp` loops stop through the Phase 59 instruction-count watchdog.
+- Normal completion leaves `attemptedNextInstructionIndex` as `null`.
+- Instruction-limit failure identifies the blocked attempted next instruction.
+- No active-time watchdog implementation is added.
+- No debugger, breakpoint, editor navigation, conditional branch, stack, procedure-call, indirect branch, or Irvine32 routine behavior is added.
+- Existing Phase 62 - CMP Register and Immediate Forms scope remains unchanged.
+
+## 65B. Phase 61B - Branch Runtime Watchdog Scope Cleanup
+
+### Goal
+
+Clarify the watchdog boundary for early branch runtime phases without changing Phase 61 direct-JMP runtime semantics.
+
+This is a documentation and verification-scope cleanup phase. It corrects earlier broad wording that mentioned both instruction-count and active-time watchdogs in the direct-JMP runtime area. Early direct-branch execution requires the existing Phase 59 - Control-Flow Instruction Limit instruction-count watchdog. Active-time watchdog behavior belongs to Phase 200 - Active Time Watchdog and Worker Responsiveness and must not be implemented merely because Phase 61 used broad wording.
+
+### Dependencies
+
+- Phase 59 - Control-Flow Instruction Limit
+- Phase 61 - Direct JMP Runtime Execution
+- Phase 61A - Direct JMP Runtime Accounting and Status Hardening, if Phase 61A has already been accepted
+- Phase 200 - Active Time Watchdog and Worker Responsiveness, as the later owner of active-time watchdog behavior
+
+### Scope
+
+Phase 61B owns documentation, static checks, and milestone-report wording that prevent future assistants from treating active-time watchdog behavior as part of direct-JMP execution.
+
+Phase 61B must not change branch execution semantics. It must not add new runtime branch forms. It must not add active-time measurement, fake monotonic clocks, worker-yield behavior, Stop-button responsiveness, wall-clock limits, time-limit settings, worker chunking, or UI controls.
+
+### Required clarification
+
+Where active Phase 61-related text says or implies:
+
+```text
+Respect instruction-count and active-time watchdogs.
+```
+
+future readers must interpret that wording as:
+
+```text
+Phase 61 direct-JMP execution must respect the existing Phase 59 - Control-Flow Instruction Limit instruction-count watchdog. Active-time watchdog behavior is not part of Phase 61, Phase 61A, or Phase 61B. It remains future work until Phase 200 - Active Time Watchdog and Worker Responsiveness.
+```
+
+Do not rewrite completed Phase 61 history as if the original text never contained the broader wording. Add this corrective phase or a corrective note instead.
+
+### Required tests and checks
+
+Add static documentation checks or manual audit checklist entries proving:
+
+- early direct-branch phases refer to Phase 59 - Control-Flow Instruction Limit when discussing branch loops;
+- early direct-branch phases do not require active-time watchdog implementation;
+- Phase 200 - Active Time Watchdog and Worker Responsiveness remains the named owner of active-time watchdog behavior;
+- milestone reports for Phase 61B state that no runtime/source-run MASM behavior changed.
+
+### Runtime/source-run MASM behavior phase metadata
+
+Phase 61B should not advance runtime/source-run MASM behavior phase metadata because it is expected to be documentation, static-check, and report-scope cleanup only.
+
+The expected status is:
+
+```text
+Repository/archive milestone:
+Phase 61B - Branch Runtime Watchdog Scope Cleanup
+
+Runtime/source-run MASM behavior phase:
+Phase 61 - Direct JMP Runtime Execution
+```
+
+If Phase 61A advanced runtime/source-run metadata because it deliberately introduced new runtime-visible behavior, use Phase 61A as the runtime/source-run behavior phase instead.
+
+### Acceptance criteria
+
+- Documentation no longer lets an AI assistant infer that active-time watchdog behavior must be implemented during Phase 61 direct-JMP work.
+- Phase 61 direct-JMP execution remains governed by the Phase 59 instruction-count watchdog.
+- Phase 200 remains the owner of active-time watchdog behavior.
+- No C runtime, worker, UI, settings, protocol, source-run JSON, or Simulator Messages behavior is changed by this phase.
+
+## 65C. Phase 61C - Branch Debugger Dependency Cleanup
+
+### Goal
+
+Move branch-target breakpoint and debugger-source-binding expectations out of Phase 61 direct-JMP runtime execution and into later debugger/editor phases.
+
+This is a documentation and roadmap-scope cleanup phase. It exists because earlier Phase 61-related wording mentioned breakpoint binding even though debugger breakpoint behavior is not part of direct-JMP runtime execution.
+
+### Dependencies
+
+- Phase 60 - Direct JMP Parsing and Target Lowering
+- Phase 61 - Direct JMP Runtime Execution
+- Later debugger, source-map, breakpoint, editor-marker, and editor-navigation phases
+
+### Scope
+
+Phase 61C owns the roadmap clarification that direct-JMP runtime execution and debugger/editor behavior are separate systems.
+
+Phase 60 and Phase 61 may preserve source metadata and lowered target metadata needed by later debugger phases. That preservation does not mean debugger behavior exists.
+
+Phase 61C must not implement debugger stepping, breakpoint creation, breakpoint binding, breakpoint persistence, current-instruction highlighting, editor navigation, source-map UI behavior, CodeMirror gutter behavior, or branch-target editor highlighting.
+
+### Corrective interpretation
+
+Where active Phase 61-related text says or implies:
+
+```text
+Breakpoint binding to target line remains valid in later debugger tests.
+```
+
+future readers must interpret that as a future debugger regression requirement, not as a Phase 61 implementation or acceptance requirement.
+
+The corrected meaning is:
+
+```text
+Phase 61 direct-JMP execution must preserve the source metadata and lowered target metadata already required for runtime branch execution. Later debugger/editor phases must test breakpoint binding, source navigation, current-instruction highlighting, and branch-target line behavior using that metadata. Phase 61 does not implement those debugger/editor features.
+```
+
+Do not rewrite completed Phase 61 history as if this wording never existed. Add this corrective phase or a corrective note instead.
+
+### Required documentation updates
+
+Add or update later debugger/editor phase text so it explicitly says:
+
+- direct-JMP target labels from Phase 60 and direct-JMP runtime transfer from Phase 61 are part of the branch/source-map regression corpus for debugger phases;
+- breakpoint binding to a branch target line is tested when breakpoint binding exists;
+- branch target highlighting and source navigation are tested when editor navigation exists;
+- those later debugger/editor tests must not be backported into Phase 61.
+
+### Required tests and checks
+
+Phase 61C itself should add static documentation checks or audit checklist entries only. Runtime/debugger implementation tests belong to later debugger/editor phases.
+
+Checks should verify:
+
+- Phase 61, Phase 61A, and Phase 61B are not described as implementing debugger stepping or breakpoint behavior;
+- later debugger/editor phase text contains an explicit future regression note for direct-JMP target lines;
+- supported-syntax documentation does not imply that executing `jmp` enables debugger source navigation;
+- milestone reports for Phase 61C state that no runtime/source-run MASM behavior changed.
+
+### Runtime/source-run MASM behavior phase metadata
+
+Phase 61C should not advance runtime/source-run MASM behavior phase metadata.
+
+The expected status is:
+
+```text
+Repository/archive milestone:
+Phase 61C - Branch Debugger Dependency Cleanup
+
+Runtime/source-run MASM behavior phase:
+Phase 61 - Direct JMP Runtime Execution
+```
+
+If Phase 61A advanced runtime/source-run metadata because it deliberately introduced new runtime-visible behavior, use Phase 61A as the runtime/source-run behavior phase instead.
+
+### Acceptance criteria
+
+- Phase 61 direct-JMP runtime scope is separated from debugger/editor scope.
+- Later debugger/editor phases explicitly inherit direct-JMP branch-target regression coverage.
+- No debugger UI, breakpoint model, editor marker, source-navigation, current-instruction highlight, CodeMirror gutter, or CodeMirror extension behavior is implemented in Phase 61C.
+- Phase 62 - CMP Register and Immediate Forms remains the next ordinary runtime instruction milestone after the post-61 cleanup phases.
+
+## 65D. Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
+
+### Placement note
+
+Phase 61D is part of the selected post-Phase-61 cleanup/hotfix chain before Phase 62.
+
+Do not treat Phase 61D as an ordinary instruction milestone. It documents and hardens source-run capacity behavior before the roadmap proceeds to Phase 62 - CMP Register and Immediate Forms.
+
+Do not renumber Phase 62 or later phases merely because Phase 61D was inserted.
+
+### Goal
+
+Document and harden current source-run/parser capacity limits so large but otherwise ordinary programs fail with structured diagnostics instead of generic worker failures or confusing runtime-limit wording.
+
+This phase responds to the distinction between parser/source-run capacity and runtime instruction limits. It does not make the simulator a full MASM compiler and does not remove all fixed capacities from the C99 core.
+
+### Dependencies
+
+- Existing lexer/parser/source-run capacity diagnostics
+- Existing native diagnostic JSON producer
+- Existing rendered Simulator Messages tests
+- Existing test-runner decomposition rules
+- The full specification's deterministic bounded-core policy
+
+### Scope
+
+Phase 61D owns documentation and targeted diagnostic hardening for fixed source-run capacities, including capacities for:
+
+- lexer tokens;
+- parser diagnostics;
+- source text buffers;
+- lowered IR instructions;
+- data symbols;
+- code labels;
+- equates, if capacity-limited by the current implementation;
+- data image bytes;
+- source-run JSON output, if capacity-limited by the current implementation.
+
+Phase 61D may raise fixed capacities only if doing so is a small, well-tested C99-core change that does not introduce unbounded allocation, browser instability, or broad parser redesign.
+
+If large-program support requires dynamic allocation, chunked parsing, larger source-run JSON, streaming diagnostics, source paging, or substantial memory-management changes, those changes must be split into a later dedicated capacity-expansion phase. Do not hide a broad capacity redesign inside Phase 61D.
+
+### Required documentation behavior
+
+`docs/SUPPORTED_SYNTAX.md` must distinguish:
+
+- parser/source-run capacity limits;
+- runtime `instructionLimit`;
+- memory-region capacity limits;
+- Program Console output limits;
+- Simulator Messages output limits;
+- worker/browser hard failures.
+
+User-facing documentation must explain that a diagnostic such as `token-capacity-exceeded` happens during lexing/parsing before VM runtime begins. It must not be described as an instruction-limit failure.
+
+### Required diagnostic behavior
+
+Capacity diagnostics must be structured whenever possible.
+
+A capacity diagnostic should include:
+
+- a stable diagnostic code;
+- diagnostic category, such as assembly error or infrastructure error, according to existing project conventions;
+- source line, column, byte offset, and span length when the failing source token or declaration is known;
+- a clear message naming the exhausted capacity;
+- no Program Console output;
+- no `execution-complete` message;
+- no partial VM execution.
+
+Examples of stable diagnostic codes or existing equivalents include:
+
+```text
+token-capacity-exceeded
+diagnostic-capacity-exceeded
+source-text-capacity-exceeded
+instruction-capacity-exceeded
+symbol-capacity-exceeded
+label-capacity-exceeded
+equate-capacity-exceeded
+data-capacity-exceeded
+json-capacity-exceeded
+```
+
+Use existing project diagnostic names where they already exist. Do not rename established public diagnostic codes merely to match the examples above.
+
+### Required tests
+
+Add structured source-run tests for at least:
+
+- token capacity exhaustion from a large source program;
+- instruction/IR capacity exhaustion from too many valid lowered instructions, if reachable without excessive fixture size;
+- data symbol or label capacity exhaustion, if reachable through a maintainable fixture;
+- data image capacity exhaustion, if not already covered by memory-capacity tests;
+- diagnostic capacity exhaustion, if the existing implementation has a deterministic way to trigger it safely.
+
+Add rendered Simulator Messages tests for at least one stable capacity diagnostic.
+
+Add documentation/static tests proving:
+
+- `docs/SUPPORTED_SYNTAX.md` mentions parser/source-run capacity limits separately from runtime `instructionLimit`;
+- capacity diagnostics are not described as MASM syntax errors unless the specific failure is caused by malformed source;
+- capacity diagnostics are not described with milestone-relative wording;
+- capacity diagnostics are not described as proof that the simulator supports arbitrary large MASM programs.
+
+### Fixture-size rule
+
+Do not create a single oversized "kitchen sink" fixture if smaller targeted fixtures can trigger the same capacity paths.
+
+Prefer:
+
+- generated source in the test harness when source length is the point of the test;
+- named external fixture files when line/column expectations must remain stable;
+- compact capacity triggers over very long hand-written source.
+
+If a test fixture must be large, the test runner must print a stable fixture name before output and must keep default successful output compact.
+
+### Runtime/source-run MASM behavior phase metadata
+
+If Phase 61D only adds documentation, tests, static checks, or milestone-report wording, it advances repository/archive milestone only.
+
+If Phase 61D changes public diagnostics, source-run JSON shape, rendered Simulator Messages wording, or runtime-visible capacity behavior, it may advance runtime/source-run MASM behavior phase metadata. The milestone report must state this explicitly.
+
+The expected documentation-only status is:
+
+```text
+Repository/archive milestone:
+Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
+
+Runtime/source-run MASM behavior phase:
+Phase 61 - Direct JMP Runtime Execution
+```
+
+If this phase is inserted later after another runtime behavior phase, use the latest accepted runtime/source-run MASM behavior phase instead of Phase 61.
+
+### Non-goals
+
+Phase 61D must not implement:
+
+- dynamic unbounded parser allocation;
+- host filesystem input;
+- multi-file include loading;
+- macro expansion;
+- full MASM compatibility;
+- control-flow features beyond what prior phases implemented;
+- debugger/editor behavior;
+- active-time watchdogs;
+- browser UI controls for capacity settings unless a later phase explicitly owns them.
+
+### Acceptance criteria
+
+- Large source programs fail through structured capacity diagnostics rather than generic worker failure where the failure is under simulator control.
+- Documentation distinguishes parser/source-run capacity from runtime instruction limits.
+- Rendered Simulator Messages coverage exists for at least one capacity diagnostic.
+- No broad capacity redesign is hidden in this phase.
+- Phase 62 - CMP Register and Immediate Forms remains unchanged and remains the next ordinary instruction milestone after the cleanup/hotfix phases.
+
+
+## 65E. Phase 61E - Reserved Word Symbol Diagnostics
+
+### Goal
+
+Reject user-defined symbol declarations whose names conflict with MASM reserved words by default.
+
+This is a MASM-compatibility cleanup and hotfix phase discovered during Phase 61 - Direct JMP Runtime Execution work. It prevents instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, recognized Irvine32 routine names, and other simulator-recognized reserved words from being accepted as user-defined labels or symbols.
+
+This phase intentionally happens before Phase 62 - CMP Register and Immediate Forms because Phase 62 and later branch phases will add more instruction keywords and more label/target interactions. The reserved-word rule should be stable before more comparison and control-flow milestones build on symbol lookup and branch target classification.
+
+This phase does not renumber Phase 62 or any later phase.
+
+### Motivation
+
+A permissive implementation may accidentally accept:
+
+```asm
+.code
+main PROC
+loop:
+    inc eax
+    jmp loop
+main ENDP
+END main
+```
+
+That behavior is too permissive for MASM-compatible default behavior. `LOOP` is a reserved instruction mnemonic. The simulator should reject `loop:` as a user-defined code label unless a future phase explicitly implements compatible `OPTION NOKEYWORD` behavior.
+
+The MASM-compatible teaching example for an infinite loop should use a non-keyword label:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+again:
+    inc eax
+    jmp again
+main ENDP
+END main
+```
+
+After Phase 61, this valid `again:` loop should execute until the Phase 59 - Control-Flow Instruction Limit watchdog stops it.
+
+### Dependencies
+
+- Phase 35A - OPTION CASEMAP and User Symbol Case Policy Correction
+- Phase 41 - Virtual Irvine32 Symbol Registry
+- Phase 58 - Code Labels and Branch Target Metadata
+- Phase 59 - Control-Flow Instruction Limit
+- Phase 60 - Direct JMP Parsing and Target Lowering
+- Phase 61 - Direct JMP Runtime Execution
+- Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+- Phase 61B - Branch Runtime Watchdog Scope Cleanup
+- Phase 61C - Branch Debugger Dependency Cleanup
+- Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
+
+### Scope
+
+Phase 61E owns default reserved-word rejection for user-defined symbol declarations.
+
+User-defined symbol categories covered by this phase include currently implemented categories:
+
+- data symbols;
+- numeric equates;
+- code labels;
+- procedure names.
+
+Future symbol categories must inherit this rule unless their owning phase explicitly says otherwise. Future categories include, but are not limited to:
+
+- macro names;
+- structure names;
+- field names where MASM compatibility requires reserved-word checks;
+- record names;
+- typedef names;
+- user-defined aliases;
+- local labels, if added later;
+- anonymous-label compatibility forms, if added later.
+
+This phase must not attempt to import or fully reproduce the complete MASM reserved-word table.
+
+It must cover every word that the current simulator already recognizes as a keyword, instruction mnemonic, register/register alias, directive, operator, data type, `PTR` width name, virtual include name, Irvine32 registry name, or reserved diagnostic keyword.
+
+It should also cover planned instruction mnemonics and directive names that are already recognized by the parser for unsupported-feature diagnostics.
+
+If a future phase adds a new recognized keyword, that future phase must add the word to the reserved-word classification path at the same time unless it explicitly documents a different MASM-compatible reason.
+
+Reserved words include, at minimum:
+
+- implemented instruction mnemonics;
+- recognized planned instruction mnemonics that the parser already treats as instruction keywords or reserved instruction-family names;
+- registers and register aliases;
+- directives;
+- operators;
+- data type names;
+- `PTR` width names;
+- virtual include names when parsed as include targets;
+- recognized Irvine32 routine and terminator names classified by the Phase 41 - Virtual Irvine32 Symbol Registry or its direct successor as reserved simulator-visible routine names;
+- other MASM or simulator-recognized reserved words already recognized by the parser for diagnostics.
+
+The reserved-word match is case-insensitive. For example, `loop:`, `LOOP:`, and `Loop:` are all rejected because `LOOP` is a reserved instruction mnemonic.
+
+### Irvine32 registry boundary
+
+Recognized Irvine32 routine and terminator names must be classified through the Phase 41 - Virtual Irvine32 Symbol Registry or a direct successor to that registry.
+
+Do not hardcode a second independent Irvine32 reserved-name list in the parser. Phase 61E must use the centralized Irvine32 registry classification path, or add a small documented reserved-word query wrapper over that registry.
+
+This phase does not make any new Irvine32 routine executable. It only prevents simulator-visible reserved Irvine32 names from being accepted as user-defined symbols when the centralized registry classifies them as reserved.
+
+If the registry does not classify a particular Irvine32-related name as reserved, Phase 61E must not invent ad hoc parser behavior for that name.
+
+### Required behavior
+
+A reserved word must not be inserted into any user-symbol table as a successful declaration.
+
+If the parser sees:
+
+```asm
+.code
+main PROC
+loop:
+    inc eax
+    jmp loop
+main ENDP
+END main
+```
+
+it must emit a declaration-site diagnostic for `loop:`.
+
+Suggested diagnostic code:
+
+```text
+reserved-word-symbol
+```
+
+Suggested rendered wording:
+
+```text
+[assembly-error] reserved-word-symbol line <line>, column <column>: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label. Use a non-keyword label such as again:, retry:, or spin:.
+```
+
+The diagnostic must point at the declaration name token whenever possible. For a code label written as `loop:`, the span should cover `loop`, not the colon and not the entire line, unless the parser's existing span model cannot isolate the name.
+
+After rejecting the declaration, later references to that spelling may produce follow-on diagnostics such as `invalid-branch-target`, `unknown-symbol`, or parser-specific keyword diagnostics if parser recovery continues. The declaration-site `reserved-word-symbol` diagnostic is the primary diagnostic and must be present.
+
+The parser should avoid noisy cascades where practical. If a later `jmp loop` would only repeat the same underlying reserved-word problem, prefer one concise secondary diagnostic or safe suppression of the secondary diagnostic.
+
+The parser must continue accepting normal non-keyword labels:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+again:
+    inc eax
+    jmp again
+main ENDP
+END main
+```
+
+After Phase 61, the example above should execute and, because it is an unbounded backward branch, eventually stop through the Phase 59 - Control-Flow Instruction Limit watchdog.
+
+### CASEMAP interaction
+
+`OPTION CASEMAP` does not make reserved words available as user symbols.
+
+These remain rejected:
+
+```asm
+OPTION CASEMAP:ALL
+
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+LOOP:
+main ENDP
+END main
+```
+
+`OPTION CASEMAP:NONE` affects lookup of accepted user-defined symbols only. It must not make instruction mnemonics, directives, registers, operators, data types, virtual include names, or recognized Irvine32 routine names case-sensitive. It also must not allow a reserved-word spelling to be inserted as a user symbol.
+
+If a diagnostic message mentions `CASEMAP`, it must not imply that `CASEMAP` caused the reserved-word failure. The failure is caused by the reserved-word rule.
+
+### OPTION NOKEYWORD interaction
+
+`OPTION NOKEYWORD` remains unsupported unless a later phase explicitly implements it.
+
+This phase must not implement:
+
+```asm
+OPTION NOKEYWORD:<LOOP>
+```
+
+If `OPTION NOKEYWORD` is already recognized as unsupported, preserve that unsupported-option diagnostic. Do not silently accept it. Do not use this phase to add dynamic keyword-table mutation.
+
+A future phase may implement limited `OPTION NOKEYWORD` support, but that phase must explicitly define:
+
+- accepted syntax;
+- source-order behavior;
+- whether disabled keywords can still be used as instructions;
+- whether disabled keywords can be used as labels, procedure names, data symbols, equates, macros, or user-defined types;
+- how disabled keywords interact with `OPTION CASEMAP:ALL`;
+- how disabled keywords interact with `OPTION CASEMAP:NONE`;
+- how the parser recovers when disabling a keyword makes later source ambiguous;
+- whether keyword recognition can be restored;
+- whether disabling one keyword affects aliases or related instructions;
+- exact structured and rendered diagnostics.
+
+### Accepted examples
+
+These labels are accepted because they are not reserved words:
+
+```asm
+.code
+main PROC
+again:
+    nop
+main ENDP
+END main
+```
+
+```asm
+.code
+main PROC
+loop_start:
+    nop
+main ENDP
+END main
+```
+
+```asm
+.code
+main PROC
+spin:
+    nop
+main ENDP
+END main
+```
+
+These data symbols are accepted if they do not conflict with any implemented or recognized reserved word:
+
+```asm
+.data
+counter DWORD 0
+loopCount DWORD 0
+again DWORD 1
+```
+
+### Rejected examples
+
+Reserved instruction mnemonic as a code label:
+
+```asm
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+Reserved instruction mnemonic as a data symbol:
+
+```asm
+.data
+mov DWORD 1
+```
+
+Reserved register name as a data symbol:
+
+```asm
+.data
+eax DWORD 1
+```
+
+Reserved data type name as a data symbol:
+
+```asm
+.data
+DWORD DWORD 1
+```
+
+Reserved operator name as a data symbol or equate:
+
+```asm
+.data
+OFFSET DWORD 1
+```
+
+```asm
+OFFSET EQU 4
+```
+
+Reserved directive/procedure-structure word as a symbol:
+
+```asm
+.data
+PROC DWORD 1
+```
+
+Known Irvine32 virtual routine name as a procedure or label, when the Phase 41 registry or its direct successor classifies it as a reserved simulator-visible routine name:
+
+```asm
+INCLUDE Irvine32.inc
+
+.code
+main PROC
+exit:
+    nop
+main ENDP
+END main
+```
+
+The exact set of reserved Irvine32 names must follow the centralized virtual Irvine32 registry. Do not add ad hoc Irvine32 string checks in this phase.
+
+### Required tests
+
+Add parser/source-run tests for reserved instruction mnemonic labels:
+
+```asm
+.code
+main PROC
+loop:
+    inc eax
+    jmp loop
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- assembly fails;
+- `reserved-word-symbol` points at the `loop:` declaration name;
+- no VM execution occurs;
+- no `execution-complete` message appears;
+- no successful register, memory, Program Console, or memory-change effects occur.
+
+Add case-insensitivity tests:
+
+```asm
+.code
+main PROC
+LOOP:
+main ENDP
+END main
+```
+
+```asm
+.code
+main PROC
+Loop:
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- both are rejected as reserved-word symbol declarations;
+- diagnostics point at the label declaration name.
+
+Add `OPTION CASEMAP:NONE` regression:
+
+```asm
+OPTION CASEMAP:NONE
+
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- still rejected;
+- diagnostic explains that `loop` is reserved;
+- diagnostic does not imply `CASEMAP:NONE` caused the failure;
+- no symbol is inserted for `loop`.
+
+Add accepted nearby-label tests:
+
+```asm
+.code
+main PROC
+    mov eax, 0
+again:
+    inc eax
+    jmp again
+main ENDP
+END main
+```
+
+Expected behavior after Phase 61:
+
+- parses successfully;
+- direct `jmp again` executes;
+- unbounded looping stops through the Phase 59 instruction-count watchdog.
+
+Add non-branch symbol tests:
+
+```asm
+.data
+mov DWORD 1
+```
+
+```asm
+COUNT EQU 1
+add EQU 2
+```
+
+Expected behavior:
+
+- declarations using reserved instruction mnemonics are rejected;
+- diagnostics point at the offending declaration name.
+
+Add directive/register/operator/data-type tests as practical:
+
+```asm
+.data
+eax DWORD 1
+DWORD DWORD 1
+OFFSET DWORD 1
+```
+
+Expected behavior:
+
+- reserved register, type, and operator names are rejected as user-defined symbols.
+
+Add procedure-name tests:
+
+```asm
+.code
+loop PROC
+loop ENDP
+END loop
+```
+
+Expected behavior:
+
+- procedure name is rejected as a reserved-word symbol;
+- parser recovery must not insert `loop` as a valid procedure symbol.
+
+Add `OPTION NOKEYWORD` negative test if the parser recognizes that option:
+
+```asm
+OPTION NOKEYWORD:<LOOP>
+
+.code
+main PROC
+loop:
+main ENDP
+END main
+```
+
+Expected behavior:
+
+- `OPTION NOKEYWORD:<LOOP>` remains unsupported unless a future phase implements it;
+- `loop:` is not accepted as a valid label by this phase;
+- no VM execution occurs.
+
+Add rendered Simulator Messages tests for:
+
+- reserved code label;
+- reserved data symbol;
+- reserved procedure name or equate if those categories are implemented in the current repository;
+- `OPTION CASEMAP:NONE` plus reserved code label;
+- `OPTION NOKEYWORD:<LOOP>` remaining unsupported, if that diagnostic path already exists.
+
+### Static/documentation checks
+
+Add or update documentation checks proving:
+
+- `docs/SUPPORTED_SYNTAX.md` says reserved words cannot be user-defined symbols by default after Phase 61E;
+- `docs/SUPPORTED_SYNTAX.md` does not imply `OPTION CASEMAP:NONE` enables reserved-word labels;
+- `docs/SUPPORTED_SYNTAX.md` says `OPTION NOKEYWORD` remains unsupported unless a future phase implements it;
+- current diagnostics do not use milestone-relative wording such as "unsupported by the current milestone";
+- supported branch-loop examples use non-keyword labels such as `again:`, `retry:`, `spin:`, or `loop_start:`, not `loop:`.
+
+### Runtime/source-run MASM behavior phase metadata
+
+This is not documentation-only cleanup.
+
+Phase 61E changes accepted/rejected MASM source behavior by rejecting declarations that may previously have been accepted. Therefore, unlike Phase 61B or Phase 61C, Phase 61E advances runtime/source-run MASM behavior phase metadata.
+
+Expected status:
+
+```text
+Repository/archive milestone:
+Phase 61E - Reserved Word Symbol Diagnostics
+
+Runtime/source-run MASM behavior phase:
+Phase 61E - Reserved Word Symbol Diagnostics
+```
+
+Do not keep runtime/source-run MASM behavior phase metadata at Phase 61 after Phase 61E is accepted.
+
+If inserted later after another runtime behavior phase, use the selected phase identifier and report both repository/archive milestone and runtime/source-run MASM behavior phase explicitly.
+
+### Non-goals
+
+This phase must not implement:
+
+- `OPTION NOKEYWORD`;
+- import or reproduction of the complete MASM reserved-word table beyond simulator-recognized reserved words;
+- macro expansion;
+- scoped symbol tables;
+- public/external name export behavior;
+- object-file or linker behavior;
+- Windows API behavior;
+- indirect branch support;
+- conditional jumps;
+- `loop` instruction runtime behavior;
+- debugger/editor behavior;
+- active-time watchdog behavior.
+
+### Acceptance criteria
+
+- Reserved MASM words recognized by the simulator cannot be declared as user-defined symbols by default.
+- `loop:` is rejected as a code label because `LOOP` is a reserved instruction mnemonic.
+- `LOOP:` and `Loop:` are also rejected.
+- A normal label such as `again:`, `retry:`, `spin:`, or `loop_start:` still works.
+- `OPTION CASEMAP:NONE` does not make reserved words available as symbols.
+- `OPTION NOKEYWORD` remains unsupported unless a later explicit phase implements it.
+- Diagnostics are structured and rendered through Simulator Messages.
+- The primary diagnostic points at the declaration name where possible.
+- Rejected reserved-word declarations are not inserted into symbol tables.
+- Irvine32 routine and terminator reserved-name behavior uses the centralized Phase 41 registry or a documented wrapper over it, not ad hoc parser string checks.
+- No future branch, debugger, macro, linker, WinAPI, active-time watchdog, or `OPTION NOKEYWORD` behavior is implemented.
+- Phase 62 - CMP Register and Immediate Forms remains the next ordinary instruction milestone after the cleanup/hotfix phases.
 
 ## 66. Phase 62 - CMP Register and Immediate Forms
 

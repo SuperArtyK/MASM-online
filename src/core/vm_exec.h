@@ -5,11 +5,11 @@
  * This module executes caller-provided IR instruction arrays. It supports the
  * currently implemented mov, add, sub, movsx, movzx, cbw, cwde, cwd, cdq,
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
- * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 60
- * direct-JMP deferred-runtime diagnostics, and Irvine32 exit forms over the
- * currently supported operand shapes. Phase 59 source-run code layers an
- * instruction-count watchdog over this executor. Runtime branch transfer,
- * stack behavior, and non-exit Irvine32 routines remain later milestones.
+ * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
+ * direct-JMP runtime transfer, and Irvine32 exit forms over the currently
+ * supported operand shapes. Phase 59 source-run code layers an instruction-count
+ * watchdog over this executor. Conditional branches, stack behavior, and
+ * non-exit Irvine32 routines remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -60,7 +60,9 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_UNDEFINED_FLAG_USE,
     /// Source-run execution stopped before fetching the next instruction because the configured instruction limit was reached.
     VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED,
-    /// Phase 60 stopped after reaching a lowered direct JMP before runtime branch execution exists.
+    /// A lowered direct branch target was malformed or outside the loaded program.
+    VM_EXEC_STATUS_INVALID_BRANCH_TARGET,
+    /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
 } VmExecStatus;
 

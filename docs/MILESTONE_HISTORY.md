@@ -12,13 +12,13 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 60:
+Current status at Phase 61:
 
 Repository/archive milestone:
-Phase 60 - Direct JMP Parsing and Target Lowering
+Phase 61 - Direct JMP Runtime Execution
 
 Runtime/source-run MASM behavior phase:
-Phase 60 - Direct JMP Parsing and Target Lowering: Direct `jmp label` forms are parsed, classified, and lowered when they target executable code labels or procedure-entry labels. Runtime branch transfer remains deferred to Phase 61; reaching a lowered direct `jmp` emits `branch-runtime-deferred` and stops before applying the jump.
+Phase 61 - Direct JMP Runtime Execution: Direct `jmp label` forms are parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -84,11 +84,16 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 57Q recognizes `INCLUDELIB` library directive tails, emits linker/import-library non-goal diagnostics instead of generic parser or lexer diagnostics, does not implement library loading, object files, imports, PE loading, a linker, WinAPI execution, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57Q.
 - Phase 57R adds unsupported `INVOKE`, `ADDR`, MASM32 runtime-style, CRT-style, and WinAPI/external routine diagnostics, refuses execution for those source lines, preserves virtual Irvine32 `exit`, does not implement invocation lowering, stack setup, calling conventions, WinAPI, CRT, MASM32 runtime, PE, linker, or external routine execution, and advances runtime/source-run MASM behavior metadata to Phase 57R.
 - Phase 57S adds targeted unsupported high-level MASM flow diagnostics for `.IF`, `.ELSE`, `.ENDIF`, `.ELSEIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, and `.CONTINUE`, suppresses safe body cascades, and advances runtime/source-run MASM behavior metadata to Phase 57S.
+- Phase 57T adds realistic MASM32 playground-program diagnostic-recovery smoke fixtures and documentation while preserving runtime/source-run MASM behavior metadata at Phase 57S.
 - Phase 58 adds ordinary and procedure-entry code-label metadata, duplicate/conflict label diagnostics, and runtime/source-run MASM behavior metadata advancement to Phase 58 while preserving future branch/procedure behavior as unsupported.
 - Phase 59 adds a source-run/test-facing executed-instruction watchdog through `instructionLimit`, emits `instruction-limit-exceeded`, and advances runtime/source-run MASM behavior metadata to Phase 59.
 - Phase 60 parses, classifies, and lowers direct `jmp label` forms to executable code labels or procedure-entry labels, emits `branch-runtime-deferred` when a lowered direct JMP is reached, and keeps runtime branch transfer deferred to Phase 61.
-- Phase 57T adds realistic MASM32 playground-program diagnostic-recovery smoke fixtures and documentation while preserving runtime/source-run MASM behavior metadata at Phase 57S.
+- Phase 61 executes already-lowered direct `jmp label` forms by transferring to the resolved VM instruction index, counting JMP as one executed instruction, preserving modeled flags, and producing no memory-change row.
 
+
+## Phase 61 - Direct JMP Runtime Execution
+
+Phase 61 executes the direct branch metadata lowered by Phase 60. A valid direct `jmp label` transfers to the resolved VM instruction index, counts as one executed VM instruction, preserves all modeled flags and flag-validity metadata, produces no memory-change row, and respects the Phase 59 instruction-count watchdog. Procedure-entry labels remain direct branch targets only and do not imply `CALL`, `RET`, stack frames, arguments, calling conventions, or procedure invocation semantics. Invalid or malformed branch target metadata reports `invalid-branch-target` without partial mutation. Conditional jumps, `loop`, indirect jumps, register/memory jumps, branch-distance overrides, stack/procedure execution, debugger stepping, breakpoints, and UI label navigation remain future work.
 
 ## Phase 60 - Direct JMP Parsing and Target Lowering
 

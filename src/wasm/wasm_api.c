@@ -9,8 +9,8 @@
  * TYPE, LENGTHOF, SIZEOF, packed character literals, sign/zero-extension
  * instructions, accumulator conversions, exchange/negation/no-op
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
- * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, Phase 60
- * direct JMP parser/lowering diagnostics, unsigned MUL, one-operand signed
+ * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, Phase 61
+ * direct JMP runtime execution, unsigned MUL, one-operand signed
  * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
@@ -72,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 60U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 61U
 
-/// Suffix for the current Phase 60 runtime/source-run behavior phase.
+/// Suffix for the current Phase 61 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 60 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 60 - Direct JMP Parsing and Target Lowering"
+/// Full name of the current Phase 61 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 61 - Direct JMP Runtime Execution"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -4926,7 +4926,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     if (diagnostic != NULL && diagnostic->has_instruction) {
         line = diagnostic->instruction.source_line;
         if (status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
-            status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED ||
+            status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED ||
             (diagnostic->status == VM_EXEC_STATUS_MEMORY_ERROR &&
              (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS ||
               (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING && diagnostic->memory_diagnostic.has_code_overlap)))) {
@@ -4958,9 +4958,12 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
             quotient_overflow_message,
             sizeof(quotient_overflow_message)
         );
+    } else if (status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET) {
+        message_code = "invalid-branch-target";
+        message_text = "Direct JMP target metadata is invalid for the loaded program. Execution stopped before applying the jump.";
     } else if (status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
         message_code = "branch-runtime-deferred";
-        message_text = "Direct JMP was parsed and resolved, but runtime branch execution is deferred to Phase 61 - Direct JMP Runtime Execution. Execution stopped before applying the jump.";
+        message_text = "A branch form was accepted for metadata, but runtime branch execution for that form is deferred to a later branch phase. Execution stopped before applying the branch.";
     }
 
     return masm32_sim_json_append_message_with_span(
@@ -5896,8 +5899,8 @@ static void masm32_sim_wasm_update_instruction_accounting(Masm32SimWasmRunStorag
     }
 
     storage->executed_instruction_count = vm->instruction_count;
-    if (vm->program != NULL && vm->instruction_count > 0U && vm->instruction_pointer > 0U && (vm->instruction_pointer - 1U) < vm->program_count) {
-        storage->current_instruction_index = vm->program[vm->instruction_pointer - 1U].instruction_index;
+    if (vm->instruction_count > 0U && vm->last_delta.has_instruction) {
+        storage->current_instruction_index = vm->last_delta.instruction.instruction_index;
         storage->has_current_instruction_index = true;
     } else {
         storage->has_current_instruction_index = false;

@@ -5,7 +5,7 @@
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, records code-label metadata,
  * lowers Phase 60 direct JMP branch-target metadata, and emits only the minimal
- * IR supported by the current executor. Runtime control-flow transfer,
+ * IR supported by the current executor. Conditional control-flow transfer,
  * stack behavior, scaled-index addressing, Irvine32 routine bodies, and full
  * MASM expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -7170,9 +7170,10 @@ static bool vm_parser_add_branch_fixup(VmParserState *state, size_t instruction_
 
 /// Parses and lowers one Phase 60 direct JMP instruction.
 ///
-/// Phase 60 accepts only direct label targets and defers runtime branch
-/// execution. The parser emits a JMP instruction with a placeholder target and
-/// resolves the target after all code labels have been seen.
+/// Phase 60 accepts only direct label targets and records branch metadata.
+/// The parser emits a JMP instruction with a placeholder target and resolves
+/// the target after all code labels have been seen; Phase 61 executes the
+/// resolved target metadata at runtime.
 ///
 /// @param state Parser state to mutate.
 /// @param mnemonic_token JMP mnemonic token used for emitted source metadata.
@@ -7258,15 +7259,6 @@ static bool vm_parser_parse_jmp_instruction(VmParserState *state, const VmLexerT
             VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
             target_token,
             "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
-        );
-    }
-
-    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
-        return vm_parser_reject_branch_target(
-            state,
-            VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
-            target_token,
-            "JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction."
         );
     }
 
@@ -7861,11 +7853,6 @@ static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmPar
         return false;
     }
 
-    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a code label with an executable target instruction.");
-        return false;
-    }
-
     symbol = vm_symbol_find_by_name_with_policy(
         state->config->symbols,
         state->result->symbol_count,
@@ -7885,6 +7872,11 @@ static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmPar
 
     if (vm_parser_find_equate_with_policy(state, target_token, fixup->case_policy) != NULL) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels.");
+        return false;
+    }
+
+    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.");
         return false;
     }
 
