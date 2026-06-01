@@ -619,7 +619,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 61 direct JMP runtime execution passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 61A direct JMP accounting hardening passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1402,15 +1402,16 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase61_status_and_code_policy_present() -> None:
-    """Verify concise Phase 61 status text and public-facing policy summaries."""
+    """Verify concise Phase 61A repository status and Phase 61 runtime summaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 61 - Direct JMP Runtime Execution",
+        "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
         "Runtime/source-run MASM behavior phase:",
+        "Phase 61 - Direct JMP Runtime Execution",
     ]
     status_block = """Repository/archive milestone:
-Phase 61 - Direct JMP Runtime Execution
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution"""
@@ -1460,8 +1461,10 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 61:",
+            "Current status at Phase 61A:",
+            "runtime/source-run MASM behavior phase because it hardens Phase 61 direct-JMP accounting",
             "instructionLimit",
             "instruction-limit-exceeded",
             "Concise milestone ledger",
@@ -1473,6 +1476,7 @@ Phase 61 - Direct JMP Runtime Execution"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
+            "Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
             "Phase 61 - Direct JMP Runtime Execution",
             "Runtime/source-run MASM behavior phase:",
             "python3 -m http.server 8000 --directory web",
@@ -1497,6 +1501,23 @@ Phase 61 - Direct JMP Runtime Execution"""
             "done:",
             "final-registers",
             "Program Console",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/SUPPORTED_SYNTAX.md",
+        [
+            "Phase 61A hardens direct-JMP accounting",
+            "Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label.",
+            "Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/MILESTONE_HISTORY.md",
+        [
+            "## Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
+            "valid direct JMP never emits `branch-runtime-deferred`",
+            "immediate-target jumps, branch-distance/type overrides",
+            "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
         ],
     )
 

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 61 direct JMP runtime execution.
+ * @brief Tests for the Wasm-facing source execution API through Phase 61A direct JMP accounting hardening.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -159,6 +159,9 @@ static int test_zero_instruction_program_succeeds(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "zero-instruction program should succeed");
     failures += expect_json_contains(json, "\"instructionCount\":0", "zero-instruction program should execute no instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "zero-instruction program should report zero committed instructions");
+    failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "zero-instruction program should not report an attempted blocked instruction");
+    failures += expect_json_contains(json, "\"currentInstructionIndex\":null", "zero-instruction program should report no last committed instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "zero-instruction program should expose zero EAX");
 
     return failures;
@@ -10661,6 +10664,71 @@ static int test_phase61_jmp_respects_instruction_limit_precedence(void) {
     return failures;
 }
 
+/// Verifies Phase 61A direct-JMP hardening for skipped writes, console separation, and accounting.
+///
+/// @return Number of failures.
+static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
+    const char *json = masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    jmp done\n"
+        "    mov value, 77\n"
+        "done:\n"
+        "    mov eax, value\n"
+        "main ENDP\n"
+        "END main\n"
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
+    failures += expect_json_contains(json, "\"phase\":61", "Phase 61A hardening should preserve runtime Phase 61 metadata");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 61 - Direct JMP Runtime Execution\"", "Phase 61A hardening should not rename the runtime phase");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
+    failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
+    failures += expect_json_contains(json, "\"currentInstructionIndex\":2", "last committed instruction should be the target MOV after the skipped write");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0", "skipped memory write should leave value readable as zero");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "direct JMP fixture should have no successful memory changes from the skipped write");
+    failures += expect_json_not_contains(json, "programConsole", "direct JMP should not create Program Console output");
+    failures += expect_json_not_contains(json, "branch-runtime-deferred", "valid direct JMP should not emit deferred branch diagnostics");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "successful direct-JMP hardening fixture should emit execution-complete");
+
+    return failures;
+}
+
+/// Verifies Phase 61A accounting when a backward direct-JMP loop stops at the watchdog.
+///
+/// @return Number of failures.
+static int test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation(void) {
+    const char *json = masm32_sim_wasm_run_source_json_with_instruction_limit(
+        ".code\n"
+        "main PROC\n"
+        "start:\n"
+        "    inc eax\n"
+        "    jmp start\n"
+        "    mov ebx, 99\n"
+        "main ENDP\n"
+        "END main\n",
+        4U
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":false", "backward direct-JMP watchdog fixture should fail the run");
+    failures += expect_json_contains(json, "\"code\":\"instruction-limit-exceeded\"", "backward direct-JMP watchdog fixture should use instruction-limit-exceeded");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "backward direct-JMP watchdog fixture should commit exactly four instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":4", "executedInstructionCount should match committed instructions at the limit");
+    failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":0", "instruction limit should identify the blocked next INC fetch");
+    failures += expect_json_contains(json, "\"currentInstructionIndex\":1", "last committed instruction should be the backward JMP");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2", "only committed INC instructions should mutate EAX");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0", "unreached instruction after loop should not mutate EBX");
+    failures += expect_json_not_contains(json, "execution-complete", "instruction-limit failure must not emit execution-complete");
+    failures += expect_json_not_contains(json, "branch-runtime-deferred", "Phase 61A watchdog coverage should not regress to branch-runtime-deferred");
+
+    return failures;
+}
+
 int main(void) {
     int failures = 0;
 
@@ -10891,6 +10959,8 @@ int main(void) {
     failures += test_phase61_backward_jmp_reaches_instruction_limit();
     failures += test_phase61_jmp_label_named_loop_is_reserved_target();
     failures += test_phase61_jmp_respects_instruction_limit_precedence();
+    failures += test_phase61a_jmp_skips_memory_write_and_keeps_console_empty();
+    failures += test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation();
     failures += test_phase57f_zero_mode_seed_does_not_randomize();
     failures += test_phase57f_seeded_startup_is_deterministic();
     failures += test_phase57f_different_seeds_change_startup_state();
@@ -10930,6 +11000,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 61 direct JMP runtime execution passed.");
+    puts("Source execution tests through Phase 61A direct JMP accounting hardening passed.");
     return 0;
 }

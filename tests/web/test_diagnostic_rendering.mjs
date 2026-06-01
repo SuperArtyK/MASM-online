@@ -2217,6 +2217,42 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
 });
 
+test("renders Phase 61A backward direct JMP instruction-limit diagnostic exactly", () => {
+  const name = "phase61aBackwardDirectJmpInstructionLimit";
+  const source = `.code
+main PROC
+start:
+    inc eax
+    jmp start
+    mov ebx, 99
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 61);
+  assert.equal(json.phaseName, "Phase 61 - Direct JMP Runtime Execution");
+  assert.equal(json.instructionCount, 4);
+  assert.equal(json.instructionLimit, 4);
+  assert.equal(json.executedInstructionCount, 4);
+  assert.equal(json.attemptedNextInstructionIndex, 0);
+  assert.equal(json.currentInstructionIndex, 1);
+  assert.equal(json.registers.EAX.hex, "00000002h");
+  assert.equal(json.registers.EBX.hex, "00000000h");
+  assertNoMessageWithCode(json.simulatorMessages, "branch-runtime-deferred");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "instruction-limit-exceeded",
+    message: "Instruction limit exceeded: attempted to execute instruction #1 (limit: 4). Program stopped before executing that instruction.",
+    line: 4,
+    column: 5,
+    byteOffset: 27,
+    spanLength: 7
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 4, column 5, byte offset 27, span length 7: Instruction limit exceeded: attempted to execute instruction #1 (limit: 4). Program stopped before executing that instruction.");
+});
+
 test("renders Phase 61 invalid direct JMP data-target diagnostic exactly", () => {
   const name = "phase61InvalidBranchDataTarget";
   const source = `.data

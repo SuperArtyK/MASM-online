@@ -12,13 +12,16 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 61:
+Current status at Phase 61A:
 
 Repository/archive milestone:
-Phase 61 - Direct JMP Runtime Execution
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution: Direct `jmp label` forms are parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
+
+Status interpretation:
+Phase 61A is newer than the runtime/source-run MASM behavior phase because it hardens Phase 61 direct-JMP accounting, documentation, static checks, and regression coverage. It does not add a new MASM syntax family or a new runtime/source-run behavior phase.
 
 Use this file as a compact orientation layer before reading detailed reports or planning new work:
 
@@ -89,11 +92,16 @@ Those reports are implementation history and evidence. They are useful for chang
 - Phase 59 adds a source-run/test-facing executed-instruction watchdog through `instructionLimit`, emits `instruction-limit-exceeded`, and advances runtime/source-run MASM behavior metadata to Phase 59.
 - Phase 60 parses, classifies, and lowers direct `jmp label` forms to executable code labels or procedure-entry labels, emits `branch-runtime-deferred` when a lowered direct JMP is reached, and keeps runtime branch transfer deferred to Phase 61.
 - Phase 61 executes already-lowered direct `jmp label` forms by transferring to the resolved VM instruction index, counting JMP as one executed instruction, preserving modeled flags, and producing no memory-change row.
+- Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
+
+## Phase 61A - Direct JMP Runtime Accounting and Status Hardening
+
+Phase 61A is a repository/test/documentation hardening phase for behavior already owned by Phase 61. It verifies that committed direct `jmp` instructions are counted in `executedInstructionCount`, normal completion leaves `attemptedNextInstructionIndex` as `null`, instruction-limit failure identifies the blocked next instruction, valid direct JMP never emits `branch-runtime-deferred`, skipped instructions do not mutate state, direct JMP preserves modeled flags and flag-validity metadata, and direct JMP itself creates no memory-change or Program Console output. Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution. Conditional jumps, `loop`, indirect branches, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, stack/procedure execution, active-time watchdog behavior, and debugger/editor branch behavior remain future work.
 
 ## Phase 61 - Direct JMP Runtime Execution
 
-Phase 61 executes the direct branch metadata lowered by Phase 60. A valid direct `jmp label` transfers to the resolved VM instruction index, counts as one executed VM instruction, preserves all modeled flags and flag-validity metadata, produces no memory-change row, and respects the Phase 59 instruction-count watchdog. Procedure-entry labels remain direct branch targets only and do not imply `CALL`, `RET`, stack frames, arguments, calling conventions, or procedure invocation semantics. Invalid or malformed branch target metadata reports `invalid-branch-target` without partial mutation. Conditional jumps, `loop`, indirect jumps, register/memory jumps, branch-distance overrides, stack/procedure execution, debugger stepping, breakpoints, and UI label navigation remain future work.
+Phase 61 executes the direct branch metadata lowered by Phase 60. A valid direct `jmp label` transfers to the resolved VM instruction index, counts as one executed VM instruction, preserves all modeled flags and flag-validity metadata, produces no memory-change row, and respects the Phase 59 instruction-count watchdog. Procedure-entry labels remain direct branch targets only and do not imply `CALL`, `RET`, stack frames, arguments, calling conventions, or procedure invocation semantics. Invalid or malformed branch target metadata reports `invalid-branch-target` without partial mutation. Conditional jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, stack/procedure execution, debugger stepping, breakpoints, and UI label navigation remain future work.
 
 ## Phase 60 - Direct JMP Parsing and Target Lowering
 

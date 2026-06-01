@@ -1,10 +1,13 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 61 - Direct JMP Runtime Execution
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution: The simulator parses, classifies, lowers, and executes direct `jmp label` forms whose targets are executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, and produces no memory-change row. The Phase 59 source-run/test-facing `instructionLimit` watchdog remains available.
+
+Status interpretation:
+Phase 61A hardens direct-JMP accounting, status wording, and regression coverage without adding a new MASM syntax family or advancing runtime/source-run behavior metadata beyond Phase 61.
 
 ### Execution limits
 
@@ -14,7 +17,7 @@ Source-run and test-facing callers may set `instructionLimit` to a positive inte
 
 Ordinary code labels (`name:`) and procedure-entry labels (`name PROC`) are accepted and recorded as parser/source metadata. Consecutive labels before one executable instruction target the same following instruction. Labels before `ENDP`, `END`, or another non-executable boundary are accepted as no-executable-target metadata.
 
-Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata and executes by transferring to the resolved VM instruction index. Procedure-entry targets are direct branch targets only; they do not imply `CALL`, `RET`, stack mutation, argument handling, frames, or calling-convention behavior. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register/memory jumps, distance overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain unsupported.
+Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata and executes by transferring to the resolved VM instruction index. Procedure-entry targets are direct branch targets only; they do not imply `CALL`, `RET`, stack mutation, argument handling, frames, or calling-convention behavior. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
 
 ### Unsupported high-level flow diagnostics
 

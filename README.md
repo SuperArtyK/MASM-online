@@ -5,12 +5,15 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 61 - Direct JMP Runtime Execution
+Phase 61A - Direct JMP Runtime Accounting and Status Hardening
 
 Runtime/source-run MASM behavior phase:
 Phase 61 - Direct JMP Runtime Execution
 
-Phase 61 executes already-lowered direct `jmp label` forms that target executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, produces no memory-change row, and respects the Phase 59 `instructionLimit` watchdog, which still reports `instruction-limit-exceeded` when a configured limit blocks the next instruction. Conditional jumps, `loop`, indirect jumps, `call`, `ret`, stack behavior, procedure invocation, debugger stepping, breakpoints, and UI label navigation remain future work.
+Status interpretation:
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because Phase 61A hardened behavior, tests, and documentation for behavior already owned by Phase 61. It did not add a new MASM syntax family or a new runtime/source-run behavior phase.
+
+Phase 61 executes already-lowered direct `jmp label` forms that target executable code labels or procedure-entry labels. A direct `jmp` transfers to the resolved VM instruction index, counts as one executed instruction, preserves modeled flags, produces no memory-change row, and respects the Phase 59 `instructionLimit` watchdog, which still reports `instruction-limit-exceeded` when a configured limit blocks the next instruction. Phase 61A adds direct-JMP accounting/status hardening and regression coverage while preserving the Phase 61 runtime/source-run metadata. Conditional jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, `call`, `ret`, stack behavior, procedure invocation, branch-distance/type overrides, debugger stepping, breakpoints, and UI label navigation remain future work.
 
 ## Current simulator scope
 
