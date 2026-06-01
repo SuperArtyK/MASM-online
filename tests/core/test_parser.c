@@ -1,12 +1,13 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 60 direct JMP lowering.
+ * @brief Unit and integration tests for the parser through Phase 63 CMP memory operands.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
- * parsing and target classification, unsupported syntax, INCLUDELIB non-goal
- * diagnostics, INVOKE/ADDR external-routine diagnostics, and integration with
- * the current executor without adding future execution behavior.
+ * parsing and target classification, Phase 63 CMP memory operand parsing,
+ * unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
+ * external-routine diagnostics, and integration with the current executor
+ * without adding future execution behavior.
  */
 
 #include <stdbool.h>
@@ -5963,14 +5964,17 @@ static int test_phase61e_reserved_word_symbol_diagnostics(void) {
 }
 
 
-/// Verifies Phase 62 CMP register/register and register/immediate parsing.
+/// Verifies Phase 63 CMP register, immediate, and memory parsing.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase62_cmp_instruction_parses_to_ir(void) {
+static int test_phase63_cmp_instruction_parses_to_ir(void) {
     int failures = 0;
     ParserTestBuffers buffers;
     VmParserResult result;
     const char *source =
+        ".data\n"
+        "value DWORD 1\n"
+        "nums DWORD 1, 2, 3\n"
         ".code\n"
         "main PROC\n"
         "    cmp al, bl\n"
@@ -5979,27 +5983,36 @@ static int test_phase62_cmp_instruction_parses_to_ir(void) {
         "    cmp al, -1\n"
         "    cmp ax, 0FFFFh\n"
         "    cmp eax, 80000000h\n"
+        "    cmp eax, value\n"
+        "    cmp value, eax\n"
+        "    cmp value, 1\n"
+        "    cmp nums[4], eax\n"
+        "    cmp eax, nums[4]\n"
+        "    cmp DWORD PTR [eax], 1\n"
         "main ENDP\n"
         "END main\n";
 
-    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 62 CMP forms should parse");
-    failures += expect_size(result.instruction_count, 6U, "Phase 62 CMP source should emit six instructions");
-    if (result.instruction_count >= 6U) {
-        failures += (buffers.instructions[0].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("first CMP opcode should match"));
-        failures += (buffers.instructions[1].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("second CMP opcode should match"));
-        failures += (buffers.instructions[2].opcode == VM_IR_OPCODE_CMP ? 0 : record_failure("third CMP opcode should match"));
-        failures += (buffers.instructions[3].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP AL immediate should parse"));
-        failures += (buffers.instructions[4].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP AX immediate should parse"));
-        failures += (buffers.instructions[5].source.kind == VM_IR_OPERAND_IMMEDIATE ? 0 : record_failure("CMP EAX immediate should parse"));
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 63 CMP forms should parse");
+    failures += expect_size(result.instruction_count, 12U, "Phase 63 CMP source should emit twelve instructions");
+    if (result.instruction_count >= 12U) {
+        failures += expect_u32(buffers.instructions[0].opcode, VM_IR_OPCODE_CMP, "first CMP opcode should match");
+        failures += expect_u32(buffers.instructions[3].source.kind, VM_IR_OPERAND_IMMEDIATE, "CMP AL immediate should parse");
+        failures += expect_u32(buffers.instructions[6].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "CMP register, memory should parse");
+        failures += expect_u32(buffers.instructions[7].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "CMP memory, register should parse");
+        failures += expect_u32(buffers.instructions[8].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "CMP memory, immediate should parse");
+        failures += expect_u32(buffers.instructions[9].destination.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "CMP symbol-offset memory destination should parse");
+        failures += expect_u32(buffers.instructions[10].source.kind, VM_IR_OPERAND_MEMORY_ADDRESS, "CMP symbol-offset memory source should parse");
+        failures += expect_u32(buffers.instructions[11].destination.kind, VM_IR_OPERAND_MEMORY_REGISTER, "CMP PTR register-indirect memory destination should parse");
+        failures += expect_u32(buffers.instructions[11].destination.width_bits, 32U, "CMP PTR register-indirect destination width should be DWORD");
     }
 
     return failures;
 }
 
-/// Verifies Phase 62 CMP parser diagnostics and memory-form deferral.
+/// Verifies Phase 63 CMP parser diagnostics for invalid memory and width forms.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase62_cmp_instruction_parse_error_paths(void) {
+static int test_phase63_cmp_instruction_parse_error_paths(void) {
     int failures = 0;
     ParserTestBuffers buffers;
     VmParserResult result;
@@ -6017,13 +6030,22 @@ static int test_phase62_cmp_instruction_parse_error_paths(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "CMP extra operand diagnostic should match");
     failures += expect_string_contains(buffers.diagnostics[0].message, "CMP takes exactly two operands", "CMP extra operand message should name CMP");
 
-    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    cmp eax, value\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory source should remain deferred");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CMP memory source diagnostic should match");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 63", "CMP memory source message should name Phase 63 owner");
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    cmp [eax], 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory/immediate ambiguous width should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, "CMP memory/immediate ambiguous width diagnostic should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Memory operand width is ambiguous", "CMP ambiguous width diagnostic should describe width ambiguity");
 
-    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    cmp value, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory destination should remain deferred");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, "CMP memory destination diagnostic should match");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "register first operand", "CMP memory destination message should describe Phase 62 first-operand rule");
+    failures += expect_parser_status(parse_for_test(".data\nleft DWORD 1\nright DWORD 2\n.code\nmain PROC\n    cmp left, right\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP memory-to-memory should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "CMP memory-to-memory diagnostic should match");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "memory-to-memory", "CMP memory-to-memory message should describe unsupported pair");
+
+    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    cmp ax, value\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP register/memory width mismatch should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_OPERAND_WIDTH_MISMATCH, "CMP register/memory width mismatch diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nq QWORD 1\n.code\nmain PROC\n    cmp QWORD PTR q, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP QWORD executable memory form should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "CMP QWORD executable memory diagnostic should match");
+
+    failures += expect_parser_status(parse_for_test(".data\nq SQWORD 1\n.code\nmain PROC\n    cmp SQWORD PTR q, 1\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP SQWORD executable memory form should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, "CMP SQWORD executable memory diagnostic should match");
 
     return failures;
 }
@@ -6076,8 +6098,8 @@ int main(void) {
     failures += test_phase21_instruction_parse_error_paths();
     failures += test_phase22_test_instruction_parses_to_ir();
     failures += test_phase22_test_instruction_parse_error_paths();
-    failures += test_phase62_cmp_instruction_parses_to_ir();
-    failures += test_phase62_cmp_instruction_parse_error_paths();
+    failures += test_phase63_cmp_instruction_parses_to_ir();
+    failures += test_phase63_cmp_instruction_parse_error_paths();
     failures += test_phase25_global_memory_width_resolution_parses_to_ir();
     failures += test_phase25_symbol_metadata_width_precedence();
     failures += test_phase25_explicit_ptr_overrides_symbol_metadata();

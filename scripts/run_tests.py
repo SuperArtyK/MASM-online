@@ -551,7 +551,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 62")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 63")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -619,7 +619,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 61A direct JMP accounting hardening passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 63 CMP memory operands passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1401,20 +1401,20 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase62_status_and_code_policy_present() -> None:
-    """Verify Phase 62 repository/runtime status, CMP scope, and preserved capacity boundaries."""
+def assert_phase63_status_and_code_policy_present() -> None:
+    """Verify Phase 63 repository/runtime status, CMP memory scope, and preserved boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 62 - CMP Register and Immediate Forms",
+        "Phase 63 - CMP Memory Operand Forms",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 62 - CMP Register and Immediate Forms",
+        "Phase 63 - CMP Memory Operand Forms",
     ]
     status_block = """Repository/archive milestone:
-Phase 62 - CMP Register and Immediate Forms
+Phase 63 - CMP Memory Operand Forms
 
 Runtime/source-run MASM behavior phase:
-Phase 62 - CMP Register and Immediate Forms"""
+Phase 63 - CMP Memory Operand Forms"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1437,12 +1437,13 @@ Phase 62 - CMP Register and Immediate Forms"""
             "`instruction-limit-exceeded`",
             "direct `jmp label` forms",
             "Direct JMP Runtime Execution",
-            "CMP Register and Immediate Forms",
+            "CMP Memory Operand Forms",
+            "`cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`",
+            "planned-read validation",
             "Reserved Word Symbol Diagnostics",
             "reserved-word-symbol",
             "`cmp`",
-            "register/immediate",
-            "Phase 63 - CMP Memory Operand Forms",
+            "Phase 64 - Equality Conditional Jumps",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
@@ -1475,16 +1476,18 @@ Phase 62 - CMP Register and Immediate Forms"""
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
+            "Phase 63 - CMP Memory Operand Forms",
             "Phase 62 - CMP Register and Immediate Forms",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 62:",
-            "Phase 62 advances both repository/archive milestone and runtime/source-run MASM behavior phase",
+            "Current status at Phase 63:",
+            "Phase 63 advances both repository/archive milestone and runtime/source-run MASM behavior phase",
+            "CMP memory reads participate in planned-read validation before flags are updated.",
+            "Phase 64 - Equality Conditional Jumps remains the next CMP-driven control-flow milestone.",
             "Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures",
             "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
-            "Phase 63 - CMP Memory Operand Forms remains the next CMP expansion milestone.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "instructionLimit",
             "instruction-limit-exceeded",
@@ -1497,7 +1500,7 @@ Phase 62 - CMP Register and Immediate Forms"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 62 - CMP Register and Immediate Forms",
+            "Phase 63 - CMP Memory Operand Forms",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
@@ -1505,6 +1508,7 @@ Phase 62 - CMP Register and Immediate Forms"""
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
             "reserved-word-symbol",
+            "CMP memory reads use checked helpers and planned-read validation",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
             "`token-capacity-exceeded`",
             "`source-text-capacity-exceeded`",
@@ -1527,64 +1531,110 @@ Phase 62 - CMP Register and Immediate Forms"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 62: CMP Register and Immediate Forms",
-            "CMP register/register and register/immediate forms update flags without mutating operands",
-            "CMP memory operands remain deferred to Phase 63",
-            "cmp eax, ebx",
-            "cmp eax, 7",
+            "Milestone 63: CMP Memory Operand Forms",
+            "CMP register/immediate and memory forms update flags without mutating operands or memory",
+            "value DWORD 6",
+            "cmp eax, value",
+            "cmp value, 7",
             "final-registers",
             "Program Console",
+        ],
+    )
+    assert_all_text_not_contains(
+        "web/index.html",
+        [
+            "CMP memory operands remain deferred to Phase 63",
+            "Milestone 62: CMP Register and Immediate Forms",
         ],
     )
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 62 advances runtime/source-run behavior metadata because it adds executable `cmp` register/register and register/immediate forms",
+            "Phase 63 advances runtime/source-run behavior metadata because it adds executable `cmp` memory operand forms",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
             "`cmp`",
-            "register/immediate",
-            "Phase 63 - CMP Memory Operand Forms",
+            "`cmp reg, mem`",
+            "`cmp mem, reg`",
+            "`cmp mem, imm`",
+            "planned-read validation",
+            "Phase 64 - Equality Conditional Jumps",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D documents and tests source-run/parser capacity behavior",
-            "Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary",
-            "Phase 61B",
-            "Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog.",
-            "Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior.",
-            "Executable direct `jmp` does not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting",
-            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
-            "Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label.",
-            "Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.",
+            "`diagnostic-capacity-exceeded`",
+            "`data-capacity-exceeded`",
+            "not MASM syntax errors unless malformed source also produced a syntax diagnostic",
+            "not evidence that a runtime loop exceeded `instructionLimit`",
+            "no Program Console output",
+            "no `execution-complete` message",
+            "Memory-region capacity limits are distinct from parser/source-run capacity",
+            "Program Console output limits and Simulator Messages output limits are separate UI/result-surface concerns",
+            "Worker/browser hard failures are not a supported diagnostic surface",
+            "does not claim arbitrary large MASM program support",
         ],
     )
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "## Phase 61C - Branch Debugger Dependency Cleanup",
-            "## Phase 61B - Branch Runtime Watchdog Scope Cleanup",
-            "Phase 59 - Control-Flow Instruction Limit",
-            "Active-time watchdog behavior is not implemented in Phase 61, Phase 61A, or Phase 61B",
-            "Phase 200 - Active Time Watchdog and Worker Responsiveness remains the future owner",
-            "## Phase 61A - Direct JMP Runtime Accounting and Status Hardening",
-            "valid direct JMP never emits `branch-runtime-deferred`",
-            "immediate-target jumps, branch-distance/type overrides",
+            "## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "lexer token capacity",
+            "parser diagnostic capacity",
+            "instruction/source-text buffers",
+            "data symbols",
+            "code labels",
+            "data image bytes",
+            "source-run JSON/result buffers",
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
+            "Phase 64 - Equality Conditional Jumps remains the next CMP-driven control-flow milestone.",
+        ],
+    )
+    assert_all_text_contains(
+        "README.md",
+        [
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
+            "`token-capacity-exceeded`",
+            "runtime `instructionLimit` failures",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+        [
+            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
+            "the documentation/static-check and regression-test hardening phase for parser/source-run capacity behavior",
+            "capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded`",
+            "runtime `instructionLimit` watchdog",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/core/test_wasm_source_run.c",
+        [
+            "test_phase61d_token_capacity_diagnostic_source_run_program",
+            "test_phase61d_source_text_capacity_diagnostic_source_run_program",
+            "test_phase61d_code_label_capacity_diagnostic_source_run_program",
+            "instruction-limit-exceeded",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/web/test_diagnostic_rendering.mjs",
+        [
+            "Phase 61D renders token capacity diagnostic exactly",
+            "token-capacity-exceeded",
+            "instruction-limit-exceeded",
         ],
     )
 
-    assert_all_text_contains(
-        "docs/FULL_IMPLEMENTATION_SPEC.md",
-        [
-            "current reviewed source-of-truth revision",
-        ],
-    )
-    assert_all_text_contains(
-        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
-        [
-            "current reviewed source-of-truth revision",
-        ],
-    )
+    for path in ["docs/SUPPORTED_SYNTAX.md", "README.md", "docs/MILESTONE_HISTORY.md", "docs/BUILDING_AND_DEVELOPMENT.md"]:
+        assert_all_text_not_contains(
+            path,
+            [
+                "capacity diagnostics prove arbitrary large MASM program support",
+                "token-capacity-exceeded is an instruction-limit failure",
+                "source-text-capacity-exceeded is an instruction-limit failure",
+                "code-label-capacity-exceeded is an instruction-limit failure",
+            ],
+        )
 
 def assert_phase61b_watchdog_scope_documented() -> None:
     """Verify Phase 61B keeps active-time watchdog behavior deferred to Phase 200."""
@@ -1731,7 +1781,7 @@ def assert_phase61d_capacity_documented() -> None:
             "data image bytes",
             "source-run JSON/result buffers",
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
-            "Phase 63 - CMP Memory Operand Forms remains the next CMP expansion milestone.",
+            "Phase 64 - Equality Conditional Jumps remains the next CMP-driven control-flow milestone.",
         ],
     )
     assert_all_text_contains(
@@ -1883,7 +1933,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase62_status_and_code_policy_present()
+    assert_phase63_status_and_code_policy_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

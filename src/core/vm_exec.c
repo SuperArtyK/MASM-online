@@ -647,10 +647,10 @@ static VmExecStatus vm_exec_execute_sub(Vm *vm, const VmIrInstruction *instructi
 
 /// Executes one CMP instruction and updates flags from a transient subtraction result.
 ///
-/// CMP reads two supported register/immediate operands at the selected width,
-/// updates the modeled subtraction flags, and deliberately does not write the
-/// transient result back to either operand. Phase 62 does not accept CMP memory
-/// operands.
+/// CMP reads supported register, immediate, or memory operands at the selected
+/// width, updates the modeled subtraction flags, and deliberately does not
+/// write the transient result back to either operand. All memory reads must
+/// succeed before flags are updated.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction Instruction to execute.
@@ -661,8 +661,9 @@ static VmExecStatus vm_exec_execute_cmp(Vm *vm, const VmIrInstruction *instructi
     uint32_t right = 0U;
     VmExecStatus status = VM_EXEC_STATUS_OK;
 
-    if (vm == NULL || instruction == NULL || instruction->destination.kind != VM_IR_OPERAND_REGISTER ||
-        (instruction->source.kind != VM_IR_OPERAND_REGISTER && instruction->source.kind != VM_IR_OPERAND_IMMEDIATE)) {
+    if (vm == NULL || instruction == NULL || !vm_exec_operand_is_destination(&instruction->destination) ||
+        instruction->source.kind == VM_IR_OPERAND_NONE ||
+        (vm_exec_operand_is_memory(&instruction->destination) && vm_exec_operand_is_memory(&instruction->source))) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
 

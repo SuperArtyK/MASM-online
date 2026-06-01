@@ -4361,7 +4361,7 @@ static bool vm_parser_opcode_is_test(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_TEST;
 }
 
-/// Returns whether an opcode uses CMP register/immediate validation rules.
+/// Returns whether an opcode uses CMP operand validation rules.
 ///
 /// @param opcode Opcode to inspect.
 /// @return true for CMP.
@@ -6737,11 +6737,12 @@ static bool vm_parser_validate_test_operands(
     return vm_parser_validate_source_width(state, destination, source, source_token);
 }
 
-/// Validates Phase 62 CMP register/register and register/immediate operands.
+/// Validates Phase 63 CMP register, memory, and immediate operands.
 ///
-/// Phase 62 intentionally accepts only register first operands and register or
-/// immediate second operands. CMP memory forms are owned by Phase 63 - CMP
-/// Memory Operand Forms and must remain rejected here.
+/// CMP accepts register/register, register/immediate, register/memory,
+/// memory/register, and memory/immediate forms when memory width is known from
+/// symbol metadata, explicit PTR syntax, or the opposite register operand. CMP
+/// remains read-only and still rejects memory-to-memory comparisons.
 ///
 /// @param state Parser state to mutate when diagnostics are needed.
 /// @param destination First CMP operand.
@@ -6760,23 +6761,18 @@ static bool vm_parser_validate_cmp_operands(
         return false;
     }
 
-    if (destination->kind != VM_IR_OPERAND_REGISTER) {
-        vm_parser_add_diagnostic(
-            state,
-            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
-            destination_token,
-            "CMP Phase 62 accepts only a register first operand. CMP memory operand forms are deferred to Phase 63 - CMP Memory Operand Forms."
-        );
+    if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "CMP requires a register or memory first operand.");
         return false;
     }
 
-    if (source->kind != VM_IR_OPERAND_REGISTER && source->kind != VM_IR_OPERAND_IMMEDIATE) {
-        vm_parser_add_diagnostic(
-            state,
-            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
-            source_token,
-            "CMP Phase 62 accepts only register or immediate second operands. CMP memory operand forms are deferred to Phase 63 - CMP Memory Operand Forms."
-        );
+    if (source->kind != VM_IR_OPERAND_IMMEDIATE && source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "CMP requires a register, immediate, or memory second operand.");
+        return false;
+    }
+
+    if (vm_parser_operand_is_memory(destination) && vm_parser_operand_is_memory(source)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "CMP does not support memory-to-memory operands.");
         return false;
     }
 
@@ -7708,7 +7704,7 @@ static bool vm_parser_reject_static_const_write(
         return false;
     }
 
-    if (opcode == VM_IR_OPCODE_TEST) {
+    if (opcode == VM_IR_OPCODE_CMP || opcode == VM_IR_OPCODE_TEST) {
         return true;
     }
 
@@ -8029,6 +8025,9 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             return false;
         }
     } else if (vm_parser_opcode_is_cmp(opcode)) {
+        if (vm_parser_resolve_binary_memory_widths(state, opcode, &destination, &source, destination_token, source_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
         if (!vm_parser_validate_cmp_operands(state, &destination, &source, destination_token, source_token)) {
             return false;
         }

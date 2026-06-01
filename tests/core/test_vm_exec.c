@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 62 CMP register/immediate execution.
+ * @brief Unit tests for the VM executor through Phase 63 CMP memory operand execution.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -3883,10 +3883,58 @@ static int test_phase62_cmp_immediate_alias_and_overflow_edges(void) {
     return failures;
 }
 
-/// Verifies CMP rejects unsupported executor operand shapes.
+/// Verifies Phase 63 CMP memory forms update flags without mutating operands.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase62_cmp_error_paths(void) {
+static int test_phase63_cmp_memory_forms_and_non_mutation(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t mem_value = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        vm_ir_instruction(VM_IR_OPCODE_CMP, vm_ir_operand_register(VM_REGISTER_EAX, 0U), vm_ir_operand_memory(VM_MEMORY_DEFAULT_DATA_BASE, 32U), "main.asm", 1U, "cmp eax, value", 0U),
+        vm_ir_instruction(VM_IR_OPCODE_CMP, vm_ir_operand_memory(VM_MEMORY_DEFAULT_DATA_BASE + 4U, 32U), vm_ir_operand_register(VM_REGISTER_EAX, 0U), "main.asm", 2U, "cmp other, eax", 1U),
+        vm_ir_instruction(VM_IR_OPCODE_CMP, vm_ir_operand_memory(VM_MEMORY_DEFAULT_DATA_BASE + 8U, 8U), vm_ir_operand_immediate(0x80U, 8U), "main.asm", 3U, "cmp BYTE PTR b, 80h", 2U)
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CMP memory forms");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "CMP memory program should load");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, 5U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("CMP memory source setup should write value"));
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, 3U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("CMP memory destination setup should write value"));
+    failures += (vm_memory_write_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 8U, 0x7FU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("CMP byte memory setup should write value"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 5U) ? 0 : record_failure("EAX setup should succeed for CMP memory forms"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP register, memory should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "CMP register, memory equal values should set ZF");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after CMP register, memory should succeed"));
+    failures += expect_u32(eax, 5U, "CMP register, memory should not mutate EAX");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "CMP register, memory should not record memory changes");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP memory, register should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "CMP memory, register 3 - 5 should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "CMP memory, register 3 - 5 should set SF");
+    failures += (vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 4U, &mem_value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory destination readback should succeed after CMP"));
+    failures += expect_u32(mem_value, 3U, "CMP memory, register should not mutate memory operand");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "CMP memory, register should not record memory changes");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP memory, immediate should execute");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "CMP 7Fh - 80h should set CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "CMP 7Fh - 80h should set SF for 8-bit result");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "CMP 7Fh - 80h should set OF for signed 8-bit overflow");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "CMP memory, immediate should not record memory changes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies CMP rejects unsupported executor operand shapes and invalid memory reads.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase63_cmp_error_paths(void) {
     int failures = 0;
     Vm vm;
     const VmIrInstruction bad_destination[] = {
@@ -3895,16 +3943,29 @@ static int test_phase62_cmp_error_paths(void) {
     const VmIrInstruction width_mismatch[] = {
         {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_AL, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp eax, al", 0U}
     };
-    const VmIrInstruction memory_source[] = {
-        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp eax, value", 0U}
+    const VmIrInstruction memory_to_memory[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_MEMORY_ADDRESS, 32U, 0U, VM_REGISTER_COUNT, VM_MEMORY_DEFAULT_DATA_BASE + 4U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "cmp left, right", 0U}
     };
+    const VmIrInstruction invalid_memory_source[] = {
+        vm_ir_instruction(VM_IR_OPCODE_CMP, vm_ir_operand_register(VM_REGISTER_EAX, 0U), vm_ir_operand_memory(0U, 32U), "main.asm", 1U, "cmp eax, DWORD PTR [0]", 0U)
+    };
+
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for CMP error paths");
     failures += expect_status(vm_load_program(&vm, bad_destination, 1U), VM_EXEC_STATUS_OK, "bad CMP destination program should load");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CMP immediate destination should fail");
     failures += expect_status(vm_load_program(&vm, width_mismatch, 1U), VM_EXEC_STATUS_OK, "CMP width mismatch program should load");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CMP width mismatch should fail");
-    failures += expect_status(vm_load_program(&vm, memory_source, 1U), VM_EXEC_STATUS_OK, "CMP memory source program should load");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "Phase 62 CMP memory source should fail in executor");
+    failures += expect_status(vm_load_program(&vm, memory_to_memory, 1U), VM_EXEC_STATUS_OK, "CMP memory-to-memory program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_UNSUPPORTED_OPERAND, "CMP memory-to-memory should fail in executor");
+
+    failures += expect_status(vm_load_program(&vm, invalid_memory_source, 1U), VM_EXEC_STATUS_OK, "CMP invalid memory source program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 123U) ? 0 : record_failure("EAX setup should succeed before invalid CMP memory read"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup should succeed before invalid CMP memory read"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("ZF setup should succeed before invalid CMP memory read"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "CMP invalid memory read should fail with memory-error status");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "CMP invalid memory read should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "CMP invalid memory read should preserve ZF");
+
     vm_deinit(&vm);
     return failures;
 }
@@ -4007,7 +4068,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 62.
+/// Runs all executor tests through Phase 63.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -4043,7 +4104,8 @@ int main(void) {
     failures += test_test_error_paths();
     failures += test_phase62_cmp_register_register_flags_and_non_mutation();
     failures += test_phase62_cmp_immediate_alias_and_overflow_edges();
-    failures += test_phase62_cmp_error_paths();
+    failures += test_phase63_cmp_memory_forms_and_non_mutation();
+    failures += test_phase63_cmp_error_paths();
     failures += test_inc_dec_register_flags_and_carry_preservation();
     failures += test_inc_dec_memory_destinations_and_errors();
     failures += test_logical_binary_register_flags();
@@ -4085,6 +4147,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 62 passed.");
+    puts("Executor tests through Phase 63 passed.");
     return 0;
 }

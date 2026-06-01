@@ -1588,7 +1588,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Phase 62 CMP register/immediate success fixture."
+    reason: "Phase 63 CMP register/immediate success fixture."
   },
   phase57tConditionalJumpUnsupported: {
     source: `.code
@@ -2151,7 +2151,7 @@ test("renders unsupported instruction diagnostic with stable wording exactly", (
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 5: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 });
 
-test("renders Phase 59 instruction-limit diagnostic under Phase 62 exactly", () => {
+test("renders Phase 59 instruction-limit diagnostic under Phase 63 exactly", () => {
   const name = "phase59InstructionLimit";
   const source = `.code
 main PROC
@@ -2163,7 +2163,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2196,9 +2196,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 62 - CMP Register and Immediate Forms");
+  assert.equal(json.phaseName, "Phase 63 - CMP Memory Operand Forms");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2224,7 +2224,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2251,7 +2251,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2276,7 +2276,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2300,7 +2300,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2326,7 +2326,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2366,7 +2366,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2397,8 +2397,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 62);
-  assert.equal(json.phaseName, "Phase 62 - CMP Register and Immediate Forms");
+  assert.equal(json.phase, 63);
+  assert.equal(json.phaseName, "Phase 63 - CMP Memory Operand Forms");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2432,7 +2432,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2457,7 +2457,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2481,7 +2481,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -2698,7 +2698,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 62);
+    assert.equal(json.phase, 63);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -2711,7 +2711,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 62);
+  assert.equal(duplicateResult.json.phase, 63);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3210,7 +3210,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3231,7 +3231,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 62);
+  assert.equal(json.phase, 63);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5513,7 +5513,7 @@ test("Phase 57T renders RET, conditional jump, and WinAPI unsupported diagnostic
 });
 
 
-test("Phase 62 renders CMP success exactly", () => {
+test("Phase 63 renders CMP register/immediate success exactly", () => {
   const cmpName = "phase62CmpRegisterImmediateSuccess";
   const cmpSource = fixtureSource(cmpName);
   const cmpResult = runFixture(cmpName, cmpSource);
@@ -5524,8 +5524,8 @@ test("Phase 62 renders CMP success exactly", () => {
   assertRenderedEquals(cmpName, cmpSource, cmpResult.rawJson, cmpResult.rendered, "[info] execution-complete: Execution completed successfully.");
 });
 
-test("Phase 62 renders CMP diagnostics exactly", () => {
-  const widthName = "phase62CmpWidthMismatch";
+test("Phase 63 renders CMP diagnostics exactly", () => {
+  const widthName = "phase63CmpWidthMismatch";
   const widthSource = `.code
 main PROC
     cmp eax, al
@@ -5537,21 +5537,35 @@ END main
   assertNoExecutionComplete(widthResult.json.simulatorMessages);
   assertRenderedEquals(widthName, widthSource, widthResult.rawJson, widthResult.rendered, "[assembly-error] operand-width-mismatch line 3, column 14, byte offset 29, span length 2: Source operand width does not match the destination operand width.");
 
-  const memName = "phase62CmpMemorySourceDeferred";
+  const memName = "phase63CmpMemorySourceSuccess";
   const memSource = `.data
 value DWORD 1
 .code
 main PROC
+    mov eax, 1
     cmp eax, value
 main ENDP
 END main
 `;
   const memResult = runFixture(memName, memSource);
-  assertRunStatus(memResult.json, false, "parse-error");
-  assertNoExecutionComplete(memResult.json.simulatorMessages);
-  assertRenderedEquals(memName, memSource, memResult.rawJson, memResult.rendered, "[assembly-error] unsupported-syntax line 5, column 14, byte offset 49, span length 5: CMP Phase 62 accepts only register or immediate second operands. CMP memory operand forms are deferred to Phase 63 - CMP Memory Operand Forms.");
+  assertRunStatus(memResult.json, true, "ok");
+  assert.deepEqual(memResult.json.memoryChanges, []);
+  assert.equal(memResult.json.registers.EFLAGS.hex, "00000040h");
+  assertRenderedEquals(memName, memSource, memResult.rawJson, memResult.rendered, "[info] execution-complete: Execution completed successfully.");
 
-  const extraName = "phase62CmpExtraOperand";
+  const ambiguousName = "phase63CmpAmbiguousMemoryImmediate";
+  const ambiguousSource = `.code
+main PROC
+    cmp [eax], 1
+main ENDP
+END main
+`;
+  const ambiguousResult = runFixture(ambiguousName, ambiguousSource);
+  assertRunStatus(ambiguousResult.json, false, "parse-error");
+  assertNoExecutionComplete(ambiguousResult.json.simulatorMessages);
+  assertRenderedEquals(ambiguousName, ambiguousSource, ambiguousResult.rawJson, ambiguousResult.rendered, "[assembly-error] ambiguous-memory-width line 3, column 9, byte offset 24, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.");
+
+  const extraName = "phase63CmpExtraOperand";
   const extraSource = `.code
 main PROC
     cmp eax, ebx, ecx
@@ -5562,6 +5576,57 @@ END main
   assertRunStatus(extraResult.json, false, "parse-error");
   assertNoExecutionComplete(extraResult.json.simulatorMessages);
   assertRenderedEquals(extraName, extraSource, extraResult.rawJson, extraResult.rendered, "[assembly-error] invalid-instruction-operands line 3, column 17, byte offset 32, span length 1: CMP takes exactly two operands.");
+
+  const qwordName = "phase63CmpQwordPtrRejected";
+  const qwordSource = `.data
+q QWORD 1
+.code
+main PROC
+    cmp QWORD PTR q, 1
+main ENDP
+END main
+`;
+  const qwordResult = runFixture(qwordName, qwordSource);
+  assertRunStatus(qwordResult.json, false, "parse-error");
+  assertNoExecutionComplete(qwordResult.json.simulatorMessages);
+  assertRenderedEquals(qwordName, qwordSource, qwordResult.rawJson, qwordResult.rendered, "[unsupported-feature] unsupported-ptr-width line 5, column 9, byte offset 40, span length 5: QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+
+  const sqwordName = "phase63CmpSqwordPtrRejected";
+  const sqwordSource = `.data
+q SQWORD 1
+.code
+main PROC
+    cmp SQWORD PTR q, 1
+main ENDP
+END main
+`;
+  const sqwordResult = runFixture(sqwordName, sqwordSource);
+  assertRunStatus(sqwordResult.json, false, "parse-error");
+  assertNoExecutionComplete(sqwordResult.json.simulatorMessages);
+  assertRenderedEquals(sqwordName, sqwordSource, sqwordResult.rawJson, sqwordResult.rendered, "[unsupported-feature] unsupported-ptr-width line 5, column 9, byte offset 41, span length 6: QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+});
+
+test("Phase 63 renders CMP planned-read warning and strict diagnostics exactly", () => {
+  const source = `.DATA?
+value DWORD ?
+.code
+main PROC
+    stc
+    cmp value, 0
+main ENDP
+END main
+`;
+  const warnName = "phase63CmpUninitializedReadWarning";
+  const warnResult = runFixture(warnName, source, { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" });
+  assertRunStatus(warnResult.json, true, "ok");
+  assertRenderedEquals(warnName, source, warnResult.rawJson, warnResult.rendered, `[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.
+[info] execution-complete: Execution completed successfully.`);
+
+  const strictName = "phase63CmpUninitializedReadStrict";
+  const strictResult = runFixture(strictName, source, { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict" });
+  assertRunStatus(strictResult.json, false, "execution-error");
+  assertNoExecutionComplete(strictResult.json.simulatorMessages);
+  assertRenderedEquals(strictName, source, strictResult.rawJson, strictResult.rendered, "[runtime-error] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.");
 });
 
 test("renders CASEMAP policy warning followed by successful execution exactly", () => {

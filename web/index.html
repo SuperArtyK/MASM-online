@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 62: CMP Register and Immediate Forms.
+  Milestone 63: CMP Memory Operand Forms.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,14 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 62: CMP Register and Immediate Forms. CMP register/register and register/immediate forms update flags without mutating operands; CMP memory operands remain deferred to Phase 63.</p>
+        <p class="muted">Milestone 63: CMP Memory Operand Forms. CMP register/immediate and memory forms update flags without mutating operands or memory.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.code
+        <textarea id="editor" spellcheck="false">.data
+value DWORD 6
+.code
 main PROC
     mov eax, 6
-    mov ebx, 6
-    cmp eax, ebx
-    cmp eax, 7
+    cmp eax, value
+    cmp value, 7
 main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

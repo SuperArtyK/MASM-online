@@ -72,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 62U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 63U
 
-/// Suffix for the current Phase 62 runtime/source-run behavior phase.
+/// Suffix for the current Phase 63 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 62 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 62 - CMP Register and Immediate Forms"
+/// Full name of the current Phase 63 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 63 - CMP Memory Operand Forms"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -2243,6 +2243,7 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             break;
         case VM_IR_OPCODE_ADD:
         case VM_IR_OPCODE_SUB:
+        case VM_IR_OPCODE_CMP:
         case VM_IR_OPCODE_ADC:
         case VM_IR_OPCODE_SBB:
         case VM_IR_OPCODE_TEST:
@@ -2360,6 +2361,7 @@ static size_t masm32_sim_wasm_collect_planned_object_accesses(
                 masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
             }
             break;
+        case VM_IR_OPCODE_CMP:
         case VM_IR_OPCODE_TEST:
             if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
                 masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->destination, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
