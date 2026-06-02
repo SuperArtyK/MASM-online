@@ -72,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 63U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 64U
 
-/// Suffix for the current Phase 63 runtime/source-run behavior phase.
+/// Suffix for the current Phase 64 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 63 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 63 - CMP Memory Operand Forms"
+/// Full name of the current Phase 64 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 64 - Equality Conditional Jumps"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -3399,6 +3399,14 @@ static size_t masm32_sim_wasm_consumed_flags_for_instruction(
         case VM_IR_OPCODE_CMC:
             if (out_flags != NULL && flag_capacity > 0U) {
                 out_flags[0] = VM_FLAG_CF;
+            }
+            return 1U;
+        case VM_IR_OPCODE_JE:
+        case VM_IR_OPCODE_JZ:
+        case VM_IR_OPCODE_JNE:
+        case VM_IR_OPCODE_JNZ:
+            if (out_flags != NULL && flag_capacity > 0U) {
+                out_flags[0] = VM_FLAG_ZF;
             }
             return 1U;
         default:

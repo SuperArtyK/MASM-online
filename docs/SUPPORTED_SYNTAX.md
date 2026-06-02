@@ -1,13 +1,15 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 63 - CMP Memory Operand Forms
+Phase 64 - Equality Conditional Jumps
 
 Runtime/source-run MASM behavior phase:
-Phase 63 - CMP Memory Operand Forms: The simulator supports `cmp` for register/register, register/immediate, register/memory, memory/register, and memory/immediate forms, including `cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`. `cmp` updates modeled subtraction flags without mutating operands or producing memory-change rows. CMP memory reads participate in planned-read validation before flags are updated. Phase 63 also preserves Phase 61E reserved-word diagnostics: user-defined declarations whose names conflict with simulator-recognized MASM reserved words are rejected.
+Phase 64 - Equality Conditional Jumps
 
 Status interpretation:
-Phase 63 advances runtime/source-run behavior metadata because it adds executable `cmp` memory operand forms. Phase 63 preserves executable direct `jmp label` behavior from Phase 61 - Direct JMP Runtime Execution. Direct-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61D documents and tests source-run/parser capacity behavior; capacity diagnostics remain separate from runtime `instructionLimit` failures. Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Phase 64 - Equality Conditional Jumps remains the next CMP-driven control-flow milestone. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, Phase 61E, Phase 62, or Phase 63; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 64 advances runtime/source-run behavior metadata because it adds executable equality conditional jumps: `je label`, `jz label`, `jne label`, and `jnz label`. These direct branch forms consume `ZF` through the shared undefined-flag-use diagnostic policy, jump to executable code-label or procedure-entry targets when their condition is true, fall through when false, count as one executed VM instruction, preserve registers, memory, and modeled flags, and produce no memory-change rows.
+
+Phase 64 preserves Phase 63 - CMP Memory Operand Forms. The simulator supports `cmp` for register/register, register/immediate, register/memory, memory/register, and memory/immediate forms, including `cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`. `cmp` updates modeled subtraction flags without mutating operands or producing memory-change rows. CMP memory reads participate in planned-read validation before flags are updated. Phase 64 also preserves executable direct `jmp label` behavior from Phase 61 - Direct JMP Runtime Execution. Direct-JMP and equality-conditional-JMP loops remain governed by the Phase 59 instruction-count watchdog. Phase 61D documents and tests source-run/parser capacity behavior; capacity diagnostics remain separate from runtime `instructionLimit` failures. Phase 61C - Branch Debugger Dependency Cleanup clarified the debugger/editor dependency boundary. Preserved branch source metadata and lowered target metadata do not implement debugger/editor behavior. This does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting. Signed relational jumps, unsigned relational jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, Phase 61E, Phase 62, Phase 63, or Phase 64; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ### Reserved words and user-defined symbols
 
@@ -37,7 +39,11 @@ Worker/browser hard failures are not a supported diagnostic surface. If a failur
 
 Ordinary code labels (`name:`) and procedure-entry labels (`name PROC`) are accepted and recorded as parser/source metadata. Consecutive labels before one executable instruction target the same following instruction. Labels before `ENDP`, `END`, or another non-executable boundary are accepted as no-executable-target metadata.
 
-Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata and executes by transferring to the resolved VM instruction index. Procedure-entry targets are direct branch targets only; they do not imply `CALL`, `RET`, stack mutation, argument handling, frames, or calling-convention behavior. Executable direct `jmp` does not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting; those systems remain future debugger/editor work. Conditional jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
+Direct `jmp label` is accepted only when the target is an executable code label or procedure-entry label. It is lowered to branch-target metadata and executes by transferring to the resolved VM instruction index. Procedure-entry targets are direct branch targets only; they do not imply `CALL`, `RET`, stack mutation, argument handling, frames, or calling-convention behavior.
+
+Equality conditional jumps are accepted for direct executable code-label or procedure-entry targets: `je label`, `jz label`, `jne label`, and `jnz label`. `je` and `jz` branch when `ZF = 1`; `jne` and `jnz` branch when `ZF = 0`. They consume `ZF` through the undefined-flag-use diagnostic policy, preserve registers, memory, and modeled flags, and do not create memory-change rows.
+
+Executable direct branches do not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting; those systems remain future debugger/editor work. Signed relational jumps, unsigned relational jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
 
 ### Unsupported high-level flow diagnostics
 
@@ -79,7 +85,7 @@ Supported structural forms:
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
 - Procedure markers using `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
-- Labels are accepted as parser/source metadata. Phase 60 resolves direct `jmp label` targets for lowering metadata, and Phase 61 executes those already-lowered direct branch targets.
+- Labels are accepted as parser/source metadata. Phase 60 resolves direct `jmp label` targets for lowering metadata, Phase 61 executes those already-lowered direct branch targets, and Phase 64 adds executable equality conditional jumps.
 
 ### MASM32 header compatibility directives
 

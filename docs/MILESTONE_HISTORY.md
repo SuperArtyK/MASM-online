@@ -12,19 +12,22 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 63:
+Current status at Phase 64:
 
 Repository/archive milestone:
-Phase 63 - CMP Memory Operand Forms
+Phase 64 - Equality Conditional Jumps
 
 Runtime/source-run MASM behavior phase:
-Phase 63 - CMP Memory Operand Forms: `cmp` memory operand forms execute by reading memory through checked helpers and planned-read validation, updating modeled subtraction flags, preserving operands, and producing no memory-change rows. Phase 62 `cmp` register/register and register/immediate forms remain implemented. Direct `jmp label` forms from Phase 61 remain parsed, classified, lowered, and executed when they target executable code labels or procedure-entry labels. Direct JMP runtime transfer counts as one executed VM instruction, preserves modeled flags, produces no memory-change row, and remains subject to the Phase 59 instruction-count watchdog.
+Phase 64 - Equality Conditional Jumps
 
-Phase 63 advances both repository/archive milestone and runtime/source-run MASM behavior phase because it adds executable `cmp` memory operand forms. CMP memory reads participate in planned-read validation before flags are updated. Phase 64 - Equality Conditional Jumps remains future work. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 64 implements executable equality conditional jumps: `je label`, `jz label`, `jne label`, and `jnz label`. These direct branch forms consume `ZF` through the shared undefined-flag-use policy, branch to executable code-label or procedure-entry targets when the condition is true, fall through when false, count as one executed VM instruction, preserve registers, memory, and modeled flags, and produce no memory-change rows.
+
+Phase 64 advances both repository/archive milestone and runtime/source-run MASM behavior phase because it adds executable equality conditional jumps. Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ## Concise milestone ledger
 
-- Phase 63 implements `cmp` memory operand forms. CMP memory comparisons read through checked helpers and planned-read validation, update modeled subtraction flags only, preserve operands, and produce no memory-change rows. Phase 64 - Equality Conditional Jumps remains future work.
+- Phase 64 implements executable equality conditional jumps: `je`, `jz`, `jne`, and `jnz` direct label branches. These consume `ZF` through the undefined-flag-use policy, preserve registers/memory/modeled flags, and respect `instructionLimit`.
+- Phase 63 implements `cmp` memory operand forms. CMP memory comparisons read through checked helpers and planned-read validation, update modeled subtraction flags only, preserve operands, and produce no memory-change rows.
 - Phase 62 implements `cmp` register/register and register/immediate forms. CMP updates modeled subtraction flags only, preserves operands, and produces no memory-change rows.
 - Phase 61E rejects simulator-recognized MASM reserved words as user-defined data symbols, numeric equates, code labels, and procedure names. Reserved-word matching is case-insensitive and independent of `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not enable reserved-word identifiers. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase.
 - Phase 61D documents and tests parser/source-run capacity behavior. Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures, not runtime `instructionLimit` failures. Runtime/source-run MASM behavior metadata remains Phase 61.
@@ -81,7 +84,7 @@ Detailed milestone reports remain historical evidence and do not replace the can
 
 ## Phase 61E - Reserved Word Symbol Diagnostics
 
-Phase 61E is a parser/source-run MASM behavior phase. It rejects simulator-recognized MASM reserved words when they are declared as user-defined data symbols, numeric equates, code labels, or procedure names. The primary diagnostic is `reserved-word-symbol`, points at the declaration token where possible, and prevents the rejected declaration from entering user-symbol tables. Reserved-word matching is case-insensitive and separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words usable as symbols. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Runtime/source-run MASM behavior metadata advances to Phase 61E - Reserved Word Symbol Diagnostics. Phase 62 - CMP Register and Immediate Forms and Phase 63 - CMP Memory Operand Forms are implemented; Phase 64 - Equality Conditional Jumps remains the next CMP-driven control-flow milestone.
+Phase 61E is a parser/source-run MASM behavior phase. It rejects simulator-recognized MASM reserved words when they are declared as user-defined data symbols, numeric equates, code labels, or procedure names. The primary diagnostic is `reserved-word-symbol`, points at the declaration token where possible, and prevents the rejected declaration from entering user-symbol tables. Reserved-word matching is case-insensitive and separate from `OPTION CASEMAP`; `OPTION CASEMAP:NONE` does not make reserved words usable as symbols. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Runtime/source-run MASM behavior metadata advances to Phase 61E - Reserved Word Symbol Diagnostics. Phase 62 - CMP Register and Immediate Forms, Phase 63 - CMP Memory Operand Forms, and Phase 64 - Equality Conditional Jumps are implemented; later relational and loop control-flow phases remain future work.
 
 ## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening
 

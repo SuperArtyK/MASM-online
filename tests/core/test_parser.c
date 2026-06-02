@@ -1,10 +1,10 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 63 CMP memory operands.
+ * @brief Unit and integration tests for the parser through Phase 64 equality conditional jumps.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
- * parsing and target classification, Phase 63 CMP memory operand parsing,
+ * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
  * unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
@@ -5964,6 +5964,123 @@ static int test_phase61e_reserved_word_symbol_diagnostics(void) {
 }
 
 
+/// Verifies Phase 64 equality conditional jumps lower direct branch targets.
+///
+/// @return Number of failures.
+static int test_phase64_equality_jumps_parse_to_ir(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    je equal\n"
+        "    jz equal\n"
+        "    jne done\n"
+        "    jnz done\n"
+        "equal:\n"
+        "    mov eax, 1\n"
+        "done:\n"
+        "    mov ebx, 2\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 64 equality jumps should parse");
+    failures += expect_size(result.instruction_count, 6U, "Phase 64 equality-jump source should emit four jumps and two MOV instructions");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_JE, "first instruction should be JE");
+    failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_JZ, "second instruction should be JZ");
+    failures += expect_u32((uint32_t)buffers.instructions[2].opcode, (uint32_t)VM_IR_OPCODE_JNE, "third instruction should be JNE");
+    failures += expect_u32((uint32_t)buffers.instructions[3].opcode, (uint32_t)VM_IR_OPCODE_JNZ, "fourth instruction should be JNZ");
+    failures += expect_u32((uint32_t)buffers.instructions[0].destination.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "JE destination should be a branch target operand");
+    failures += expect_u32(buffers.instructions[0].destination.immediate, 4U, "JE should target the equal label MOV instruction index");
+    failures += expect_u32(buffers.instructions[1].destination.immediate, 4U, "JZ should target the equal label MOV instruction index");
+    failures += expect_u32(buffers.instructions[2].destination.immediate, 5U, "JNE should target the done label MOV instruction index");
+    failures += expect_u32(buffers.instructions[3].destination.immediate, 5U, "JNZ should target the done label MOV instruction index");
+
+    return failures;
+}
+
+/// Verifies Phase 64 equality conditional jump target diagnostics.
+///
+/// @return Number of failures.
+static int test_phase64_equality_jump_target_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    jnz value\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNZ to data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "data-symbol JNZ target should use invalid-branch-target");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Direct conditional jumps accept only code labels", "data-symbol JNZ diagnostic should name conditional jump target rules");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    je missing\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JE to unknown label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "unknown JE target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    je eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JE register target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "register JE target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    jz [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JZ memory target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "memory JZ target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    jne 1234h\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNE immediate target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "immediate JNE target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    je exit\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JE to Irvine32 exit should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "Irvine32 JE target should use invalid-branch-target");
+
+    return failures;
+}
+
 /// Verifies Phase 63 CMP register, immediate, and memory parsing.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -6067,6 +6184,8 @@ int main(void) {
     failures += test_phase60_jmp_procedure_entry_target();
     failures += test_phase60_jmp_target_diagnostics();
     failures += test_phase60_jmp_form_rejections();
+    failures += test_phase64_equality_jumps_parse_to_ir();
+    failures += test_phase64_equality_jump_target_diagnostics();
     failures += test_phase61e_reserved_word_symbol_diagnostics();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();

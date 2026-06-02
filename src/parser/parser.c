@@ -136,7 +136,7 @@ typedef struct VmParserConstantExpression {
 
 /// Describes one lowered direct-branch target that must be resolved after labels are known.
 typedef struct VmParserBranchFixup {
-    /// Emitted JMP instruction index to patch with the resolved target.
+    /// Emitted direct branch instruction index to patch with the resolved target.
     size_t instruction_index;
     /// Copied source token naming the branch target operand.
     VmLexerToken target_token;
@@ -186,7 +186,7 @@ typedef struct VmParserState {
     size_t pending_code_label_indices[VM_PARSER_PENDING_CODE_LABEL_CAPACITY];
     /// Number of valid entries in @ref pending_code_label_indices.
     size_t pending_code_label_count;
-    /// Direct JMP target references awaiting final code-label resolution.
+    /// Direct branch target references awaiting final code-label resolution.
     VmParserBranchFixup branch_fixups[VM_PARSER_BRANCH_FIXUP_CAPACITY];
     /// Number of valid entries in @ref branch_fixups.
     size_t branch_fixup_count;
@@ -4196,6 +4196,22 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_JMP;
         return true;
     }
+    if (vm_parser_token_equals(token, "je")) {
+        *out_opcode = VM_IR_OPCODE_JE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jz")) {
+        *out_opcode = VM_IR_OPCODE_JZ;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jne")) {
+        *out_opcode = VM_IR_OPCODE_JNE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnz")) {
+        *out_opcode = VM_IR_OPCODE_JNZ;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4214,6 +4230,47 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
     }
 
     return false;
+}
+
+/// Returns whether an opcode uses direct branch-target parsing and fixups.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for direct JMP and Phase 64 equality conditional jumps.
+static bool vm_parser_opcode_is_direct_branch(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_JMP ||
+           opcode == VM_IR_OPCODE_JE ||
+           opcode == VM_IR_OPCODE_JZ ||
+           opcode == VM_IR_OPCODE_JNE ||
+           opcode == VM_IR_OPCODE_JNZ;
+}
+
+/// Returns an uppercase mnemonic for a direct branch opcode.
+///
+/// @param opcode Direct branch opcode to describe.
+/// @return Static uppercase mnemonic, or "branch" for invalid inputs.
+static const char *vm_parser_direct_branch_mnemonic(VmIrOpcode opcode) {
+    switch (opcode) {
+        case VM_IR_OPCODE_JMP:
+            return "JMP";
+        case VM_IR_OPCODE_JE:
+            return "JE";
+        case VM_IR_OPCODE_JZ:
+            return "JZ";
+        case VM_IR_OPCODE_JNE:
+            return "JNE";
+        case VM_IR_OPCODE_JNZ:
+            return "JNZ";
+        default:
+            return "branch";
+    }
+}
+
+/// Returns whether a direct branch opcode should preserve exact Phase 61 JMP wording.
+///
+/// @param opcode Opcode to inspect.
+/// @return true only for JMP.
+static bool vm_parser_direct_branch_is_jmp(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_JMP;
 }
 
 /// Returns the stable diagnostic text for unsupported Phase 57O NOP operand forms.
@@ -7421,97 +7478,174 @@ static bool vm_parser_add_branch_fixup(VmParserState *state, size_t instruction_
     return true;
 }
 
-/// Parses and lowers one Phase 60 direct JMP instruction.
+/// Parses and lowers one direct branch instruction.
 ///
-/// Phase 60 accepts only direct label targets and records branch metadata.
-/// The parser emits a JMP instruction with a placeholder target and resolves
-/// the target after all code labels have been seen; Phase 61 executes the
-/// resolved target metadata at runtime.
+/// Phase 60 accepts direct JMP targets, and Phase 64 extends the same direct
+/// code-label target model to equality conditional jumps. The parser emits a
+/// branch instruction with a placeholder target and resolves the target after
+/// all code labels have been seen. Runtime execution consumes the patched
+/// instruction index.
 ///
 /// @param state Parser state to mutate.
-/// @param mnemonic_token JMP mnemonic token used for emitted source metadata.
+/// @param opcode Direct branch opcode to emit.
+/// @param mnemonic_token Branch mnemonic token used for emitted source metadata.
 /// @return true when the instruction was parsed and a fixup was retained.
-static bool vm_parser_parse_jmp_instruction(VmParserState *state, const VmLexerToken *mnemonic_token) {
+static bool vm_parser_parse_direct_branch_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token) {
     const VmLexerToken *target_token = vm_parser_current_token(state);
+    const char *mnemonic = vm_parser_direct_branch_mnemonic(opcode);
+    bool is_jmp = vm_parser_direct_branch_is_jmp(opcode);
     size_t instruction_index = 0U;
     VmIrOperand target_operand = vm_ir_operand_branch_target(0U);
+    char message[192];
 
-    if (state == NULL || state->result == NULL || mnemonic_token == NULL) {
+    if (state == NULL || state->result == NULL || mnemonic_token == NULL || !vm_parser_opcode_is_direct_branch(opcode)) {
         return false;
     }
 
     if (target_token == NULL || vm_parser_is_line_end_token(target_token)) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
+                target_token != NULL ? target_token : mnemonic_token,
+                "JMP requires a direct code-label target operand."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s requires a direct code-label target operand.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
             target_token != NULL ? target_token : mnemonic_token,
-            "JMP requires a direct code-label target operand."
+            message
         );
     }
 
     if (vm_parser_token_is_branch_distance_override(target_token)) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+                target_token,
+                "JMP distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
             target_token,
-            "JMP distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred to a later branch phase. Use a plain code label target."
+            message
         );
     }
 
     if (vm_parser_current_token_starts_ptr_width(state) || vm_parser_current_token_is_malformed_ptr_prefix(state) ||
         target_token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+                target_token,
+                "JMP memory targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s memory targets are not supported. Indirect branch behavior is deferred to a later branch phase.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
             target_token,
-            "JMP memory targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+            message
         );
     }
 
     if (target_token->kind == VM_LEXER_TOKEN_REGISTER) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+                target_token,
+                "JMP register targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s register targets are not supported. Indirect branch behavior is deferred to a later branch phase.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
             target_token,
-            "JMP register targets are not supported for direct JMP. Indirect branch behavior is deferred to a later branch phase."
+            message
         );
     }
 
     if (target_token->kind == VM_LEXER_TOKEN_NUMBER || target_token->kind == VM_LEXER_TOKEN_PLUS ||
         target_token->kind == VM_LEXER_TOKEN_MINUS || target_token->kind == VM_LEXER_TOKEN_CHARACTER ||
         target_token->kind == VM_LEXER_TOKEN_LEFT_PAREN) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
+                target_token,
+                "JMP immediate numeric targets are not supported. Use a direct code label target."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s immediate numeric targets are not supported. Use a direct code label target.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM,
             target_token,
-            "JMP immediate numeric targets are not supported. Use a direct code label target."
+            message
         );
     }
 
     if (target_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+                target_token,
+                "JMP target cannot be a directive name. Use a code label with an executable target instruction."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s target cannot be a directive name. Use a code label with an executable target instruction.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
             target_token,
-            "JMP target cannot be a directive name. Use a code label with an executable target instruction."
+            message
         );
     }
 
     if (target_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
+                target_token,
+                "JMP requires a direct code-label target operand."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s requires a direct code-label target operand.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
             target_token,
-            "JMP requires a direct code-label target operand."
+            message
         );
     }
 
     if (vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length) != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        if (is_jmp) {
+            return vm_parser_reject_branch_target(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
+                target_token,
+                "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
+            );
+        }
+        (void)snprintf(message, sizeof(message), "%s target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct conditional jumps accept only code labels.", mnemonic);
         return vm_parser_reject_branch_target(
             state,
             VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET,
             target_token,
-            "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels."
+            message
         );
     }
 
@@ -7521,7 +7655,7 @@ static bool vm_parser_parse_jmp_instruction(VmParserState *state, const VmLexerT
     }
 
     instruction_index = state->result->instruction_count;
-    if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_JMP, target_operand, vm_ir_operand_none(), mnemonic_token)) {
+    if (!vm_parser_emit_instruction(state, opcode, target_operand, vm_ir_operand_none(), mnemonic_token)) {
         return false;
     }
 
@@ -7846,8 +7980,8 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     }
 
     vm_parser_advance(state);
-    if (opcode == VM_IR_OPCODE_JMP) {
-        return vm_parser_parse_jmp_instruction(state, mnemonic_token);
+    if (vm_parser_opcode_is_direct_branch(opcode)) {
+        return vm_parser_parse_direct_branch_instruction(state, opcode, mnemonic_token);
     }
     if (opcode == VM_IR_OPCODE_NOP) {
         if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
@@ -8086,10 +8220,11 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
 /// Classifies and applies one retained direct branch fixup.
 ///
-/// The final classifier is shared by direct JMP parsing and future direct branch
-/// phases. It accepts only code labels and procedure-entry labels that resolve
-/// to executable IR instruction indexes, and it rejects data symbols, equates,
-/// Irvine32/external names, instruction names, and unknown identifiers.
+/// The final classifier is shared by direct JMP parsing and direct equality
+/// conditional jumps. It accepts only code labels and procedure-entry labels
+/// that resolve to executable IR instruction indexes, and it rejects data
+/// symbols, equates, Irvine32/external names, instruction names, and unknown
+/// identifiers.
 ///
 /// @param state Parser state to mutate.
 /// @param fixup Fixup to classify and apply.
@@ -8100,18 +8235,35 @@ static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmPar
     const VmSymbol *symbol = NULL;
     VmSymbolLookupStatus symbol_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
     const VmLexerToken *target_token = fixup != NULL ? &fixup->target_token : NULL;
+    const char *mnemonic = "branch";
+    bool is_jmp = false;
+    char message[224];
 
     if (state == NULL || state->config == NULL || state->result == NULL || fixup == NULL || target_token == NULL) {
         return false;
     }
 
     if (fixup->instruction_index >= state->result->instruction_count || state->config->instructions == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "Internal direct JMP target metadata is invalid.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "Internal direct branch target metadata is invalid.");
+        return false;
+    }
+
+    instruction = &state->config->instructions[fixup->instruction_index];
+    mnemonic = vm_parser_direct_branch_mnemonic(instruction->opcode);
+    is_jmp = vm_parser_direct_branch_is_jmp(instruction->opcode);
+
+    if (!vm_parser_opcode_is_direct_branch(instruction->opcode)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "Internal direct branch fixup references a non-branch instruction.");
         return false;
     }
 
     if (vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length) != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct JMP accepts only code labels.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target cannot be an Irvine32 virtual routine, virtual terminator, Windows/API name, or external symbol. Direct conditional jumps accept only code labels.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
@@ -8124,41 +8276,70 @@ static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmPar
         &symbol_status
     );
     if (symbol_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is ambiguous among data symbols under CASEMAP:ALL. Direct JMP accepts only an unambiguous code label target.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is ambiguous among data symbols under CASEMAP:ALL. Direct JMP accepts only an unambiguous code label target.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target is ambiguous among data symbols under CASEMAP:ALL. Direct conditional jumps accept only an unambiguous code label target.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
     if (symbol != NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a data symbol. Direct JMP accepts only code labels with executable instruction targets.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a data symbol. Direct JMP accepts only code labels with executable instruction targets.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target cannot be a data symbol. Direct conditional jumps accept only code labels with executable instruction targets.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
     if (vm_parser_find_equate_with_policy(state, target_token, fixup->case_policy) != NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be a numeric equate or constant symbol. Direct JMP accepts only code labels.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target cannot be a numeric equate or constant symbol. Direct conditional jumps accept only code labels.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
     if (vm_parser_token_names_instruction_mnemonic(target_token)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
     label = vm_parser_find_code_label_with_policy(state, target_token, fixup->case_policy);
     if (label == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is not a known code label or procedure-entry label.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target is not a known code label or procedure-entry label.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target is not a known code label or procedure-entry label.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
     if (!label->has_target_instruction_index || label->target_kind == VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target label has no executable instruction target.");
+        if (is_jmp) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target label has no executable instruction target.");
+        } else {
+            (void)snprintf(message, sizeof(message), "%s target label has no executable instruction target.", mnemonic);
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, message);
+        }
         return false;
     }
 
-    instruction = &state->config->instructions[fixup->instruction_index];
     instruction->destination = vm_ir_operand_branch_target((uint32_t)label->target_instruction_index);
     return true;
 }
 
-/// Resolves every retained Phase 60 direct branch fixup.
+/// Resolves every retained direct branch fixup.
 ///
 /// @param state Parser state to mutate.
 /// @return true when all fixups resolved successfully.

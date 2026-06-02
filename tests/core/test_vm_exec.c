@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 63 CMP memory operand execution.
+ * @brief Unit tests for the VM executor through Phase 64 equality conditional jump execution.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -3775,6 +3775,115 @@ static int test_phase61_direct_jmp_runtime_transfer(void) {
     return failures;
 }
 
+/// Verifies Phase 64 equality conditional jumps branch and preserve state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase64_equality_conditional_jump_runtime(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_JE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "je equal", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_JNE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "jne notequal", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov ebx, 2", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 9U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov ebx, 9", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 64 Jcc test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "conditional jump program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("seed ZF before JE should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("seed CF before JE should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JE should execute when ZF is set");
+    failures += expect_size(vm.instruction_pointer, 2U, "JE should branch to the target instruction when ZF is set");
+    failures += expect_u64(vm.instruction_count, 1U, "JE should count as one executed instruction");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "JE should not produce register changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "JE should not produce flag changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "JE should not produce memory changes");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "JE should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "JE should preserve CF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNE should execute when reached");
+    failures += expect_size(vm.instruction_pointer, 3U, "JNE should fall through when ZF is set");
+    failures += expect_u64(vm.instruction_count, 2U, "JNE should count as one executed instruction even when not taken");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "not-taken JNE should not produce register changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "not-taken JNE should not produce flag changes");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fall-through MOV after JNE should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after conditional jumps");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after conditional jumps");
+    failures += expect_u32(eax, 0U, "taken JE should skip EAX mutation");
+    failures += expect_u32(ebx, 2U, "not-taken JNE should execute fall-through MOV");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 64 JZ/JNZ aliases branch with JE/JNE conditions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase64_equality_conditional_jump_aliases(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_JZ, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "jz zero", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_JNZ, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "jnz nonzero", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov ebx, 1", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov ecx, 1", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 64 JZ/JNZ alias test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "conditional alias program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, false) ? 0 : record_failure("seed ZF clear before JZ should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JZ should execute when ZF is clear");
+    failures += expect_size(vm.instruction_pointer, 1U, "JZ should fall through when ZF is clear");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fall-through MOV after JZ should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNZ should execute when ZF is clear");
+    failures += expect_size(vm.instruction_pointer, 4U, "JNZ should branch when ZF is clear");
+    failures += expect_u64(vm.instruction_count, 3U, "alias jumps should count committed instructions");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 64 conditional jumps preserve deterministic undefined-ZF metadata.
+///
+/// Source-run policy validation emits the user-facing undefined-flag-use
+/// diagnostic before the executor consumes a flag. The native executor keeps
+/// deterministic behavior available for direct VM callers and must not clear
+/// validity metadata merely because a conditional branch read the flag bit.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase64_equality_conditional_jump_preserves_zf_validity(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_JNE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "jne target", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "mov ebx, 2", 2U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for undefined-ZF JNE test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "undefined-ZF conditional jump program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, false) ? 0 : record_failure("seed deterministic ZF bit before JNE should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_ZF, "seed-invalid", "seed", "seed.asm", 6U, 1U, 60U, 4U, "seed", 0U) ? 0 : record_failure("mark ZF invalid before JNE should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "native JNE should use deterministic ZF when policy validation is external");
+    failures += expect_size(vm.instruction_pointer, 2U, "native JNE should branch using deterministic clear ZF");
+    failures += expect_u64(vm.instruction_count, 1U, "native JNE should count as one executed instruction");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_ZF, false, "seed-invalid", "seed", 6U, "JNE should preserve ZF validity metadata");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4068,7 +4177,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 63.
+/// Runs all executor tests through Phase 64.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -4139,6 +4248,9 @@ int main(void) {
     failures += test_phase56_div_semantics_and_errors();
     failures += test_phase57_idiv_semantics_and_errors();
     failures += test_phase61_direct_jmp_runtime_transfer();
+    failures += test_phase64_equality_conditional_jump_runtime();
+    failures += test_phase64_equality_conditional_jump_aliases();
+    failures += test_phase64_equality_conditional_jump_preserves_zf_validity();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_metadata_helpers();
 
@@ -4147,6 +4259,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 63 passed.");
+    puts("Executor tests through Phase 64 passed.");
     return 0;
 }

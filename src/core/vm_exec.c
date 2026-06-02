@@ -2906,18 +2906,18 @@ static VmExecStatus vm_exec_execute_exit(Vm *vm, const VmIrInstruction *instruct
     return VM_EXEC_STATUS_OK;
 }
 
-/// Validates one Phase 61 lowered direct JMP before instruction-pointer transfer.
+/// Validates one lowered direct branch target before instruction-pointer transfer.
 ///
-/// A direct JMP is valid only when Phase 60 lowering produced a branch-target
+/// A direct branch is valid only when parser lowering produced a branch-target
 /// operand whose target index is inside the loaded instruction array. This
-/// helper performs validation only; @ref vm_step applies the transfer after it
-/// knows the instruction committed successfully and can increment instruction
-/// accounting exactly once.
+/// helper performs validation only; @ref vm_step applies any unconditional or
+/// conditional transfer after it knows the instruction committed successfully and
+/// can increment instruction accounting exactly once.
 ///
 /// @param vm VM instance containing the loaded program bounds.
-/// @param instruction JMP instruction descriptor to validate.
-/// @return OK for a valid direct JMP, otherwise an executor status.
-static VmExecStatus vm_exec_validate_jmp_target(const Vm *vm, const VmIrInstruction *instruction) {
+/// @param instruction Branch instruction descriptor to validate.
+/// @return OK for a valid direct branch, otherwise an executor status.
+static VmExecStatus vm_exec_validate_branch_target(const Vm *vm, const VmIrInstruction *instruction) {
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
@@ -3069,7 +3069,11 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_LEA:
             return vm_exec_execute_lea(vm, instruction);
         case VM_IR_OPCODE_JMP:
-            return vm_exec_validate_jmp_target(vm, instruction);
+        case VM_IR_OPCODE_JE:
+        case VM_IR_OPCODE_JZ:
+        case VM_IR_OPCODE_JNE:
+        case VM_IR_OPCODE_JNZ:
+            return vm_exec_validate_branch_target(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:
@@ -3169,6 +3173,47 @@ VmExecStatus vm_load_program(Vm *vm, const VmIrInstruction *program, size_t prog
     return VM_EXEC_STATUS_OK;
 }
 
+
+/// Returns whether an opcode is a Phase 64 equality conditional jump.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for JE, JZ, JNE, and JNZ.
+static bool vm_exec_opcode_is_equality_conditional_jump(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_JE ||
+           opcode == VM_IR_OPCODE_JZ ||
+           opcode == VM_IR_OPCODE_JNE ||
+           opcode == VM_IR_OPCODE_JNZ;
+}
+
+/// Evaluates whether a committed Phase 64 equality conditional jump is taken.
+///
+/// The caller is responsible for ensuring undefined-flag-use policy has already
+/// run when such diagnostics are enabled. Native executor callers that use this
+/// helper directly receive the deterministic preserved ZF bit.
+///
+/// @param cpu CPU state containing the ZF bit to inspect.
+/// @param opcode Conditional-jump opcode.
+/// @param out_taken Receives whether the branch condition is true.
+/// @return true when @p opcode is a supported equality conditional jump and ZF
+/// can be read.
+static bool vm_exec_equality_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
+    bool zf_is_set = false;
+
+    if (cpu == NULL || out_taken == NULL || !vm_exec_opcode_is_equality_conditional_jump(opcode)) {
+        return false;
+    }
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_ZF, &zf_is_set)) {
+        return false;
+    }
+
+    if (opcode == VM_IR_OPCODE_JE || opcode == VM_IR_OPCODE_JZ) {
+        *out_taken = zf_is_set;
+    } else {
+        *out_taken = !zf_is_set;
+    }
+    return true;
+}
+
 VmExecStatus vm_step(Vm *vm) {
     const VmIrInstruction *instruction = NULL;
     VmCpu before_cpu;
@@ -3199,6 +3244,13 @@ VmExecStatus vm_step(Vm *vm) {
 
     if (instruction->opcode == VM_IR_OPCODE_JMP) {
         vm->instruction_pointer = (size_t)instruction->destination.immediate;
+    } else if (vm_exec_opcode_is_equality_conditional_jump(instruction->opcode)) {
+        bool branch_taken = false;
+        if (!vm_exec_equality_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_BRANCH_TARGET, instruction);
+            return VM_EXEC_STATUS_INVALID_BRANCH_TARGET;
+        }
+        vm->instruction_pointer = branch_taken ? (size_t)instruction->destination.immediate : vm->instruction_pointer + 1U;
     } else {
         vm->instruction_pointer += 1U;
     }

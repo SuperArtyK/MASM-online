@@ -723,19 +723,36 @@ END main
 
 `OPTION NOKEYWORD` remains unsupported until a later phase explicitly implements it. Until such a phase is accepted, `OPTION NOKEYWORD` must not be treated as silently enabling reserved-word identifiers.
 
-A future `OPTION NOKEYWORD` phase must explicitly define all of the following before changing this behavior:
+The implementation guide may reserve a non-renumbering placeholder phase for future `OPTION NOKEYWORD` keyword-control work. A placeholder is not implementation authority by itself. It must not be selected as an implementation target until a later documentation revision deliberately expands it into an implementation-ready phase with accepted syntax, rejected syntax, diagnostics, tests, and acceptance criteria.
+
+Until such an expanded phase is accepted:
+
+- `OPTION NOKEYWORD` remains rejected or recognized-unsupported according to the current option-diagnostic path;
+- reserved-word declarations remain rejected by default;
+- `OPTION CASEMAP:ALL` does not make reserved words available as user-defined symbols;
+- `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols;
+- parser keyword tables must not be mutated dynamically;
+- instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 names remain case-insensitive reserved words according to the current reserved-word policy;
+- no macro, linker, object-file, public/external symbol, or WinAPI behavior is implied.
+
+A future expanded `OPTION NOKEYWORD` phase must explicitly define all of the following before changing reserved-word behavior:
 
 - accepted `OPTION NOKEYWORD` syntax;
+- rejected `OPTION NOKEYWORD` syntax;
 - source-order behavior;
 - whether disabled keywords can still be used as instructions, directives, or operators;
 - whether disabled keywords can be used only as user-defined symbols;
 - interaction with `OPTION CASEMAP:ALL`;
 - interaction with `OPTION CASEMAP:NONE`;
-- interaction with code labels, procedure names, data symbols, equates, macros, user-defined types, and future local labels;
-- diagnostics for ambiguous parsing after a keyword is disabled;
+- interaction with code labels, procedure names, data symbols, equates, macros, user-defined types, fields, and future local labels;
+- interaction with recognized Irvine32 routine and terminator names;
+- interaction with aliases or related mnemonics, such as whether disabling `JE` affects `JZ`;
 - whether keyword recognition can be restored;
 - whether disabling one keyword affects aliases or related instructions;
-- exact structured and rendered diagnostics.
+- exact structured diagnostics;
+- exact rendered Simulator Messages tests;
+- parser recovery behavior after unsupported or ambiguous forms;
+- supported-syntax documentation updates.
 
 #### 8.1.4 Recognized Unsupported or Deferred Directives
 
@@ -4171,6 +4188,159 @@ The debugger must define:
 - final-diff aggregate register/flag deltas plus ordered memory and console event streams.
 
 Breakpoint binding is source-line based in v1. Breakpoints do not track moved code across edits; after source edits, bindings become unbound until the next successful load/rebind pass.
+
+### 19.3.2 Runtime Notice Ordering and Modeled Flag Display Policy
+
+This section defines stable user-facing display rules for source-less runtime notices and final modeled flag display.
+
+The implementation guide owns the exact phase numbers, implementation tasks, required tests, and acceptance criteria for introducing or changing these behaviors. This specification owns the stable behavior after those phases are accepted.
+
+#### Simulator Messages stream boundary
+
+Program Console and Simulator Messages remain separate UI streams.
+
+Program Console is simulated program I/O.
+
+Simulator Messages contain diagnostics, warnings, notices, runtime errors, setting errors, compatibility notices, startup notices, execution-status messages, and other simulator-generated status text.
+
+A rendered blank separator in Simulator Messages is a formatting separator only. It is not Program Console output and is not a diagnostic by itself.
+
+#### Startup-state notice timing
+
+`startup-state-notice` describes the runtime environment that the simulator applies before the first instruction executes.
+
+The notice must be emitted only when runtime execution is actually about to begin.
+
+The notice must not be emitted during lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase that prevents runtime execution from starting.
+
+If assembly diagnostics, invalid source-run settings, or static validation errors prevent execution from beginning, the Simulator Messages output must not include `startup-state-notice` for that failed run.
+
+If runtime execution begins and the active `startup-state-notice` policy emits the notice, the notice must appear before runtime warnings, runtime notices, runtime errors, and final execution-status messages.
+
+The notice must not be delayed until the end of execution.
+
+#### Startup-state notice separator
+
+When `startup-state-notice` is rendered and at least one later Simulator Messages line follows it, the renderer must place exactly one blank line after the notice.
+
+The blank line after `startup-state-notice` is a visual grouping separator. It must not be represented as:
+
+- a diagnostic object;
+- a source-run diagnostic entry;
+- a Program Console line;
+- a warning;
+- a notice;
+- an info message;
+- a fake source-less diagnostic.
+
+The blank line must not appear when:
+
+- `startup-state-notice` is suppressed by policy;
+- invalid settings prevent execution from beginning;
+- assembly/static diagnostics prevent runtime execution from beginning;
+- there is no following Simulator Messages line.
+
+Structured diagnostic counts must not increase because of the blank separator. Tests may compare rendered text that includes the blank line, but structured diagnostic tests must continue to count only real diagnostics, notices, warnings, errors, and execution-status messages.
+
+#### Rendered ordering examples
+
+Successful execution with no runtime warnings:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[info] execution-complete: Execution completed successfully.
+```
+
+Successful execution with a runtime warning:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.
+[info] execution-complete: Execution completed successfully.
+```
+
+Runtime error after execution begins:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.
+```
+
+Assembly error before execution begins:
+
+```text
+[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+```
+
+No startup-state notice appears in the assembly-error-only case because runtime execution did not begin.
+
+Invalid setting before execution begins:
+
+```text
+[ui-error] invalid-setting: Invalid startup-state-notice policy value 'error'. Supported values: off, warn.
+```
+
+No startup-state notice appears in the invalid-setting-only case because runtime execution did not begin.
+
+#### Modeled EFLAGS display
+
+The simulator must continue to display `EFLAGS` as a canonical final-register row when final register state is available.
+
+When expanded modeled flag display is implemented by the guide, the final register display must also show the currently modeled individual flags as visually subordinate rows under `EFLAGS`.
+
+The currently modeled flag bits are:
+
+```text
+CF
+ZF
+SF
+OF
+```
+
+The display must not imply that unmodeled x86 flags exist. Do not display or invent values for unmodeled flags such as `PF`, `AF`, `DF`, `IF`, or `TF` unless later accepted guide phases explicitly implement those flags.
+
+Recommended display shape:
+
+```text
+EFLAGS | 00000040h / 64
+  CF   | 0
+  ZF   | 1
+  SF   | 0
+  OF   | 0
+```
+
+The exact table separators, alignment, and typography may follow the existing UI formatter style, but these semantic requirements apply:
+
+- `EFLAGS` remains the parent row;
+- `CF`, `ZF`, `SF`, and `OF` are displayed as child rows under `EFLAGS`;
+- child row values are derived from the same modeled flag bits used by execution and diagnostics;
+- child rows are not register aliases;
+- child rows are not independently writable user registers;
+- child rows must not receive register alias write markers;
+- child rows must not change the formatting contract of the parent `EFLAGS` row;
+- individual flag child rows display bit values as `0` or `1`;
+- individual flag child rows do not display hexadecimal or signed-decimal interpretations.
+
+#### Flag-validity metadata display
+
+Modeled flag validity metadata is distinct from modeled flag bit values.
+
+The first expanded EFLAGS display phase should display modeled flag bit values only. It must not display validity annotations unless the implementation guide deliberately expands that phase before implementation.
+
+Flag-validity annotations remain future display work unless a later guide phase explicitly requires them.
+
+If a later guide phase displays validity annotations, the annotation must not change instruction semantics or undefined-flag-use diagnostic policy. It must be tested with exact final-display or formatter assertions.
+
+A possible future-compatible display shape is:
+
+```text
+  OF   | 0 [architecturally undefined; deterministic preserved value]
+```
+
+No validity annotation is required unless the implementation guide phase that owns the display work explicitly requires it.
 
 ## 20. Memory Change Display
 

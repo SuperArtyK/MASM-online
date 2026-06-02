@@ -94,6 +94,14 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_LEA,
     /// Direct JMP branch target metadata lowered by Phase 60 and executed by Phase 61.
     VM_IR_OPCODE_JMP,
+    /// Jump when the zero flag is set.
+    VM_IR_OPCODE_JE,
+    /// Alias for JE; jump when the zero flag is set.
+    VM_IR_OPCODE_JZ,
+    /// Jump when the zero flag is clear.
+    VM_IR_OPCODE_JNE,
+    /// Alias for JNE; jump when the zero flag is clear.
+    VM_IR_OPCODE_JNZ,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

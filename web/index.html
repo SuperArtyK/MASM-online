@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 63: CMP Memory Operand Forms.
+  Milestone 64: Equality Conditional Jumps.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,15 +18,19 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 63: CMP Memory Operand Forms. CMP register/immediate and memory forms update flags without mutating operands or memory.</p>
+        <p class="muted">Milestone 64: Equality Conditional Jumps. JE/JZ/JNE/JNZ branch to direct labels from the modeled ZF flag.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.data
-value DWORD 6
-.code
+        <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, 6
-    cmp eax, value
-    cmp value, 7
+    mov eax, 5
+    cmp eax, 5
+    je equal
+    mov ebx, 1
+    jmp done
+equal:
+    mov ebx, 2
+done:
+    nop
 main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

@@ -16325,53 +16325,966 @@ EBX = 00000002h / 2
 
 ---
 
+
+## 68A. Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+### Goal
+
+Correct source-run planned-read coverage for already implemented memory-reading instructions before adding additional conditional jump families.
+
+This is a corrective diagnostics, source-run policy, and validation phase. It does not add new MASM syntax, new instruction mnemonics, new addressing forms, new flags, new memory layout modes, stack behavior, procedure behavior, Irvine32 callable routine behavior, macro behavior, debugger/editor behavior, or browser UI controls.
+
+This phase exists because source-run diagnostic policy must see a memory read before the instruction consumes that memory value or writes a result back. Executor-level checked memory reads remain mandatory, but they are not sufficient for optional educational policies such as `uninitialized-read` strict mode.
+
+### Placement and roadmap effect
+
+This is a non-renumbering corrective phase inserted after:
+
+```text
+Phase 64 - Equality Conditional Jumps
+```
+
+and before the Phase 64B and Phase 64C display hotfixes, if those hotfixes are accepted into the active guide.
+
+It does not renumber Phase 65 or any later phase.
+
+After Phase 64A is complete, the next accepted hotfix phase is:
+
+```text
+Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+```
+
+If Phase 64B and Phase 64C are not adopted, or after those display hotfixes are complete, the next normal control-flow implementation phase remains:
+
+```text
+Phase 65 - Signed Relational Conditional Jumps
+```
+
+### Behavior category
+
+Source-run diagnostic-policy correction for existing runtime instructions.
+
+### Required current-behavior correction
+
+The implementation must audit and correct source-run planned-read collection for every currently implemented instruction form that reads simulated memory before completing execution.
+
+This includes both memory-source instructions and memory-destination read-modify-write instructions.
+
+At minimum, the audit must include these already implemented memory-destination read-modify-write forms when the destination is memory:
+
+```asm
+inc mem
+dec mem
+add mem, source
+sub mem, source
+adc mem, source
+sbb mem, source
+and mem, source
+or  mem, source
+xor mem, source
+not mem
+neg mem
+shl mem, count
+sal mem, count
+shr mem, count
+sar mem, count
+rol mem, count
+ror mem, count
+xchg reg, mem
+xchg mem, reg
+```
+
+The audit must also include these already implemented memory-source forms when the source, tested operand, dividend/divisor operand, or comparison operand is memory:
+
+```asm
+mov register, mem
+movsx register, mem
+movzx register, mem
+cmp mem, source
+cmp destination, mem
+test mem, source
+test destination, mem
+mul mem
+imul mem
+div mem
+idiv mem
+```
+
+If any listed family is not currently implemented in the repository state at the start of Phase 64A, the implementation report must say so and must not add that future instruction family merely to satisfy this corrective phase.
+
+If an implemented instruction family has multiple memory operand shapes, the phase must cover every semantic category, not every Cartesian combination of register width, pointer spelling, and addressing syntax. For example, one representative initialized/uninitialized memory fixture may cover `DWORD PTR [eax]` planned-read behavior, while existing addressing-mode regression tests continue to cover address parsing.
+
+### Required diagnostic behavior
+
+For memory reads from bytes that still carry uninitialized-origin metadata:
+
+- default `uninitialized-read` behavior must emit a warning and continue using deterministic visible bytes;
+- explicit `off` policy must suppress only the teaching diagnostic and continue using deterministic visible bytes;
+- strict/error policy must emit `uninitialized-read` and stop before the instruction consumes the memory value;
+- strict/error policy must stop before write-back for read-modify-write instructions;
+- strict/error policy must leave registers, modeled flags, flag-validity metadata, memory bytes, Program Console output, and memory-change rows exactly as they were before the failing instruction began;
+- no `execution-complete` message may be emitted after a fatal strict/error diagnostic.
+
+For warning-mode read-modify-write behavior, after the warning is emitted and execution continues:
+
+- the instruction may use the deterministic visible byte value;
+- a successful write-back initializes the bytes written by that instruction according to the existing uninitialized-origin metadata rules;
+- the memory-change row must reflect the actual write-back if the instruction completes.
+
+### Planned-read and planned-access consistency
+
+The implementation must not update only one policy path.
+
+Every applicable current opcode must be audited across all source-run planned-memory paths, including:
+
+- planned memory-read collection for `uninitialized-read` diagnostics;
+- section-capacity planned-read validation, if applicable to the instruction;
+- section-image planned-read validation, if applicable to the instruction;
+- declared-object planned-read validation, if applicable to the instruction;
+- source-run/Wasm policy routing used by diagnostic settings;
+- native diagnostic JSON producer paths used by rendered Simulator Messages tests.
+
+If the codebase has separate switch statements, visitors, opcode lists, or helper functions for different planned-memory policies, this phase must either:
+
+1. centralize memory-access classification in one shared helper or descriptor table; or
+2. add explicit tests and comments explaining how the separate paths are kept in sync.
+
+The preferred implementation is a single source of truth for opcode memory-access classification. The phase may stop short of a full refactor only if the report documents why the smaller correction was chosen and the tests prove the affected policies now agree.
+
+### Required no-partial-mutation order
+
+For a read-modify-write instruction with a memory destination, use this conceptual order:
+
+1. Parse and lower the instruction normally.
+2. Resolve the final effective address and access width.
+3. Before consuming the destination value, expose the planned memory read to source-run policy checks.
+4. If a strict planned-read or strict uninitialized-read policy rejects the access, emit the diagnostic and stop before reading the value for instruction semantics.
+5. If planned-read policy allows execution, perform the actual checked VM memory read through the central memory helper.
+6. Compute the instruction result.
+7. Expose any planned write to write-side policy checks already required by the memory-validation model.
+8. Perform the final checked VM memory write through the central memory helper.
+9. Record memory changes only after the write succeeds.
+
+Address calculation, source-span lookup, symbol/object metadata lookup, and policy planning may occur before the strict/error decision. The forbidden operation is consuming the loaded memory bytes for instruction semantics, computing a result from those bytes, or committing any visible mutation before strict/error planned-read policy has allowed the read.
+
+The implementation must not read the memory value for instruction semantics and then retroactively decide that strict uninitialized-read policy should have stopped execution.
+
+### Required tests
+
+Add source-run JSON tests and exact rendered Simulator Messages tests for representative uninitialized-origin memory reads across the corrected opcode families.
+
+The required minimum test set is:
+
+- `inc mem`
+- `dec mem`
+- `add mem, imm`
+- `sub mem, imm`
+- `adc mem, imm`
+- `sbb mem, imm`
+- `and mem, imm`
+- `or mem, imm`
+- `xor mem, imm`
+- `not mem`
+- `neg mem`
+- one shift or rotate memory destination, such as `shl mem, 1` or `ror mem, 1`
+- one `xchg reg, mem` or `xchg mem, reg`
+- one memory-source arithmetic, compare, test, multiply, or divide form that was already covered before this phase, to prove no regression
+
+For each newly corrected family, cover:
+
+- default warning behavior;
+- explicit `uninitialized-read` off behavior;
+- strict/error behavior;
+- no-partial-mutation behavior in strict/error mode;
+- absence of `execution-complete` after strict/error failure;
+- absence of successful memory-change rows after strict/error failure.
+
+The test suite does not need to duplicate every width, signed `PTR` alias, and addressing form for every opcode. It must prove that each semantic opcode family reaches the planned-read policy path, and existing addressing/width tests must continue to prove operand resolution behavior.
+
+At least one strict/error test must prove that destination bytes still carry uninitialized-origin metadata after the instruction stops.
+
+At least one warning-mode test must prove that the instruction continues, writes back a deterministic result, and clears uninitialized-origin metadata for the bytes it successfully writes.
+
+### Required regression tests
+
+Add or preserve regression coverage proving that already covered memory-reading instruction families still behave correctly. The regression set must include at least:
+
+- `cmp mem, imm` warning and strict/error behavior;
+- one shift or rotate memory read-modify-write warning and strict/error behavior;
+- one `not mem` warning and strict/error behavior;
+- one memory-source multiply or divide family, if already implemented and already memory-capable;
+- one rendered Simulator Messages fixture that includes both the `uninitialized-read` diagnostic and the final `execution-complete` line for warning mode;
+- one rendered Simulator Messages fixture that includes the fatal strict/error diagnostic and omits `execution-complete`.
+
+### Diagnostics
+
+Use the existing `uninitialized-read` diagnostic family.
+
+This phase must not introduce a new diagnostic code merely to distinguish read-modify-write cases. The existing diagnostic wording may mention that the memory read occurs as part of a read-modify-write instruction only if the current formatter supports that wording without destabilizing unrelated diagnostics.
+
+Every user-visible diagnostic path touched by this phase must preserve:
+
+- diagnostic kind/severity;
+- diagnostic code;
+- source line;
+- source column;
+- byte offset;
+- span length;
+- rendered Simulator Messages text.
+
+### Current-status and metadata
+
+Because this phase changes runtime/source-run diagnostic behavior and strict-mode execution behavior for already accepted MASM source programs, the phase report must advance both labels to:
+
+```text
+Repository/archive milestone:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+Runtime/source-run MASM behavior phase:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+```
+
+Current supported-syntax documentation must not imply that Phase 64A added new syntax. Use wording such as:
+
+```text
+Accepted MASM syntax remains the Phase 64 equality-jump subset. Phase 64A corrected source-run diagnostic-policy behavior for existing memory-reading instructions.
+```
+
+Do not list Phase 64A as adding new instruction mnemonics, new operands, new addressing forms, or new branch behavior.
+
+### Non-goals
+
+Do not implement any of these in Phase 64A:
+
+- signed relational conditional jumps;
+- unsigned relational conditional jumps;
+- `loop` or loop-family instructions;
+- indirect jumps;
+- stack instructions;
+- call/ret/procedure runtime changes;
+- Irvine32 callable routines;
+- new memory addressing forms;
+- object-bounds policy changes beyond preserving existing behavior;
+- `.CONST` policy changes;
+- QWORD/SQWORD executable memory operations;
+- browser settings UI;
+- debugger/editor behavior;
+- macro behavior;
+- `OPTION NOKEYWORD`.
+
+### Acceptance criteria
+
+This program in default warning mode:
+
+```asm
+.DATA?
+x DWORD ?
+
+.code
+main PROC
+    inc x
+main ENDP
+END main
+```
+
+must emit `uninitialized-read`, continue execution using deterministic visible bytes, complete successfully, and write back the incremented result.
+
+The same program in strict/error mode must emit `uninitialized-read`, stop before `inc` consumes the destination value, leave memory unchanged, leave uninitialized-origin metadata unchanged, produce no successful memory-change row, and omit `execution-complete`.
+
+This program in default warning mode:
+
+```asm
+.DATA?
+x DWORD ?
+
+.code
+main PROC
+    and x, 1
+main ENDP
+END main
+```
+
+must emit `uninitialized-read`, continue execution using deterministic visible bytes, complete successfully, and write back the deterministic result.
+
+The same program in strict/error mode must stop before write-back and leave `x` unchanged.
+
+A milestone report for Phase 64A must explicitly state:
+
+- which opcode families were audited;
+- which planned-read/planned-access paths were updated;
+- whether a shared opcode memory-access helper or descriptor table was added;
+- which focused test groups were run;
+- whether the aggregate test command completed or required focused verification;
+- whether Emscripten/Wasm browser smoke testing was skipped because `emcc` was unavailable.
+
+
+## 68B. Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+
+### Goal
+
+Improve Simulator Messages ordering and readability for source-less runtime status notices without changing parser behavior, instruction behavior, memory behavior, startup values, diagnostic policy defaults, Program Console output, or accepted MASM syntax.
+
+This phase specifically changes how the existing `startup-state-notice` is emitted and rendered relative to runtime diagnostics and `execution-complete`.
+
+### Behavior category
+
+Rendered Simulator Messages ordering and runtime notice grouping.
+
+### Placement and roadmap effect
+
+This is a non-renumbering hotfix phase inserted after:
+
+```text
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+```
+
+and before:
+
+```text
+Phase 65 - Signed Relational Conditional Jumps
+```
+
+It does not renumber Phase 65 or any later phase.
+
+If Phase 64C - Expanded EFLAGS Flag Display is accepted as the next hotfix, Phase 64C follows this phase. Otherwise, the project may resume with Phase 65.
+
+### Existing behavior being adjusted
+
+Phase 57E - Startup State Notice and Zero-Default Documentation added the `startup-state-notice` diagnostic-policy family.
+
+The notice is source-less, non-fatal, policy-controlled, and routed through Simulator Messages rather than Program Console.
+
+Existing examples show the startup notice near the end of Simulator Messages, adjacent to `execution-complete`, and after some runtime warnings. This phase changes that ordering.
+
+This phase preserves the existing startup-state notice semantics:
+
+- the notice remains controlled by the existing `startup-state-notice` policy family;
+- `warn` or `on` emits the notice;
+- `off` suppresses only the startup-state notice;
+- `error` remains unsupported for this notice family unless a later phase deliberately changes that policy;
+- the notice does not block execution;
+- the notice does not change registers;
+- the notice does not change modeled flags;
+- the notice does not change memory;
+- the notice does not change uninitialized-origin metadata;
+- the notice does not write Program Console output;
+- the notice remains source-less and must not invent source line, source column, byte offset, or span length.
+
+### Required behavior
+
+When a source-run attempt fails during lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase that prevents runtime execution from starting:
+
+- do not emit `startup-state-notice`;
+- do not emit a startup-state blank separator;
+- preserve existing assembly/static/settings diagnostics;
+- preserve existing source-run failure behavior.
+
+Invalid source-run settings that are diagnosed before execution begins must not cause `startup-state-notice` to be emitted. For example, an invalid `startup-state-notice` policy value should produce the existing setting diagnostic without emitting the startup notice or startup separator.
+
+When a source-run attempt passes static checks and runtime execution is about to begin:
+
+1. emit `startup-state-notice` first among runtime/source-run messages, if the active policy is `warn` or `on`;
+2. render exactly one blank line after `startup-state-notice` if at least one later Simulator Messages line will be rendered;
+3. render runtime warnings, runtime notices, runtime errors, and final execution-status messages after that blank line;
+4. render `execution-complete` only if execution completes successfully;
+5. do not render `execution-complete` after fatal assembly diagnostics, fatal runtime diagnostics, strict-policy stops, instruction-limit failures, or internal execution failures.
+
+The startup-state notice must describe the runtime environment before the first instruction consumes initial register, flag, or uninitialized-storage state. It must not be delayed until the end of execution.
+
+### Rendering shape
+
+Successful default execution with no runtime warnings:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[info] execution-complete: Execution completed successfully.
+```
+
+Successful execution with a runtime warning:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.
+[info] execution-complete: Execution completed successfully.
+```
+
+Runtime error after execution begins:
+
+```text
+[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+
+[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.
+```
+
+Assembly error before execution begins:
+
+```text
+[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+```
+
+No startup-state notice appears in the assembly-error-only case because runtime execution did not begin.
+
+Invalid setting before execution begins:
+
+```text
+[ui-error] invalid-setting: Invalid startup-state-notice policy value 'error'. Supported values: off, warn.
+```
+
+No startup-state notice appears in the invalid-setting-only case because runtime execution did not begin.
+
+### Blank-line rule
+
+The blank line after `startup-state-notice` is a rendering separator only.
+
+It must not be represented as:
+
+- a diagnostic object;
+- a Program Console line;
+- a source-run diagnostic entry;
+- a warning;
+- a notice;
+- an info message;
+- a fake source-less diagnostic.
+
+Structured diagnostic order and rendered message order must remain testable without treating the blank line as a diagnostic. Tests should compare rendered text including the blank line, but structured diagnostic counts must not increase because of the separator.
+
+The Node/browser Simulator Messages formatter may insert the blank line while rendering. If the existing formatter architecture requires blank lines to be represented internally, that representation must remain formatter-private and must not leak into source-run JSON as a diagnostic.
+
+Render exactly one blank line after `startup-state-notice` when the notice is present and there is at least one following rendered Simulator Messages line.
+
+Do not render the blank line when:
+
+- `startup-state-notice` is disabled;
+- static diagnostics prevent execution and the startup notice is not emitted;
+- invalid settings prevent execution and the startup notice is not emitted;
+- there is no following message line.
+
+### Source-run JSON and formatter behavior
+
+The preferred implementation is to emit or order the existing startup notice in the source-run result before runtime execution diagnostics, then let the existing Simulator Messages formatter insert the blank rendered separator.
+
+Do not add a new diagnostic code merely to create the blank line.
+
+Do not add a fake diagnostic object for spacing.
+
+Do not move the notice to Program Console.
+
+Do not make the notice source-attached.
+
+If the source-run JSON diagnostic ordering changes, update structured JSON tests and rendered Simulator Messages tests together.
+
+### Required tests
+
+Add structured source-run tests and exact rendered Simulator Messages tests for:
+
+- successful default execution with startup notice first, one blank line, then `execution-complete`;
+- successful execution with at least one runtime warning after the startup notice separator;
+- runtime fatal error after execution begins, with startup notice first, one blank line, then the runtime error, and no `execution-complete`;
+- assembly error before execution begins, with no startup notice and no startup separator;
+- invalid source-run setting before execution begins, with no startup notice and no startup separator;
+- `startup-state-notice=off`, proving no startup notice and no extra leading blank line;
+- invalid `startup-state-notice` policy value, proving existing setting-diagnostic behavior remains renderable and does not create a startup separator;
+- Program Console remains unchanged and receives no notice or blank separator text.
+
+Exact rendered tests must include the blank line where required.
+
+Structured diagnostic tests must prove that the blank line does not increase diagnostic counts.
+
+### Required documentation updates
+
+Update current user-facing manual/browser testing examples that show `startup-state-notice` adjacent to `execution-complete`.
+
+Do not update supported-syntax documentation as if a MASM syntax feature was added.
+
+If any documentation describes `startup-state-notice` as appearing at completion, replace it with wording that says the notice is rendered before runtime diagnostics and final execution status when execution begins.
+
+### Non-goals
+
+Do not implement any of these in this phase:
+
+- new MASM syntax;
+- new instructions;
+- signed relational jumps;
+- unsigned relational jumps;
+- `loop`;
+- indirect jumps;
+- stack or procedure behavior;
+- Irvine32 callable routines;
+- startup randomization;
+- changes to startup register, flag, or memory values;
+- new diagnostic-policy families;
+- new browser settings;
+- Program Console formatting changes;
+- EFLAGS display changes;
+- debugger/editor behavior.
+
+### Current-status and metadata
+
+This phase changes rendered Simulator Messages ordering and startup notice grouping. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
+
+The milestone report must state both status values explicitly.
+
+Use this status wording:
+
+```text
+Repository/archive milestone:
+Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+
+Runtime/source-run MASM behavior phase:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+Status interpretation:
+Phase 64B changes rendered Simulator Messages ordering and startup notice grouping for an existing source-less notice. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Do not update supported-syntax runtime wording to say new MASM behavior was added.
+```
+
+If Phase 64A has not been adopted in the active guide, replace the runtime/source-run MASM behavior phase in the block above with the latest accepted runtime/source-run MASM behavior phase at the time Phase 64B is implemented.
+
+Do not advance runtime/source-run MASM behavior metadata merely because message ordering changed.
+
+### Acceptance criteria
+
+- `startup-state-notice` appears before runtime warnings, runtime errors, and `execution-complete`.
+- `startup-state-notice` does not appear for programs that fail before runtime execution begins.
+- `startup-state-notice` does not appear for invalid source-run settings diagnosed before runtime execution begins.
+- Exactly one rendered blank line separates `startup-state-notice` from following Simulator Messages lines.
+- The blank line is not a diagnostic object and does not appear in Program Console.
+- Structured diagnostic counts do not increase because of the blank line.
+- Existing opt-out behavior for `startup-state-notice` remains supported.
+- Existing startup values and startup diagnostic-policy defaults are unchanged.
+- Exact rendered Simulator Messages tests cover the new ordering and separator behavior.
+
+## 68C. Phase 64C - Expanded EFLAGS Flag Display
+
+### Goal
+
+Improve final register display by showing the currently modeled individual flag bits under the `EFLAGS` row.
+
+This is a display-only phase. It does not add new modeled flags, new flag semantics, new instruction behavior, new diagnostics, new MASM syntax, debugger behavior, or editor behavior.
+
+### Behavior category
+
+Final-state display and browser/source-run formatting.
+
+### Placement and roadmap effect
+
+This is a non-renumbering hotfix phase inserted after:
+
+```text
+Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+```
+
+and before:
+
+```text
+Phase 65 - Signed Relational Conditional Jumps
+```
+
+It does not renumber Phase 65 or any later phase.
+
+After Phase 64C is complete, the next normal control-flow implementation phase remains:
+
+```text
+Phase 65 - Signed Relational Conditional Jumps
+```
+
+### Existing behavior being extended
+
+The simulator currently displays `EFLAGS` as a single register row.
+
+This phase keeps that row and adds child rows for the currently modeled flags.
+
+The currently modeled flags are:
+
+```text
+CF
+ZF
+SF
+OF
+```
+
+This phase must not imply that unmodeled x86 flags are implemented. Do not display or invent values for flags such as `PF`, `AF`, `DF`, `IF`, or `TF` unless a later phase explicitly implements them.
+
+### Required display behavior
+
+Final register display must continue to include the canonical `EFLAGS` row.
+
+Immediately under `EFLAGS`, display indented child rows for each currently modeled flag:
+
+```text
+EFLAGS | 00000040h / 64
+  CF   | 0
+  ZF   | 1
+  SF   | 0
+  OF   | 0
+```
+
+The exact table separators, column widths, and typography may follow the existing UI/table style. The semantic requirements are:
+
+- `EFLAGS` remains the parent row;
+- `CF`, `ZF`, `SF`, and `OF` appear visually subordinate to `EFLAGS`;
+- the displayed bit values are derived from the same modeled flag state used by execution and diagnostics;
+- the child rows must not be treated as register aliases;
+- the child rows must not receive register alias write markers;
+- the child rows must not imply that these flags are independently writable user registers;
+- the child rows must not change `EFLAGS` value formatting.
+
+### Display values
+
+Display each modeled flag as:
+
+```text
+0
+```
+
+or:
+
+```text
+1
+```
+
+according to the current modeled bit value.
+
+Do not display signed decimal interpretations for individual flags.
+
+Do not display hexadecimal interpretations for individual flags.
+
+Do not display unmodeled flag bits.
+
+### Flag-validity metadata
+
+Phase 50A and later undefined-flag-use work added validity metadata for modeled flags.
+
+Phase 64C displays modeled flag bit values only.
+
+Flag-validity annotations remain future display work unless the user explicitly expands Phase 64C before implementation.
+
+Do not add validity annotations such as:
+
+```text
+[undefined]
+```
+
+or:
+
+```text
+[architecturally undefined; deterministic preserved value]
+```
+
+in this phase.
+
+Do not add new undefined-flag diagnostics in this phase.
+
+Do not change the existing `undefined-flag-use` warning/error policy.
+
+The milestone report must say:
+
+```text
+Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work.
+```
+
+### Source-run JSON and formatter behavior
+
+If final register display is generated entirely in browser/UI code from existing `EFLAGS` data, no source-run JSON shape change is required.
+
+If source-run JSON currently lacks enough structured data for the UI to render `CF`, `ZF`, `SF`, and `OF` child rows reliably, this phase may add a structured display-only field for modeled flags.
+
+Any new JSON field must be:
+
+- structured-clone-safe;
+- JSON-compatible;
+- explicitly documented;
+- covered by tests;
+- backward-compatible with existing consumers.
+
+Do not remove or rename existing `EFLAGS` fields.
+
+Do not require users to parse the hexadecimal `EFLAGS` string in browser code if a safer structured value already exists in the source-run payload.
+
+A display-only source-run JSON field does not make this phase a new MASM syntax or instruction-behavior phase.
+
+### Required tests
+
+Add tests for final-register display or source-run output proving:
+
+- `EFLAGS` parent row still appears;
+- `CF`, `ZF`, `SF`, and `OF` child rows appear under `EFLAGS`;
+- child rows display correct values after arithmetic that sets `ZF`;
+- child rows display correct values after arithmetic that sets `CF`;
+- child rows display correct values after arithmetic that sets `SF`;
+- child rows display correct values after arithmetic that sets `OF`;
+- flag-control instructions such as `clc`, `stc`, and `cmc` display correct `CF`;
+- `test` displays `CF=0`, `OF=0`, and appropriate `ZF`/`SF`;
+- a successful Phase 64 equality conditional jump program still displays flags without changing branch behavior;
+- no unmodeled flags are displayed;
+- `EFLAGS` row formatting remains compatible with existing tests;
+- no invalid/undefined validity annotation text appears in the flag child rows.
+
+### Browser/manual test examples
+
+Program:
+
+```asm
+.code
+main PROC
+    xor eax, eax
+main ENDP
+END main
+```
+
+Expected final register display includes:
+
+```text
+EFLAGS | 00000040h / 64
+  CF   | 0
+  ZF   | 1
+  SF   | 0
+  OF   | 0
+```
+
+Program:
+
+```asm
+.code
+main PROC
+    mov al, 7Fh
+    add al, 1
+main ENDP
+END main
+```
+
+Expected final register display includes modeled flag rows showing the overflow/sign result according to the existing arithmetic flag behavior.
+
+### Required documentation updates
+
+Update manual/browser expected-output examples that show only a bare `EFLAGS` row if those examples are meant to reflect current final-register display after this phase.
+
+Do not update supported-syntax documentation as if MASM syntax changed.
+
+Do not describe this as adding new x86 flags. It only displays currently modeled flag bits.
+
+### Non-goals
+
+Do not implement any of these in Phase 64C:
+
+- new modeled flags;
+- `PF`, `AF`, `DF`, `IF`, `TF`, or other full x86 flag support;
+- flag-validity annotations;
+- new flag-setting semantics;
+- changes to arithmetic behavior;
+- changes to branch behavior;
+- changes to `undefined-flag-use` policy;
+- changes to startup-state notice ordering;
+- new MASM syntax;
+- signed relational jumps;
+- unsigned relational jumps;
+- stack/procedure behavior;
+- Irvine32 callable routines;
+- debugger/editor behavior;
+- user-editable flag controls.
+
+### Current-status and metadata
+
+This phase changes final-state display formatting only. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, new diagnostic codes, or new diagnostic-policy families.
+
+The milestone report must state both status values explicitly.
+
+Use this status wording:
+
+```text
+Repository/archive milestone:
+Phase 64C - Expanded EFLAGS Flag Display
+
+Runtime/source-run MASM behavior phase:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+Status interpretation:
+Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, or new diagnostics. Do not update supported-syntax runtime wording to say new MASM behavior was added.
+```
+
+If Phase 64A has not been adopted in the active guide, replace the runtime/source-run MASM behavior phase in the block above with the latest accepted runtime/source-run MASM behavior phase at the time Phase 64C is implemented.
+
+If the implementation adds a display-only source-run JSON field to avoid parsing the formatted `EFLAGS` string in browser code, that field must be documented and tested, but it still must not be described as new MASM syntax or new instruction behavior.
+
+Do not advance runtime/source-run MASM behavior metadata merely because final-state display formatting changed.
+
+### Acceptance criteria
+
+- Final register display still includes the existing `EFLAGS` parent row.
+- Final register display shows `CF`, `ZF`, `SF`, and `OF` as child rows under `EFLAGS`.
+- Child row values match the modeled flag bits.
+- No unmodeled flags are displayed.
+- No flag-validity annotations are displayed.
+- Existing instruction semantics and diagnostics are unchanged.
+- Runtime/source-run MASM behavior metadata is not advanced merely because display formatting changed.
+- Exact UI/formatter/source-run tests cover the new display shape.
+
 ## 69. Phase 65 - Signed Relational Conditional Jumps
 
 ### Goal
 
-Implement signed relational conditional jumps after equality jumps are stable.
+Implement signed relational conditional jumps after equality jumps, the Phase 64A planned-read correction, and any accepted Phase 64B/64C display hotfixes are stable.
 
-This phase must not implement unsigned relational jumps, anonymous labels, `loop`, calls, stack behavior, or procedure behavior.
+This phase adds only direct-label signed relational conditional jumps. It must not implement unsigned relational jumps, anonymous labels, `loop`, indirect jumps, calls, stack behavior, procedure runtime behavior, Irvine32 callable routines, debugger/editor behavior, or active-time watchdog behavior.
 
 ### Behavior category
 
 Runtime control-flow instructions.
 
+### Dependencies
+
+- Phase 64 - Equality Conditional Jumps.
+- Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions, if that corrective phase has been inserted into the guide.
+- Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers.
+- Existing direct branch target classification and fixup behavior.
+- Existing instruction-count watchdog behavior.
+- Existing `cmp` behavior for setting `ZF`, `SF`, and `OF` for signed relational decisions. `CF` may be produced by `cmp`, but signed relational jumps in this phase must not consume it.
+
 ### Accepted syntax and conditions
 
 ```text
-jl  label   ; SF != OF
-jnge label  ; alias of JL
-jle label   ; ZF = 1 or SF != OF
-jng label   ; alias of JLE
-jg  label   ; ZF = 0 and SF = OF
-jnle label  ; alias of JG
-jge label   ; SF = OF
-jnl label   ; alias of JGE
+jl   label  ; signed less-than:        SF != OF
+jnge label  ; alias of JL:             SF != OF
+
+jle  label  ; signed less-or-equal:    ZF = 1 or SF != OF
+jng  label  ; alias of JLE:            ZF = 1 or SF != OF
+
+jg   label  ; signed greater-than:     ZF = 0 and SF = OF
+jnle label  ; alias of JG:             ZF = 0 and SF = OF
+
+jge  label  ; signed greater-or-equal: SF = OF
+jnl  label  ; alias of JGE:            SF = OF
 ```
+
+Accepted targets are the same direct executable label targets accepted by Phase 64 equality conditional jumps.
+
+### Consumed flags
+
+Each mnemonic must consume only the flags required by its condition.
+
+```text
+JL   / JNGE: consume SF and OF.
+JGE  / JNL:  consume SF and OF.
+JLE  / JNG:  consume ZF, SF, and OF.
+JG   / JNLE: consume ZF, SF, and OF.
+```
+
+The implementation must not consume `CF` for any signed relational conditional jump in this phase.
+
+The implementation must not consume `ZF` for `JL`, `JNGE`, `JGE`, or `JNL`.
 
 ### Rejected syntax
 
-- Same rejected target forms as equality jumps.
-- Unsigned jump mnemonics remain unimplemented in this phase if not already implemented.
+Reject the same invalid target categories as Phase 64 equality conditional jumps:
+
+```asm
+jl eax
+jle [eax]
+jg 1234h
+jge dataSymbol
+jnl exit
+```
+
+These forms must not be accepted as indirect branches, computed branches, Irvine32 calls, or data-symbol jumps.
+
+Unsigned jump mnemonics remain unimplemented in this phase unless a later accepted phase has already implemented them:
+
+```asm
+ja label
+jae label
+jb label
+jbe label
+jna label
+jnae label
+jnb label
+jnbe label
+```
 
 ### Runtime semantics
 
-- Read only `ZF`, `SF`, and `OF`.
-- Before evaluating the signed branch condition, call the Phase 50B undefined-flag-use helper for every flag read by that mnemonic: `ZF`, `SF`, and/or `OF`. In warn mode, emit `undefined-flag-use` and continue using deterministic preserved flag values. In error mode, stop before deciding whether the jump is taken.
-- Do not modify registers, memory, or flags.
-- Count each jump as one executed instruction.
-- Instruction-limit enforcement applies.
+- Count each signed conditional jump as one executed instruction.
+- Before evaluating the branch condition, call the Phase 50B undefined-flag-use helper for exactly the flags consumed by that mnemonic.
+- In `off` mode, use deterministic preserved flag values and emit no `undefined-flag-use` diagnostic.
+- In default warning mode, emit `undefined-flag-use` when a consumed flag is invalid and continue using deterministic preserved flag values.
+- In strict/error mode, emit `undefined-flag-use` when a consumed flag is invalid and stop before deciding whether the branch is taken.
+- If the condition is true, branch to the resolved target label instruction index.
+- If the condition is false, fall through to the next instruction.
+- Do not modify registers.
+- Do not modify memory.
+- Do not modify modeled flag bits.
+- Do not modify flag-validity metadata.
+- Do not write Program Console output.
+- Do not create memory-change rows.
+- Instruction-count watchdog enforcement applies to taken and not-taken jumps.
+- Active-time or wall-clock watchdog behavior remains future work.
+
+### Undefined-flag-use no-partial-mutation rule
+
+In strict/error mode, if any consumed flag is invalid:
+
+- no branch decision is made;
+- the current instruction index must not advance to the target or fall-through instruction as a successful execution step;
+- registers remain unchanged;
+- memory remains unchanged;
+- modeled flag bits remain unchanged;
+- flag-validity metadata remains unchanged;
+- Program Console output remains unchanged;
+- memory-change rows remain unchanged;
+- no `execution-complete` message is emitted after the fatal diagnostic.
 
 ### Required tests
 
-- Signed less-than with `-1 < 1` takes `jl`.
-- Signed greater-than with `1 > -1` takes `jg`.
-- Equal signed values take `jle` and `jge`, not `jl` or `jg`.
-- Alias mnemonics match primary mnemonics. Require at least one taken and one not-taken test for each alias group: `JL/JNGE`, `JLE/JNG`, `JG/JNLE`, and `JGE/JNL`.
-- Same raw values demonstrate signed-vs-unsigned difference, for example `FFFFFFFFh` compared with `1`.
-- Unknown/data/`exit` target diagnostics.
-- Instruction-limit diagnostics for a signed conditional loop.
+Functional branch tests:
+
+- `jl` taken for a signed less-than case such as `-1 < 1`.
+- `jl` not taken for equal values.
+- `jle` taken for less-than values.
+- `jle` taken for equal values.
+- `jle` not taken for greater-than values.
+- `jg` taken for a signed greater-than case such as `1 > -1`.
+- `jg` not taken for equal values.
+- `jge` taken for greater-than values.
+- `jge` taken for equal values.
+- `jge` not taken for less-than values.
+- Alias mnemonics match primary mnemonics:
+  - `JNGE` matches `JL`;
+  - `JNG` matches `JLE`;
+  - `JNLE` matches `JG`;
+  - `JNL` matches `JGE`.
+- At least one taken and one not-taken test for each alias group.
+- Same raw operand values demonstrate signed-versus-unsigned interpretation, for example `FFFFFFFFh` compared with `1`.
+
+Target diagnostic tests:
+
+- Unknown target diagnostic.
+- Data symbol target diagnostic.
+- Irvine32 `exit` target diagnostic.
+- Register target diagnostic.
+- Memory target diagnostic.
+- Immediate target diagnostic.
+- Each diagnostic preserves line, column, byte offset, and span length for the target token where possible.
+- Exact rendered Simulator Messages tests exist for representative target diagnostics.
+
+Undefined-flag-use tests:
+
+- Valid flag consumption with no warning.
+- Default warning-mode `undefined-flag-use` for a mnemonic that consumes `SF` and `OF`.
+- Default warning-mode `undefined-flag-use` for a mnemonic that consumes `ZF`, `SF`, and `OF`.
+- Explicit off-policy behavior uses deterministic preserved flag values without warning.
+- Strict/error-policy behavior stops before the branch decision.
+- Strict/error-policy behavior proves no partial mutation.
+- Exact rendered Simulator Messages tests for warning and strict/error paths.
+- Regression proving `JL`, `JNGE`, `JGE`, and `JNL` do not consume or diagnose invalid `ZF` when `SF` and `OF` are valid.
+- Regression proving no signed relational jump consumes or diagnoses invalid `CF`.
+
+If a source-level fixture cannot isolate the validity of a single modeled flag, use the existing native/test-only flag-validity helpers for selective-consumption tests and still include source-run rendered-message tests for at least one invalid consumed-flag warning and one invalid consumed-flag strict/error case.
+
+Instruction-limit tests:
+
+- A taken signed conditional backward loop reaches the existing instruction-count watchdog.
+- A not-taken signed conditional jump falls through and does not falsely trip the watchdog.
+- The milestone report states that active-time watchdog behavior remains future work.
 
 ### Acceptance program
 
@@ -16396,54 +17309,178 @@ Expected:
 EBX = 00000001h / 1
 ```
 
+### Milestone report requirements
+
+The Phase 65 milestone report must include the branch/control-flow status block required by Section 2.4c-1.
+
+It must explicitly state:
+
+- signed direct-label conditional jumps implemented in this phase;
+- equality conditional jumps preserved from Phase 64;
+- unsigned relational conditional jumps still future-owned until Phase 66;
+- loop-family instructions still future-owned;
+- indirect branches still future-owned;
+- stack/procedure control transfer still future-owned;
+- active-time watchdog behavior still future-owned;
+- debugger/editor branch behavior still future-owned;
+- which flags each signed conditional jump consumes;
+- which undefined-flag-use policy tests were run;
+- whether runtime/source-run MASM behavior metadata advanced.
+
 ---
 
 ## 70. Phase 66 - Unsigned Relational Conditional Jumps
 
 ### Goal
 
-Implement unsigned relational conditional jumps after signed jumps are stable.
+Implement unsigned relational conditional jumps after signed relational jumps are stable.
 
-This phase must not implement anonymous labels, `loop`, calls, stack behavior, or procedure behavior.
+This phase adds only direct-label unsigned relational conditional jumps. It must not implement anonymous labels, `loop`, indirect jumps, calls, stack behavior, procedure runtime behavior, Irvine32 callable routines, debugger/editor behavior, or active-time watchdog behavior.
 
 ### Behavior category
 
 Runtime control-flow instructions.
 
+### Dependencies
+
+- Phase 64 - Equality Conditional Jumps.
+- Phase 65 - Signed Relational Conditional Jumps.
+- Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers.
+- Existing direct branch target classification and fixup behavior.
+- Existing instruction-count watchdog behavior.
+- Existing `cmp` behavior for setting `CF` and `ZF` for unsigned relational decisions. `SF` and `OF` may be produced by `cmp`, but unsigned relational jumps in this phase must not consume them.
+
 ### Accepted syntax and conditions
 
 ```text
-ja   label  ; CF = 0 and ZF = 0
-jnbe label  ; alias of JA
-jae  label  ; CF = 0
-jnb  label  ; alias of JAE
-jb   label  ; CF = 1
-jnae label  ; alias of JB
-jbe  label  ; CF = 1 or ZF = 1
-jna  label  ; alias of JBE
+ja   label  ; unsigned above:          CF = 0 and ZF = 0
+jnbe label  ; alias of JA:             CF = 0 and ZF = 0
+
+jae  label  ; unsigned above-or-equal: CF = 0
+jnb  label  ; alias of JAE:            CF = 0
+
+jb   label  ; unsigned below:          CF = 1
+jnae label  ; alias of JB:             CF = 1
+
+jbe  label  ; unsigned below-or-equal: CF = 1 or ZF = 1
+jna  label  ; alias of JBE:            CF = 1 or ZF = 1
 ```
+
+Accepted targets are the same direct executable label targets accepted by Phase 64 equality conditional jumps.
+
+### Consumed flags
+
+Each mnemonic must consume only the flags required by its condition.
+
+```text
+JA   / JNBE: consume CF and ZF.
+JBE  / JNA:  consume CF and ZF.
+JAE  / JNB:  consume CF only.
+JB   / JNAE: consume CF only.
+```
+
+The implementation must not consume `SF` or `OF` for any unsigned relational conditional jump in this phase.
+
+The implementation must not consume `ZF` for `JAE`, `JNB`, `JB`, or `JNAE`.
 
 ### Rejected syntax
 
-- Same rejected target forms as equality jumps.
+Reject the same invalid target categories as Phase 64 equality conditional jumps:
+
+```asm
+ja eax
+jbe [eax]
+jb 1234h
+jae dataSymbol
+jna exit
+```
+
+These forms must not be accepted as indirect branches, computed branches, Irvine32 calls, or data-symbol jumps.
 
 ### Runtime semantics
 
-- Read only `CF` and `ZF`.
-- Before evaluating the unsigned branch condition, call the Phase 50B undefined-flag-use helper for every flag read by that mnemonic: `CF` and/or `ZF`. In warn mode, emit `undefined-flag-use` and continue using deterministic preserved flag values. In error mode, stop before deciding whether the jump is taken.
-- Do not modify registers, memory, or flags.
-- Count each jump as one executed instruction.
-- Instruction-limit enforcement applies.
+- Count each unsigned conditional jump as one executed instruction.
+- Before evaluating the branch condition, call the Phase 50B undefined-flag-use helper for exactly the flags consumed by that mnemonic.
+- In `off` mode, use deterministic preserved flag values and emit no `undefined-flag-use` diagnostic.
+- In default warning mode, emit `undefined-flag-use` when a consumed flag is invalid and continue using deterministic preserved flag values.
+- In strict/error mode, emit `undefined-flag-use` when a consumed flag is invalid and stop before deciding whether the branch is taken.
+- If the condition is true, branch to the resolved target label instruction index.
+- If the condition is false, fall through to the next instruction.
+- Do not modify registers.
+- Do not modify memory.
+- Do not modify modeled flag bits.
+- Do not modify flag-validity metadata.
+- Do not write Program Console output.
+- Do not create memory-change rows.
+- Instruction-count watchdog enforcement applies to taken and not-taken jumps.
+- Active-time or wall-clock watchdog behavior remains future work.
+
+### Undefined-flag-use no-partial-mutation rule
+
+In strict/error mode, if any consumed flag is invalid:
+
+- no branch decision is made;
+- the current instruction index must not advance to the target or fall-through instruction as a successful execution step;
+- registers remain unchanged;
+- memory remains unchanged;
+- modeled flag bits remain unchanged;
+- flag-validity metadata remains unchanged;
+- Program Console output remains unchanged;
+- memory-change rows remain unchanged;
+- no `execution-complete` message is emitted after the fatal diagnostic.
 
 ### Required tests
 
-- Unsigned below with `1 < FFFFFFFFh` takes `jb`.
-- Unsigned above with `FFFFFFFFh > 1` takes `ja`.
-- Equal values take `jae` and `jbe`, not `ja` or `jb`.
-- Alias mnemonics match primary mnemonics. Require at least one taken and one not-taken test for each alias group: `JA/JNBE`, `JAE/JNB`, `JB/JNAE`, and `JBE/JNA`.
-- Same raw operand values must demonstrate the difference between unsigned relational jumps in this phase and signed relational jumps from Phase 65 - Signed Relational Conditional Jumps.
-- Unknown/data/`exit` target diagnostics.
-- Instruction-limit diagnostics for an unsigned conditional loop.
+Functional branch tests:
+
+- `jb` taken for an unsigned below case such as `1 < FFFFFFFFh`.
+- `jb` not taken for equal values.
+- `jbe` taken for below values.
+- `jbe` taken for equal values.
+- `jbe` not taken for above values.
+- `ja` taken for an unsigned above case such as `FFFFFFFFh > 1`.
+- `ja` not taken for equal values.
+- `jae` taken for above values.
+- `jae` taken for equal values.
+- `jae` not taken for below values.
+- Alias mnemonics match primary mnemonics:
+  - `JNBE` matches `JA`;
+  - `JNB` matches `JAE`;
+  - `JNAE` matches `JB`;
+  - `JNA` matches `JBE`.
+- At least one taken and one not-taken test for each alias group.
+- Same raw operand values demonstrate the difference between unsigned relational jumps in this phase and signed relational jumps from Phase 65 - Signed Relational Conditional Jumps.
+
+Target diagnostic tests:
+
+- Unknown target diagnostic.
+- Data symbol target diagnostic.
+- Irvine32 `exit` target diagnostic.
+- Register target diagnostic.
+- Memory target diagnostic.
+- Immediate target diagnostic.
+- Each diagnostic preserves line, column, byte offset, and span length for the target token where possible.
+- Exact rendered Simulator Messages tests exist for representative target diagnostics.
+
+Undefined-flag-use tests:
+
+- Valid flag consumption with no warning.
+- Default warning-mode `undefined-flag-use` for a mnemonic that consumes `CF`.
+- Default warning-mode `undefined-flag-use` for a mnemonic that consumes `CF` and `ZF`.
+- Explicit off-policy behavior uses deterministic preserved flag values without warning.
+- Strict/error-policy behavior stops before the branch decision.
+- Strict/error-policy behavior proves no partial mutation.
+- Exact rendered Simulator Messages tests for warning and strict/error paths.
+- Regression proving `JAE`, `JNB`, `JB`, and `JNAE` do not consume or diagnose invalid `ZF` when `CF` is valid.
+- Regression proving no unsigned relational jump consumes or diagnoses invalid `SF` or `OF`.
+
+If a source-level fixture cannot isolate the validity of a single modeled flag, use the existing native/test-only flag-validity helpers for selective-consumption tests and still include source-run rendered-message tests for at least one invalid consumed-flag warning and one invalid consumed-flag strict/error case.
+
+Instruction-limit tests:
+
+- A taken unsigned conditional backward loop reaches the existing instruction-count watchdog.
+- A not-taken unsigned conditional jump falls through and does not falsely trip the watchdog.
+- The milestone report states that active-time watchdog behavior remains future work.
 
 ### Acceptance program
 
@@ -16467,6 +17504,24 @@ Expected:
 ```text
 EBX = 00000001h / 1
 ```
+
+### Milestone report requirements
+
+The Phase 66 milestone report must include the branch/control-flow status block required by Section 2.4c-1.
+
+It must explicitly state:
+
+- unsigned direct-label conditional jumps implemented in this phase;
+- equality conditional jumps preserved from Phase 64;
+- signed relational conditional jumps preserved from Phase 65;
+- loop-family instructions still future-owned;
+- indirect branches still future-owned;
+- stack/procedure control transfer still future-owned;
+- active-time watchdog behavior still future-owned;
+- debugger/editor branch behavior still future-owned;
+- which flags each unsigned conditional jump consumes;
+- which undefined-flag-use policy tests were run;
+- whether runtime/source-run MASM behavior metadata advanced.
 
 ## B. Batch-wide test requirements
 
@@ -17439,6 +18494,101 @@ Rendered Simulator Messages tests:
 A parser test can inspect a procedure's local metadata and see names, types, sizes, counts, and EBP-relative offsets.
 
 ---
+
+## 82A. Phase 78A - OPTION NOKEYWORD Keyword-Control Compatibility Placeholder
+
+### Goal
+
+Reserve a future location for limited MASM-compatible `OPTION NOKEYWORD` keyword-control design.
+
+This placeholder is intentionally placed near the procedure/local-symbol roadmap because reserved-word behavior affects procedure names, labels, local names, data symbols, equates, and future macro/user-type names. Its placement does not mean the keyword surface is mature enough to implement `OPTION NOKEYWORD` at Phase 78A.
+
+This is a reserved planning placeholder only. It is not implementation-ready. It must not be selected as a coding target until a later documentation revision deliberately expands it with accepted syntax, rejected syntax, source-order behavior, parser behavior, runtime behavior if any, diagnostics, required tests, and acceptance criteria.
+
+### Why this placeholder exists
+
+The reserved-word policy is explicit:
+
+- reserved words are not user-defined symbols by default;
+- `OPTION CASEMAP` controls lookup of accepted user-defined symbols only;
+- `OPTION CASEMAP` does not make reserved words available as symbols;
+- `OPTION NOKEYWORD` remains unsupported until a later explicit phase implements it.
+
+`OPTION NOKEYWORD` is more dangerous than ordinary option parsing because it can change the parser's keyword classification. Implementing it too early could destabilize instruction parsing, branch parsing, procedure parsing, local-symbol parsing, Irvine32 name recognition, macro planning, and user-symbol lookup.
+
+This placeholder records that the topic exists without authorizing premature implementation.
+
+### Current behavior before this placeholder is expanded
+
+Until a later accepted revision expands this placeholder into an implementation-ready phase:
+
+- `OPTION NOKEYWORD` remains unsupported;
+- `OPTION NOKEYWORD:<LOOP>` remains unsupported;
+- `OPTION NOKEYWORD` must not be silently accepted;
+- reserved-word user-symbol declarations remain rejected;
+- `OPTION CASEMAP:ALL` must not make reserved words available as symbols;
+- `OPTION CASEMAP:NONE` must not make reserved words available as symbols;
+- instruction mnemonics remain case-insensitive reserved words;
+- directives remain case-insensitive reserved words;
+- registers and register aliases remain case-insensitive reserved words;
+- operators remain case-insensitive reserved words;
+- data type names and `PTR` width names remain case-insensitive reserved words;
+- virtual include names remain case-insensitive reserved words where parsed as include targets;
+- recognized Irvine32 routine and terminator names remain governed by the centralized Phase 41 - Virtual Irvine32 Symbol Registry or its direct successor;
+- no dynamic keyword-table mutation is allowed.
+
+### Future expansion requirements
+
+A future documentation revision that turns this placeholder into an implementation phase must define all of the following before any code is changed:
+
+- accepted `OPTION NOKEYWORD` syntax;
+- rejected `OPTION NOKEYWORD` syntax;
+- source-order behavior;
+- whether a disabled instruction mnemonic can still be parsed as an instruction;
+- whether a disabled directive name can still be parsed as a directive;
+- whether a disabled operator name can still be parsed as an operator;
+- whether disabled keywords become available as labels only, or also as procedure names, data symbols, equates, macros, user-defined types, fields, and local symbols;
+- interaction with `OPTION CASEMAP:ALL`;
+- interaction with `OPTION CASEMAP:NONE`;
+- interaction with recognized Irvine32 routine and terminator names;
+- interaction with aliases and related mnemonics, such as `JE`/`JZ`, `JNE`/`JNZ`, `JL`/`JNGE`, and `LOOP`/loop-family names;
+- whether keyword recognition can be restored later in the same source file;
+- whether disabling one spelling affects all case variants;
+- whether disabling one mnemonic affects aliases;
+- how parser recovery behaves when disabled-keyword parsing makes a line ambiguous;
+- diagnostic codes for unsupported forms;
+- diagnostic codes for ambiguous forms;
+- source-span target for each diagnostic;
+- exact rendered Simulator Messages tests;
+- supported-syntax documentation updates;
+- migration notes for any reserved-word tests that must change.
+
+### Non-goals for this placeholder
+
+Do not implement any of these from this placeholder alone:
+
+- `OPTION NOKEYWORD`;
+- dynamic keyword-table mutation;
+- full MASM reserved-word table import;
+- macro expansion;
+- public/external symbol behavior;
+- object-file or linker behavior;
+- WinAPI behavior;
+- host include-file loading;
+- changes to `OPTION CASEMAP`;
+- changes to the existing reserved-word rejection rule.
+
+### Roadmap effect
+
+This placeholder does not interrupt the procedure/local roadmap and does not authorize implementation work.
+
+Unless a later accepted documentation revision deliberately expands Phase 78A into an implementation-ready phase and selects it as the target, the next implementation phase after Phase 78 remains:
+
+```text
+Phase 79 - LOCAL Stack Allocation and Lifetime
+```
+
+If a future reviewer decides that `OPTION NOKEYWORD` should not be implemented until after later Irvine32, macro, STRUCT/RECORD, or high-level-flow phases, keep this Phase 78A entry as a placeholder and add the expanded implementation phase later without renumbering existing phases.
 
 ## 83. Phase 79 - LOCAL Stack Allocation and Lifetime
 
