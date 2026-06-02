@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 64 equality conditional jumps.
+ * @brief Tests for the Wasm-facing source execution API through Phase 64A planned-read correction.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -4207,7 +4207,7 @@ static int test_phase40_uninitialized_read_warning_mode_warns_and_continues(void
     failures += expect_json_contains(json, "\"accessByteOffset\":0", "warning JSON should include symbol-relative byte offset");
     failures += expect_json_contains(json, "\"accessSizeBytes\":4", "warning JSON should include access width in bytes");
     failures += expect_json_contains(json, "\"line\":5", "warning JSON should preserve source line");
-    failures += expect_json_contains(json, "\"sourceLocation\":{\"line\":5,\"column\":null,\"byteOffset\":null,\"spanLength\":null}", "warning JSON should include explicit sourceLocation metadata");
+    failures += expect_json_contains(json, "\"sourceLocation\":{\"line\":5,\"column\":14,\"byteOffset\":45,\"spanLength\":1}", "warning JSON should include explicit sourceLocation metadata");
     failures += expect_json_contains(json, "execution-complete", "warning mode should still complete successfully");
 
     return failures;
@@ -4237,7 +4237,7 @@ static int test_phase40_uninitialized_read_strict_mode_stops(void) {
     failures += expect_json_contains(json, "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.", "strict message should describe the whole read range and symbol");
     failures += expect_json_contains(json, "\"symbolName\":\"x\"", "strict JSON should include symbolName");
     failures += expect_json_contains(json, "\"accessStartAddress\":\"00500000h\"", "strict JSON should include range start");
-    failures += expect_json_contains(json, "\"sourceLocation\":{\"line\":5,\"column\":null,\"byteOffset\":null,\"spanLength\":null}", "strict JSON should include explicit sourceLocation metadata");
+    failures += expect_json_contains(json, "\"sourceLocation\":{\"line\":5,\"column\":14,\"byteOffset\":45,\"spanLength\":1}", "strict JSON should include explicit sourceLocation metadata");
     failures += expect_json_not_contains(json, "execution-complete", "strict mode should not emit completion message");
 
     return failures;
@@ -4414,6 +4414,135 @@ static int test_phase40_rmw_strict_stops_before_writeback(void) {
     failures += expect_json_contains(json, "uninitialized-read", "RMW strict mode should emit uninitialized-read error");
     failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "RMW strict mode should leave destination bytes uninitialized-origin");
     failures += expect_json_not_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":4", "RMW strict mode should not mark destination initialized");
+
+    return failures;
+}
+
+/// Runs one Phase 64A read-modify-write planned-read policy fixture.
+///
+/// @param name Fixture name for failure messages.
+/// @param setup_source Optional instructions to run before the checked instruction.
+/// @param instruction_source Instruction that should read and then write `x`.
+/// @param strict_instruction_count_fragment Expected strict-mode instruction count fragment.
+/// @return Number of failures.
+static int run_phase64a_rmw_planned_read_fixture(
+    const char *name,
+    const char *setup_source,
+    const char *instruction_source,
+    const char *strict_instruction_count_fragment
+) {
+    char source[512];
+    char warning_message[192];
+    char off_message[192];
+    char strict_message[192];
+    const char *json = NULL;
+    int failures = 0;
+
+    (void)snprintf(
+        source,
+        sizeof(source),
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "%s"
+        "    %s\n"
+        "main ENDP\n"
+        "END main\n",
+        setup_source != NULL ? setup_source : "",
+        instruction_source != NULL ? instruction_source : "nop"
+    );
+    (void)snprintf(warning_message, sizeof(warning_message), "Phase 64A %s warning mode should continue", name);
+    (void)snprintf(off_message, sizeof(off_message), "Phase 64A %s off mode should suppress uninitialized-read only", name);
+    (void)snprintf(strict_message, sizeof(strict_message), "Phase 64A %s strict mode should stop before write-back", name);
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        source,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
+    );
+    failures += expect_json_contains(json, "\"ok\":true", warning_message);
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "Phase 64A RMW warning mode should emit uninitialized-read");
+    failures += expect_json_contains(json, "Memory read range 00500000h..00500003h reads 4 bytes from x + 0", "Phase 64A RMW warning should describe the destination read range");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "Phase 64A RMW warning write-back should mark destination bytes initialized");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 64A RMW warning mode should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        source,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY
+    );
+    failures += expect_json_contains(json, "\"ok\":true", off_message);
+    failures += expect_json_not_contains(json, "uninitialized-read", "Phase 64A RMW off mode should not emit uninitialized-read");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":4,\"uninitializedByteCount\":0,\"initializedMask\":\"1111\"", "Phase 64A RMW off mode write-back should mark destination bytes initialized");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 64A RMW off mode should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        source,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
+    );
+    failures += expect_json_contains(json, "\"ok\":false", strict_message);
+    failures += expect_json_contains(json, strict_instruction_count_fragment, "Phase 64A RMW strict mode should stop before executing the memory-reading instruction");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "Phase 64A RMW strict mode should emit uninitialized-read");
+    failures += expect_json_contains(json, "\"memoryChanges\":[]", "Phase 64A RMW strict mode should not create memory-change rows");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "Phase 64A RMW strict mode should leave destination bytes uninitialized-origin");
+    failures += expect_json_not_contains(json, "execution-complete", "Phase 64A RMW strict mode should not complete");
+
+    return failures;
+}
+
+/// Verifies Phase 64A planned-read coverage for memory-destination RMW instructions.
+///
+/// @return Number of failures.
+static int test_phase64a_rmw_planned_read_policy_for_existing_families(void) {
+    int failures = 0;
+
+    failures += run_phase64a_rmw_planned_read_fixture("inc mem", "", "inc x", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("dec mem", "", "dec x", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("add mem, imm", "", "add x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("sub mem, imm", "", "sub x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("adc mem, imm", "    stc\n", "adc x, 1", "\"instructionCount\":1");
+    failures += run_phase64a_rmw_planned_read_fixture("sbb mem, imm", "    stc\n", "sbb x, 1", "\"instructionCount\":1");
+    failures += run_phase64a_rmw_planned_read_fixture("and mem, imm", "", "and x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("or mem, imm", "", "or x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("xor mem, imm", "", "xor x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("not mem", "", "not x", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("neg mem", "", "neg x", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("shl mem, count", "", "shl x, 1", "\"instructionCount\":0");
+    failures += run_phase64a_rmw_planned_read_fixture("xchg mem, reg", "    mov eax, 7\n", "xchg x, eax", "\"instructionCount\":1");
+
+    return failures;
+}
+
+/// Verifies Phase 64A preserves already-covered memory-source planned-read behavior.
+///
+/// @return Number of failures.
+static int test_phase64a_memory_source_planned_read_regression(void) {
+    const char *source =
+        ".DATA?\n"
+        "x DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    cmp x, 0\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        source,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
+    );
+    int failures = 0;
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 64A CMP memory-source warning mode should continue");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "Phase 64A CMP memory-source warning should emit uninitialized-read");
+    failures += expect_json_contains(json, "\"symbol\":\"x\",\"state\":\"tracked\",\"initializedByteCount\":0,\"uninitializedByteCount\":4,\"initializedMask\":\"0000\"", "Phase 64A CMP memory-source read should not initialize source bytes");
+    failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 64A CMP memory-source warning mode should complete");
+
+    json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
+        source,
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
+    );
+    failures += expect_json_contains(json, "\"ok\":false", "Phase 64A CMP memory-source strict mode should stop");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "Phase 64A CMP memory-source strict mode should stop before CMP");
+    failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "Phase 64A CMP memory-source strict mode should emit uninitialized-read");
+    failures += expect_json_not_contains(json, "execution-complete", "Phase 64A CMP memory-source strict mode should not complete");
 
     return failures;
 }
@@ -8771,7 +8900,7 @@ static int test_phase58_label_source_run_behavior(void) {
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":64", "Labeled source should report numeric Phase 64 metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 64 - Equality Conditional Jumps\"", "Labeled source should report Phase 64 runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions\"", "Labeled source should report Phase 64A runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":2", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -8880,7 +9009,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":64", "Phase 64 acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 64 - Equality Conditional Jumps\"", "Phase 64 acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions\"", "Phase 64A acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9009,8 +9138,8 @@ static int test_phase64_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":64", "Runtime metadata should report numeric Phase 64 metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 64 should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 64 - Equality Conditional Jumps\"", "Phase 64 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 64A should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions\"", "Phase 64A should report the runtime phase name");
 
     return failures;
 }
@@ -9754,7 +9883,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"\"", ".CONST ? fixture should report the current Phase 64 runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current Phase 64A runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -10446,7 +10575,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"\"", ".code read should report the current Phase 64 runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current Phase 64A runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -10629,7 +10758,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"\"", "segment diagnostics should report the current Phase 64 runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current Phase 64A runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -11227,7 +11356,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":64", "Phase 64 should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 64 - Equality Conditional Jumps\"", "Phase 64 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions\"", "Phase 64A should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -11396,6 +11525,8 @@ int main(void) {
     failures += test_phase40_repeated_uninitialized_reads_emit_distinct_warnings();
     failures += test_phase40_rmw_warning_then_writeback_marks_initialized();
     failures += test_phase40_rmw_strict_stops_before_writeback();
+    failures += test_phase64a_rmw_planned_read_policy_for_existing_families();
+    failures += test_phase64a_memory_source_planned_read_regression();
     failures += test_phase40_invalid_address_precedes_uninitialized_read();
     failures += test_phase40_object_strict_regression_precedes_uninitialized_read_feature();
     failures += test_phase39_register_copy_marks_destination_initialized();
@@ -11553,6 +11684,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 64 equality conditional jumps passed.");
+    puts("Source execution tests through Phase 64A planned-read correction passed.");
     return 0;
 }

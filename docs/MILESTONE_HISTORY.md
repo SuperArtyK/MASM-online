@@ -12,20 +12,21 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 64:
+Current status at Phase 64A:
 
 Repository/archive milestone:
-Phase 64 - Equality Conditional Jumps
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
 
 Runtime/source-run MASM behavior phase:
-Phase 64 - Equality Conditional Jumps
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
 
-Phase 64 implements executable equality conditional jumps: `je label`, `jz label`, `jne label`, and `jnz label`. These direct branch forms consume `ZF` through the shared undefined-flag-use policy, branch to executable code-label or procedure-entry targets when the condition is true, fall through when false, count as one executed VM instruction, preserve registers, memory, and modeled flags, and produce no memory-change rows.
+Phase 64A corrects source-run planned-read coverage for already implemented memory-reading instructions. Existing memory-destination read-modify-write instructions now expose their destination memory read to `uninitialized-read` and related planned-read policy checks before the instruction consumes bytes or performs write-back.
 
-Phase 64 advances both repository/archive milestone and runtime/source-run MASM behavior phase because it adds executable equality conditional jumps. Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 64A advances both repository/archive milestone and runtime/source-run MASM behavior phase because strict/error diagnostic-policy behavior changes for already accepted programs. Accepted MASM syntax remains the Phase 64 equality-jump subset. Phase 64 - Equality Conditional Jumps remains implemented, and Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ## Concise milestone ledger
 
+- Phase 64A corrects source-run planned-read coverage for existing memory-reading instructions without adding new syntax. Memory-destination read-modify-write instructions now participate in `uninitialized-read` warning and strict/error policy before consuming bytes or committing write-back.
 - Phase 64 implements executable equality conditional jumps: `je`, `jz`, `jne`, and `jnz` direct label branches. These consume `ZF` through the undefined-flag-use policy, preserve registers/memory/modeled flags, and respect `instructionLimit`.
 - Phase 63 implements `cmp` memory operand forms. CMP memory comparisons read through checked helpers and planned-read validation, update modeled subtraction flags only, preserve operands, and produce no memory-change rows.
 - Phase 62 implements `cmp` register/register and register/immediate forms. CMP updates modeled subtraction flags only, preserves operands, and produces no memory-change rows.

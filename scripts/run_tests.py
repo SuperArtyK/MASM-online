@@ -552,6 +552,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 64")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
+    assert_text_contains("web/src/protocol.js", "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -619,7 +621,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 64 equality conditional jumps passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 64A planned-read correction passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1401,20 +1403,20 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase63_status_and_code_policy_present() -> None:
-    """Verify Phase 64 repository/runtime status, equality jumps, CMP memory scope, and preserved boundaries."""
+def assert_phase64a_status_and_code_policy_present() -> None:
+    """Verify Phase 64A repository/runtime status, planned-read correction, and preserved boundaries."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 64 - Equality Conditional Jumps",
+        "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 64 - Equality Conditional Jumps",
+        "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
     ]
     status_block = """Repository/archive milestone:
-Phase 64 - Equality Conditional Jumps
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
 
 Runtime/source-run MASM behavior phase:
-Phase 64 - Equality Conditional Jumps"""
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1444,6 +1446,7 @@ Phase 64 - Equality Conditional Jumps"""
             "reserved-word-symbol",
             "`cmp`",
             "Phase 64 - Equality Conditional Jumps",
+            "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
@@ -1482,10 +1485,11 @@ Phase 64 - Equality Conditional Jumps"""
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 64:",
-            "Phase 64 advances both repository/archive milestone and runtime/source-run MASM behavior phase",
+            "Current status at Phase 64A:",
+            "Phase 64A advances both repository/archive milestone and runtime/source-run MASM behavior phase",
             "CMP memory reads participate in planned-read validation before flags are updated.",
             "Phase 64 implements executable equality conditional jumps",
+            "Phase 64A corrects source-run planned-read coverage",
             "Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures",
             "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
@@ -1509,6 +1513,7 @@ Phase 64 - Equality Conditional Jumps"""
             "Runtime/source-run MASM behavior phase:",
             "reserved-word-symbol",
             "CMP memory reads use checked helpers and planned-read validation",
+            "existing read-modify-write memory destinations now route through planned-read validation",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
             "`token-capacity-exceeded`",
             "`source-text-capacity-exceeded`",
@@ -1531,8 +1536,9 @@ Phase 64 - Equality Conditional Jumps"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 64: Equality Conditional Jumps",
-            "JE/JZ/JNE/JNZ branch to direct labels from the modeled ZF flag",
+            "Milestone 64A: Planned-Read Coverage Correction",
+            "planned-read diagnostics corrected for existing memory-reading instructions",
+            "Accepted syntax remains the Phase 64 equality-jump subset",
             "je equal",
             "jmp done",
             "done:",
@@ -1550,7 +1556,8 @@ Phase 64 - Equality Conditional Jumps"""
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Phase 64 advances runtime/source-run behavior metadata because it adds executable equality conditional jumps",
+            "Accepted MASM syntax remains the Phase 64 equality-jump subset",
+            "Phase 64A corrected source-run diagnostic-policy behavior",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
             "`cmp`",
@@ -1559,6 +1566,7 @@ Phase 64 - Equality Conditional Jumps"""
             "`cmp mem, imm`",
             "planned-read validation",
             "Phase 64 - Equality Conditional Jumps",
+            "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D documents and tests source-run/parser capacity behavior",
@@ -1587,6 +1595,7 @@ Phase 64 - Equality Conditional Jumps"""
             "source-run JSON/result buffers",
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
             "Phase 64 implements executable equality conditional jumps",
+            "Phase 64A corrects source-run planned-read coverage",
         ],
     )
     assert_all_text_contains(
@@ -1782,6 +1791,7 @@ def assert_phase61d_capacity_documented() -> None:
             "source-run JSON/result buffers",
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
             "Phase 64 implements executable equality conditional jumps",
+            "Phase 64A corrects source-run planned-read coverage",
         ],
     )
     assert_all_text_contains(
@@ -1933,7 +1943,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase63_status_and_code_policy_present()
+    assert_phase64a_status_and_code_policy_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

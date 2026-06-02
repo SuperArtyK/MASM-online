@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 64;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "";
+export const IMPLEMENTED_PHASE_SUFFIX = "A";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 64 - Equality Conditional Jumps";
+export const IMPLEMENTED_PHASE_NAME = "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions";
 
 /**
  * Creates the initial worker readiness response.

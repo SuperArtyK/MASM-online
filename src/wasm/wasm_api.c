@@ -74,11 +74,11 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 64U
 
-/// Suffix for the current Phase 64 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
+/// Suffix for the current Phase 64A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
 
-/// Full name of the current Phase 64 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 64 - Equality Conditional Jumps"
+/// Full name of the current Phase 64A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -2246,6 +2246,9 @@ static size_t masm32_sim_wasm_collect_planned_reads(
         case VM_IR_OPCODE_CMP:
         case VM_IR_OPCODE_ADC:
         case VM_IR_OPCODE_SBB:
+        case VM_IR_OPCODE_AND:
+        case VM_IR_OPCODE_OR:
+        case VM_IR_OPCODE_XOR:
         case VM_IR_OPCODE_TEST:
             if (masm32_sim_wasm_operand_width(&instruction->destination, &width_bits)) {
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->destination, width_bits);
@@ -2254,6 +2257,8 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             break;
         case VM_IR_OPCODE_NEG:
         case VM_IR_OPCODE_NOT:
+        case VM_IR_OPCODE_INC:
+        case VM_IR_OPCODE_DEC:
         case VM_IR_OPCODE_SHL:
         case VM_IR_OPCODE_SAL:
         case VM_IR_OPCODE_SHR:
@@ -2641,6 +2646,124 @@ static void masm32_sim_wasm_copy_bracketed_memory_source_span(
         *out_byte_offset = line_start_offset + (size_t)(*out_column - 1U);
     }
     *out_span_length = (size_t)(span_end - span_start) + 1U;
+    *out_has_source_span = true;
+}
+
+/// Returns whether a byte can continue a MASM-like identifier.
+///
+/// @param ch Source byte to inspect.
+/// @return true when @p ch can appear inside an identifier.
+static bool masm32_sim_wasm_is_identifier_continue(char ch) {
+    return ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '@' || ch == '$');
+}
+
+/// Converts one ASCII byte to uppercase for identifier comparison.
+///
+/// @param ch Source byte to convert.
+/// @return Uppercase ASCII byte, or @p ch for non-lowercase bytes.
+static char masm32_sim_wasm_ascii_upper(char ch) {
+    if (ch >= 'a' && ch <= 'z') {
+        return (char)(ch - ('a' - 'A'));
+    }
+    return ch;
+}
+
+/// Returns whether a source slice equals a symbol spelling case-insensitively.
+///
+/// @param text Source slice to compare.
+/// @param symbol Symbol spelling to match.
+/// @param symbol_length Length of @p symbol.
+/// @return true when @p text matches @p symbol with ASCII case folding.
+static bool masm32_sim_wasm_symbol_slice_equals(const char *text, const char *symbol, size_t symbol_length) {
+    size_t index = 0U;
+
+    if (text == NULL || symbol == NULL || symbol_length == 0U) {
+        return false;
+    }
+    for (index = 0U; index < symbol_length; index += 1U) {
+        if (masm32_sim_wasm_ascii_upper(text[index]) != masm32_sim_wasm_ascii_upper(symbol[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Copies best-effort direct-symbol memory operand source-span metadata.
+///
+/// @param instruction Instruction associated with the memory operand.
+/// @param source Original source text for byte-offset reconstruction.
+/// @param symbol_name Symbol name whose source reference should be located.
+/// @param out_column Receives a one-based source column, or zero.
+/// @param out_byte_offset Receives the zero-based source byte offset.
+/// @param out_span_length Receives source span length in bytes.
+/// @param out_has_source_span Receives whether byte offset and span length are valid.
+static void masm32_sim_wasm_copy_symbol_memory_source_span(
+    const VmIrInstruction *instruction,
+    const char *source,
+    const char *symbol_name,
+    uint32_t *out_column,
+    size_t *out_byte_offset,
+    size_t *out_span_length,
+    bool *out_has_source_span
+) {
+    const char *line_text = instruction != NULL ? instruction->source_text : NULL;
+    const char *scan = line_text;
+    const char *match = NULL;
+    size_t line_start_offset = 0U;
+    size_t symbol_length = symbol_name != NULL ? strlen(symbol_name) : 0U;
+
+    if (out_column != NULL) {
+        *out_column = 0U;
+    }
+    if (out_byte_offset != NULL) {
+        *out_byte_offset = 0U;
+    }
+    if (out_span_length != NULL) {
+        *out_span_length = 0U;
+    }
+    if (out_has_source_span != NULL) {
+        *out_has_source_span = false;
+    }
+    if (instruction == NULL || source == NULL || line_text == NULL || symbol_name == NULL || symbol_length == 0U || instruction->source_line == 0U ||
+        out_column == NULL || out_byte_offset == NULL || out_span_length == NULL || out_has_source_span == NULL ||
+        !masm32_sim_wasm_find_line_start_offset(source, instruction->source_line, &line_start_offset)) {
+        return;
+    }
+
+    while (scan != NULL && *scan != '\0') {
+        size_t remaining_length = strlen(scan);
+        bool before_is_identifier = scan > line_text && masm32_sim_wasm_is_identifier_continue(scan[-1]);
+        bool after_is_identifier = remaining_length > symbol_length && masm32_sim_wasm_is_identifier_continue(scan[symbol_length]);
+
+        if (remaining_length >= symbol_length && !before_is_identifier && !after_is_identifier &&
+            masm32_sim_wasm_symbol_slice_equals(scan, symbol_name, symbol_length)) {
+            match = scan;
+            break;
+        }
+        scan += 1;
+    }
+    if (match == NULL) {
+        return;
+    }
+
+    {
+        const char *source_line = source + line_start_offset;
+        const char *source_line_end = strchr(source_line, '\n');
+        const char *line_text_start = NULL;
+        size_t line_text_offset = 0U;
+
+        if (source_line_end == NULL) {
+            source_line_end = source_line + strlen(source_line);
+        }
+        line_text_start = strstr(source_line, line_text);
+        if (line_text_start != NULL && line_text_start <= source_line_end) {
+            line_text_offset = (size_t)(line_text_start - source_line);
+        }
+
+        *out_column = (uint32_t)(line_text_offset + (size_t)(match - line_text) + 1U);
+        *out_byte_offset = line_start_offset + (size_t)(*out_column - 1U);
+    }
+    *out_span_length = symbol_length;
     *out_has_source_span = true;
 }
 
@@ -3217,6 +3340,17 @@ static void masm32_sim_wasm_fill_uninitialized_read_diagnostic(
         &diagnostic->source_span_length,
         &diagnostic->has_source_span
     );
+    if (!diagnostic->has_source_span && diagnostic->has_symbol_name) {
+        masm32_sim_wasm_copy_symbol_memory_source_span(
+            instruction,
+            storage != NULL ? storage->source_text : NULL,
+            diagnostic->symbol_name,
+            &diagnostic->source_column,
+            &diagnostic->source_byte_offset,
+            &diagnostic->source_span_length,
+            &diagnostic->has_source_span
+        );
+    }
 }
 
 /// Validates one planned memory read against Phase 40 uninitialized-origin metadata.

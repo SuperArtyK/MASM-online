@@ -2197,8 +2197,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 64 - Equality Conditional Jumps");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2225,7 +2225,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2252,7 +2252,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2277,7 +2277,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2301,7 +2301,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2327,7 +2327,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2398,7 +2398,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseName, "Phase 64 - Equality Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2438,7 +2438,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 64);
-  assert.equal(json.phaseName, "Phase 64 - Equality Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -4327,7 +4327,10 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
       code: "uninitialized-read",
       message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 6,
-      sourceLocation: { line: 6, column: null, byteOffset: null, spanLength: null },
+      column: 10,
+      byteOffset: 57,
+      spanLength: 1,
+      sourceLocation: { line: 6, column: 10, byteOffset: 57, spanLength: 1 },
       symbolName: "x",
       accessStartAddress: "00500000h",
       accessEndAddress: "00500003h",
@@ -4342,7 +4345,7 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 10, byte offset 57, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J CONST declaration warning and read warning exactly", () => {
@@ -4373,7 +4376,10 @@ END main
       code: "uninitialized-read",
       message: "Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 5,
-      sourceLocation: { line: 5, column: null, byteOffset: null, spanLength: null },
+      column: 14,
+      byteOffset: 50,
+      spanLength: 5,
+      sourceLocation: { line: 5, column: 14, byteOffset: 50, spanLength: 5 },
       symbolName: "limit",
       accessStartAddress: "00600000h",
       accessEndAddress: "00600003h",
@@ -4388,7 +4394,7 @@ END main
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J CONST declaration error policy exactly", () => {
@@ -4441,7 +4447,10 @@ END main
       code: "uninitialized-read",
       message: "Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 5,
-      sourceLocation: { line: 5, column: null, byteOffset: null, spanLength: null },
+      column: 14,
+      byteOffset: 50,
+      spanLength: 5,
+      sourceLocation: { line: 5, column: 14, byteOffset: 50, spanLength: 5 },
       symbolName: "limit",
       accessStartAddress: "00600000h",
       accessEndAddress: "00600003h",
@@ -4456,7 +4465,7 @@ END main
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J direct CONST uninitialized write diagnostics exactly", () => {
@@ -4940,7 +4949,7 @@ test("Phase 51 renders CONST precedence smoke diagnostic exactly", () => {
 test("Phase 51 renders uninitialized RMW smoke diagnostic exactly", () => {
   runPhase51RenderedDiagnosticSmoke(
     "phase51UninitializedRmw",
-    "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.",
+    "[simulator-warning] uninitialized-read line 5, column 9, byte offset 40, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.",
     { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" }
   );
 });
@@ -5320,11 +5329,14 @@ test("renders uninitialized-read warning followed by successful execution exactl
       code: "uninitialized-read",
       message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 5,
+      column: 14,
+      byteOffset: 45,
+      spanLength: 1,
       sourceLocation: {
         line: 5,
-        column: null,
-        byteOffset: null,
-        spanLength: null
+        column: 14,
+        byteOffset: 45,
+        spanLength: 1
       },
       symbolName: "x",
       accessStartAddress: "00500000h",
@@ -5340,7 +5352,7 @@ test("renders uninitialized-read warning followed by successful execution exactl
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C renders default uninitialized-read warning exactly", () => {
@@ -5355,11 +5367,14 @@ test("Phase 53C renders default uninitialized-read warning exactly", () => {
       code: "uninitialized-read",
       message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 5,
+      column: 14,
+      byteOffset: 45,
+      spanLength: 1,
       sourceLocation: {
         line: 5,
-        column: null,
-        byteOffset: null,
-        spanLength: null
+        column: 14,
+        byteOffset: 45,
+        spanLength: 1
       },
       symbolName: "x",
       accessStartAddress: "00500000h",
@@ -5375,7 +5390,7 @@ test("Phase 53C renders default uninitialized-read warning exactly", () => {
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C keeps default uninitialized-read warnings when only section validation is explicit", () => {
@@ -5392,11 +5407,14 @@ test("Phase 53C keeps default uninitialized-read warnings when only section vali
       code: "uninitialized-read",
       message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 5,
+      column: 14,
+      byteOffset: 45,
+      spanLength: 1,
       sourceLocation: {
         line: 5,
-        column: null,
-        byteOffset: null,
-        spanLength: null
+        column: 14,
+        byteOffset: 45,
+        spanLength: 1
       },
       symbolName: "x",
       accessStartAddress: "00500000h",
@@ -5412,7 +5430,7 @@ test("Phase 53C keeps default uninitialized-read warnings when only section vali
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C renders indirect overlapping uninitialized-read warning exactly", () => {
@@ -5493,6 +5511,77 @@ test("renders uninitialized-read strict violation with source span exactly", () 
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] uninitialized-read line 6, column 24, byte offset 77, span length 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.");
+});
+
+test("Phase 64A renders RMW planned-read warning and completion exactly", () => {
+  const name = "phase64aRmwUninitializedReadWarning";
+  const source = `.DATA?
+x DWORD ?
+.code
+main PROC
+    inc x
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.simulatorMessages[0].kind, "simulator-warning");
+  assert.equal(json.simulatorMessages[0].code, "uninitialized-read");
+  assert.equal(json.simulatorMessages[0].line, 5);
+  assert.equal(json.simulatorMessages[0].column, 9);
+  assert.equal(json.simulatorMessages[0].byteOffset, 41);
+  assert.equal(json.simulatorMessages[0].spanLength, 1);
+  assert.equal(json.simulatorMessages[0].message, "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.");
+  assert.equal(json.simulatorMessages[1].kind, "info");
+  assert.equal(json.simulatorMessages[1].code, "execution-complete");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 9, byte offset 41, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("Phase 64A renders RMW planned-read strict stop exactly", () => {
+  const name = "phase64aRmwUninitializedReadStrict";
+  const source = `.DATA?
+x DWORD ?
+.code
+main PROC
+    inc x
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.instructionCount, 0);
+  assert.equal(json.memoryChanges.length, 0);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "uninitialized-read",
+      message: "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 5,
+      column: 9,
+      byteOffset: 41,
+      spanLength: 1,
+      sourceLocation: {
+        line: 5,
+        column: 9,
+        byteOffset: 41,
+        spanLength: 1
+      },
+      symbolName: "x",
+      accessStartAddress: "00500000h",
+      accessEndAddress: "00500003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] uninitialized-read line 5, column 9, byte offset 41, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.");
 });
 
 test("renders automatic layout resource-limit diagnostic exactly", () => {
@@ -5798,14 +5887,14 @@ END main
   const warnName = "phase63CmpUninitializedReadWarning";
   const warnResult = runFixture(warnName, source, { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" });
   assertRunStatus(warnResult.json, true, "ok");
-  assertRenderedEquals(warnName, source, warnResult.rawJson, warnResult.rendered, `[simulator-warning] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.
+  assertRenderedEquals(warnName, source, warnResult.rawJson, warnResult.rendered, `[simulator-warning] uninitialized-read line 6, column 9, byte offset 53, span length 5: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.
 [info] execution-complete: Execution completed successfully.`);
 
   const strictName = "phase63CmpUninitializedReadStrict";
   const strictResult = runFixture(strictName, source, { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict" });
   assertRunStatus(strictResult.json, false, "execution-error");
   assertNoExecutionComplete(strictResult.json.simulatorMessages);
-  assertRenderedEquals(strictName, source, strictResult.rawJson, strictResult.rendered, "[runtime-error] uninitialized-read line 6: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.");
+  assertRenderedEquals(strictName, source, strictResult.rawJson, strictResult.rendered, "[runtime-error] uninitialized-read line 6, column 9, byte offset 53, span length 5: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.");
 });
 
 test("renders CASEMAP policy warning followed by successful execution exactly", () => {
@@ -6127,11 +6216,14 @@ END main
       code: "uninitialized-read",
       message: "Memory read range 00500000h..00500003h reads 4 bytes from factor + 0; 4 of those bytes still originated from uninitialized storage.",
       line: 7,
+      column: 10,
+      byteOffset: 80,
+      spanLength: 6,
       sourceLocation: {
         line: 7,
-        column: null,
-        byteOffset: null,
-        spanLength: null
+        column: 10,
+        byteOffset: 80,
+        spanLength: 6
       },
       symbolName: "factor",
       accessStartAddress: "00500000h",
@@ -6152,7 +6244,7 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals("phase57-idiv-uninitialized-then-divide-by-zero", source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7: Memory read range 00500000h..00500003h reads 4 bytes from factor + 0; 4 of those bytes still originated from uninitialized storage.\n[runtime-error] divide-by-zero line 7, column 5, byte offset 75, span length 11: IDIV divisor operand factor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
+  assertRenderedEquals("phase57-idiv-uninitialized-then-divide-by-zero", source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7, column 10, byte offset 80, span length 6: Memory read range 00500000h..00500003h reads 4 bytes from factor + 0; 4 of those bytes still originated from uninitialized storage.\n[runtime-error] divide-by-zero line 7, column 5, byte offset 75, span length 11: IDIV divisor operand factor evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
 });
 
 test("Phase 57 renders IDIV quotient-overflow runtime error", () => {
