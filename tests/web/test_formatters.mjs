@@ -305,6 +305,110 @@ test("formats Phase 57F startup setting errors through Simulator Messages", () =
   ]), "[ui-error] invalid-startup-setting: Invalid startup setting 'startupStateSeed'. Accepted values: unsigned 32-bit integer.");
 });
 
+test("formats Phase 64B startup notice and completion as separate rendered groups", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: "Startup notice."
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("formats Phase 64B startup, runtime warning, and completion groups", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: "Startup notice."
+    },
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Runtime warning."
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[simulator-warning] uninitialized-read: Runtime warning.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("formats Phase 64B runtime warning and completion with startup notice suppressed", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Runtime warning."
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]), "[simulator-warning] uninitialized-read: Runtime warning.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("formats Phase 64B multiple runtime diagnostics without internal separators", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: "Startup notice."
+    },
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Runtime warning."
+    },
+    {
+      kind: "runtime-error",
+      code: "invalid-address",
+      message: "Runtime error."
+    }
+  ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[simulator-warning] uninitialized-read: Runtime warning.\n[runtime-error] invalid-address: Runtime error.");
+});
+
+test("formats Phase 64B pre-execution diagnostics without group separators", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "ui-error",
+      code: "invalid-startup-setting",
+      message: "Invalid startup setting."
+    },
+    {
+      kind: "assembly-error",
+      code: "ambiguous-memory-width",
+      line: 3,
+      column: 9,
+      message: "Memory operand width is ambiguous."
+    }
+  ]), "[ui-error] invalid-startup-setting: Invalid startup setting.\n[assembly-error] ambiguous-memory-width line 3, column 9: Memory operand width is ambiguous.");
+});
+
+test("formats Phase 64B compatibility notices without final-status grouping", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-notice",
+      code: "compatibility-no-op",
+      line: 1,
+      column: 1,
+      message: ".386 is accepted."
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]), "[simulator-notice] compatibility-no-op line 1, column 1: .386 is accepted.\n[info] execution-complete: Execution completed successfully.");
+});
+
 test("formats empty simulator messages", () => {
   assert.equal(formatSimulatorMessages([]), "No simulator messages.");
 });

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 64A: Planned-Read Coverage Correction.
+  Milestone 64B: Simulator Message Runtime Notice Ordering and Grouping.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 64A: planned-read diagnostics corrected for existing memory-reading instructions. Accepted syntax remains the Phase 64 equality-jump subset.</p>
+        <p class="muted">Milestone 64B: Simulator Messages now group startup notices, runtime diagnostics, and completion status with readable blank-line separators. Accepted syntax remains the Phase 64 equality-jump subset.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC

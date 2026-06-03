@@ -1947,7 +1947,7 @@ test("renders Phase 57E startup-state notice exactly", () => {
     code: "execution-complete",
     message: "Execution completed successfully."
   });
-  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[info] execution-complete: Execution completed successfully.`);
 });
 
 test("renders Phase 57F seeded startup-state notice exactly", () => {
@@ -1969,7 +1969,7 @@ test("renders Phase 57F seeded startup-state notice exactly", () => {
     code: "execution-complete",
     message: "Execution completed successfully."
   });
-  assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_STARTUP_STATE_NOTICE_RENDERED}\n[info] execution-complete: Execution completed successfully.`);
+  assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_STARTUP_STATE_NOTICE_RENDERED}\n\n[info] execution-complete: Execution completed successfully.`);
 });
 
 test("renders Phase 57G seeded uninitialized-storage startup-state notice exactly", () => {
@@ -1987,6 +1987,7 @@ test("renders Phase 57G seeded uninitialized-storage startup-state notice exactl
     message: SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT
   });
   assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_UNINITIALIZED_STORAGE_NOTICE_RENDERED}
+
 [info] execution-complete: Execution completed successfully.`);
 });
 
@@ -2006,6 +2007,7 @@ test("renders combined Phase 57F and Phase 57G seeded startup-state notice exact
     message: SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT
   });
   assertRenderedEquals(name, source, rawJson, rendered, `${SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_RENDERED}
+
 [info] execution-complete: Execution completed successfully.`);
 });
 
@@ -2173,6 +2175,11 @@ END main
   assert.equal(json.registers.EBX.hex, "00000002h");
   assert.equal(json.registers.ECX.hex, "00000000h");
   assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
     kind: "runtime-error",
     code: "instruction-limit-exceeded",
     message: "Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.",
@@ -2182,7 +2189,7 @@ END main
     spanLength: 10
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 5, column 5, byte offset 50, span length 10: Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.");
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[runtime-error] instruction-limit-exceeded line 5, column 5, byte offset 50, span length 10: Instruction limit exceeded: attempted to execute instruction #3 (limit: 2). Program stopped before executing that instruction.`);
 });
 
 
@@ -2409,6 +2416,11 @@ END main
   assertNoMessageWithCode(json.simulatorMessages, "branch-runtime-deferred");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
     kind: "runtime-error",
     code: "instruction-limit-exceeded",
     message: "Instruction limit exceeded: attempted to execute instruction #1 (limit: 4). Program stopped before executing that instruction.",
@@ -2417,7 +2429,7 @@ END main
     byteOffset: 27,
     spanLength: 7
   });
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] instruction-limit-exceeded line 4, column 5, byte offset 27, span length 7: Instruction limit exceeded: attempted to execute instruction #1 (limit: 4). Program stopped before executing that instruction.");
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[runtime-error] instruction-limit-exceeded line 4, column 5, byte offset 27, span length 7: Instruction limit exceeded: attempted to execute instruction #1 (limit: 4). Program stopped before executing that instruction.`);
 });
 
 
@@ -3708,6 +3720,7 @@ test("renders SHL undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 34, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -3736,6 +3749,7 @@ test("renders SAL undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 66, span length 11: SAL count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -3822,6 +3836,7 @@ test("renders SHR undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SHR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -3907,6 +3922,7 @@ test("renders SAR undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 36, span length 9: SAR count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4012,6 +4028,7 @@ test("renders ROL undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROL count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4028,6 +4045,7 @@ test("renders ROL warning under strict shift validation without runtime error", 
   assert.equal(json.simulatorMessages[1].code, "execution-complete");
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROL count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4345,7 +4363,7 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 10, byte offset 57, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 10, byte offset 57, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J CONST declaration warning and read warning exactly", () => {
@@ -4394,7 +4412,7 @@ END main
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J CONST declaration error policy exactly", () => {
@@ -4465,7 +4483,7 @@ END main
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J direct CONST uninitialized write diagnostics exactly", () => {
@@ -4563,6 +4581,7 @@ test("renders ROR undefined modeled flag warning exactly", () => {
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROR count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the most significant bit of the rotated result. ZF and SF were preserved because ROR does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4579,6 +4598,7 @@ test("renders ROR warning under strict shift validation without runtime error", 
   assert.equal(json.simulatorMessages[1].code, "execution-complete");
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-modeled-flag line 4, column 5, byte offset 36, span length 9: ROR count 8 has effective count 8 and rotate amount 0 for an 8-bit destination. CF was updated from the most significant bit of the rotated result. ZF and SF were preserved because ROR does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4720,6 +4740,7 @@ test("renders undefined flag-use warning exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 42, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
     "[simulator-warning] undefined-flag-use line 7, column 5, byte offset 71, span length 10: ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4763,6 +4784,7 @@ test("Phase 53C renders default undefined flag-use warning exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, [
     "[simulator-warning] undefined-shift-flag line 5, column 5, byte offset 42, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
     "[simulator-warning] undefined-flag-use line 7, column 5, byte offset 71, span length 10: ADC reads CF, but CF is architecturally undefined from SHL at line 5. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });
@@ -4949,7 +4971,7 @@ test("Phase 51 renders CONST precedence smoke diagnostic exactly", () => {
 test("Phase 51 renders uninitialized RMW smoke diagnostic exactly", () => {
   runPhase51RenderedDiagnosticSmoke(
     "phase51UninitializedRmw",
-    "[simulator-warning] uninitialized-read line 5, column 9, byte offset 40, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.",
+    "[simulator-warning] uninitialized-read line 5, column 9, byte offset 40, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.",
     { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" }
   );
 });
@@ -4991,7 +5013,7 @@ test("renders unaligned warning followed by successful execution exactly", () =>
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders allocated-object warning followed by successful execution exactly", () => {
@@ -5015,7 +5037,7 @@ test("renders allocated-object warning followed by successful execution exactly"
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 6: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 6: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 
@@ -5063,7 +5085,7 @@ test("Phase 53A renders default region-only object-spanning read without object 
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53A renders object-spanning warning before unaligned warning", () => {
@@ -5093,7 +5115,7 @@ test("Phase 53A renders object-spanning warning before unaligned warning", () =>
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 7: Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 7: Memory read range 00500001h..00500004h spans multiple declared data objects (spans-objects).\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53A renders strict object violation before rejected instruction mutation", () => {
@@ -5162,7 +5184,7 @@ test("Phase 53A renders uninitialized-read before unaligned warning for symbol-o
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7, column 24, byte offset 67, span length 5: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 7, column 24, byte offset 67, span length 5: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 7: Unaligned DWORD memory access at 00500001h.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 
@@ -5190,7 +5212,7 @@ test("Phase 53B renders section-image warning exactly", () => {
     boundaryStartAddress: "00500000h",
     boundaryEndAddress: "00500003h"
   });
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-image-violation line 7, column 24, byte offset 92, span length 5: Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-image-violation line 7, column 24, byte offset 92, span length 5: Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53B renders section-image strict violation exactly", () => {
@@ -5247,7 +5269,7 @@ test("Phase 53B renders section-capacity warning exactly", () => {
     boundaryStartAddress: null,
     boundaryEndAddress: null
   });
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-capacity-violation line 4, column 19, byte offset 57, span length 5: Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] section-capacity-violation line 4, column 19, byte offset 57, span length 5: Memory write at 00700000h for 4 bytes covers range 00700000h..00700003h but does not start inside a known section capacity range for heap.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53B renders section-capacity strict violation exactly", () => {
@@ -5352,7 +5374,7 @@ test("renders uninitialized-read warning followed by successful execution exactl
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C renders default uninitialized-read warning exactly", () => {
@@ -5390,7 +5412,7 @@ test("Phase 53C renders default uninitialized-read warning exactly", () => {
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C keeps default uninitialized-read warnings when only section validation is explicit", () => {
@@ -5430,7 +5452,7 @@ test("Phase 53C keeps default uninitialized-read warnings when only section vali
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 14, byte offset 45, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 53C renders indirect overlapping uninitialized-read warning exactly", () => {
@@ -5474,7 +5496,7 @@ test("Phase 53C renders indirect overlapping uninitialized-read warning exactly"
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 24, byte offset 78, span length 7: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 3 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 6, column 24, byte offset 78, span length 7: Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 3 of those bytes still originated from uninitialized storage.\n[simulator-warning] unaligned-memory-access line 6: Unaligned DWORD memory access at 00500001h.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders uninitialized-read strict violation with source span exactly", () => {
@@ -5537,7 +5559,7 @@ END main
   assert.equal(json.simulatorMessages[0].message, "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.");
   assert.equal(json.simulatorMessages[1].kind, "info");
   assert.equal(json.simulatorMessages[1].code, "execution-complete");
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 9, byte offset 41, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 5, column 9, byte offset 41, span length 1: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("Phase 64A renders RMW planned-read strict stop exactly", () => {
@@ -5888,6 +5910,7 @@ END main
   const warnResult = runFixture(warnName, source, { MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings" });
   assertRunStatus(warnResult.json, true, "ok");
   assertRenderedEquals(warnName, source, warnResult.rawJson, warnResult.rendered, `[simulator-warning] uninitialized-read line 6, column 9, byte offset 53, span length 5: Memory read range 00500000h..00500003h reads 4 bytes from value + 0; 4 of those bytes still originated from uninitialized storage.
+
 [info] execution-complete: Execution completed successfully.`);
 
   const strictName = "phase63CmpUninitializedReadStrict";

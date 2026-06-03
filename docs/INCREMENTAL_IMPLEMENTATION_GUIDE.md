@@ -392,7 +392,82 @@ Required test coverage does not need to cover every Cartesian combination of ope
 
 If a future phase introduces a memory-capable feature but a listed policy cannot apply to that feature, the milestone report must say why. For example, a memory-source-only instruction has no `.CONST` write-protection or cross-region `.CONST`-overlap write case because it does not write memory.
 
-Implementation reports for future memory-capable phases must explicitly state whether planned-read or planned-write collection was updated. Future assistants must not leave this as an implicit assumption.
+### Planned-read/planned-write coverage checklist for future memory-capable phases
+
+Every future phase that adds, changes, corrects, or reclassifies simulated memory access must include an explicit planned-access review.
+
+This requirement applies when a phase changes any of the following:
+
+- an instruction form that can read simulated memory;
+- an instruction form that can write simulated memory;
+- a read-modify-write instruction form whose memory destination is read before write-back;
+- an Irvine32 routine that can read or write simulated memory;
+- a stack, call, return, procedure-frame, string, buffer, or runtime-library feature that performs implicit memory access;
+- a debugger action that inspects or mutates simulated memory;
+- a source-run, Wasm-facing, browser, or diagnostic-policy path that classifies, warns about, blocks, reports, or renders simulated memory access.
+
+This requirement does not apply to phases that are purely documentation-only, display-only, test-runner-only, repository-maintenance-only, or unrelated to simulated memory access. If a future phase is mixed-scope and touches memory-access behavior in any way, the requirement applies to the memory-access part of that phase.
+
+The milestone report for an applicable phase must include a subsection named exactly:
+
+```text
+Planned-read/planned-write coverage
+```
+
+That subsection must list:
+
+- every opcode, runtime routine, debugger action, or policy path touched by the phase that can cause, classify, warn about, block, read, or write a simulated memory access;
+- every newly added, changed, or corrected simulated memory read;
+- every newly added, changed, or corrected simulated memory write;
+- every read-modify-write form, including destination-memory reads before write-back;
+- every implicit memory access, including stack, call/return, procedure-frame, Irvine32 buffer, string/buffer, runtime-library, or debugger memory access;
+- whether planned-read collection was updated;
+- whether planned-write collection was updated;
+- whether object/declared-bounds planned-access collection was updated;
+- whether section-capacity planned-access collection was updated;
+- whether section-image planned-access collection was updated;
+- whether uninitialized-read policy coverage applies;
+- whether `.CONST` or other protected-region write protection can apply;
+- whether cross-region protected-region diagnostics can apply;
+- whether source line, column, byte offset, and span length are preserved for newly surfaced diagnostics;
+- why any listed memory-validation or teaching-diagnostic policy does not apply.
+
+The report must not use this statement as sufficient proof:
+
+```text
+The feature uses checked memory helpers.
+```
+
+That statement proves only mandatory Level 1 checked-memory coverage. It does not prove planned-access coverage for source-run diagnostic policies.
+
+If the codebase still uses separate switch statements, helper functions, or tables for planned reads, planned writes, object bounds, section capacity, section image, uninitialized-origin reads, protected-region checks, and rendered diagnostics, the phase must audit every applicable path. Updating only one switch, helper, or table is insufficient unless the report explains why the other paths cannot apply.
+
+For strict/error policy tests, the phase must prove no partial mutation for every newly added, changed, or corrected planned-access failure category. The no-partial-mutation evidence must cover:
+
+- registers;
+- modeled flags;
+- Phase 50A flag-validity metadata;
+- memory bytes;
+- Program Console output;
+- memory-change rows;
+- absence of `execution-complete` after a fatal diagnostic.
+
+For warning-policy tests, the phase must prove that execution continues only after the warning is emitted and that continued execution uses the deterministic checked-memory value.
+
+For `off` policy tests, where applicable, the phase must prove that only the selected teaching diagnostic is suppressed. Mandatory checked-memory failures, `.CONST` protection, protected-region crossing, invalid address, invalid range, invalid region, and invalid permission behavior must remain active.
+
+Required tests do not need to cover every Cartesian combination of register width, pointer spelling, addressing syntax, layout mode, and diagnostic policy unless the target phase explicitly requires that. Tests must cover every applicable policy at least once and every newly accepted or newly corrected memory-access semantic category at least once.
+
+If a policy does not apply, the report must state the concrete reason. Acceptable examples include:
+
+- a register-only instruction has no simulated memory access;
+- a memory-source-only instruction has no planned write;
+- a memory-write-only feature has no uninitialized-origin read;
+- a stack feature has implicit memory access but no explicit memory operand;
+- a display-only phase formats already-collected memory data but does not execute, inspect, classify, or mutate simulated memory;
+- a diagnostic-wording-only phase changes rendered text but does not change memory-access classification.
+
+Future assistants must not leave planned-access coverage as an implicit assumption. The milestone report must make the audit result explicit.
 
 ### 2.4e Standing Rule: Keyword Matching and User-Symbol CASEMAP Policy Are Separate
 
@@ -16338,27 +16413,55 @@ This phase exists because source-run diagnostic policy must see a memory read be
 
 ### Placement and roadmap effect
 
-This is a non-renumbering corrective phase inserted after:
+Phase 64A is a non-renumbering corrective phase inserted after:
 
 ```text
 Phase 64 - Equality Conditional Jumps
 ```
 
-and before the Phase 64B and Phase 64C display hotfixes, if those hotfixes are accepted into the active guide.
-
-It does not renumber Phase 65 or any later phase.
-
-After Phase 64A is complete, the next accepted hotfix phase is:
+and before:
 
 ```text
 Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
 ```
 
-If Phase 64B and Phase 64C are not adopted, or after those display hotfixes are complete, the next normal control-flow implementation phase remains:
+Phase 64A does not renumber Phase 65 or any later phase.
+
+Phase 64B, Phase 64C, and Phase 64D are active canonical guide phases, not optional proposals. Future assistants must not skip them merely because they use lettered corrective-phase identifiers.
+
+The canonical sequence after Phase 64 is:
 
 ```text
-Phase 65 - Signed Relational Conditional Jumps
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+Phase 64C - Expanded EFLAGS Flag Display
+Phase 64D - Memory Change Source Attribution Display
+Phase 65  - Signed Relational Conditional Jumps
 ```
+
+Phase 64A changes runtime/source-run diagnostic-policy behavior for source programs that were already accepted before Phase 64A. Therefore, Phase 64A advances both status labels:
+
+```text
+Repository/archive milestone:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+Runtime/source-run MASM behavior phase:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+```
+
+Phase 64A does not add new MASM syntax, new instruction mnemonics, new addressing forms, new branch forms, new modeled flags, new memory layout modes, stack behavior, procedure behavior, Irvine32 callable routine behavior, macro behavior, debugger/editor behavior, or browser UI controls.
+
+Current supported-syntax wording after Phase 64A must continue to say that accepted MASM syntax remains the Phase 64 equality-jump subset. Phase 64A corrects source-run diagnostic-policy behavior for already implemented memory-reading instructions.
+
+Stale-title guard:
+
+Historical milestone reports may mention older planning text for Phase 64C. Those reports remain historical evidence only. The active canonical guide defines the current Phase 64C title and scope as:
+
+```text
+Phase 64C - Expanded EFLAGS Flag Display
+```
+
+Do not implement, document, or test a different Phase 64C scope unless the user explicitly requests a new reviewed guide revision.
 
 ### Behavior category
 
@@ -16622,9 +16725,9 @@ A milestone report for Phase 64A must explicitly state:
 
 ### Goal
 
-Improve Simulator Messages ordering and readability for source-less runtime status notices without changing parser behavior, instruction behavior, memory behavior, startup values, diagnostic policy defaults, Program Console output, or accepted MASM syntax.
+Improve Simulator Messages ordering and readability for source-less runtime status notices, runtime diagnostics, and final execution-status messages without changing parser behavior, instruction behavior, memory behavior, startup values, diagnostic policy defaults, Program Console output, or accepted MASM syntax.
 
-This phase specifically changes how the existing `startup-state-notice` is emitted and rendered relative to runtime diagnostics and `execution-complete`.
+This phase specifically changes rendered Simulator Messages grouping for the existing `startup-state-notice`, runtime diagnostics, and `execution-complete` message.
 
 ### Behavior category
 
@@ -16632,7 +16735,7 @@ Rendered Simulator Messages ordering and runtime notice grouping.
 
 ### Placement and roadmap effect
 
-This is a non-renumbering hotfix phase inserted after:
+Phase 64B is a non-renumbering corrective phase inserted after:
 
 ```text
 Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
@@ -16641,12 +16744,18 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
 and before:
 
 ```text
+Phase 64C - Expanded EFLAGS Flag Display
+```
+
+Phase 64B does not renumber Phase 65 or any later phase.
+
+Phase 64C is the next canonical phase after Phase 64B. Phase 64D follows Phase 64C. After Phase 64D is complete, the next normal control-flow implementation phase remains:
+
+```text
 Phase 65 - Signed Relational Conditional Jumps
 ```
 
-It does not renumber Phase 65 or any later phase.
-
-If Phase 64C - Expanded EFLAGS Flag Display is accepted as the next hotfix, Phase 64C follows this phase. Otherwise, the project may resume with Phase 65.
+Future assistants must not skip Phase 64C or Phase 64D and proceed directly from Phase 64B to Phase 65 unless the user explicitly creates a new reviewed guide revision that changes the roadmap.
 
 ### Existing behavior being adjusted
 
@@ -16654,7 +16763,12 @@ Phase 57E - Startup State Notice and Zero-Default Documentation added the `start
 
 The notice is source-less, non-fatal, policy-controlled, and routed through Simulator Messages rather than Program Console.
 
-Existing examples show the startup notice near the end of Simulator Messages, adjacent to `execution-complete`, and after some runtime warnings. This phase changes that ordering.
+Earlier active wording underspecified separator behavior by describing the blank line as a separator after `startup-state-notice`. That wording could be misread in two incorrect ways:
+
+- `execution-complete` might appear immediately after runtime warnings without a blank separator;
+- disabling `startup-state-notice` might incorrectly remove the separator between runtime warnings and `execution-complete`.
+
+Phase 64B corrects that model. Blank rendered separators are group separators. They are controlled by adjacent non-empty rendered message groups, not by the `startup-state-notice` policy toggle.
 
 This phase preserves the existing startup-state notice semantics:
 
@@ -16672,22 +16786,54 @@ This phase preserves the existing startup-state notice semantics:
 
 ### Required behavior
 
+Phase 64B must order and render Simulator Messages by logical rendered message groups.
+
+The rendered group order is:
+
+1. **Startup notice group**
+   - Contains `startup-state-notice` only when runtime execution is about to begin and the active `startup-state-notice` policy emits the notice.
+
+2. **Runtime diagnostic group**
+   - Contains runtime warnings, runtime notices, and runtime errors emitted during execution.
+   - Examples include `uninitialized-read`, `undefined-flag-use`, runtime memory diagnostics, instruction-limit diagnostics after execution begins, and other runtime diagnostics.
+
+3. **Final execution-status group**
+   - Contains `execution-complete` only when execution completes successfully.
+
+The renderer must place exactly one blank rendered line between adjacent non-empty groups.
+
+The renderer must not place a leading blank line before the first non-empty group.
+
+The renderer must not place a trailing blank line after the final non-empty group.
+
+The renderer must not place more than one blank line between the same two adjacent non-empty groups.
+
+The renderer must not automatically insert group-separator blank lines between multiple messages inside the same group. Multiple runtime warnings, runtime notices, and runtime errors belong to the runtime diagnostic group and remain adjacent according to the existing rendered-message line format unless a later phase explicitly defines subgroup formatting.
+
+The `startup-state-notice` policy controls only whether the startup notice group exists. It must not control whether `execution-complete` is separated from preceding runtime warnings or runtime notices.
+
 When a source-run attempt fails during lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase that prevents runtime execution from starting:
 
 - do not emit `startup-state-notice`;
-- do not emit a startup-state blank separator;
+- do not emit a startup notice group;
+- do not emit a startup separator;
+- do not emit `execution-complete`;
+- do not add group-separator blank lines around pre-execution-only diagnostics;
 - preserve existing assembly/static/settings diagnostics;
 - preserve existing source-run failure behavior.
 
-Invalid source-run settings that are diagnosed before execution begins must not cause `startup-state-notice` to be emitted. For example, an invalid `startup-state-notice` policy value should produce the existing setting diagnostic without emitting the startup notice or startup separator.
+Invalid source-run settings that are diagnosed before execution begins must not cause `startup-state-notice` to be emitted. For example, an invalid `startup-state-notice` policy value should produce the existing setting diagnostic without emitting the startup notice or any startup separator.
 
 When a source-run attempt passes static checks and runtime execution is about to begin:
 
-1. emit `startup-state-notice` first among runtime/source-run messages, if the active policy is `warn` or `on`;
-2. render exactly one blank line after `startup-state-notice` if at least one later Simulator Messages line will be rendered;
-3. render runtime warnings, runtime notices, runtime errors, and final execution-status messages after that blank line;
+1. emit `startup-state-notice` first among runtime/source-run messages if the active policy is `warn` or `on`;
+2. render runtime warnings, runtime notices, and runtime errors after the startup notice group;
+3. keep multiple runtime diagnostics in the runtime diagnostic group without inserting group-separator blank lines between them;
 4. render `execution-complete` only if execution completes successfully;
-5. do not render `execution-complete` after fatal assembly diagnostics, fatal runtime diagnostics, strict-policy stops, instruction-limit failures, or internal execution failures.
+5. render exactly one blank line between every adjacent non-empty rendered group;
+6. do not render `execution-complete` after fatal assembly diagnostics, fatal runtime diagnostics, strict-policy stops, instruction-limit failures, or internal execution failures.
+
+If runtime warnings or runtime notices are emitted before a later fatal runtime error, all such messages remain in the runtime diagnostic group. No final execution-status group exists, and no separator for `execution-complete` is rendered.
 
 The startup-state notice must describe the runtime environment before the first instruction consumes initial register, flag, or uninitialized-storage state. It must not be delayed until the end of execution.
 
@@ -16696,35 +16842,61 @@ The startup-state notice must describe the runtime environment before the first 
 Successful default execution with no runtime warnings:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-notice] startup-state-notice: ...
 
 [info] execution-complete: Execution completed successfully.
 ```
 
-Successful execution with a runtime warning:
+Successful default execution with one runtime warning:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-notice] startup-state-notice: ...
 
-[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.
+[simulator-warning] uninitialized-read line 5: ...
+
 [info] execution-complete: Execution completed successfully.
 ```
 
-Runtime error after execution begins:
+Successful execution with `startup-state-notice=off` and one runtime warning:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-warning] uninitialized-read line 5: ...
 
-[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.
+[info] execution-complete: Execution completed successfully.
+```
+
+Successful execution with `startup-state-notice=off` and no runtime warnings:
+
+```text
+[info] execution-complete: Execution completed successfully.
+```
+
+Runtime warning followed by fatal runtime error:
+
+```text
+[simulator-notice] startup-state-notice: ...
+
+[simulator-warning] uninitialized-read line 5: ...
+[runtime-error] invalid-address line 8: ...
+```
+
+No `execution-complete` appears because execution did not complete successfully.
+
+Runtime error after execution begins with no earlier runtime warning:
+
+```text
+[simulator-notice] startup-state-notice: ...
+
+[runtime-error] invalid-address line 4: ...
 ```
 
 Assembly error before execution begins:
 
 ```text
-[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: ...
 ```
 
-No startup-state notice appears in the assembly-error-only case because runtime execution did not begin.
+No startup-state notice appears in the assembly-error-only case because runtime execution did not begin. No `execution-complete` appears because execution did not complete successfully. No leading blank line, trailing blank line, startup separator, runtime separator, or final-status separator appears.
 
 Invalid setting before execution begins:
 
@@ -16732,40 +16904,54 @@ Invalid setting before execution begins:
 [ui-error] invalid-setting: Invalid startup-state-notice policy value 'error'. Supported values: off, warn.
 ```
 
-No startup-state notice appears in the invalid-setting-only case because runtime execution did not begin.
+No startup-state notice appears in the invalid-setting-only case because runtime execution did not begin. No `execution-complete` appears because execution did not complete successfully. No separator appears merely because the setting diagnostic was rendered.
 
 ### Blank-line rule
 
-The blank line after `startup-state-notice` is a rendering separator only.
+Blank lines in rendered Simulator Messages are group separators only.
 
-It must not be represented as:
+A blank rendered separator must not be represented as:
 
-- a diagnostic object;
-- a Program Console line;
-- a source-run diagnostic entry;
+- a source-run JSON diagnostic object;
+- a diagnostic code;
+- a severity;
 - a warning;
 - a notice;
-- an info message;
-- a fake source-less diagnostic.
+- a runtime error;
+- an assembly error;
+- a setting error;
+- an execution-status message;
+- Program Console text.
 
-Structured diagnostic order and rendered message order must remain testable without treating the blank line as a diagnostic. Tests should compare rendered text including the blank line, but structured diagnostic counts must not increase because of the separator.
+Structured diagnostic order and rendered message order must remain testable without treating blank lines as diagnostics. Tests should compare rendered text including required blank lines, but structured diagnostic counts must not increase because of separators.
 
-The Node/browser Simulator Messages formatter may insert the blank line while rendering. If the existing formatter architecture requires blank lines to be represented internally, that representation must remain formatter-private and must not leak into source-run JSON as a diagnostic.
+The Node/browser Simulator Messages formatter may insert blank lines while rendering. If the existing formatter architecture requires blank lines to be represented internally, that representation must remain formatter-private and must not leak into source-run JSON as a diagnostic.
 
-Render exactly one blank line after `startup-state-notice` when the notice is present and there is at least one following rendered Simulator Messages line.
+Render exactly one blank line between adjacent non-empty rendered groups:
 
-Do not render the blank line when:
+```text
+startup notice group
+runtime diagnostic group
+final execution-status group
+```
 
-- `startup-state-notice` is disabled;
-- static diagnostics prevent execution and the startup notice is not emitted;
-- invalid settings prevent execution and the startup notice is not emitted;
-- there is no following message line.
+Do not render a blank line:
+
+- before the first non-empty group;
+- after the last non-empty group;
+- when only one group is non-empty;
+- for a group that does not exist;
+- between multiple messages inside the same group;
+- around pre-execution-only diagnostics;
+- merely because `startup-state-notice` is enabled or disabled.
+
+The `startup-state-notice=off` setting suppresses only the startup notice group. It must not suppress or create the separator between the runtime diagnostic group and the final execution-status group.
 
 ### Source-run JSON and formatter behavior
 
-The preferred implementation is to emit or order the existing startup notice in the source-run result before runtime execution diagnostics, then let the existing Simulator Messages formatter insert the blank rendered separator.
+The preferred implementation is to emit or order the existing startup notice in the source-run result before runtime execution diagnostics, then let the Simulator Messages formatter render group separators.
 
-Do not add a new diagnostic code merely to create the blank line.
+Do not add a new diagnostic code merely to create a blank line.
 
 Do not add a fake diagnostic object for spacing.
 
@@ -16773,24 +16959,205 @@ Do not move the notice to Program Console.
 
 Do not make the notice source-attached.
 
+Do not add blank separator records to source-run JSON.
+
+Do not change Program Console output.
+
 If the source-run JSON diagnostic ordering changes, update structured JSON tests and rendered Simulator Messages tests together.
+
+The formatter may compute rendered groups from existing diagnostic/status kinds. If it does so, that grouping must remain a rendering concern and must not change the structured diagnostic payload contract.
 
 ### Required tests
 
-Add structured source-run tests and exact rendered Simulator Messages tests for:
+Add structured source-run tests and exact rendered Simulator Messages tests for all of the following cases.
 
-- successful default execution with startup notice first, one blank line, then `execution-complete`;
-- successful execution with at least one runtime warning after the startup notice separator;
-- runtime fatal error after execution begins, with startup notice first, one blank line, then the runtime error, and no `execution-complete`;
-- assembly error before execution begins, with no startup notice and no startup separator;
-- invalid source-run setting before execution begins, with no startup notice and no startup separator;
-- `startup-state-notice=off`, proving no startup notice and no extra leading blank line;
-- invalid `startup-state-notice` policy value, proving existing setting-diagnostic behavior remains renderable and does not create a startup separator;
-- Program Console remains unchanged and receives no notice or blank separator text.
+1. **Successful default execution with no runtime warnings**
 
-Exact rendered tests must include the blank line where required.
+   Required rendered order:
 
-Structured diagnostic tests must prove that the blank line does not increase diagnostic counts.
+   ```text
+   startup-state-notice
+
+   execution-complete
+   ```
+
+   Required assertions:
+
+   - `startup-state-notice` appears first;
+   - exactly one blank line separates `startup-state-notice` from `execution-complete`;
+   - `execution-complete` appears;
+   - no leading blank line appears;
+   - no trailing blank line appears;
+   - the blank line does not increase structured diagnostic counts.
+
+2. **Successful default execution with at least one runtime warning**
+
+   Use a fixture that emits `uninitialized-read` in default warning mode and then completes successfully.
+
+   Required rendered order:
+
+   ```text
+   startup-state-notice
+
+   uninitialized-read
+
+   execution-complete
+   ```
+
+   Required assertions:
+
+   - `startup-state-notice` appears before the runtime warning;
+   - exactly one blank line separates `startup-state-notice` from the runtime warning group;
+   - exactly one blank line separates the runtime warning group from `execution-complete`;
+   - `execution-complete` appears only after the runtime warning group;
+   - the blank lines do not increase structured diagnostic counts.
+
+3. **Successful execution with `startup-state-notice=off` and at least one runtime warning**
+
+   Use a fixture that emits `uninitialized-read` in default warning mode and then completes successfully while `startup-state-notice` is disabled.
+
+   Required rendered order:
+
+   ```text
+   uninitialized-read
+
+   execution-complete
+   ```
+
+   Required assertions:
+
+   - no `startup-state-notice` appears;
+   - no leading blank line appears;
+   - the runtime warning is the first rendered message line;
+   - exactly one blank line separates the runtime warning group from `execution-complete`;
+   - disabling `startup-state-notice` does not remove the runtime-warning-to-completion separator;
+   - the blank line does not increase structured diagnostic counts.
+
+4. **Successful execution with `startup-state-notice=off` and no runtime warnings**
+
+   Required rendered order:
+
+   ```text
+   execution-complete
+   ```
+
+   Required assertions:
+
+   - no `startup-state-notice` appears;
+   - no leading blank line appears;
+   - no trailing blank line appears;
+   - `execution-complete` appears as the only rendered Simulator Messages line.
+
+5. **Runtime fatal error after execution begins with no earlier runtime warning**
+
+   Required rendered order when startup notice is enabled:
+
+   ```text
+   startup-state-notice
+
+   runtime-error
+   ```
+
+   Required assertions:
+
+   - `startup-state-notice` appears first;
+   - exactly one blank line separates `startup-state-notice` from the runtime error group;
+   - no `execution-complete` appears;
+   - the blank line does not increase structured diagnostic counts.
+
+6. **Runtime warning followed by fatal runtime error**
+
+   Use a fixture that emits a runtime warning and then later stops with a fatal runtime error after execution has begun.
+
+   Required rendered order when startup notice is enabled:
+
+   ```text
+   startup-state-notice
+
+   runtime-warning
+   runtime-error
+   ```
+
+   Required assertions:
+
+   - `startup-state-notice` appears first;
+   - exactly one blank line separates `startup-state-notice` from the runtime diagnostic group;
+   - the runtime warning and runtime error are both in the runtime diagnostic group;
+   - no group-separator blank line appears between the runtime warning and runtime error;
+   - no `execution-complete` appears;
+   - no final execution-status separator appears.
+
+7. **Multiple runtime warnings followed by successful completion**
+
+   Use a fixture that emits at least two runtime warnings and then completes successfully.
+
+   Required rendered order:
+
+   ```text
+   startup-state-notice
+
+   runtime-warning
+   runtime-warning
+
+   execution-complete
+   ```
+
+   Required assertions:
+
+   - exactly one blank line separates `startup-state-notice` from the runtime diagnostic group;
+   - no group-separator blank line appears between the two runtime warnings;
+   - exactly one blank line separates the runtime diagnostic group from `execution-complete`;
+   - the blank lines do not increase structured diagnostic counts.
+
+8. **Assembly/static error before execution begins**
+
+   Required assertions:
+
+   - no `startup-state-notice` appears;
+   - no startup notice group exists;
+   - no startup separator appears;
+   - no final execution-status group exists;
+   - no `execution-complete` appears;
+   - no leading blank line appears;
+   - no trailing blank line appears;
+   - existing assembly/static diagnostics are preserved.
+
+9. **Invalid source-run setting before execution begins**
+
+   Required assertions:
+
+   - no `startup-state-notice` appears;
+   - no startup notice group exists;
+   - no startup separator appears;
+   - no final execution-status group exists;
+   - no `execution-complete` appears;
+   - no leading blank line appears;
+   - no trailing blank line appears;
+   - existing setting diagnostic behavior remains renderable.
+
+10. **Invalid `startup-state-notice` policy value**
+
+    Required assertions:
+
+    - the invalid setting diagnostic appears;
+    - no `startup-state-notice` appears;
+    - no startup separator appears;
+    - no `execution-complete` appears;
+    - the invalid policy diagnostic does not create a rendered group separator by itself.
+
+11. **Program Console remains unchanged**
+
+    Required assertions:
+
+    - Program Console receives no startup notice text;
+    - Program Console receives no blank separator text;
+    - Program Console output remains controlled only by simulated program I/O.
+
+Exact rendered tests must include every required blank line.
+
+Exact rendered tests must also prove absence of blank lines where the group model forbids them.
+
+Structured diagnostic tests must prove that blank separators do not increase diagnostic counts.
 
 ### Required documentation updates
 
@@ -16799,6 +17166,12 @@ Update current user-facing manual/browser testing examples that show `startup-st
 Do not update supported-syntax documentation as if a MASM syntax feature was added.
 
 If any documentation describes `startup-state-notice` as appearing at completion, replace it with wording that says the notice is rendered before runtime diagnostics and final execution status when execution begins.
+
+If any documentation describes the blank line as belonging only to `startup-state-notice`, replace it with wording that says blank lines separate adjacent non-empty rendered Simulator Messages groups.
+
+If any documentation implies that `startup-state-notice=off` changes the spacing before `execution-complete`, replace it with wording that says the startup notice policy controls only the startup notice group.
+
+If any documentation examples include runtime warnings followed by `execution-complete`, update them to include the required blank line between the runtime diagnostic group and the final execution-status group.
 
 ### Non-goals
 
@@ -16822,7 +17195,7 @@ Do not implement any of these in this phase:
 
 ### Current-status and metadata
 
-This phase changes rendered Simulator Messages ordering and startup notice grouping. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
+This phase changes rendered Simulator Messages ordering and group separators. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
 
 The milestone report must state both status values explicitly.
 
@@ -16836,24 +17209,31 @@ Runtime/source-run MASM behavior phase:
 Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
 
 Status interpretation:
-Phase 64B changes rendered Simulator Messages ordering and startup notice grouping for an existing source-less notice. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Do not update supported-syntax runtime wording to say new MASM behavior was added.
+Phase 64B changes rendered Simulator Messages ordering and group separators for existing source-less notices, runtime diagnostics, and final execution-status messages. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Do not update supported-syntax runtime wording to say new MASM behavior was added.
 ```
 
-If Phase 64A has not been adopted in the active guide, replace the runtime/source-run MASM behavior phase in the block above with the latest accepted runtime/source-run MASM behavior phase at the time Phase 64B is implemented.
+Phase 64A is active canonical guide content. Do not replace the runtime/source-run MASM behavior phase in the block above unless the user explicitly creates a new reviewed guide revision that changes the roadmap or status model.
 
 Do not advance runtime/source-run MASM behavior metadata merely because message ordering changed.
 
 ### Acceptance criteria
 
-- `startup-state-notice` appears before runtime warnings, runtime errors, and `execution-complete`.
+- `startup-state-notice` appears before runtime warnings, runtime notices, runtime errors, and `execution-complete` when runtime execution begins and the active policy emits the notice.
 - `startup-state-notice` does not appear for programs that fail before runtime execution begins.
 - `startup-state-notice` does not appear for invalid source-run settings diagnosed before runtime execution begins.
-- Exactly one rendered blank line separates `startup-state-notice` from following Simulator Messages lines.
+- `execution-complete` appears only when execution completes successfully.
+- `execution-complete` does not appear after fatal assembly diagnostics, fatal runtime diagnostics, strict-policy stops, instruction-limit failures, or internal execution failures.
+- Exactly one rendered blank line separates each adjacent non-empty rendered message group.
+- The adjacent rendered message groups are startup notice group, runtime diagnostic group, and final execution-status group.
+- Multiple runtime diagnostics inside the runtime diagnostic group are not separated by group-separator blank lines.
+- Pre-execution-only diagnostics are not wrapped in startup, runtime, or final-status group separators.
 - The blank line is not a diagnostic object and does not appear in Program Console.
-- Structured diagnostic counts do not increase because of the blank line.
+- Structured diagnostic counts do not increase because of blank-line separators.
 - Existing opt-out behavior for `startup-state-notice` remains supported.
+- `startup-state-notice=off` suppresses only the startup notice group.
+- `startup-state-notice=off` does not remove the separator between runtime warnings/notices and `execution-complete`.
 - Existing startup values and startup diagnostic-policy defaults are unchanged.
-- Exact rendered Simulator Messages tests cover the new ordering and separator behavior.
+- Exact rendered Simulator Messages tests cover startup notice on/off, runtime warning success, multiple-warning success, no-warning success, fatal runtime error, runtime warning followed by fatal runtime error, pre-runtime assembly/static error, and invalid settings behavior.
 
 ## 68C. Phase 64C - Expanded EFLAGS Flag Display
 
@@ -16878,12 +17258,18 @@ Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
 and before:
 
 ```text
-Phase 65 - Signed Relational Conditional Jumps
+Phase 64D - Memory Change Source Attribution Display
 ```
 
 It does not renumber Phase 65 or any later phase.
 
-After Phase 64C is complete, the next normal control-flow implementation phase remains:
+After Phase 64C is complete, the next canonical phase is:
+
+```text
+Phase 64D - Memory Change Source Attribution Display
+```
+
+After Phase 64D is complete, the next normal control-flow implementation phase remains:
 
 ```text
 Phase 65 - Signed Relational Conditional Jumps
@@ -17103,7 +17489,7 @@ Status interpretation:
 Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, or new diagnostics. Do not update supported-syntax runtime wording to say new MASM behavior was added.
 ```
 
-If Phase 64A has not been adopted in the active guide, replace the runtime/source-run MASM behavior phase in the block above with the latest accepted runtime/source-run MASM behavior phase at the time Phase 64C is implemented.
+Phase 64A is active canonical guide content. Do not replace the runtime/source-run MASM behavior phase in the block above unless the user explicitly creates a new reviewed guide revision that changes the roadmap or status model.
 
 If the implementation adds a display-only source-run JSON field to avoid parsing the formatted `EFLAGS` string in browser code, that field must be documented and tested, but it still must not be described as new MASM syntax or new instruction behavior.
 
@@ -17120,11 +17506,346 @@ Do not advance runtime/source-run MASM behavior metadata merely because final-st
 - Runtime/source-run MASM behavior metadata is not advanced merely because display formatting changed.
 - Exact UI/formatter/source-run tests cover the new display shape.
 
+## 68D. Phase 64D - Memory Change Source Attribution Display
+
+### Goal
+
+Improve memory-change traceability by showing where each successful memory write came from in the source program.
+
+This phase adds source attribution to memory-change output so users can connect a memory-change row to the instruction line that produced the write.
+
+This is a display and source-run result metadata phase. It changes memory-change attribution data and rendered memory-change display. It must not add MASM syntax, parser acceptance, new instruction behavior, new memory semantics, new diagnostic-policy behavior, debugger/editor behavior, or browser UI controls beyond the minimum formatter/display changes required to show the source line attribution.
+
+### Behavior category
+
+Memory-change display and source-run result attribution.
+
+### Dependencies
+
+- Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions.
+- Phase 64B - Simulator Message Runtime Notice Ordering and Grouping.
+- Phase 64C - Expanded EFLAGS Flag Display.
+- Existing source-location preservation for parsed instructions and generated IR instructions.
+- Existing memory-change row generation.
+- Existing source-run JSON/result path.
+- Existing browser/Node formatter tests for user-visible output.
+
+### Required source attribution model
+
+Each successful memory-change entry caused by a parsed source instruction must carry, at minimum:
+
+```text
+sourceLine
+```
+
+`sourceLine` is the required field for Phase 64D when the memory write comes from a parsed source instruction and the instruction source line is available.
+
+Each successful memory-change entry may also carry, when available:
+
+```text
+sourceText
+```
+
+`sourceText` is optional in Phase 64D. If included, it must come from the original source line already preserved for the parsed instruction or generated IR instruction. The implementation must not reconstruct `sourceText` from opcode metadata, operand metadata, symbol metadata, or formatted memory-change data.
+
+The visible memory-change display must show `sourceLine` by default.
+
+Preferred compact display shape:
+
+```text
+a DWORD | line 10
+    old | 00000000h / u: 0 / s: 0
+    new | 00000001h / u: 1 / s: 1
+```
+
+Preferred display shape when compact source text is shown:
+
+```text
+a DWORD | line 10: inc a
+    old | 00000000h / u: 0 / s: 0
+    new | 00000001h / u: 1 / s: 1
+```
+
+If source text is long enough to make the memory-change row difficult to scan, the display may omit the source text and show only the line number.
+
+A later UI/debugger phase may add hover text, expandable rows, click-to-source navigation, source highlighting, or editor integration. Phase 64D must not implement those future debugger/editor features.
+
+### Attribution rules
+
+The source attribution must point to the instruction that caused the memory write.
+
+It must not point to:
+
+- the data declaration that created the symbol;
+- an earlier line that loaded an address with `OFFSET`;
+- an earlier line that computed an address;
+- a later line that only reads the memory;
+- a synthesized source line invented by the formatter.
+
+Example direct read-modify-write:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    inc a
+main ENDP
+END main
+```
+
+The memory-change row for `a` is attributed to the `inc a` line.
+
+Example indirect write:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    mov eax, OFFSET a
+    mov DWORD PTR [eax], 1
+main ENDP
+END main
+```
+
+The memory-change row for `a` is attributed to the `mov DWORD PTR [eax], 1` line, not to the `mov eax, OFFSET a` line.
+
+For read-modify-write instructions, the row is attributed to the read-modify-write instruction line. This includes currently implemented memory-destination forms such as:
+
+```text
+inc mem
+dec mem
+add mem, source
+sub mem, source
+adc mem, source
+sbb mem, source
+and mem, source
+or mem, source
+xor mem, source
+not mem
+neg mem
+shl mem, count
+sal mem, count
+shr mem, count
+sar mem, count
+rol mem, count
+ror mem, count
+xchg mem, reg
+xchg reg, mem
+```
+
+This list is a current-behavior reminder only. It is not permission to implement any future instruction form early. If a listed form is not implemented in the current repository state for any reason, Phase 64D must not add it.
+
+If one source instruction produces multiple memory-change rows, every row produced by that instruction must carry the same source attribution.
+
+Same-value writes that already count as writes under the current explicit-write tracking rules must receive source attribution just like value-changing writes. Phase 64D must not change the rules for whether a write is recorded; it only adds attribution to rows that are already supposed to exist.
+
+If source attribution is unavailable for a future source-less or synthesized runtime write, the implementation must not invent a fake source line. The structured result may use the documented nullable source representation, and the display may omit the line marker or use a stable fallback such as:
+
+```text
+source unavailable
+```
+
+### JSON/source-run result requirements
+
+The source-run memory-change entry must include a stable field for the line number when the write comes from a parsed source instruction.
+
+Required field:
+
+```text
+sourceLine
+```
+
+The source-run memory-change entry may include source text.
+
+Optional field:
+
+```text
+sourceText
+```
+
+The line number must use the same user-facing 1-based line-number convention used by diagnostics and existing source-location metadata.
+
+If `sourceText` is included, it must be the original source line text associated with the write-producing instruction, not a normalized or reconstructed instruction string.
+
+Phase 64D must not require source column, byte offset, span length, or instruction index to be displayed in the memory-change log. Those fields may remain internal. They may be added to source-run result metadata only if they fit the existing source-location model, are documented, and are tested. The required visible display remains line-number based.
+
+### Required implementation tasks
+
+1. Audit the current memory-change data path from executor/source-run result generation through browser formatting.
+2. Identify where memory-change entries are created and where write-producing instruction source metadata is still available.
+3. Add or wire `sourceLine` into every successful memory-change entry caused by a parsed source instruction.
+4. Add or wire `sourceText` only when the original source line text is already available and can be carried without reconstructing source code.
+5. Update the browser/Node memory-change formatter so each rendered memory-change row shows `line <N>` by default.
+6. If source text is rendered, keep it compact. Do not require long source lines to be printed in full.
+7. Preserve existing memory-change value formatting, including hexadecimal, unsigned decimal, and signed decimal display where width is known.
+8. Preserve existing symbol/type/offset display.
+9. Preserve Program Console and Simulator Messages separation.
+10. Preserve existing diagnostic behavior and diagnostic ordering.
+11. Preserve existing rules for whether a write creates a memory-change row.
+12. Preserve existing source-run phase metadata rules for display-only/source-run-result-attribution phases.
+13. Add the required tests listed below.
+
+### Required tests
+
+Add source-run JSON/result tests proving that successful memory-change entries include the producing source line for all of the following cases.
+
+Direct symbol write:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    mov a, 1
+main ENDP
+END main
+```
+
+Read-modify-write memory destination:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    inc a
+main ENDP
+END main
+```
+
+Indirect memory write:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    mov eax, OFFSET a
+    mov DWORD PTR [eax], 1
+main ENDP
+END main
+```
+
+Two writes to the same symbol on different lines:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    mov a, 1
+    inc a
+main ENDP
+END main
+```
+
+The first memory-change row must identify the `mov a, 1` line. The second memory-change row must identify the `inc a` line.
+
+Add formatter tests proving that rendered memory-change rows include the source line marker.
+
+Minimum exact rendered shape to test:
+
+```text
+a DWORD | line 10
+```
+
+If source text is rendered, also test:
+
+```text
+a DWORD | line 10: inc a
+```
+
+Add regression tests proving:
+
+- existing memory-change old/new value formatting is preserved;
+- existing symbol/type/offset display is preserved;
+- Program Console output is unchanged;
+- Simulator Messages output is unchanged except for any fixture text that intentionally includes the new memory-change attribution display;
+- failed `.CONST` writes still create no successful memory-change row;
+- strict planned-access failures still create no successful memory-change row;
+- invalid-address and invalid-range writes still create no successful memory-change row;
+- read-only/no-write instructions still create no memory-change rows;
+- same-value writes that are already recorded under existing explicit-write tracking receive source attribution.
+
+### Non-goals
+
+Do not implement any of these in Phase 64D:
+
+- new MASM syntax;
+- new instruction forms;
+- new memory operand forms;
+- new memory layout modes;
+- new memory-validation policy behavior;
+- new diagnostic codes;
+- new diagnostic-policy families;
+- changes to `.CONST` protection;
+- changes to uninitialized-read behavior;
+- changes to planned-read or planned-write semantics;
+- changes to whether successful same-value writes are recorded;
+- debugger stepping;
+- clickable source links;
+- CodeMirror gutter behavior;
+- hover cards;
+- expandable memory-change rows;
+- source-map editor navigation;
+- branch behavior;
+- signed relational jumps;
+- unsigned relational jumps;
+- stack/procedure behavior;
+- Irvine32 callable routines;
+- macro behavior.
+
+### Current-status and metadata
+
+This phase changes source-run result metadata and rendered memory-change display. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior.
+
+The milestone report must state both status values explicitly.
+
+Use this status wording:
+
+```text
+Repository/archive milestone:
+Phase 64D - Memory Change Source Attribution Display
+
+Runtime/source-run MASM behavior phase:
+Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+
+Status interpretation:
+Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add accepted MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior. Do not update runtime/source-run MASM behavior phase metadata or supported-syntax runtime wording merely because memory-change attribution was added.
+```
+
+Do not advance runtime/source-run MASM behavior metadata merely because memory-change display attribution changed.
+
+### Acceptance criteria
+
+- Successful memory-change entries caused by parsed source instructions include `sourceLine`.
+- `sourceLine` uses the same 1-based user-facing line-number convention as diagnostics.
+- Successful memory-change entries include `sourceText` only when it is available from original instruction source metadata and can be carried without reconstructing source code.
+- Rendered memory-change rows show `line <N>` by default.
+- If rendered source text is included, it appears after the line marker and remains compact.
+- The source line identifies the instruction that caused the write, not the data declaration.
+- Direct symbol writes, read-modify-write memory destinations, indirect writes, and repeated writes to the same symbol on different lines are tested.
+- Failed writes do not create successful memory-change rows.
+- Existing memory-change value formatting is preserved.
+- Existing symbol/type/offset display is preserved.
+- Existing Program Console output is unchanged.
+- Existing Simulator Messages output is unchanged except for fixture updates that intentionally include the new memory-change attribution display.
+- No MASM syntax or instruction behavior changes.
+- Runtime/source-run MASM behavior metadata is not advanced merely because source-run result attribution and rendered memory-change display changed.
+
 ## 69. Phase 65 - Signed Relational Conditional Jumps
 
 ### Goal
 
-Implement signed relational conditional jumps after equality jumps, the Phase 64A planned-read correction, and any accepted Phase 64B/64C display hotfixes are stable.
+Implement signed relational conditional jumps after equality jumps and after the active non-renumbering corrective/display phases Phase 64A, Phase 64B, Phase 64C, and Phase 64D are stable.
 
 This phase adds only direct-label signed relational conditional jumps. It must not implement unsigned relational jumps, anonymous labels, `loop`, indirect jumps, calls, stack behavior, procedure runtime behavior, Irvine32 callable routines, debugger/editor behavior, or active-time watchdog behavior.
 
@@ -17135,7 +17856,10 @@ Runtime control-flow instructions.
 ### Dependencies
 
 - Phase 64 - Equality Conditional Jumps.
-- Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions, if that corrective phase has been inserted into the guide.
+- Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions.
+- Phase 64B - Simulator Message Runtime Notice Ordering and Grouping.
+- Phase 64C - Expanded EFLAGS Flag Display.
+- Phase 64D - Memory Change Source Attribution Display.
 - Phase 50B - Undefined Flag Use Diagnostics for Flag Consumers.
 - Existing direct branch target classification and fixup behavior.
 - Existing instruction-count watchdog behavior.

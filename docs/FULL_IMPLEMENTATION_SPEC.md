@@ -2854,6 +2854,59 @@ The parser must not silently accept `[eax-4*2]` as `[eax-4]`. Extra arithmetic t
 
 Parser/static diagnostics remain appropriate for malformed or unsupported address syntax. Runtime memory helpers remain authoritative for final byte-range validation, region containment, permissions, `.CONST` write protection, cross-region protected-region diagnostics, and optional memory-validation policies.
 
+
+### 11.9.5 Planned Memory-Access Classification Consistency
+
+The simulator has two related memory-access layers.
+
+1. **Mandatory checked VM memory helpers.**  
+   These helpers are the final authority for simulated memory reads and writes. They enforce address-overflow checks, final byte-range checks, region containment, read/write permissions, and mandatory protected-region rules such as `.CONST` write protection.
+
+2. **Planned-access classification before value consumption or visible mutation.**  
+   Source-run, Wasm-facing, browser, and diagnostic-policy paths must be able to classify memory reads and writes before an instruction, runtime routine, debugger action, or other simulator feature consumes a memory value or mutates visible state.
+
+Calling a checked memory helper inside executor code is mandatory, but it is not sufficient for every source-run diagnostic policy.
+
+Optional teaching policies and strict/error policies must be able to warn or stop before the relevant value is consumed or state is changed. These policies include, where implemented:
+
+- uninitialized-origin read diagnostics;
+- section-capacity validation;
+- section-image validation;
+- declared-object validation;
+- protected-region crossing diagnostics;
+- future memory provenance, source-intent, taint, or bounds diagnostics.
+
+A memory-capable instruction or runtime feature must therefore keep its planned-access classification consistent with its actual memory behavior.
+
+This rule applies to:
+
+- explicit memory source operands;
+- explicit memory destination operands;
+- read-modify-write destination operands, where the destination is read before write-back;
+- implicit memory reads and writes, such as future stack operations, call/return behavior, procedure frame setup, Irvine32 buffer routines, string/buffer routines, debugger memory inspection, and debugger memory mutation.
+
+Planned-access classification must distinguish, at minimum:
+
+- whether the feature performs a simulated memory read;
+- whether the feature performs a simulated memory write;
+- whether a destination memory operand is read before it is written;
+- whether the access is explicit in source text or implicit in simulator runtime behavior;
+- the access width in bytes when it can be resolved before execution;
+- the source location or synthesized-source representation that should be attached to diagnostics;
+- whether no planned access applies because the feature does not touch simulated memory.
+
+For strict/error diagnostic-policy failures, planned-access checks must stop before value consumption or visible mutation. The no-partial-mutation guarantee includes:
+
+- registers;
+- modeled flags;
+- flag-validity metadata;
+- memory bytes;
+- Program Console output;
+- memory-change rows;
+- successful-completion messages.
+
+The implementation guide owns the per-phase checklist, tests, and milestone-report requirements for this rule. The stable specification requirement is that planned-access classification must not drift from actual simulated memory behavior.
+
 ### 11.10 Uninitialized-Origin Byte Tracking and Read Diagnostics
 
 `?` and `.DATA?` storage are deterministic zero at program load but must retain metadata that the bytes originated from uninitialized declarations.
@@ -4205,7 +4258,34 @@ Simulator Messages contain diagnostics, warnings, notices, runtime errors, setti
 
 A rendered blank separator in Simulator Messages is a formatting separator only. It is not Program Console output and is not a diagnostic by itself.
 
-#### Startup-state notice timing
+#### Simulator Messages rendered group order
+
+Rendered Simulator Messages use logical message groups. A rendered blank separator is controlled by adjacent non-empty groups, not by any single diagnostic-policy toggle.
+
+The stable rendered group order is:
+
+1. **Startup notice group**  
+   Contains `startup-state-notice` when runtime execution is about to begin and the active `startup-state-notice` policy emits the notice.
+
+2. **Runtime diagnostic group**  
+   Contains runtime warnings, runtime notices, and runtime errors emitted during execution. Examples include `uninitialized-read`, `undefined-flag-use`, runtime memory diagnostics, instruction-limit diagnostics after execution begins, and other runtime diagnostics emitted after runtime execution starts.
+
+3. **Final execution-status group**  
+   Contains `execution-complete` only when execution completes successfully.
+
+The renderer must place exactly one blank rendered line between adjacent non-empty groups.
+
+The renderer must not place a leading blank line before the first non-empty group.
+
+The renderer must not place a trailing blank line after the final non-empty group.
+
+The renderer must not create multiple blank lines between the same two adjacent non-empty groups.
+
+Multiple messages inside the same group must remain adjacent according to the existing rendered-message line format unless a later phase explicitly defines subgroup formatting. For example, two runtime warnings belong to the same runtime diagnostic group and must not automatically receive a group-separator blank line between them.
+
+A blank rendered separator is formatting only. It is not a diagnostic. It must not be represented as a source-run JSON diagnostic object, warning, notice, runtime error, assembly error, setting error, execution-status message, Program Console text, memory-change row, or any other structured runtime result item.
+
+#### Startup-state notice timing and grouping
 
 `startup-state-notice` describes the runtime environment that the simulator applies before the first instruction executes.
 
@@ -4213,77 +4293,98 @@ The notice must be emitted only when runtime execution is actually about to begi
 
 The notice must not be emitted during lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase that prevents runtime execution from starting.
 
-If assembly diagnostics, invalid source-run settings, or static validation errors prevent execution from beginning, the Simulator Messages output must not include `startup-state-notice` for that failed run.
+If assembly diagnostics, invalid source-run settings, static validation errors, or other pre-execution diagnostics prevent execution from beginning, the rendered Simulator Messages output must not include `startup-state-notice` for that failed run.
 
-If runtime execution begins and the active `startup-state-notice` policy emits the notice, the notice must appear before runtime warnings, runtime notices, runtime errors, and final execution-status messages.
+If runtime execution begins and the active `startup-state-notice` policy emits the notice, the notice must appear in the startup notice group before runtime warnings, runtime notices, runtime errors, and final execution-status messages.
 
 The notice must not be delayed until the end of execution.
 
-#### Startup-state notice separator
+The `startup-state-notice` policy controls only whether the startup notice group exists. It must not control whether the final execution-status group is separated from a preceding runtime diagnostic group.
 
-When `startup-state-notice` is rendered and at least one later Simulator Messages line follows it, the renderer must place exactly one blank line after the notice.
+#### Final execution-status grouping
 
-The blank line after `startup-state-notice` is a visual grouping separator. It must not be represented as:
+`execution-complete` belongs to the final execution-status group.
 
-- a diagnostic object;
-- a source-run diagnostic entry;
-- a Program Console line;
-- a warning;
-- a notice;
-- an info message;
-- a fake source-less diagnostic.
+When execution succeeds and at least one runtime warning or runtime notice was rendered before `execution-complete`, the renderer must place exactly one blank line between the runtime diagnostic group and the final execution-status group.
 
-The blank line must not appear when:
+This runtime-diagnostic-to-final-status separator is required even when `startup-state-notice` is disabled.
 
-- `startup-state-notice` is suppressed by policy;
-- invalid settings prevent execution from beginning;
-- assembly/static diagnostics prevent runtime execution from beginning;
-- there is no following Simulator Messages line.
+When execution succeeds with no startup notice and no runtime diagnostics, `execution-complete` is the only non-empty group and must be rendered without a leading blank line.
 
-Structured diagnostic counts must not increase because of the blank separator. Tests may compare rendered text that includes the blank line, but structured diagnostic tests must continue to count only real diagnostics, notices, warnings, errors, and execution-status messages.
+When execution fails before runtime begins, `execution-complete` must not be rendered.
 
-#### Rendered ordering examples
+When execution begins but stops because of a fatal runtime diagnostic, strict-policy stop, instruction-limit failure, or internal execution failure, `execution-complete` must not be rendered.
 
-Successful execution with no runtime warnings:
+If runtime warnings or runtime notices are emitted before a later fatal runtime error, all of those messages remain in the runtime diagnostic group. No final execution-status group exists, and no final-status separator is rendered.
+
+#### Pre-execution diagnostics
+
+Pre-execution diagnostics are rendered according to the existing diagnostic renderer order. Work that changes startup notice grouping must not introduce a startup notice group, runtime diagnostic group, final execution-status group, or group-separator blank line around pre-execution-only diagnostics.
+
+Pre-execution diagnostics include, but are not limited to:
+
+- lexer diagnostics;
+- parser diagnostics;
+- unsupported-feature diagnostics collected before runtime starts;
+- static option validation diagnostics;
+- invalid source-run setting diagnostics;
+- data declaration validation diagnostics;
+- layout validation diagnostics that prevent runtime execution.
+
+A run that contains only pre-execution diagnostics must not render a leading blank line, a trailing blank line, `startup-state-notice`, or `execution-complete`.
+
+#### Illustrative examples
+
+Successful default execution with startup notice and no runtime warnings:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-notice] startup-state-notice: ...
 
 [info] execution-complete: Execution completed successfully.
 ```
 
-Successful execution with a runtime warning:
+Successful default execution with startup notice and one runtime warning:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-notice] startup-state-notice: ...
 
-[simulator-warning] uninitialized-read line 5: Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 4 of those bytes still originated from uninitialized storage.
+[simulator-warning] uninitialized-read line 5: ...
+
 [info] execution-complete: Execution completed successfully.
 ```
 
-Runtime error after execution begins:
+Successful execution with `startup-state-notice=off` and one runtime warning:
 
 ```text
-[simulator-notice] startup-state-notice: The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.
+[simulator-warning] uninitialized-read line 5: ...
 
-[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.
+[info] execution-complete: Execution completed successfully.
 ```
 
-Assembly error before execution begins:
+Successful execution with `startup-state-notice=off` and no runtime diagnostics:
 
 ```text
-[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: Memory operand width is ambiguous. Use BYTE PTR, WORD PTR, or DWORD PTR.
+[info] execution-complete: Execution completed successfully.
 ```
 
-No startup-state notice appears in the assembly-error-only case because runtime execution did not begin.
-
-Invalid setting before execution begins:
+Runtime warning followed by a fatal runtime error:
 
 ```text
-[ui-error] invalid-setting: Invalid startup-state-notice policy value 'error'. Supported values: off, warn.
+[simulator-notice] startup-state-notice: ...
+
+[simulator-warning] uninitialized-read line 5: ...
+[runtime-error] invalid-address line 8: ...
 ```
 
-No startup-state notice appears in the invalid-setting-only case because runtime execution did not begin.
+The runtime warning and fatal runtime error are both in the runtime diagnostic group. No `execution-complete` line is rendered.
+
+Pre-execution assembly error:
+
+```text
+[assembly-error] ambiguous-memory-width line 4, column 9, byte offset 47, span length 1: ...
+```
+
+No startup notice, separator, or `execution-complete` line is rendered because runtime execution did not begin.
 
 #### Modeled EFLAGS display
 
@@ -4344,6 +4445,113 @@ No validity annotation is required unless the implementation guide phase that ow
 
 ## 20. Memory Change Display
 
+### 20.0 Memory Change Source Attribution
+
+Memory-change output should help users trace each visible memory update back to the source instruction that produced it.
+
+Every successful memory-change entry produced by a parsed source instruction must preserve the source line number when that source line is available from existing instruction source metadata.
+
+At minimum, each successful memory-change entry produced by a parsed source instruction must carry:
+
+```text
+sourceLine
+```
+
+When available from existing instruction source metadata, each successful memory-change entry may also carry:
+
+```text
+sourceText
+```
+
+`sourceLine` is the required attribution field for this behavior. `sourceText` is optional. Source text must come from the original source line already preserved for the parsed instruction or generated IR instruction. The implementation must not reconstruct source text by formatting opcode and operand metadata, because reconstructed text can differ from the user's original source.
+
+The visible memory-change display must show the source line number by default.
+
+Preferred compact display shape:
+
+```text
+a DWORD | line 10
+    old | 00000000h / u: 0 / s: 0
+    new | 00000001h / u: 1 / s: 1
+```
+
+Preferred display shape when compact source text is shown:
+
+```text
+a DWORD | line 10: inc a
+    old | 00000000h / u: 0 / s: 0
+    new | 00000001h / u: 1 / s: 1
+```
+
+The source attribution must identify the instruction that caused the memory write, not the data declaration that created the symbol.
+
+Example:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    inc a
+main ENDP
+END main
+```
+
+The memory-change row for `a` is attributed to the line containing:
+
+```asm
+inc a
+```
+
+It is not attributed to the `.data` declaration line containing:
+
+```asm
+a DWORD 0
+```
+
+For indirect writes, the memory-change row is attributed to the instruction that performed the write, not to an earlier instruction that loaded an address.
+
+Example:
+
+```asm
+.data
+a DWORD 0
+
+.code
+main PROC
+    mov eax, OFFSET a
+    mov DWORD PTR [eax], 1
+main ENDP
+END main
+```
+
+The memory-change row for `a` is attributed to the line containing:
+
+```asm
+mov DWORD PTR [eax], 1
+```
+
+It is not attributed to the line containing:
+
+```asm
+mov eax, OFFSET a
+```
+
+For read-modify-write instructions, the memory-change row is attributed to the read-modify-write instruction that performs the final write. This includes forms such as `inc a`, `dec a`, `add a, 1`, `and a, 1`, `not a`, `neg a`, shift/rotate memory destinations, and `xchg` forms that write memory when those instructions are implemented.
+
+If one source instruction produces multiple memory-change rows, every row produced by that instruction should carry the same source attribution.
+
+If a future source-less or synthesized runtime operation produces a memory change and no source line is available, the simulator must not invent a fake source line. In that case, the structured result may use a documented nullable source representation, and the visible display may omit the line marker or use a stable fallback such as:
+
+```text
+source unavailable
+```
+
+Source attribution must not create successful memory-change rows for failed writes. Failed `.CONST` writes, invalid-address writes, invalid-range writes, permission failures, strict planned-access failures, and any other no-partial-mutation failure must still produce no successful memory-change row.
+
+This rule affects memory-change attribution in source-run results and rendered memory-change display only. It does not change MASM syntax, parser acceptance, instruction semantics, memory safety, `.CONST` protection, planned-read or planned-write policy behavior, Program Console output, diagnostic codes, or diagnostic-policy behavior.
+
 ### 20.1 Default Display
 
 By default, show only changed memory for the last step.
@@ -4361,10 +4569,11 @@ Display:
 
 ```text
 Memory changes:
-  var BYTE
+  var BYTE | line 4: mov var, 100
     address: 00500000h
     byte offset: +0
-    00h / u:0 / s:0 -> 64h / u:100 / s:100
+    old | 00h / u:0 / s:0
+    new | 64h / u:100 / s:100
 ```
 
 ### 20.2 Arrays and Byte Offsets
@@ -4384,11 +4593,12 @@ Display:
 
 ```text
 Memory changes:
-  nums + 8 DWORD
+  nums + 8 DWORD | line 4: mov nums[8], 100
     address: 00500008h
     byte offset: +8
     element index: 2
-    00000000h / u:0 / s:0 -> 00000064h / u:100 / s:100
+    old | 00000000h / u:0 / s:0
+    new | 00000064h / u:100 / s:100
 ```
 
 If the address is unaligned inside an element:
@@ -4435,7 +4645,7 @@ Large string changes should be collapsed by default.
 
 ### 20.5 Post-30 Memory Visualization Row Contract
 
-Memory-change visualization uses ordered row objects with stable identity. Each row includes sequence, row ID, region name, address, width, old bytes, new bytes, source instruction index or null, symbol name or null, byte offset when known, and display classification.
+Memory-change visualization uses ordered row objects with stable identity. Each row includes sequence, row ID, region name, address, width, old bytes, new bytes, symbol name or null, byte offset when known, display classification, and source attribution metadata where available. Source attribution metadata includes at least `sourceLine` for successful writes caused by parsed source instructions, may include `sourceText`, and may also include a source instruction index or null when the existing execution model exposes one.
 
 Overlapping writes are displayed in execution order by default. Grouped views must not reorder rows unless the grouping is explicitly labeled. Failed writes and validation-first failures produce diagnostics but no successful memory-change rows.
 

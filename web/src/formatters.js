@@ -76,6 +76,34 @@ const ALIGNED_REGISTER_VALUE_COLUMN_WIDTH =
 /** Valid display widths for Phase 52A signed integer formatting. */
 const SUPPORTED_SIGNED_DISPLAY_WIDTHS = new Set([8, 16, 32]);
 
+/** Stable diagnostic codes that belong to the Phase 64B runtime diagnostic group. */
+const RUNTIME_DIAGNOSTIC_CODES = new Set([
+  "divide-by-zero",
+  "invalid-address",
+  "invalid-branch-target",
+  "object-bounds-violation",
+  "object-bounds-warning",
+  "permission-denied",
+  "quotient-overflow",
+  "region-boundary-crossing",
+  "section-capacity-violation",
+  "section-image-violation",
+  "undefined-flag-use",
+  "undefined-modeled-flag",
+  "undefined-shift-flag",
+  "unaligned-memory-access",
+  "uninitialized-read",
+  "unsupported-code-memory-access"
+]);
+
+/** Logical rendered Simulator Messages group names introduced by Phase 64B. */
+const SIMULATOR_MESSAGE_GROUPS = {
+  OTHER: "other",
+  STARTUP: "startup",
+  RUNTIME: "runtime",
+  FINAL: "final"
+};
+
 /**
  * Returns a power-of-two modulus for one supported integer display width.
  *
@@ -329,6 +357,60 @@ export function formatRegisterLine(name, value, widthBits, signedDisplay = true,
 }
 
 /**
+ * Returns the logical rendered group for one Simulator Message.
+ *
+ * Phase 64B groups only the existing startup notice, runtime diagnostics, and
+ * final execution-complete status. Other diagnostics and compatibility notices
+ * keep their ordinary adjacency and are not converted into group separators.
+ *
+ * @param {SimulatorMessage | undefined} message Message to classify.
+ * @returns {string} One value from SIMULATOR_MESSAGE_GROUPS.
+ */
+function simulatorMessageRenderedGroup(message) {
+  if (!message) {
+    return SIMULATOR_MESSAGE_GROUPS.OTHER;
+  }
+
+  if (message.code === "startup-state-notice") {
+    return SIMULATOR_MESSAGE_GROUPS.STARTUP;
+  }
+
+  if (message.code === "execution-complete") {
+    return SIMULATOR_MESSAGE_GROUPS.FINAL;
+  }
+
+  if (message.kind === "runtime-error" || RUNTIME_DIAGNOSTIC_CODES.has(message.code)) {
+    return SIMULATOR_MESSAGE_GROUPS.RUNTIME;
+  }
+
+  return SIMULATOR_MESSAGE_GROUPS.OTHER;
+}
+
+/**
+ * Returns whether Phase 64B requires a blank separator between adjacent messages.
+ *
+ * Separators are rendering-only group boundaries. They are never represented as
+ * source-run JSON diagnostics and are not inserted around pre-execution-only
+ * diagnostics or compatibility notices.
+ *
+ * @param {string} previousGroup Logical group for the preceding message.
+ * @param {string} currentGroup Logical group for the current message.
+ * @returns {boolean} true when a blank rendered line should be inserted.
+ */
+function shouldSeparateSimulatorMessageGroups(previousGroup, currentGroup) {
+  if (previousGroup === currentGroup) {
+    return false;
+  }
+
+  if (previousGroup === SIMULATOR_MESSAGE_GROUPS.STARTUP &&
+      (currentGroup === SIMULATOR_MESSAGE_GROUPS.RUNTIME || currentGroup === SIMULATOR_MESSAGE_GROUPS.FINAL)) {
+    return true;
+  }
+
+  return previousGroup === SIMULATOR_MESSAGE_GROUPS.RUNTIME && currentGroup === SIMULATOR_MESSAGE_GROUPS.FINAL;
+}
+
+/**
  * Returns whether one canonical register row should show the unchanged marker.
  *
  * The formatter consumes explicit write-tracking metadata. It deliberately does
@@ -410,13 +492,24 @@ export function formatSimulatorMessages(messages) {
     return "No simulator messages.";
   }
 
-  return messages.map((message) => {
-    const sourceSpan = Number.isFinite(message.byteOffset)
-      ? `, byte offset ${message.byteOffset}${Number.isFinite(message.spanLength) ? `, span length ${message.spanLength}` : ""}`
+  const lines = [];
+  let previousGroup = null;
+
+  messages.forEach((message) => {
+    const safeMessage = message || {};
+    const group = simulatorMessageRenderedGroup(safeMessage);
+    const sourceSpan = Number.isFinite(safeMessage.byteOffset)
+      ? `, byte offset ${safeMessage.byteOffset}${Number.isFinite(safeMessage.spanLength) ? `, span length ${safeMessage.spanLength}` : ""}`
       : "";
-    const location = message.line ? ` line ${message.line}${message.column ? `, column ${message.column}` : ""}${sourceSpan}` : "";
-    return `[${message.kind || "message"}] ${message.code || "unknown"}${location}: ${message.message || ""}`;
-  }).join("\n");
+    const location = safeMessage.line ? ` line ${safeMessage.line}${safeMessage.column ? `, column ${safeMessage.column}` : ""}${sourceSpan}` : "";
+    if (previousGroup !== null && shouldSeparateSimulatorMessageGroups(previousGroup, group)) {
+      lines.push("");
+    }
+    lines.push(`[${safeMessage.kind || "message"}] ${safeMessage.code || "unknown"}${location}: ${safeMessage.message || ""}`);
+    previousGroup = group;
+  });
+
+  return lines.join("\n");
 }
 
 /**

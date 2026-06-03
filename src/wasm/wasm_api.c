@@ -800,6 +800,43 @@ static bool masm32_sim_json_append_message(
     return masm32_sim_json_append_message_with_span(writer, kind, code, message, line, column, 0U, 0U, false);
 }
 
+/// Appends the source-less startup-state notice to Simulator Messages.
+///
+/// The notice is emitted before runtime diagnostics for Phase 64B rendered
+/// grouping. It remains an ordinary structured message; blank group separators
+/// are added only by the browser/Node formatter.
+///
+/// @param writer Writer to mutate.
+/// @param inout_has_message Whether a prior message has already been appended.
+/// @param startup_register_flag_mode Active register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Active uninitialized-byte mode.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_startup_state_notice(
+    Masm32SimJsonWriter *writer,
+    bool *inout_has_message,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode
+) {
+    if (writer == NULL || inout_has_message == NULL) {
+        return false;
+    }
+    if (*inout_has_message && !masm32_sim_json_append(writer, ",")) {
+        return false;
+    }
+    if (!masm32_sim_json_append_message(
+            writer,
+            "simulator-notice",
+            MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE,
+            masm32_sim_wasm_startup_state_notice_message(startup_register_flag_mode, uninitialized_storage_visible_byte_mode),
+            0U,
+            0U
+        )) {
+        return false;
+    }
+    *inout_has_message = true;
+    return true;
+}
+
 /// Builds a renderable invalid startup-setting JSON result.
 ///
 /// @param setting_name Setting key that failed validation.
@@ -5475,26 +5512,20 @@ static const char *masm32_sim_wasm_build_run_json(
             (void)masm32_sim_json_append_parser_messages(&writer, parser_diagnostics, parser_result->diagnostic_count);
             has_message = true;
         }
+        if (emit_startup_state_notice) {
+            (void)masm32_sim_json_append_startup_state_notice(
+                &writer,
+                &has_message,
+                startup_register_flag_mode,
+                uninitialized_storage_visible_byte_mode
+            );
+        }
         (void)masm32_sim_json_append_section_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_shift_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_flag_use_warnings(&writer, storage, &has_message);
-        if (emit_startup_state_notice) {
-            if (has_message) {
-                (void)masm32_sim_json_append(&writer, ",");
-            }
-            (void)masm32_sim_json_append_message(
-                &writer,
-                "simulator-notice",
-                MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE,
-                masm32_sim_wasm_startup_state_notice_message(startup_register_flag_mode, uninitialized_storage_visible_byte_mode),
-                0U,
-                0U
-            );
-            has_message = true;
-        }
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
@@ -5509,6 +5540,14 @@ static const char *masm32_sim_wasm_build_run_json(
         );
     } else if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR) {
         bool has_message = false;
+        if (emit_startup_state_notice) {
+            (void)masm32_sim_json_append_startup_state_notice(
+                &writer,
+                &has_message,
+                startup_register_flag_mode,
+                uninitialized_storage_visible_byte_mode
+            );
+        }
         if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
             (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
         }
