@@ -311,6 +311,35 @@ function assertRunStatus(json, ok, status) {
   assert.equal(json.status, status);
 }
 
+/**
+ * Asserts one Phase 64C modeled flag child row is present with the expected value.
+ *
+ * @param {string} formatted Full formatted register table.
+ * @param {string} flagName Modeled flag name.
+ * @param {number} expected Expected modeled bit value.
+ * @returns {void}
+ */
+function assertModeledFlagLine(formatted, flagName, expected) {
+  assert.match(formatted, new RegExp(`^  ${flagName}\\s+\\| ${expected}$`, "m"));
+}
+
+/**
+ * Asserts Phase 64C modeled flag rows are present and future-owned display text is absent.
+ *
+ * @param {string} formatted Full formatted register table.
+ * @param {{CF: number, ZF: number, SF: number, OF: number}} expected Expected modeled flags.
+ * @returns {void}
+ */
+function assertModeledFlags(formatted, expected) {
+  assert.match(formatted, /^EFLAGS \| [0-9A-F]{8}h \/ [0-9]+\s*$/m);
+  assertModeledFlagLine(formatted, "CF", expected.CF);
+  assertModeledFlagLine(formatted, "ZF", expected.ZF);
+  assertModeledFlagLine(formatted, "SF", expected.SF);
+  assertModeledFlagLine(formatted, "OF", expected.OF);
+  assert.doesNotMatch(formatted, /^  (PF|AF|DF|IF|TF)\s+\|/m);
+  assert.doesNotMatch(formatted, /undefined|architecturally/i);
+}
+
 
 /**
  * Runs one Phase 51 rendered diagnostic smoke fixture and reports the expected line.
@@ -6541,6 +6570,109 @@ END main
   const registers = formatRegisters(json.registers);
   assert.match(registers, /^EAX    \| FFFFFFFFh \/ u: 4294967295 \/ s: -1\s*$/m);
   assert.match(registers, /^    AL \|       FFh \/ u: 255\s+\/ s: -1\s*$/m);
+});
+
+
+test("Phase 64C formats modeled flag rows after XOR sets ZF", () => {
+  const source = `.code
+main PROC
+    xor eax, eax
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-xor-zf-flag-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EFLAGS.hex, "00000040h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 0, ZF: 1, SF: 0, OF: 0 });
+});
+
+
+test("Phase 64C formats modeled flag rows after ADD sets CF", () => {
+  const source = `.code
+main PROC
+    mov al, 0FFh
+    add al, 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-add-cf-flag-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EFLAGS.hex, "00000041h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 1, ZF: 1, SF: 0, OF: 0 });
+});
+
+
+test("Phase 64C formats modeled flag rows after ADD sets SF and OF", () => {
+  const source = `.code
+main PROC
+    mov al, 7Fh
+    add al, 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-add-sf-of-flag-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EFLAGS.hex, "00000880h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 0, ZF: 0, SF: 1, OF: 1 });
+});
+
+
+test("Phase 64C formats modeled flag rows after flag-control instructions", () => {
+  const source = `.code
+main PROC
+    stc
+    cmc
+    stc
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-flag-control-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EFLAGS.hex, "00000001h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 1, ZF: 0, SF: 0, OF: 0 });
+});
+
+
+test("Phase 64C formats modeled flag rows after TEST clears CF and OF", () => {
+  const source = `.code
+main PROC
+    mov eax, 80000000h
+    stc
+    test eax, eax
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-test-flag-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EFLAGS.hex, "00000080h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 0, ZF: 0, SF: 1, OF: 0 });
+});
+
+
+test("Phase 64C preserves equality jump behavior while displaying modeled flags", () => {
+  const source = `.code
+main PROC
+    mov eax, 5
+    cmp eax, 5
+    je equal
+    mov ebx, 99
+equal:
+    mov ecx, 2
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64c-equality-jump-flag-display", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(json.registers.EBX.unsigned, 0);
+  assert.equal(json.registers.ECX.unsigned, 2);
+  assert.equal(json.registers.EFLAGS.hex, "00000040h");
+  assertModeledFlags(formatRegisters(json.registers), { CF: 0, ZF: 1, SF: 0, OF: 0 });
 });
 
 

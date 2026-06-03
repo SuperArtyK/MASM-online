@@ -14,6 +14,18 @@
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
 
+/** Zero-based EFLAGS bit index for the currently modeled carry flag. */
+const EFLAGS_CF_BIT = 0;
+
+/** Zero-based EFLAGS bit index for the currently modeled zero flag. */
+const EFLAGS_ZF_BIT = 6;
+
+/** Zero-based EFLAGS bit index for the currently modeled sign flag. */
+const EFLAGS_SF_BIT = 7;
+
+/** Zero-based EFLAGS bit index for the currently modeled overflow flag. */
+const EFLAGS_OF_BIT = 11;
+
 /** Canonical MASM32 register display groups and aliases for the final-state panel. */
 const REGISTER_DISPLAY_ROWS = [
   { name: "EAX", source: "EAX", widthBits: 32, group: "EAX", indentLevel: 0 },
@@ -41,7 +53,11 @@ const REGISTER_DISPLAY_ROWS = [
   { name: "ESP", source: "ESP", widthBits: 32, group: "ESP", indentLevel: 0 },
   { name: "SP", source: "ESP", widthBits: 16, group: "ESP", indentLevel: 1 },
   { name: "EIP", source: "EIP", widthBits: 32, group: "EIP", indentLevel: 0 },
-  { name: "EFLAGS", source: "EFLAGS", widthBits: 32, group: "EFLAGS", indentLevel: 0, signedDisplay: false }
+  { name: "EFLAGS", source: "EFLAGS", widthBits: 32, group: "EFLAGS", indentLevel: 0, signedDisplay: false },
+  { name: "CF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_CF_BIT },
+  { name: "ZF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_ZF_BIT },
+  { name: "SF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_SF_BIT },
+  { name: "OF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_OF_BIT }
 ];
 
 /** Number of leading spaces added for one register composition level. */
@@ -338,6 +354,44 @@ function deriveRegisterAliasValue(sourceValue, widthBits, shiftBits = 0) {
   };
 }
 
+
+/**
+ * Derives one modeled flag bit value from the canonical EFLAGS payload.
+ *
+ * Phase 64C displays only currently modeled flag bit values. It deliberately
+ * avoids flag-validity annotations and does not expose unmodeled x86 flags.
+ *
+ * @param {RegisterValue} eflagsValue Canonical EFLAGS register value.
+ * @param {number} flagBit Zero-based EFLAGS bit index.
+ * @returns {number | null} Modeled flag bit as 0 or 1, or null when unavailable.
+ */
+function deriveModeledFlagBitValue(eflagsValue, flagBit) {
+  const sourceUnsigned = Number.isFinite(eflagsValue && eflagsValue.unsigned)
+    ? eflagsValue.unsigned
+    : parseHexDisplay(eflagsValue && eflagsValue.hex);
+  if (!Number.isFinite(sourceUnsigned) || !Number.isInteger(flagBit) || flagBit < 0 || flagBit > 31) {
+    return null;
+  }
+
+  const normalized = normalizeUnsignedForWidth(sourceUnsigned, 32);
+  if (normalized === null) {
+    return null;
+  }
+
+  return Math.floor(normalized / (2 ** flagBit)) % 2;
+}
+
+/**
+ * Formats one modeled flag child row for the final-register panel.
+ *
+ * @param {string} name Modeled flag display name.
+ * @param {number} value Modeled flag bit value, either 0 or 1.
+ * @returns {string} Human-readable modeled-flag row.
+ */
+function formatModeledFlagLine(name, value) {
+  return `${name.padEnd(REGISTER_NAME_COLUMN_WIDTH, " ")}| ${value ? 1 : 0}`;
+}
+
 /**
  * Formats one register value for the final-register panel.
  *
@@ -461,11 +515,23 @@ export function formatRegisters(registers, registerWrites) {
       }
 
       const sourceValue = registers[row.source];
-      const value = row.name === row.source
-        ? sourceValue
-        : deriveRegisterAliasValue(sourceValue, row.widthBits, row.shiftBits || 0);
-      if (value === null) {
-        return;
+      const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
+      let line = null;
+
+      if (Number.isInteger(row.flagBit)) {
+        const flagValue = deriveModeledFlagBitValue(sourceValue, row.flagBit);
+        if (flagValue === null) {
+          return;
+        }
+        line = formatModeledFlagLine(displayName, flagValue);
+      } else {
+        const value = row.name === row.source
+          ? sourceValue
+          : deriveRegisterAliasValue(sourceValue, row.widthBits, row.shiftBits || 0);
+        if (value === null) {
+          return;
+        }
+        line = formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement);
       }
 
       if (previousGroup !== null && previousGroup !== row.group) {
@@ -473,8 +539,6 @@ export function formatRegisters(registers, registerWrites) {
       }
       previousGroup = row.group;
 
-      const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
-      const line = formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement);
       lines.push(shouldShowRegisterUnchangedMarker(row, registerWrites) ? `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}` : line);
     });
 

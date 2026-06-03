@@ -1403,17 +1403,17 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase64b_status_and_message_grouping_present() -> None:
-    """Verify Phase 64B repository status, Phase 64A runtime metadata, and grouping docs/tests."""
+def assert_phase64c_status_and_eflags_display_present() -> None:
+    """Verify Phase 64C repository status, Phase 64A runtime metadata, and final EFLAGS display docs/tests."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 64B - Simulator Message Runtime Notice Ordering and Grouping",
+        "Phase 64C - Expanded EFLAGS Flag Display",
         "Runtime/source-run MASM behavior phase:",
         "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
     ]
     status_block = """Repository/archive milestone:
-Phase 64B - Simulator Message Runtime Notice Ordering and Grouping
+Phase 64C - Expanded EFLAGS Flag Display
 
 Runtime/source-run MASM behavior phase:
 Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"""
@@ -1447,7 +1447,10 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "`cmp`",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
-            "Phase 64B - Simulator Message Runtime Notice Ordering and Grouping",
+            "Phase 64C - Expanded EFLAGS Flag Display",
+            "Final register display now keeps the canonical `EFLAGS` parent row",
+            "Phase 64C displays modeled flag bit values only",
+            "Flag-validity annotations remain future display work",
             "Simulator Messages now render `startup-state-notice`, runtime diagnostics, and `execution-complete` as adjacent logical groups",
             "Blank separators are formatter-only",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
@@ -1488,7 +1491,10 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 64B:",
+            "Current status at Phase 64C:",
+            "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
+            "Phase 64C displays modeled flag bit values only",
+            "Flag-validity annotations remain future display work",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
             "CMP memory reads participate in planned-read validation before flags are updated.",
             "Phase 64 implements executable equality conditional jumps",
@@ -1513,12 +1519,13 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Phase 64B - Simulator Message Runtime Notice Ordering and Grouping",
+            "Phase 64C - Expanded EFLAGS Flag Display",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
             "reserved-word-symbol",
             "CMP memory reads use checked helpers and planned-read validation",
             "existing read-modify-write memory destinations continue to route through planned-read validation",
+            "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
             "`token-capacity-exceeded`",
@@ -1542,7 +1549,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 64B: Simulator Messages now group startup notices, runtime diagnostics, and completion status",
+            "Milestone 64C: Final registers now show modeled CF, ZF, SF, and OF child rows under EFLAGS",
             "Accepted syntax remains the Phase 64 equality-jump subset",
             "je equal",
             "jmp done",
@@ -1563,8 +1570,12 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Accepted MASM syntax remains the Phase 64 equality-jump subset",
-            "Phase 64B changes rendered Simulator Messages ordering and blank-line group separators only",
+            "Phase 64C changes final-register display formatting only",
             "Phase 64A remains the runtime/source-run MASM behavior phase",
+            "### Final register EFLAGS child display",
+            "Final register display now keeps the canonical `EFLAGS` parent row",
+            "Phase 64C displays modeled flag bit values only",
+            "Flag-validity annotations remain future display work",
             "### Simulator Messages grouping",
             "The renderer inserts exactly one blank line between adjacent non-empty startup, runtime-diagnostic, and final-status groups",
             "Those blank lines are formatter-only",
@@ -1577,7 +1588,8 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "planned-read validation",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
-            "Phase 64B - Simulator Message Runtime Notice Ordering and Grouping",
+            "Phase 64C - Expanded EFLAGS Flag Display",
+            "Phase 64B",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D documents and tests source-run/parser capacity behavior",
@@ -1607,6 +1619,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
             "Phase 64 implements executable equality conditional jumps",
             "Phase 64A corrects source-run planned-read coverage",
+            "Phase 64C expands final register display",
             "Phase 64B corrects rendered Simulator Messages grouping",
         ],
     )
@@ -1649,6 +1662,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "tests/web/test_formatters.mjs",
         [
+            "formats Phase 64C modeled flag child rows under EFLAGS",
             "formats Phase 64B startup, runtime warning, and completion groups",
             "startup-state-notice",
             "execution-complete",
@@ -1964,7 +1978,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase64b_status_and_message_grouping_present()
+    assert_phase64c_status_and_eflags_display_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

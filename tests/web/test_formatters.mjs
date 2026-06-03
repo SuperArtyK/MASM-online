@@ -97,8 +97,41 @@ test("formats canonical registers and aliases in stable order", () => {
     "    BH |     00h   / u: 0          / s:  0         ",
     "    BL |       03h / u: 3          / s:  3         ",
     "",
-    "EFLAGS | 00000040h / 64                            "
+    "EFLAGS | 00000040h / 64                            ",
+    "  CF   | 0",
+    "  ZF   | 1",
+    "  SF   | 0",
+    "  OF   | 0"
   ].join("\n"));
+});
+
+
+test("formats Phase 64C modeled flag child rows under EFLAGS", () => {
+  const formatted = formatRegisters({
+    EFLAGS: { hex: "000008C1h", unsigned: 2241 }
+  });
+
+  assert.equal(formatted, [
+    "EFLAGS | 000008C1h / 2241                          ",
+    "  CF   | 1",
+    "  ZF   | 1",
+    "  SF   | 1",
+    "  OF   | 1"
+  ].join("\n"));
+  assert.doesNotMatch(formatted, /PF|AF|DF|IF|TF/);
+  assert.doesNotMatch(formatted, /undefined|architecturally/i);
+});
+
+
+test("formats Phase 64C modeled flag bits from EFLAGS hexadecimal fallback", () => {
+  const formatted = formatRegisters({
+    EFLAGS: { hex: "00000801h" }
+  });
+
+  assert.equal(findRegisterLine(formatted, "  CF"), "  CF   | 1");
+  assert.equal(findRegisterLine(formatted, "  ZF"), "  ZF   | 0");
+  assert.equal(findRegisterLine(formatted, "  SF"), "  SF   | 0");
+  assert.equal(findRegisterLine(formatted, "  OF"), "  OF   | 1");
 });
 
 
@@ -132,7 +165,7 @@ test("formats unchanged markers on canonical parent rows only", () => {
   ["EAX", "EBX", "ECX", "EDX", "ESI", "EDI", "EBP", "ESP", "EIP", "EFLAGS"].forEach((name) => {
     assert.match(findRegisterLine(formatted, name), /\[unchanged\]$/);
   });
-  ["  AX", "    AH", "    AL", "  BX", "    BH", "    BL", "  CX", "    CH", "    CL", "  DX", "    DH", "    DL", "  SI", "  DI", "  BP", "  SP"].forEach((name) => {
+  ["  AX", "    AH", "    AL", "  BX", "    BH", "    BL", "  CX", "    CH", "    CL", "  DX", "    DH", "    DL", "  SI", "  DI", "  BP", "  SP", "  CF", "  ZF", "  SF", "  OF"].forEach((name) => {
     assert.doesNotMatch(findRegisterLine(formatted, name), /\[unchanged\]/);
   });
 });
@@ -156,6 +189,10 @@ test("aligns EFLAGS and adds readable marker spacing for wide values", () => {
     findRegisterLine(formatted, "EFLAGS"),
     "EFLAGS | 80000000h / 2147483648                         [unchanged]"
   );
+  assert.equal(findRegisterLine(formatted, "  CF"), "  CF   | 0");
+  assert.equal(findRegisterLine(formatted, "  ZF"), "  ZF   | 0");
+  assert.equal(findRegisterLine(formatted, "  SF"), "  SF   | 0");
+  assert.equal(findRegisterLine(formatted, "  OF"), "  OF   | 0");
 });
 
 test("omits unchanged marker for parent and alias register-family writes", () => {
@@ -181,6 +218,15 @@ test("keeps legacy register formatting when write metadata is absent", () => {
 
   assert.doesNotMatch(formatted, /\[unchanged\]/);
   assert.equal(findRegisterLine(formatted, "EAX"), "EAX    | 00000000h / u: 0          / s:  0         ");
+});
+
+
+test("does not synthesize modeled flag rows when EFLAGS is unavailable", () => {
+  const formatted = formatRegisters({
+    EAX: { hex: "00000000h", unsigned: 0 }
+  });
+
+  assert.doesNotMatch(formatted, /^  (CF|ZF|SF|OF)\s+\|/m);
 });
 
 test("separates independent register groups with blank lines", () => {
