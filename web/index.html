@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 64C: Expanded EFLAGS Flag Display.
+  Milestone 64D: Memory Change Source Attribution Display.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,10 +18,15 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 64C: Final registers now show modeled CF, ZF, SF, and OF child rows under EFLAGS. Accepted syntax remains the Phase 64 equality-jump subset.</p>
+        <p class="muted">Milestone 64D: Memory changes now show the source line that produced each successful write. Accepted syntax remains the Phase 64 equality-jump subset.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.code
+        <textarea id="editor" spellcheck="false">.data
+a DWORD 0
+
+.code
 main PROC
+    mov a, 1
+    inc a
     mov eax, 5
     cmp eax, 5
     je equal

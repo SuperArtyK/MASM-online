@@ -6543,13 +6543,78 @@ END main
   assert.equal(json.ok, true, rawJson);
   assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
   assert.equal(formatMemoryChanges(json.memoryChanges), [
-    "value DWORD",
+    "value DWORD | line 6: mov value, 0FFFFFFFFh",
     "  old | 00000000h / u: 0          / s:  0         ",
     "  new | FFFFFFFFh / u: 4294967295 / s: -1         ",
     "",
-    "b BYTE",
+    "b BYTE | line 7: mov b, 0FFh",
     "  old |       00h / u: 0          / s:  0         ",
     "  new |       FFh / u: 255        / s: -1         "
+  ].join("\n"));
+});
+
+test("Phase 64D renders memory-change source attribution for direct and RMW writes", () => {
+  const source = `.data
+a DWORD 0
+.code
+main PROC
+    mov a, 1
+    inc a
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64d-memory-source-attribution-direct-rmw", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(formatMemoryChanges(json.memoryChanges), [
+    "a DWORD | line 5: mov a, 1",
+    "  old | 00000000h / u: 0          / s:  0         ",
+    "  new | 00000001h / u: 1          / s:  1         ",
+    "",
+    "a DWORD | line 6: inc a",
+    "  old | 00000001h / u: 1          / s:  1         ",
+    "  new | 00000002h / u: 2          / s:  2         "
+  ].join("\n"));
+});
+
+test("Phase 64D renders memory-change source attribution for indirect writes", () => {
+  const source = `.data
+a DWORD 0
+.code
+main PROC
+    mov eax, OFFSET a
+    mov DWORD PTR [eax], 1
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64d-memory-source-attribution-indirect", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(formatMemoryChanges(json.memoryChanges), [
+    "a DWORD | line 6: mov DWORD PTR [eax], 1",
+    "  old | 00000000h / u: 0          / s:  0         ",
+    "  new | 00000001h / u: 1          / s:  1         "
+  ].join("\n"));
+  assert.doesNotMatch(formatMemoryChanges(json.memoryChanges), /OFFSET a/);
+});
+
+test("Phase 64D renders memory-change source attribution for XCHG reg,mem writes", () => {
+  const source = `.data
+a DWORD 5
+.code
+main PROC
+    mov eax, 10
+    xchg eax, a
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture("phase64d-memory-source-attribution-xchg-reg-mem", source);
+  assert.equal(json.ok, true, rawJson);
+  assert.equal(rendered, "[info] execution-complete: Execution completed successfully.");
+  assert.equal(formatMemoryChanges(json.memoryChanges), [
+    "a DWORD | line 6: xchg eax, a",
+    "  old | 00000005h / u: 5          / s:  5         ",
+    "  new | 0000000Ah / u: 10         / s:  10        "
   ].join("\n"));
 });
 

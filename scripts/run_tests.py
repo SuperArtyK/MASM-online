@@ -621,7 +621,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 64B simulator-message ordering passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 64D memory-change source attribution passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1403,17 +1403,17 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase64c_status_and_eflags_display_present() -> None:
-    """Verify Phase 64C repository status, Phase 64A runtime metadata, and final EFLAGS display docs/tests."""
+def assert_phase64d_status_and_memory_attribution_present() -> None:
+    """Verify Phase 64D repository status, Phase 64A runtime metadata, and memory attribution docs/tests."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 64C - Expanded EFLAGS Flag Display",
+        "Phase 64D - Memory Change Source Attribution Display",
         "Runtime/source-run MASM behavior phase:",
         "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
     ]
     status_block = """Repository/archive milestone:
-Phase 64C - Expanded EFLAGS Flag Display
+Phase 64D - Memory Change Source Attribution Display
 
 Runtime/source-run MASM behavior phase:
 Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"""
@@ -1447,7 +1447,9 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "`cmp`",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
+            "Phase 64D - Memory Change Source Attribution Display",
             "Phase 64C - Expanded EFLAGS Flag Display",
+            "Memory-change rows now show the source line that caused each successful mutation",
             "Final register display now keeps the canonical `EFLAGS` parent row",
             "Phase 64C displays modeled flag bit values only",
             "Flag-validity annotations remain future display work",
@@ -1491,8 +1493,8 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 64C:",
-            "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
+            "Current status at Phase 64D:",
+            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write",
             "Phase 64C displays modeled flag bit values only",
             "Flag-validity annotations remain future display work",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
@@ -1519,12 +1521,13 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Phase 61C - Branch Debugger Dependency Cleanup",
             "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
             "Phase 61 - Direct JMP Runtime Execution",
-            "Phase 64C - Expanded EFLAGS Flag Display",
+            "Phase 64D - Memory Change Source Attribution Display",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "Runtime/source-run MASM behavior phase:",
             "reserved-word-symbol",
             "CMP memory reads use checked helpers and planned-read validation",
             "existing read-modify-write memory destinations continue to route through planned-read validation",
+            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write",
             "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
@@ -1549,8 +1552,10 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 64C: Final registers now show modeled CF, ZF, SF, and OF child rows under EFLAGS",
+            "Milestone 64D: Memory changes now show the source line that produced each successful write",
             "Accepted syntax remains the Phase 64 equality-jump subset",
+            "mov a, 1",
+            "inc a",
             "je equal",
             "jmp done",
             "done:",
@@ -1570,7 +1575,9 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Accepted MASM syntax remains the Phase 64 equality-jump subset",
-            "Phase 64C changes final-register display formatting only",
+            "Phase 64D changes source-run result metadata and rendered memory-change display only",
+            "### Memory-change source attribution display",
+            "a DWORD | line 10: inc a",
             "Phase 64A remains the runtime/source-run MASM behavior phase",
             "### Final register EFLAGS child display",
             "Final register display now keeps the canonical `EFLAGS` parent row",
@@ -1588,6 +1595,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "planned-read validation",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
+            "Phase 64D - Memory Change Source Attribution Display",
             "Phase 64C - Expanded EFLAGS Flag Display",
             "Phase 64B",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
@@ -1619,7 +1627,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
             "Phase 64 implements executable equality conditional jumps",
             "Phase 64A corrects source-run planned-read coverage",
-            "Phase 64C expands final register display",
+            "Phase 64D adds memory-change source attribution",
             "Phase 64B corrects rendered Simulator Messages grouping",
         ],
     )
@@ -1648,6 +1656,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "test_phase61d_source_text_capacity_diagnostic_source_run_program",
             "test_phase61d_code_label_capacity_diagnostic_source_run_program",
             "test_phase64b_source_run_message_ordering_contract",
+            "test_phase64d_memory_change_source_attribution",
             "instruction-limit-exceeded",
         ],
     )
@@ -1662,6 +1671,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "tests/web/test_formatters.mjs",
         [
+            "formats Phase 64D memory-change source line and text attribution",
             "formats Phase 64C modeled flag child rows under EFLAGS",
             "formats Phase 64B startup, runtime warning, and completion groups",
             "startup-state-notice",
@@ -1978,7 +1988,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase64c_status_and_eflags_display_present()
+    assert_phase64d_status_and_memory_attribution_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

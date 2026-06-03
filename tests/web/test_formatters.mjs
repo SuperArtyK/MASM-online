@@ -479,6 +479,41 @@ test("formats one symbol-aware memory change with signed display", () => {
   ].join("\n"));
 });
 
+test("formats Phase 64D memory-change source line and text attribution", () => {
+  assert.equal(formatMemoryChangeLine({
+    symbol: "a",
+    dataType: "DWORD",
+    widthBits: 32,
+    sourceLine: 10,
+    sourceText: "inc a",
+    oldHex: "00000000h",
+    oldUnsigned: 0,
+    newHex: "00000001h",
+    newUnsigned: 1
+  }), [
+    "a DWORD | line 10: inc a",
+    "  old | 00000000h / u: 0          / s:  0         ",
+    "  new | 00000001h / u: 1          / s:  1         "
+  ].join("\n"));
+});
+
+test("formats Phase 64D memory-change source line without fabricated source text", () => {
+  assert.equal(formatMemoryChangeLine({
+    symbol: "a",
+    dataType: "DWORD",
+    widthBits: 32,
+    sourceLine: 10,
+    oldHex: "00000000h",
+    oldUnsigned: 0,
+    newHex: "00000001h",
+    newUnsigned: 1
+  }), [
+    "a DWORD | line 10",
+    "  old | 00000000h / u: 0          / s:  0         ",
+    "  new | 00000001h / u: 1          / s:  1         "
+  ].join("\n"));
+});
+
 test("formats memory changes and empty memory changes", () => {
   assert.equal(formatMemoryChanges([{
     symbol: "var",
@@ -531,12 +566,14 @@ test("formats symbol-offset memory changes with byte offset and element index", 
     widthBits: 32,
     byteOffset: 8,
     elementIndex: 2,
+    sourceLine: 12,
+    sourceText: "mov nums[8], 100",
     oldHex: "00000000h",
     oldUnsigned: 0,
     newHex: "00000064h",
     newUnsigned: 100
   }), [
-    "nums + 8 DWORD",
+    "nums + 8 DWORD | line 12: mov nums[8], 100",
     "  old | 00000000h / u: 0          / s:  0         ",
     "  new | 00000064h / u: 100        / s:  100       ",
     "  info| byte offset +8, element index 2"

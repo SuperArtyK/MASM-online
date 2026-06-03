@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 64B simulator-message ordering.
+ * @brief Tests for the Wasm-facing source execution API through Phase 64D memory-change source attribution.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -11582,6 +11582,166 @@ static int test_phase64b_source_run_message_ordering_contract(void) {
     return failures;
 }
 
+/// Verifies Phase 64D source attribution metadata for memory-change rows.
+///
+/// @return Number of failures.
+static int test_phase64d_memory_change_source_attribution(void) {
+    int failures = 0;
+    char direct_json[TEST_JSON_COPY_CAPACITY];
+    char rmw_json[TEST_JSON_COPY_CAPACITY];
+    char indirect_json[TEST_JSON_COPY_CAPACITY];
+    char xchg_reg_mem_json[TEST_JSON_COPY_CAPACITY];
+    char two_writes_json[TEST_JSON_COPY_CAPACITY];
+    char same_value_json[TEST_JSON_COPY_CAPACITY];
+    char const_failure_json[TEST_JSON_COPY_CAPACITY];
+    char no_write_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(
+        direct_json,
+        sizeof(direct_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov a, 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        rmw_json,
+        sizeof(rmw_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    inc a\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        indirect_json,
+        sizeof(indirect_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, OFFSET a\n"
+            "    mov DWORD PTR [eax], 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        xchg_reg_mem_json,
+        sizeof(xchg_reg_mem_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 5\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, 10\n"
+            "    xchg eax, a\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        two_writes_json,
+        sizeof(two_writes_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov a, 1\n"
+            "    inc a\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        same_value_json,
+        sizeof(same_value_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov a, 0\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        const_failure_json,
+        sizeof(const_failure_json),
+        masm32_sim_wasm_run_source_json(
+            ".CONST\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov a, 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        no_write_json,
+        sizeof(no_write_json),
+        masm32_sim_wasm_run_source_json(
+            ".data\n"
+            "a DWORD 0\n"
+            "\n"
+            ".code\n"
+            "main PROC\n"
+            "    cmp a, 0\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+
+    failures += expect_json_contains(direct_json, "\"ok\":true", "Phase 64D direct write fixture should execute");
+    failures += expect_json_contains(direct_json, "\"sourceLine\":6,\"sourceText\":\"mov a, 1\"", "Phase 64D direct write should carry producing source line and text");
+
+    failures += expect_json_contains(rmw_json, "\"ok\":true", "Phase 64D RMW fixture should execute");
+    failures += expect_json_contains(rmw_json, "\"sourceLine\":6,\"sourceText\":\"inc a\"", "Phase 64D RMW row should point to the RMW instruction");
+
+    failures += expect_json_contains(indirect_json, "\"ok\":true", "Phase 64D indirect write fixture should execute");
+    failures += expect_json_contains(indirect_json, "\"sourceLine\":7,\"sourceText\":\"mov DWORD PTR [eax], 1\"", "Phase 64D indirect write should point to the write instruction");
+    failures += expect_json_not_contains(indirect_json, "\"sourceLine\":6,\"sourceText\":\"mov eax, OFFSET a\"", "Phase 64D indirect write must not point to the address-loading line");
+
+    failures += expect_json_contains(xchg_reg_mem_json, "\"ok\":true", "Phase 64D XCHG reg,mem fixture should execute");
+    failures += expect_json_contains(xchg_reg_mem_json, "\"sourceLine\":7,\"sourceText\":\"xchg eax, a\"", "Phase 64D XCHG reg,mem write should point to the XCHG instruction");
+    failures += expect_json_contains(xchg_reg_mem_json, "\"oldHex\":\"00000005h\",\"oldUnsigned\":5,\"newHex\":\"0000000Ah\",\"newUnsigned\":10", "Phase 64D XCHG reg,mem should report memory mutation");
+
+    failures += expect_json_contains(two_writes_json, "\"ok\":true", "Phase 64D two-write fixture should execute");
+    failures += expect_json_contains(two_writes_json, "\"sourceLine\":6,\"sourceText\":\"mov a, 1\"", "Phase 64D first write should carry first source line");
+    failures += expect_json_contains(two_writes_json, "\"sourceLine\":7,\"sourceText\":\"inc a\"", "Phase 64D second write should carry second source line");
+    failures += expect_json_fragment_order(two_writes_json, "\"sourceText\":\"mov a, 1\"", "\"sourceText\":\"inc a\"", "Phase 64D memory changes should preserve execution order");
+
+    failures += expect_json_contains(same_value_json, "\"ok\":true", "Phase 64D same-value write fixture should execute");
+    failures += expect_json_contains(same_value_json, "\"memoryChanges\":[]", "Phase 64D must preserve existing same-value memory-write row rules");
+
+    failures += expect_json_contains(const_failure_json, "\"ok\":false", "Phase 64D failed .CONST write fixture should fail");
+    failures += expect_json_contains(const_failure_json, "\"memoryChanges\":[]", "Phase 64D failed .CONST write should not create memory-change rows");
+    failures += expect_json_contains(no_write_json, "\"ok\":true", "Phase 64D no-write fixture should execute");
+    failures += expect_json_contains(no_write_json, "\"memoryChanges\":[]", "Phase 64D read-only CMP fixture should not create memory-change rows");
+
+    return failures;
+}
+
 int main(void) {
     int failures = 0;
 
@@ -11805,6 +11965,7 @@ int main(void) {
     failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
     failures += test_phase57e_invalid_startup_state_notice_setting();
     failures += test_phase64b_source_run_message_ordering_contract();
+    failures += test_phase64d_memory_change_source_attribution();
     failures += test_phase57h_register_write_metadata_no_register_writes();
     failures += test_phase57h_register_write_metadata_same_value_parent_write();
     failures += test_phase57h_register_write_metadata_alias_writes();
@@ -11866,6 +12027,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 64B simulator-message ordering passed.");
+    puts("Source execution tests through Phase 64D memory-change source attribution passed.");
     return 0;
 }

@@ -12,7 +12,7 @@
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {Record<string, boolean>} RegisterWriteMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
-/** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number}} MemoryChange */
+/** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number, sourceLine?: number, sourceText?: string}} MemoryChange */
 
 /** Zero-based EFLAGS bit index for the currently modeled carry flag. */
 const EFLAGS_CF_BIT = 0;
@@ -595,12 +595,35 @@ function hasSymbolOffset(change) {
 function formatMemoryChangeLabel(change) {
   const symbol = change && change.symbol ? change.symbol : "<unknown>";
   const dataType = change && change.dataType ? ` ${change.dataType}` : "";
+  const attribution = formatMemoryChangeSourceAttribution(change);
+  const suffix = attribution ? ` | ${attribution}` : "";
 
   if (hasSymbolOffset(change)) {
-    return `${symbol} + ${change.byteOffset}${dataType}`;
+    return `${symbol} + ${change.byteOffset}${dataType}${suffix}`;
   }
 
-  return `${symbol}${dataType}`;
+  return `${symbol}${dataType}${suffix}`;
+}
+
+/**
+ * Formats the Phase 64D source attribution suffix for a memory-change row.
+ *
+ * Source text, when present, is the original parser-preserved instruction line;
+ * this formatter does not reconstruct source from opcode or operand metadata.
+ *
+ * @param {MemoryChange} change Memory change object.
+ * @returns {string | null} Source attribution text, or null when unavailable.
+ */
+function formatMemoryChangeSourceAttribution(change) {
+  if (!change || !Number.isInteger(change.sourceLine) || change.sourceLine <= 0) {
+    return null;
+  }
+
+  if (typeof change.sourceText === "string" && change.sourceText.length > 0) {
+    return `line ${change.sourceLine}: ${change.sourceText}`;
+  }
+
+  return `line ${change.sourceLine}`;
 }
 
 /**
@@ -660,7 +683,7 @@ function formatMemoryChangeInfoRow(change) {
 /**
  * Formats one symbol-aware memory change returned by the worker.
  *
- * Each memory change uses a compact block with aligned old/new value rows.
+ * Each memory change uses a source-attributed block with aligned old/new value rows.
  * Symbol-offset writes include an extra info row when the core reports byte
  * offset or element-index metadata.
  *

@@ -12,15 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 64C:
+Current status at Phase 64D:
 
 Repository/archive milestone:
-Phase 64C - Expanded EFLAGS Flag Display
+Phase 64D - Memory Change Source Attribution Display
 
 Runtime/source-run MASM behavior phase:
 Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
 
-Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. The runtime/source-run MASM behavior phase remains Phase 64A. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work.
+Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior. The runtime/source-run MASM behavior phase remains Phase 64A.
+
+Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work.
 
 Phase 64B changes rendered Simulator Messages ordering and group separators for existing source-less notices, runtime diagnostics, and final execution-status messages. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
 
@@ -28,6 +30,7 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 
 ## Concise milestone ledger
 
+- Phase 64D adds memory-change source attribution to successful memory-change rows, including the one-based source line and preserved source text when available, without adding MASM syntax or changing runtime semantics.
 - Phase 64C expands final register display by keeping the EFLAGS parent row and adding subordinate CF, ZF, SF, and OF child rows without adding new flags, flag semantics, diagnostics, or MASM syntax.
 - Phase 64B corrects rendered Simulator Messages grouping for startup notices, runtime diagnostics, and successful completion without adding new syntax or source-run status fields.
 - Phase 64A corrects source-run planned-read coverage for existing memory-reading instructions without adding new syntax. Memory-destination read-modify-write instructions now participate in `uninitialized-read` warning and strict/error policy before consuming bytes or committing write-back.

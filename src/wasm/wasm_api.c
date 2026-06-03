@@ -182,6 +182,10 @@ typedef struct Masm32SimSymbolicMemoryChange {
     uint32_t old_value;
     /// Decoded unsigned value after the write.
     uint32_t new_value;
+    /// One-based source line of the instruction that caused the write, or zero when unavailable.
+    uint32_t source_line;
+    /// Original source text for the instruction that caused the write, or NULL when unavailable.
+    const char *source_text;
 } Masm32SimSymbolicMemoryChange;
 
 /// Describes one unaligned memory access warning returned to the UI.
@@ -1122,8 +1126,24 @@ static bool masm32_sim_json_append_memory_change(Masm32SimJsonWriter *writer, co
     if (!masm32_sim_json_append_memory_hex(writer, change->new_value, change->width_bits)) {
         return false;
     }
+    if (!masm32_sim_json_append(writer, ",\"newUnsigned\":%u", (unsigned int)change->new_value)) {
+        return false;
+    }
+    if (change->source_line > 0U) {
+        if (!masm32_sim_json_append(writer, ",\"sourceLine\":%u", (unsigned int)change->source_line)) {
+            return false;
+        }
+    }
+    if (change->source_text != NULL && change->source_text[0] != '\0') {
+        if (!masm32_sim_json_append(writer, ",\"sourceText\":")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, change->source_text)) {
+            return false;
+        }
+    }
 
-    return masm32_sim_json_append(writer, ",\"newUnsigned\":%u}", (unsigned int)change->new_value);
+    return masm32_sim_json_append(writer, "}");
 }
 
 /// Appends the symbol-aware memory change array to JSON.
@@ -1213,6 +1233,87 @@ static bool masm32_sim_wasm_delta_write_address(const VmExecDelta *delta, uint32
     return false;
 }
 
+/// Collects a symbol-aware memory change for a specific instruction operand.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM containing the latest execution delta and memory state.
+/// @param parser_result Parser result containing symbol count.
+/// @param delta Latest execution delta containing changed memory bytes.
+/// @param operand Instruction operand that may identify the written memory range.
+/// @return true when a symbolic memory-change row was appended.
+static bool masm32_sim_wasm_collect_memory_change_for_operand(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    const VmParserResult *parser_result,
+    const VmExecDelta *delta,
+    const VmIrOperand *operand
+) {
+    const VmSymbol *symbol = NULL;
+    uint32_t write_address = 0U;
+    uint8_t width_bytes = 0U;
+    uint8_t old_bytes[4] = {0U, 0U, 0U, 0U};
+    uint8_t new_bytes[4] = {0U, 0U, 0U, 0U};
+    uint8_t byte_index = 0U;
+    size_t change_index = 0U;
+    bool has_changed_byte = false;
+
+    if (storage == NULL || vm == NULL || parser_result == NULL || delta == NULL || operand == NULL ||
+        storage->memory_change_count >= (size_t)MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES) {
+        return false;
+    }
+
+    if ((operand->kind != VM_IR_OPERAND_MEMORY_ADDRESS && operand->kind != VM_IR_OPERAND_MEMORY_REGISTER) ||
+        (operand->width_bits != 8U && operand->width_bits != 16U && operand->width_bits != 32U)) {
+        return false;
+    }
+
+    if (!masm32_sim_wasm_delta_write_address(delta, &write_address)) {
+        return false;
+    }
+
+    width_bytes = (uint8_t)(operand->width_bits / 8U);
+    symbol = vm_symbol_find_by_address(storage->symbols, parser_result->symbol_count, write_address);
+    if (symbol == NULL || write_address + width_bytes > symbol->address + symbol->size_bytes) {
+        return false;
+    }
+
+    for (byte_index = 0U; byte_index < width_bytes; byte_index += 1U) {
+        uint8_t current_byte = 0U;
+        (void)vm_memory_read_u8(&vm->memory, write_address + byte_index, &current_byte, NULL);
+        old_bytes[byte_index] = current_byte;
+        new_bytes[byte_index] = current_byte;
+    }
+
+    for (change_index = 0U; change_index < delta->memory_change_count; change_index += 1U) {
+        const VmMemoryByteChange *byte_change = &delta->memory_changes[change_index];
+        if (byte_change->address >= write_address && byte_change->address < write_address + width_bytes) {
+            uint8_t relative = (uint8_t)(byte_change->address - write_address);
+            old_bytes[relative] = byte_change->old_value;
+            new_bytes[relative] = byte_change->new_value;
+            has_changed_byte = true;
+        }
+    }
+
+    if (has_changed_byte) {
+        Masm32SimSymbolicMemoryChange *change = &storage->memory_changes[storage->memory_change_count];
+        change->symbol_name = symbol->name;
+        change->data_type_name = operand->width_bits == 8U ? "BYTE" : (operand->width_bits == 16U ? "WORD" : "DWORD");
+        change->address = write_address;
+        change->byte_offset = write_address - symbol->address;
+        change->has_element_index = symbol->element_size_bytes != 0U && (change->byte_offset % (uint32_t)symbol->element_size_bytes) == 0U;
+        change->element_index = change->has_element_index ? change->byte_offset / (uint32_t)symbol->element_size_bytes : 0U;
+        change->width_bits = operand->width_bits;
+        change->old_value = masm32_sim_wasm_decode_u32(old_bytes, width_bytes);
+        change->new_value = masm32_sim_wasm_decode_u32(new_bytes, width_bytes);
+        change->source_line = delta->instruction.source_line;
+        change->source_text = delta->instruction.source_text;
+        storage->memory_change_count += 1U;
+        return true;
+    }
+
+    return false;
+}
+
 /// Collects one symbol-aware logical memory write from the last-step delta.
 ///
 /// @param storage Source-run storage to mutate.
@@ -1220,15 +1321,6 @@ static bool masm32_sim_wasm_delta_write_address(const VmExecDelta *delta, uint32
 /// @param parser_result Parser result containing symbol count.
 static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *storage, const Vm *vm, const VmParserResult *parser_result) {
     const VmExecDelta *delta = NULL;
-    const VmIrOperand *destination = NULL;
-    const VmSymbol *symbol = NULL;
-    uint32_t destination_address = 0U;
-    uint8_t width_bytes = 0U;
-    uint8_t old_bytes[4] = {0U, 0U, 0U, 0U};
-    uint8_t new_bytes[4] = {0U, 0U, 0U, 0U};
-    uint8_t byte_index = 0U;
-    size_t change_index = 0U;
-    bool has_changed_byte = false;
 
     if (storage == NULL || vm == NULL || parser_result == NULL || storage->memory_change_count >= (size_t)MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES) {
         return;
@@ -1239,52 +1331,11 @@ static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *stora
         return;
     }
 
-    destination = &delta->instruction.destination;
-    if ((destination->kind != VM_IR_OPERAND_MEMORY_ADDRESS && destination->kind != VM_IR_OPERAND_MEMORY_REGISTER) ||
-        (destination->width_bits != 8U && destination->width_bits != 16U && destination->width_bits != 32U)) {
+    if (masm32_sim_wasm_collect_memory_change_for_operand(storage, vm, parser_result, delta, &delta->instruction.destination)) {
         return;
     }
 
-    if (!masm32_sim_wasm_delta_write_address(delta, &destination_address)) {
-        return;
-    }
-
-    width_bytes = (uint8_t)(destination->width_bits / 8U);
-    symbol = vm_symbol_find_by_address(storage->symbols, parser_result->symbol_count, destination_address);
-    if (symbol == NULL || destination_address + width_bytes > symbol->address + symbol->size_bytes) {
-        return;
-    }
-
-    for (byte_index = 0U; byte_index < width_bytes; byte_index += 1U) {
-        uint8_t current_byte = 0U;
-        (void)vm_memory_read_u8(&vm->memory, destination_address + byte_index, &current_byte, NULL);
-        old_bytes[byte_index] = current_byte;
-        new_bytes[byte_index] = current_byte;
-    }
-
-    for (change_index = 0U; change_index < delta->memory_change_count; change_index += 1U) {
-        const VmMemoryByteChange *byte_change = &delta->memory_changes[change_index];
-        if (byte_change->address >= destination_address && byte_change->address < destination_address + width_bytes) {
-            uint8_t relative = (uint8_t)(byte_change->address - destination_address);
-            old_bytes[relative] = byte_change->old_value;
-            new_bytes[relative] = byte_change->new_value;
-            has_changed_byte = true;
-        }
-    }
-
-    if (has_changed_byte) {
-        Masm32SimSymbolicMemoryChange *change = &storage->memory_changes[storage->memory_change_count];
-        change->symbol_name = symbol->name;
-        change->data_type_name = destination->width_bits == 8U ? "BYTE" : (destination->width_bits == 16U ? "WORD" : "DWORD");
-        change->address = destination_address;
-        change->byte_offset = destination_address - symbol->address;
-        change->has_element_index = symbol->element_size_bytes != 0U && (change->byte_offset % (uint32_t)symbol->element_size_bytes) == 0U;
-        change->element_index = change->has_element_index ? change->byte_offset / (uint32_t)symbol->element_size_bytes : 0U;
-        change->width_bits = destination->width_bits;
-        change->old_value = masm32_sim_wasm_decode_u32(old_bytes, width_bytes);
-        change->new_value = masm32_sim_wasm_decode_u32(new_bytes, width_bytes);
-        storage->memory_change_count += 1U;
-    }
+    (void)masm32_sim_wasm_collect_memory_change_for_operand(storage, vm, parser_result, delta, &delta->instruction.source);
 }
 
 /// Returns a MASM data-width name for warning messages.
