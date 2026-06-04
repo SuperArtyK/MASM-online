@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 64);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "A");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions");
+  assert.equal(IMPLEMENTED_PHASE, 65);
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 65 - Signed Relational Conditional Jumps");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 64,
-      phaseSuffix: "A",
-      phaseName: "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"
+      phase: 65,
+      phaseSuffix: "",
+      phaseName: "Phase 65 - Signed Relational Conditional Jumps"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 64,
-      phaseSuffix: "A",
-      phaseName: "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"
+      phase: 65,
+      phaseSuffix: "",
+      phaseName: "Phase 65 - Signed Relational Conditional Jumps"
     }
   });
 });
@@ -326,7 +326,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 65 - Signed Relational Conditional Jumps. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });

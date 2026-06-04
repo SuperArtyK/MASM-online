@@ -193,6 +193,22 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "jne";
         case VM_IR_OPCODE_JNZ:
             return "jnz";
+        case VM_IR_OPCODE_JL:
+            return "jl";
+        case VM_IR_OPCODE_JNGE:
+            return "jnge";
+        case VM_IR_OPCODE_JLE:
+            return "jle";
+        case VM_IR_OPCODE_JNG:
+            return "jng";
+        case VM_IR_OPCODE_JG:
+            return "jg";
+        case VM_IR_OPCODE_JNLE:
+            return "jnle";
+        case VM_IR_OPCODE_JGE:
+            return "jge";
+        case VM_IR_OPCODE_JNL:
+            return "jnl";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

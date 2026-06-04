@@ -4212,6 +4212,38 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_JNZ;
         return true;
     }
+    if (vm_parser_token_equals(token, "jl")) {
+        *out_opcode = VM_IR_OPCODE_JL;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnge")) {
+        *out_opcode = VM_IR_OPCODE_JNGE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jle")) {
+        *out_opcode = VM_IR_OPCODE_JLE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jng")) {
+        *out_opcode = VM_IR_OPCODE_JNG;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jg")) {
+        *out_opcode = VM_IR_OPCODE_JG;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnle")) {
+        *out_opcode = VM_IR_OPCODE_JNLE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jge")) {
+        *out_opcode = VM_IR_OPCODE_JGE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnl")) {
+        *out_opcode = VM_IR_OPCODE_JNL;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4235,13 +4267,21 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
 /// Returns whether an opcode uses direct branch-target parsing and fixups.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for direct JMP and Phase 64 equality conditional jumps.
+/// @return true for direct JMP, Phase 64 equality conditional jumps, and Phase 65 signed relational jumps.
 static bool vm_parser_opcode_is_direct_branch(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_JMP ||
            opcode == VM_IR_OPCODE_JE ||
            opcode == VM_IR_OPCODE_JZ ||
            opcode == VM_IR_OPCODE_JNE ||
-           opcode == VM_IR_OPCODE_JNZ;
+           opcode == VM_IR_OPCODE_JNZ ||
+           opcode == VM_IR_OPCODE_JL ||
+           opcode == VM_IR_OPCODE_JNGE ||
+           opcode == VM_IR_OPCODE_JLE ||
+           opcode == VM_IR_OPCODE_JNG ||
+           opcode == VM_IR_OPCODE_JG ||
+           opcode == VM_IR_OPCODE_JNLE ||
+           opcode == VM_IR_OPCODE_JGE ||
+           opcode == VM_IR_OPCODE_JNL;
 }
 
 /// Returns an uppercase mnemonic for a direct branch opcode.
@@ -4260,6 +4300,22 @@ static const char *vm_parser_direct_branch_mnemonic(VmIrOpcode opcode) {
             return "JNE";
         case VM_IR_OPCODE_JNZ:
             return "JNZ";
+        case VM_IR_OPCODE_JL:
+            return "JL";
+        case VM_IR_OPCODE_JNGE:
+            return "JNGE";
+        case VM_IR_OPCODE_JLE:
+            return "JLE";
+        case VM_IR_OPCODE_JNG:
+            return "JNG";
+        case VM_IR_OPCODE_JG:
+            return "JG";
+        case VM_IR_OPCODE_JNLE:
+            return "JNLE";
+        case VM_IR_OPCODE_JGE:
+            return "JGE";
+        case VM_IR_OPCODE_JNL:
+            return "JNL";
         default:
             return "branch";
     }
@@ -7481,7 +7537,8 @@ static bool vm_parser_add_branch_fixup(VmParserState *state, size_t instruction_
 /// Parses and lowers one direct branch instruction.
 ///
 /// Phase 60 accepts direct JMP targets, and Phase 64 extends the same direct
-/// code-label target model to equality conditional jumps. The parser emits a
+/// code-label target model to equality conditional jumps. Phase 65 reuses that
+/// same target model for signed relational conditional jumps. The parser emits a
 /// branch instruction with a placeholder target and resolves the target after
 /// all code labels have been seen. Runtime execution consumes the patched
 /// instruction index.
@@ -8220,8 +8277,8 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
 /// Classifies and applies one retained direct branch fixup.
 ///
-/// The final classifier is shared by direct JMP parsing and direct equality
-/// conditional jumps. It accepts only code labels and procedure-entry labels
+/// The final classifier is shared by direct JMP parsing, direct equality
+/// conditional jumps, and direct signed relational jumps. It accepts only code labels and procedure-entry labels
 /// that resolve to executable IR instruction indexes, and it rejects data
 /// symbols, equates, Irvine32/external names, instruction names, and unknown
 /// identifiers.

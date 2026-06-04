@@ -6,11 +6,11 @@
  * currently implemented mov, add, sub, cmp, movsx, movzx, cbw, cwde, cwd, cdq,
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
- * direct-JMP runtime transfer, Phase 64 equality conditional jumps, and Irvine32
- * exit forms over the currently supported operand shapes. Phase 59 source-run
- * code layers an instruction-count watchdog over this executor. Relational
- * conditional branches, stack behavior, and non-exit Irvine32 routines remain
- * later milestones.
+ * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
+ * signed relational conditional jumps, and Irvine32 exit forms over the
+ * currently supported operand shapes. Phase 59 source-run code layers an
+ * instruction-count watchdog over this executor. Unsigned relational branches,
+ * stack behavior, and non-exit Irvine32 routines remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H

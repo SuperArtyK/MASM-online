@@ -12,24 +12,27 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 64D:
+Current status at Phase 65:
 
 Repository/archive milestone:
-Phase 64D - Memory Change Source Attribution Display
+Phase 65 - Signed Relational Conditional Jumps
 
 Runtime/source-run MASM behavior phase:
-Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions
+Phase 65 - Signed Relational Conditional Jumps
 
-Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior. The runtime/source-run MASM behavior phase remains Phase 64A.
+Phase 65 adds executable direct-label signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`. These branch forms use the modeled `ZF`, `SF`, and `OF` flags according to signed relational semantics, consume only the flags required by each mnemonic through the shared `undefined-flag-use` policy, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and respect the Phase 59 instruction-count watchdog.
+
+Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior.
 
 Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work.
 
 Phase 64B changes rendered Simulator Messages ordering and group separators for existing source-less notices, runtime diagnostics, and final execution-status messages. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
 
-Phase 64A corrects source-run planned-read coverage for already implemented memory-reading instructions. Existing memory-destination read-modify-write instructions expose their destination memory read to `uninitialized-read` and related planned-read policy checks before the instruction consumes bytes or performs write-back. Accepted MASM syntax remains the Phase 64 equality-jump subset. Phase 64 - Equality Conditional Jumps remains implemented, and Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 64A corrects source-run planned-read coverage for already implemented memory-reading instructions. Existing memory-destination read-modify-write instructions expose their destination memory read to `uninitialized-read` and related planned-read policy checks before the instruction consumes bytes or performs write-back. Phase 64 - Equality Conditional Jumps remains implemented, and Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ## Concise milestone ledger
 
+- Phase 65 implements executable signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` direct label branches. These consume the required signed-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 64D adds memory-change source attribution to successful memory-change rows, including the one-based source line and preserved source text when available, without adding MASM syntax or changing runtime semantics.
 - Phase 64C expands final register display by keeping the EFLAGS parent row and adding subordinate CF, ZF, SF, and OF child rows without adding new flags, flag semantics, diagnostics, or MASM syntax.
 - Phase 64B corrects rendered Simulator Messages grouping for startup notices, runtime diagnostics, and successful completion without adding new syntax or source-run status fields.
@@ -124,7 +127,7 @@ Phase 59 adds deterministic executed-instruction limit enforcement through the s
 
 ## Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
 
-Phase 57T adds source-run and rendered Simulator Messages smoke fixtures for realistic unsupported MASM32 playground programs. The fixtures verify concise diagnostics for host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, external MASM32/CRT/WinAPI routine boundaries, high-level MASM flow, and still-unsupported `CALL`, `RET`, `CMP`, and conditional-jump syntax. Phase 57T is repository/test/documentation work and does not implement host include loading, library linking, invocation lowering, WinAPI execution, high-level-flow lowering, stack/procedure behavior, or branch execution. Runtime/source-run MASM behavior metadata remains Phase 57S.
+Phase 57T adds source-run and rendered Simulator Messages smoke fixtures for realistic unsupported MASM32 playground programs. The fixtures verify concise diagnostics for host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, external MASM32/CRT/WinAPI routine boundaries, high-level MASM flow, and still-unsupported `CALL`, `RET`, and unsigned conditional-jump syntax. Phase 57T is repository/test/documentation work and does not implement host include loading, library linking, invocation lowering, WinAPI execution, high-level-flow lowering, stack/procedure behavior, or branch execution. Runtime/source-run MASM behavior metadata remains Phase 57S.
 
 ## Phase 57S - Unsupported High-Level Flow Diagnostics
 

@@ -5954,6 +5954,11 @@ static int test_phase61e_reserved_word_symbol_diagnostics(void) {
     failures += expect_parser_status(parse_for_test(".code\nmain PROC\ncmp:\n    nop\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CMP code label should diagnose after Phase 62");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "CMP code label should use reserved-word-symbol");
 
+    failures += expect_parser_status(parse_for_test(".data\njl DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 65 signed jump mnemonic data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JL data symbol should use reserved-word-symbol");
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nJGE:\n    nop\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 65 signed jump mnemonic code label should diagnose case-insensitively");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JGE code label should use reserved-word-symbol");
+
     failures += expect_parser_status(parse_for_test(
         ".data\nloopCount DWORD 0\nagain DWORD 1\n.code\nmain PROC\n    mov eax, 0\nagain_label:\n    inc eax\n    jmp again_label\nmain ENDP\nEND main\n",
         &buffers,

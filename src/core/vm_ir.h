@@ -102,6 +102,22 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_JNE,
     /// Alias for JNE; jump when the zero flag is clear.
     VM_IR_OPCODE_JNZ,
+    /// Jump when signed less-than holds: SF != OF.
+    VM_IR_OPCODE_JL,
+    /// Alias for JL; jump when signed not-greater-or-equal holds: SF != OF.
+    VM_IR_OPCODE_JNGE,
+    /// Jump when signed less-or-equal holds: ZF is set or SF != OF.
+    VM_IR_OPCODE_JLE,
+    /// Alias for JLE; jump when signed not-greater holds: ZF is set or SF != OF.
+    VM_IR_OPCODE_JNG,
+    /// Jump when signed greater-than holds: ZF is clear and SF == OF.
+    VM_IR_OPCODE_JG,
+    /// Alias for JG; jump when signed not-less-or-equal holds: ZF is clear and SF == OF.
+    VM_IR_OPCODE_JNLE,
+    /// Jump when signed greater-or-equal holds: SF == OF.
+    VM_IR_OPCODE_JGE,
+    /// Alias for JGE; jump when signed not-less holds: SF == OF.
+    VM_IR_OPCODE_JNL,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

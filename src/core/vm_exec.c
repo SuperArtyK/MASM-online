@@ -6,7 +6,8 @@
  * sub, cmp, movsx, movzx, cbw, cwde, cwd, cdq, xchg, neg, nop, adc, sbb, clc, stc, cmc,
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
- * and Irvine32 exit over the currently supported register and memory operand forms. It records last-step
+ * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
+ * jumps, and Irvine32 exit over the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -3073,6 +3074,14 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_JZ:
         case VM_IR_OPCODE_JNE:
         case VM_IR_OPCODE_JNZ:
+        case VM_IR_OPCODE_JL:
+        case VM_IR_OPCODE_JNGE:
+        case VM_IR_OPCODE_JLE:
+        case VM_IR_OPCODE_JNG:
+        case VM_IR_OPCODE_JG:
+        case VM_IR_OPCODE_JNLE:
+        case VM_IR_OPCODE_JGE:
+        case VM_IR_OPCODE_JNL:
             return vm_exec_validate_branch_target(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
@@ -3185,6 +3194,30 @@ static bool vm_exec_opcode_is_equality_conditional_jump(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_JNZ;
 }
 
+/// Returns whether an opcode is a Phase 65 signed relational conditional jump.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for signed relational conditional-jump mnemonics and aliases.
+static bool vm_exec_opcode_is_signed_relational_conditional_jump(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_JL ||
+           opcode == VM_IR_OPCODE_JNGE ||
+           opcode == VM_IR_OPCODE_JLE ||
+           opcode == VM_IR_OPCODE_JNG ||
+           opcode == VM_IR_OPCODE_JG ||
+           opcode == VM_IR_OPCODE_JNLE ||
+           opcode == VM_IR_OPCODE_JGE ||
+           opcode == VM_IR_OPCODE_JNL;
+}
+
+/// Returns whether an opcode is any implemented conditional branch.
+///
+/// @param opcode Opcode to inspect.
+/// @return true when @p opcode is an implemented direct conditional jump.
+static bool vm_exec_opcode_is_conditional_jump(VmIrOpcode opcode) {
+    return vm_exec_opcode_is_equality_conditional_jump(opcode) ||
+           vm_exec_opcode_is_signed_relational_conditional_jump(opcode);
+}
+
 /// Evaluates whether a committed Phase 64 equality conditional jump is taken.
 ///
 /// The caller is responsible for ensuring undefined-flag-use policy has already
@@ -3212,6 +3245,70 @@ static bool vm_exec_equality_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode
         *out_taken = !zf_is_set;
     }
     return true;
+}
+
+/// Evaluates whether a committed Phase 65 signed relational conditional jump is taken.
+///
+/// The caller is responsible for ensuring undefined-flag-use policy has already
+/// run for the exact flag set consumed by @p opcode. Native executor callers
+/// that use this helper directly receive deterministic preserved flag bits.
+///
+/// @param cpu CPU state containing ZF, SF, and OF bits to inspect.
+/// @param opcode Signed relational conditional-jump opcode.
+/// @param out_taken Receives whether the branch condition is true.
+/// @return true when @p opcode is a supported signed relational conditional jump
+/// and all required flag bits can be read.
+static bool vm_exec_signed_relational_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
+    bool zf_is_set = false;
+    bool sf_is_set = false;
+    bool of_is_set = false;
+    bool sf_differs_of = false;
+
+    if (cpu == NULL || out_taken == NULL || !vm_exec_opcode_is_signed_relational_conditional_jump(opcode)) {
+        return false;
+    }
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_SF, &sf_is_set) ||
+        !vm_cpu_read_flag(cpu, VM_FLAG_OF, &of_is_set)) {
+        return false;
+    }
+
+    sf_differs_of = (sf_is_set != of_is_set);
+    if (opcode == VM_IR_OPCODE_JL || opcode == VM_IR_OPCODE_JNGE) {
+        *out_taken = sf_differs_of;
+        return true;
+    }
+    if (opcode == VM_IR_OPCODE_JGE || opcode == VM_IR_OPCODE_JNL) {
+        *out_taken = !sf_differs_of;
+        return true;
+    }
+
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_ZF, &zf_is_set)) {
+        return false;
+    }
+    if (opcode == VM_IR_OPCODE_JLE || opcode == VM_IR_OPCODE_JNG) {
+        *out_taken = zf_is_set || sf_differs_of;
+        return true;
+    }
+    if (opcode == VM_IR_OPCODE_JG || opcode == VM_IR_OPCODE_JNLE) {
+        *out_taken = !zf_is_set && !sf_differs_of;
+        return true;
+    }
+
+    return false;
+}
+
+/// Evaluates whether a committed direct conditional jump is taken.
+///
+/// @param cpu CPU state containing modeled flags.
+/// @param opcode Conditional-jump opcode.
+/// @param out_taken Receives whether the branch condition is true.
+/// @return true when @p opcode is an implemented conditional jump and required
+/// flag bits can be read.
+static bool vm_exec_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
+    if (vm_exec_opcode_is_equality_conditional_jump(opcode)) {
+        return vm_exec_equality_conditional_jump_taken(cpu, opcode, out_taken);
+    }
+    return vm_exec_signed_relational_conditional_jump_taken(cpu, opcode, out_taken);
 }
 
 VmExecStatus vm_step(Vm *vm) {
@@ -3244,9 +3341,9 @@ VmExecStatus vm_step(Vm *vm) {
 
     if (instruction->opcode == VM_IR_OPCODE_JMP) {
         vm->instruction_pointer = (size_t)instruction->destination.immediate;
-    } else if (vm_exec_opcode_is_equality_conditional_jump(instruction->opcode)) {
+    } else if (vm_exec_opcode_is_conditional_jump(instruction->opcode)) {
         bool branch_taken = false;
-        if (!vm_exec_equality_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
+        if (!vm_exec_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
             vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_BRANCH_TARGET, instruction);
             return VM_EXEC_STATUS_INVALID_BRANCH_TARGET;
         }

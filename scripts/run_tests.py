@@ -551,9 +551,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 64")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
-    assert_text_contains("web/src/protocol.js", "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 65")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
+    assert_text_contains("web/src/protocol.js", "Phase 65 - Signed Relational Conditional Jumps")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -621,7 +621,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 64D memory-change source attribution passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 65 signed relational conditional jumps passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1403,20 +1403,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase64d_status_and_memory_attribution_present() -> None:
-    """Verify Phase 64D repository status, Phase 64A runtime metadata, and memory attribution docs/tests."""
+def assert_phase65_status_and_signed_jumps_present() -> None:
+    """Verify Phase 65 status, signed relational jumps, and preserved Phase 64 display behavior."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 64D - Memory Change Source Attribution Display",
+        "Phase 65 - Signed Relational Conditional Jumps",
         "Runtime/source-run MASM behavior phase:",
-        "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
     ]
     status_block = """Repository/archive milestone:
-Phase 64D - Memory Change Source Attribution Display
+Phase 65 - Signed Relational Conditional Jumps
 
 Runtime/source-run MASM behavior phase:
-Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"""
+Phase 65 - Signed Relational Conditional Jumps"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1435,26 +1434,20 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
-            "`instructionLimit` watchdog",
-            "`instruction-limit-exceeded`",
-            "direct `jmp label` forms",
-            "Direct JMP Runtime Execution",
-            "CMP Memory Operand Forms",
-            "`cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`",
-            "planned-read validation",
+            "Phase 65 adds executable direct-label signed relational conditional jumps",
+            "`jl label` / `jnge label`",
+            "`jle label` / `jng label`",
+            "`jg label` / `jnle label`",
+            "`jge label` / `jnl label`",
+            "`undefined-flag-use` policy",
+            "Phase 64 - Equality Conditional Jumps remains implemented",
+            "Phase 64D - Memory Change Source Attribution Display remains implemented",
+            "Memory-change rows show the source line that caused each successful mutation",
+            "Phase 64C - Expanded EFLAGS Flag Display remains implemented",
+            "Simulator Messages still render `startup-state-notice`, runtime diagnostics, and `execution-complete` as adjacent logical groups",
+            "CMP Memory Operand Forms remains implemented",
             "Reserved Word Symbol Diagnostics",
             "reserved-word-symbol",
-            "`cmp`",
-            "Phase 64 - Equality Conditional Jumps",
-            "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
-            "Phase 64D - Memory Change Source Attribution Display",
-            "Phase 64C - Expanded EFLAGS Flag Display",
-            "Memory-change rows now show the source line that caused each successful mutation",
-            "Final register display now keeps the canonical `EFLAGS` parent row",
-            "Phase 64C displays modeled flag bit values only",
-            "Flag-validity annotations remain future display work",
-            "Simulator Messages now render `startup-state-notice`, runtime diagnostics, and `execution-complete` as adjacent logical groups",
-            "Blank separators are formatter-only",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
@@ -1462,7 +1455,8 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "`source-text-capacity-exceeded`",
             "`code-label-capacity-exceeded`",
             "`data-capacity-exceeded`",
-            "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
+            "Unsigned relational jumps",
+            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
             "./scripts/build_wasm.sh",
@@ -1471,37 +1465,21 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_not_contains(
         "README.md",
         [
-            "Preserved diagnostic/code-policy highlights",
-            "Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures",
-            "unsupported-high-level-if",
-            "The repository state includes runtime MASM behavior implemented through",
-            "Milestone 32 memory layout policy infrastructure",
-            "Native diagnostic rendering harness",
-            "## Notes for later milestones",
-            "Visual Studio External Tools setup",
-            "Visual Studio Makefile Project setup",
-            "scripts\\windows\\serve_web.cmd",
-            "scripts\\windows\\build_wasm.cmd",
+            "Signed relational jumps, unsigned relational jumps",
+            "Accepted syntax remains the Phase 64 equality-jump subset",
+            "runtime/source-run behavior phase remains Phase 64A",
+            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add accepted MASM syntax",
         ],
     )
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Phase 64 - Equality Conditional Jumps",
-            "Phase 62 - CMP Register and Immediate Forms",
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
-            "Phase 61C - Branch Debugger Dependency Cleanup",
-            "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
-            "Phase 61 - Direct JMP Runtime Execution",
-            "Current status at Phase 64D:",
-            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write",
-            "Phase 64C displays modeled flag bit values only",
-            "Flag-validity annotations remain future display work",
-            "Phase 64B changes rendered Simulator Messages ordering and group separators",
-            "CMP memory reads participate in planned-read validation before flags are updated.",
-            "Phase 64 implements executable equality conditional jumps",
+            "Current status at Phase 65:",
+            "Phase 65 implements executable signed relational conditional jumps",
+            "Phase 64D adds memory-change source attribution",
             "Phase 64A corrects source-run planned-read coverage",
-            "Phase 64B corrects rendered Simulator Messages grouping",
+            "Phase 64 implements executable equality conditional jumps",
+            "Phase 63 implements `cmp` memory operand forms",
             "Capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime source-run failures",
             "Preserving branch source metadata and lowered target metadata does not implement debugger stepping, breakpoint binding, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting.",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
@@ -1516,26 +1494,19 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 64 - Equality Conditional Jumps",
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
-            "Phase 61C - Branch Debugger Dependency Cleanup",
-            "Phase 61B - Branch Runtime Watchdog Scope Cleanup",
-            "Phase 61 - Direct JMP Runtime Execution",
-            "Phase 64D - Memory Change Source Attribution Display",
-            "Phase 200 - Active Time Watchdog and Worker Responsiveness",
-            "Runtime/source-run MASM behavior phase:",
-            "reserved-word-symbol",
-            "CMP memory reads use checked helpers and planned-read validation",
-            "existing read-modify-write memory destinations continue to route through planned-read validation",
-            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write",
+            "Phase 65 - Signed Relational Conditional Jumps",
+            "The current direct-branch subset includes direct `jmp label`, equality conditional jumps",
+            "signed relational conditional jumps",
+            "Phase 64D - Memory Change Source Attribution Display remains implemented",
             "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
+            "Phase 64A keeps existing read-modify-write memory destinations on planned-read validation",
             "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains the documentation/static-check and regression-test hardening phase",
             "`token-capacity-exceeded`",
             "`source-text-capacity-exceeded`",
             "`code-label-capacity-exceeded`",
             "`data-capacity-exceeded`",
-            "debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting",
+            "debugger stepping, breakpoint behavior, editor source navigation, current-instruction highlighting, CodeMirror gutter behavior, or branch-target editor highlighting",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
             "scripts\\windows\\build_wasm.cmd",
@@ -1544,7 +1515,6 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "python3 scripts/run_tests.py --diagnostics",
             "missing `emcc`",
             "Browser/Wasm smoke guidance",
-            "does not include a committed Visual Studio solution or project file",
             "Visual Studio External Tools",
         ],
     )
@@ -1552,12 +1522,11 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 64D: Memory changes now show the source line that produced each successful write",
-            "Accepted syntax remains the Phase 64 equality-jump subset",
-            "mov a, 1",
-            "inc a",
-            "je equal",
-            "jmp done",
+            "Milestone 65: Signed relational conditional jumps now execute for direct code-label targets",
+            "mov eax, -1",
+            "cmp eax, 1",
+            "jl less",
+            "less:",
             "done:",
             "final-registers",
             "Program Console",
@@ -1566,7 +1535,8 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_not_contains(
         "web/index.html",
         [
-            "CMP memory operands remain deferred to Phase 63",
+            "Accepted syntax remains the Phase 64 equality-jump subset",
+            "Milestone 64D: Memory changes now show the source line",
             "Milestone 63: CMP Memory Operand Forms",
             "Milestone 64A: Planned-Read Coverage Correction",
         ],
@@ -1574,11 +1544,14 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Accepted MASM syntax remains the Phase 64 equality-jump subset",
-            "Phase 64D changes source-run result metadata and rendered memory-change display only",
+            "Accepted MASM syntax now includes Phase 65 executable direct-label signed relational conditional jumps",
+            "`jl label` / `jnge label`",
+            "`jle label` / `jng label`",
+            "`jg label` / `jnle label`",
+            "`jge label` / `jnl label`",
+            "No signed relational conditional jump consumes `CF`",
             "### Memory-change source attribution display",
             "a DWORD | line 10: inc a",
-            "Phase 64A remains the runtime/source-run MASM behavior phase",
             "### Final register EFLAGS child display",
             "Final register display now keeps the canonical `EFLAGS` parent row",
             "Phase 64C displays modeled flag bit values only",
@@ -1593,6 +1566,7 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "`cmp mem, reg`",
             "`cmp mem, imm`",
             "planned-read validation",
+            "Phase 65 - Signed Relational Conditional Jumps",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
             "Phase 64D - Memory Change Source Attribution Display",
@@ -1613,59 +1587,41 @@ Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instruc
             "does not claim arbitrary large MASM program support",
         ],
     )
-    assert_all_text_contains(
-        "docs/MILESTONE_HISTORY.md",
+    assert_all_text_not_contains(
+        "docs/SUPPORTED_SYNTAX.md",
         [
-            "## Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
-            "lexer token capacity",
-            "parser diagnostic capacity",
-            "instruction/source-text buffers",
-            "data symbols",
-            "code labels",
-            "data image bytes",
-            "source-run JSON/result buffers",
-            "Runtime/source-run MASM behavior metadata remains Phase 61 - Direct JMP Runtime Execution.",
-            "Phase 64 implements executable equality conditional jumps",
-            "Phase 64A corrects source-run planned-read coverage",
-            "Phase 64D adds memory-change source attribution",
-            "Phase 64B corrects rendered Simulator Messages grouping",
-        ],
-    )
-    assert_all_text_contains(
-        "README.md",
-        [
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics",
-            "`token-capacity-exceeded`",
-            "runtime `instructionLimit` failures",
-        ],
-    )
-    assert_all_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        [
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening",
-            "the documentation/static-check and regression-test hardening phase for parser/source-run capacity behavior",
-            "capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded`",
-            "runtime `instructionLimit` watchdog",
+            "Accepted MASM syntax remains the Phase 64 equality-jump subset",
+            "Signed relational jumps, unsigned relational jumps",
+            "Deferred systems include signed relational conditional jumps",
         ],
     )
     assert_all_text_contains(
         "tests/core/test_wasm_source_run.c",
         [
-            "test_phase61d_token_capacity_diagnostic_source_run_program",
-            "test_phase61d_source_text_capacity_diagnostic_source_run_program",
-            "test_phase61d_code_label_capacity_diagnostic_source_run_program",
-            "test_phase64b_source_run_message_ordering_contract",
-            "test_phase64d_memory_change_source_attribution",
+            "test_phase65_signed_relational_jumps_source_run_programs",
+            "test_phase65_signed_relational_jump_source_run_diagnostics",
+            "test_phase65_signed_relational_jump_instruction_limit",
+            "test_phase65_signed_relational_undefined_flag_use_policy",
+            "branch-runtime-deferred",
             "instruction-limit-exceeded",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/core/test_vm_exec.c",
+        [
+            "test_phase65_signed_relational_conditional_jump_runtime",
+            "test_phase65_signed_relational_conditional_jump_aliases",
+            "test_phase65_signed_relational_flag_consumption_sets",
         ],
     )
     assert_all_text_contains(
         "tests/web/test_diagnostic_rendering.mjs",
         [
-            "Phase 61D renders token capacity diagnostic exactly",
-            "token-capacity-exceeded",
-            "instruction-limit-exceeded",
+            "renders Phase 65 signed conditional jump memory-target diagnostic exactly",
+            "renders Phase 65 signed conditional jump Irvine32-target diagnostic exactly",
+            "renders Phase 65 signed conditional jump undefined flag-use warning exactly",
+            "renders Phase 65 signed conditional jump undefined flag-use runtime error exactly",
+            "undefined-flag-use",
         ],
     )
     assert_all_text_contains(
@@ -1988,7 +1944,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase64d_status_and_memory_attribution_present()
+    assert_phase65_status_and_signed_jumps_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

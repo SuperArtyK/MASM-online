@@ -72,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 64U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 65U
 
-/// Suffix for the current Phase 64A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
+/// Suffix for the current Phase 65 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 64A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions"
+/// Full name of the current Phase 65 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 65 - Signed Relational Conditional Jumps"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -3631,6 +3631,25 @@ static size_t masm32_sim_wasm_consumed_flags_for_instruction(
                 out_flags[0] = VM_FLAG_ZF;
             }
             return 1U;
+        case VM_IR_OPCODE_JL:
+        case VM_IR_OPCODE_JNGE:
+        case VM_IR_OPCODE_JGE:
+        case VM_IR_OPCODE_JNL:
+            if (out_flags != NULL && flag_capacity >= 2U) {
+                out_flags[0] = VM_FLAG_SF;
+                out_flags[1] = VM_FLAG_OF;
+            }
+            return 2U;
+        case VM_IR_OPCODE_JLE:
+        case VM_IR_OPCODE_JNG:
+        case VM_IR_OPCODE_JG:
+        case VM_IR_OPCODE_JNLE:
+            if (out_flags != NULL && flag_capacity >= 3U) {
+                out_flags[0] = VM_FLAG_ZF;
+                out_flags[1] = VM_FLAG_SF;
+                out_flags[2] = VM_FLAG_OF;
+            }
+            return 3U;
         default:
             return 0U;
     }
@@ -4524,6 +4543,42 @@ static const char *masm32_sim_wasm_display_mnemonic(const char *mnemonic) {
     }
     if (strcmp(mnemonic, "ror") == 0) {
         return "ROR";
+    }
+    if (strcmp(mnemonic, "je") == 0) {
+        return "JE";
+    }
+    if (strcmp(mnemonic, "jz") == 0) {
+        return "JZ";
+    }
+    if (strcmp(mnemonic, "jne") == 0) {
+        return "JNE";
+    }
+    if (strcmp(mnemonic, "jnz") == 0) {
+        return "JNZ";
+    }
+    if (strcmp(mnemonic, "jl") == 0) {
+        return "JL";
+    }
+    if (strcmp(mnemonic, "jnge") == 0) {
+        return "JNGE";
+    }
+    if (strcmp(mnemonic, "jle") == 0) {
+        return "JLE";
+    }
+    if (strcmp(mnemonic, "jng") == 0) {
+        return "JNG";
+    }
+    if (strcmp(mnemonic, "jg") == 0) {
+        return "JG";
+    }
+    if (strcmp(mnemonic, "jnle") == 0) {
+        return "JNLE";
+    }
+    if (strcmp(mnemonic, "jge") == 0) {
+        return "JGE";
+    }
+    if (strcmp(mnemonic, "jnl") == 0) {
+        return "JNL";
     }
 
     return mnemonic;

@@ -16,13 +16,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 64;
+export const IMPLEMENTED_PHASE = 65;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "A";
+export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions";
+export const IMPLEMENTED_PHASE_NAME = "Phase 65 - Signed Relational Conditional Jumps";
 
 /**
  * Creates the initial worker readiness response.
