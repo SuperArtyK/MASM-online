@@ -94,6 +94,8 @@ Source-run and test-facing callers may set `instructionLimit` to a positive inte
 
 ### Parser and source-run capacity limits
 
+Phase 61D documents and tests source-run/parser capacity behavior.
+
 The source-run path is intentionally bounded. Parser/source-run capacity limits are separate from the runtime `instructionLimit` watchdog. A capacity diagnostic such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `instruction-capacity-exceeded`, `code-label-capacity-exceeded`, `symbol-capacity-exceeded`, `diagnostic-capacity-exceeded`, or `data-capacity-exceeded` occurs while lexing, parsing, lowering, or preparing the source-run result before VM execution begins. These diagnostics are not MASM syntax errors unless malformed source also produced a syntax diagnostic, and they are not evidence that a runtime loop exceeded `instructionLimit`.
 
 When the simulator controls the failure path, capacity failures are reported through structured Simulator Messages with stable diagnostic codes, source line/column/byte-offset/span fields where the failing source token or declaration is known, no Program Console output, no `execution-complete` message, and no hidden partial VM execution. Source-run JSON/result output also has finite buffers; if a result cannot be fully produced, the source-run layer should report a structured capacity or infrastructure error rather than relying on a generic worker failure.
@@ -120,6 +122,17 @@ Signed relational conditional jumps are accepted for direct executable code-labe
 - `jge label` and `jnl label` branch when `SF = OF`.
 
 `jl`, `jnge`, `jge`, and `jnl` consume `SF` and `OF`. `jle`, `jng`, `jg`, and `jnle` consume `ZF`, `SF`, and `OF`. No signed relational conditional jump consumes `CF`.
+
+Unsigned relational conditional jumps are accepted for direct executable code-label or procedure-entry targets:
+
+- `ja label` / `jnbe label` branch when `CF = 0` and `ZF = 0`.
+- `jae label` / `jnb label` branch when `CF = 0`.
+- `jb label` / `jnae label` branch when `CF = 1`.
+- `jbe label` / `jna label` branch when `CF = 1` or `ZF = 1`.
+
+`ja`, `jnbe`, `jbe`, and `jna` consume `CF` and `ZF`. `jae`, `jnb`, `jb`, and `jnae` consume `CF` only. No unsigned relational conditional jump consumes `SF` or `OF`.
+
+`cmp` is accepted for implemented register, immediate, and unambiguous memory comparison forms, including `cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`. It updates comparison flags without storing a result and uses the same planned-read validation path as other current memory-reading instructions.
 
 Phase 61C - Branch Debugger Dependency Cleanup documents that direct-branch execution and debugger/editor behavior are separate systems; it does not implement debugger behavior. Executable direct branches do not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting; those systems remain future debugger/editor work. `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
 
@@ -335,6 +348,7 @@ Implemented executable instructions:
 - `mov`
 - `add`
 - `sub`
+- `cmp`
 - `movsx`
 - `movzx`
 - `cbw`
@@ -475,7 +489,8 @@ Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 
-`.DATA?` and `.CONST` were promoted from recovered unsupported sections to implemented data sections in Milestone 27. Numeric equates and Stage A constant expressions were promoted to implemented syntax in Milestone 28. Extended constant-expression operators were promoted to implemented syntax in Milestone 29. Nested `DUP` expansion was promoted to implemented syntax in Milestone 30. Milestone 31 added a native diagnostic JSON producer plus Node rendering harness for exact Simulator Messages tests; Milestone 32 added a fixed-layout policy object consumed by VM memory initialization; Milestone 33 added automatic deterministic region sizing for tests/configuration; Milestone 34 applies parsed `.stack` metadata and configured heap-size requests to automatic layout capacity metadata; Milestone 35 adds seeded/fresh randomized layout placement for tests/configuration, with symbolic addresses relocated to selected bases while fixed numeric addresses remain literal; Milestone 36 adds declared-object allocation map metadata; Milestone 37 adds allocated-object warning validation for tests/configuration while leaving default region-only execution unchanged; Milestone 38 adds allocated-object strict validation for tests/configuration while still leaving default region-only execution unchanged; Milestone 39 adds uninitialized-origin byte metadata plus successful-write tracking for test/internal inspection, Milestone 40 adds opt-in uninitialized-read warning and strict modes while preserving the then-current default runtime output, Milestone 41 adds virtual Irvine32 registry metadata, Milestone 42 adds the zero-operand virtual `exit` terminator, Milestone 43 adds `inc` and `dec` runtime instruction behavior, Milestone 44 adds `and`, `or`, and `xor` runtime instruction behavior, Milestone 45 adds `not` runtime instruction behavior, Milestone 46 adds `shl`/`sal` runtime instruction behavior, Milestone 47 adds `shr` runtime instruction behavior, Milestone 48 adds `sar` runtime instruction behavior, Milestone 49 adds `rol` runtime instruction behavior, Milestone 50 adds `ror` runtime instruction behavior, Milestone 50A adds internal modeled-flag validity metadata, Milestone 50B adds opt-in undefined flag-use diagnostics for existing `CF` consumers, Milestone 51 adds validation-only smoke-harness coverage, and Milestone 52 adds `lea` runtime effective-address computation. The infrastructure-only milestones do not prove stale `web/dist` artifacts were rebuilt; Milestone 50 intentionally adds only rotate-right instruction semantics beyond the prior rotate-left behavior, Milestone 50A intentionally adds no new source syntax or visible default diagnostics, Milestone 50B adds only opt-in consumer diagnostics without new source syntax or default browser behavior changes at that time, Milestone 51 adds validation-only smoke-harness coverage without new source syntax or runtime behavior, and Milestone 52 adds only `lea` effective-address computation without scaled-index addressing or memory reads; Milestone 52A adds only signed register and memory value display formatting without source syntax or runtime semantics changes; Milestone 53 adds only unsigned one-operand `mul` without signed multiplication, division, or multi-operand multiplication forms; Milestone 53A adds only memory-validation policy clarification and symbol-offset runtime correction without new MASM syntax or new instruction behavior; Milestone 53B adds opt-in section-capacity and section-image validation modes without changing default region-only behavior; Milestone 53C changes omitted/default browser source-run behavior so the existing uninitialized-read and undefined-flag-use diagnostics warn by default; Milestone 53D adds default compatibility notices for accepted no-op, metadata-only, and limited-behavior MASM constructs without adding new syntax or runtime execution behavior; Milestone 53E exposes existing diagnostic policies through browser UI settings without adding backend semantics; Milestone 54 adds only one-operand signed `imul`; Milestone 55 adds only two- and three-operand signed `imul` forms without division or other multiplication forms; Milestone 56 adds only unsigned one-operand `div` without signed `idiv` or new multiplication forms; Milestone 57 adds only signed one-operand `idiv` without control flow, stack behavior, QWORD/SQWORD execution, or new multiplication forms.
+Current syntax details are maintained in the sections above. Historical promotion details for older milestones belong in [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md), not in this syntax reference section.
+
 
 ## Backlog notes
 
@@ -497,4 +512,4 @@ Expression parser expansion tracked for later compatibility work:
 
 ## Still deferred
 
-Deferred systems include unsigned relational conditional jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility. Equality conditional jumps `je`, `jz`, `jne`, and `jnz` and signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` are already implemented for direct executable code-label and procedure-entry targets.
+Deferred systems include `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility. Equality conditional jumps `je`, `jz`, `jne`, and `jnz`, signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`, and unsigned relational conditional jumps `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` are already implemented for direct executable code-label and procedure-entry targets.

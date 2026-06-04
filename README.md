@@ -10,14 +10,7 @@ Phase 66A - Current-Status Documentation De-Cluttering
 Runtime/source-run MASM behavior phase:
 Phase 66 - Unsigned Relational Conditional Jumps
 
-Phase 66 is the latest runtime/source-run MASM behavior phase. It adds executable direct-label unsigned relational conditional jumps:
-
-- `ja` / `jnbe`
-- `jae` / `jnb`
-- `jb` / `jnae`
-- `jbe` / `jna`
-
-Phase 66A is documentation cleanup only. It keeps current-status documentation concise and does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic behavior, source-run JSON behavior, or runtime/source-run MASM behavior metadata advancement.
+Phase 66 is the latest runtime/source-run MASM behavior phase. Phase 66A is documentation cleanup only and does not add MASM syntax or runtime behavior.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -60,7 +53,7 @@ Still future or unsupported unless a later accepted milestone says otherwise:
 
 This README is intentionally concise. Exact accepted forms, rejected forms, diagnostic codes, examples, and future/deferred syntax belong in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md), not in this README.
 
-Future milestones should update this section by adjusting feature categories where possible. Do not append milestone-specific bullets such as `Phase <N> added...`.
+When this section changes, revise existing feature categories in place instead of adding changelog bullets.
 
 ## Quick start
 
