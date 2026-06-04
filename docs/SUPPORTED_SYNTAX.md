@@ -1,15 +1,72 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66A - Current-Status Documentation De-Cluttering
 
 Runtime/source-run MASM behavior phase:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66 - Unsigned Relational Conditional Jumps
 
-Status interpretation:
-Accepted MASM syntax now includes Phase 65 executable direct-label signed relational conditional jumps. Repository/archive status and runtime/source-run MASM behavior phase now match because Phase 65 adds accepted syntax, parser lowering, VM execution behavior, source-run diagnostics, and runtime phase metadata.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 
-Phase 65 preserves Phase 64D - Memory Change Source Attribution Display, Phase 64C, Phase 64B, Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions, and Phase 64 behavior. Signed relational conditional jumps `jl label` / `jnge label`, `jle label` / `jng label`, `jg label` / `jnle label`, and `jge label` / `jnl label` consume the modeled flags required by each mnemonic through the shared undefined-flag-use diagnostic policy, jump to executable code-label or procedure-entry targets when true, fall through when false, count as one executed VM instruction, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and produce no memory-change rows of their own. Phase 64 - Equality Conditional Jumps remains implemented: `je label`, `jz label`, `jne label`, and `jnz label` consume `ZF` through the same policy path. Phase 64A preserves Phase 63 - CMP Memory Operand Forms, including `cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm`; CMP memory reads participate in planned-read validation before flags are updated. Phase 61 - Direct JMP Runtime Execution remains implemented. Phase 61C - Branch Debugger Dependency Cleanup documents that direct-branch execution and debugger/editor behavior are separate systems; Phase 65 does not implement debugger behavior. Direct-JMP, equality-conditional-JMP, and signed-relational-conditional-JMP loops remain governed by the Phase 59 instruction-count watchdog. The `cmp` instruction remains implemented. Phase 61D documents and tests source-run/parser capacity behavior. Unsigned relational jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, Phase 61E, Phase 62, Phase 63, Phase 64, Phase 64A, Phase 64B, Phase 64C, Phase 64D, or Phase 65; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
+Phase 66 is the latest runtime/source-run MASM behavior phase. Phase 66A is documentation cleanup only and does not add or remove accepted MASM syntax.
+
+Current direct branch support includes:
+
+- direct `jmp label`;
+- equality conditional jumps: `je`, `jz`, `jne`, `jnz`;
+- signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, `jnl`;
+- unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, `jna`.
+
+All current branch forms target executable code labels or procedure-entry labels only.
+
+Still future or unsupported unless a later accepted milestone updates this document:
+
+- `loop`;
+- indirect jumps;
+- register-target jumps;
+- memory-target jumps;
+- immediate-target jumps;
+- branch distance/type overrides;
+- `call`;
+- `ret`;
+- source-level `push` and `pop`;
+- stack/procedure execution;
+- active-time watchdog behavior.
+
+Historical milestone detail belongs in [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md), not in this opening status block.
+
+Detailed syntax sections below may remain long and precise. The anti-clutter rule applies to this opening status block and other current-status summaries, not to legitimate syntax reference detail.
+
+### Future stack/procedure syntax not implemented yet
+
+Consult the current instruction-support table in this document for implemented branch and control-flow forms. Do not infer stack, CALL, RET, or procedure-frame support from future roadmap examples.
+
+The following stack/procedure features remain future work unless a later accepted milestone explicitly implements them:
+
+- source-level `push`;
+- source-level `pop`;
+- direct `call procedureName`;
+- plain `ret`;
+- root procedure termination through `ret`;
+- `leave`;
+- `ret imm16`;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- Irvine32 routine calls other than already implemented virtual terminator behavior.
+
+Important distinction:
+
+- Future direct CALL implementation uses simulator-defined 32-bit VM return tokens, not native x86 addresses.
+- Future CALL internal return-token writes are not the same feature as source-level `push`.
+- Future source-level `push` and `pop` require their own implementation phase before documentation examples may rely on them.
+- Procedure names are user-defined symbols and follow the active `OPTION CASEMAP` policy.
+- Recognized Irvine32 routine and terminator names remain case-insensitive reserved names and are classified through the virtual Irvine32 registry.
+- Windows API calls, PE loading, object-file linking, import-library behavior, and host include-file loading remain non-goals.
+
+This section is a roadmap/status note only. It does not make any listed future feature available before its implementation phase is accepted and tested.
 
 ### Memory-change source attribution display
 
@@ -64,7 +121,7 @@ Signed relational conditional jumps are accepted for direct executable code-labe
 
 `jl`, `jnge`, `jge`, and `jnl` consume `SF` and `OF`. `jle`, `jng`, `jg`, and `jnle` consume `ZF`, `SF`, and `OF`. No signed relational conditional jump consumes `CF`.
 
-Executable direct branches do not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting; those systems remain future debugger/editor work. Unsigned relational jumps, `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
+Phase 61C - Branch Debugger Dependency Cleanup documents that direct-branch execution and debugger/editor behavior are separate systems; it does not implement debugger behavior. Executable direct branches do not enable debugger stepping, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, or branch-target editor highlighting; those systems remain future debugger/editor work. `loop`, `call`, `ret`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides such as `SHORT`/`NEAR PTR`/`FAR PTR`, and stack/procedure execution remain future work.
 
 ### Unsupported high-level flow diagnostics
 

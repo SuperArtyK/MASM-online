@@ -1032,3 +1032,63 @@ MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION=off|warn|strict
 ```
 
 `warn` emits `section-capacity-violation` or `section-image-violation` as a simulator warning and continues when Level 1 memory validation succeeds. `strict` emits the same code as a runtime error before mutation. Milestone 53B added these controls to the test/source-run path. Phase 53E exposes the same existing section-capacity and section-image policies in the browser Memory range validation setting. Defaults still leave section-capacity and section-image validation off unless the user selects one of those modes.
+
+
+## Stack, CALL, RET, and procedure milestone verification note
+
+Future stack/procedure milestones must separate focused executor tests from complete source-run programs.
+
+Use executor/native tests when a phase implements an instruction whose full source-run program would require a later phase. Examples:
+
+- Phase 69 - Direct CALL to User Procedures can be tested by stepping one CALL and checking the return token, stack write, instruction pointer, modeled flags, and no-partial-mutation behavior.
+- Phase 70 - RET Execution and Return Address Validation can be tested with executor-level stack setup before Phase 71 - Root Procedure Termination Semantics exists.
+- Phase 73 - LEAVE Instruction can be tested with direct frame setup even when source-level setup instructions are also available.
+
+Use source-run tests only when all required source-level dependencies already exist. Examples:
+
+- A complete CALL/RET source program requires both CALL and RET behavior and a defined termination path.
+- A source program using `push ebp` requires source-level PUSH support.
+- A source program using argument pushes before `ret imm16` requires source-level PUSH support.
+
+Do not implement future instructions merely to make a source-run fixture pass. If a fixture depends on a future phase, either move that fixture to the owning future phase or mark it as an integration regression that becomes active only after the dependency phase is complete.
+
+For stack/procedure diagnostics, tests must prove:
+
+- structured diagnostic fields include code, severity, line, column, byte offset, and span length where source-backed;
+- rendered Simulator Messages match expected wording;
+- fatal stack/procedure failures do not emit `execution-complete`;
+- no-partial-mutation behavior covers registers, modeled flags, flag-validity metadata, memory bytes, Program Console output, memory-change rows, stack pointer, instruction pointer, and call-depth metadata where applicable;
+- current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
+
+
+## Current-status documentation clutter checks
+
+Static or manual documentation checks should protect current-status surfaces from becoming milestone-history dumps.
+
+The checks should apply to active current-status/current-scope sections in:
+
+- `README.md`;
+- `docs/SUPPORTED_SYNTAX.md` opening status block;
+- `docs/BUILDING_AND_DEVELOPMENT.md`;
+- browser/protocol status strings if they are stored in source files;
+- tests that assert current-status wording.
+
+Recommended checks:
+
+1. README active current-status section must contain exactly one active `Repository/archive milestone:` label and one active `Runtime/source-run MASM behavior phase:` label.
+2. If README contains quoted examples or templates with additional status labels, those must be clearly outside the active current-status section and should be avoided unless necessary.
+3. README active current-status/current-scope text must not contain milestone-report headings such as:
+   - `Exact requirements implemented`
+   - `Assumptions used`
+   - `TODO-style note disposition`
+   - `Files changed`
+   - `Tests added`
+   - `Commands used to test`
+4. README active current-status text must not contain a rolling sequence of several milestone paragraphs beginning with `Phase <N> adds`, `Phase <N> added`, `Phase <N> remains`, or `After Phase <N>`.
+5. `docs/BUILDING_AND_DEVELOPMENT.md` must not define implemented MASM feature behavior beyond a short status note and links to the proper behavior documents.
+6. `docs/SUPPORTED_SYNTAX.md` may contain detailed syntax sections, but its opening status block must remain concise and must not become a milestone ledger.
+7. Detailed historical text removed from README must be preserved in `docs/MILESTONE_HISTORY.md` or milestone reports when it has historical value.
+8. If automated static checks are deferred, the milestone report must list the manual checks performed and preserve static-check implementation as future documentation-maintenance work.
+
+These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
+

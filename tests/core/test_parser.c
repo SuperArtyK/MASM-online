@@ -6086,6 +6086,102 @@ static int test_phase64_equality_jump_target_diagnostics(void) {
     return failures;
 }
 
+
+/// Verifies Phase 66 unsigned relational conditional jumps lower direct branch targets.
+///
+/// @return Number of failures.
+static int test_phase66_unsigned_relational_jumps_parse_to_ir(void) {
+    const char *source =
+        ".code\n"
+        "main PROC\n"
+        "    ja above\n"
+        "    jnbe above\n"
+        "    jae done\n"
+        "    jnb done\n"
+        "    jb below\n"
+        "    jnae below\n"
+        "    jbe done\n"
+        "    jna done\n"
+        "above:\n"
+        "    mov eax, 1\n"
+        "below:\n"
+        "    mov ebx, 2\n"
+        "done:\n"
+        "    mov ecx, 3\n"
+        "main ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 66 unsigned jumps should parse");
+    failures += expect_size(result.instruction_count, 11U, "Phase 66 unsigned-jump source should emit eight jumps and three MOV instructions");
+    if (result.instruction_count >= 11U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_JA, "first instruction should be JA");
+        failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_JNBE, "second instruction should be JNBE");
+        failures += expect_u32((uint32_t)buffers.instructions[2].opcode, (uint32_t)VM_IR_OPCODE_JAE, "third instruction should be JAE");
+        failures += expect_u32((uint32_t)buffers.instructions[3].opcode, (uint32_t)VM_IR_OPCODE_JNB, "fourth instruction should be JNB");
+        failures += expect_u32((uint32_t)buffers.instructions[4].opcode, (uint32_t)VM_IR_OPCODE_JB, "fifth instruction should be JB");
+        failures += expect_u32((uint32_t)buffers.instructions[5].opcode, (uint32_t)VM_IR_OPCODE_JNAE, "sixth instruction should be JNAE");
+        failures += expect_u32((uint32_t)buffers.instructions[6].opcode, (uint32_t)VM_IR_OPCODE_JBE, "seventh instruction should be JBE");
+        failures += expect_u32((uint32_t)buffers.instructions[7].opcode, (uint32_t)VM_IR_OPCODE_JNA, "eighth instruction should be JNA");
+        failures += expect_u32((uint32_t)buffers.instructions[0].destination.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "JA destination should be a branch target operand");
+        failures += expect_u32(buffers.instructions[0].destination.immediate, 8U, "JA should target the above label MOV instruction index");
+        failures += expect_u32(buffers.instructions[4].destination.immediate, 9U, "JB should target the below label MOV instruction index");
+        failures += expect_u32(buffers.instructions[6].destination.immediate, 10U, "JBE should target the done label MOV instruction index");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 66 unsigned relational jump target diagnostics and reserved words.
+///
+/// @return Number of failures.
+static int test_phase66_unsigned_relational_jump_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(".data\nvalue DWORD 1\n.code\nmain PROC\n    ja value\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JA to data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "data-symbol JA target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    jbe missing\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JBE to unknown label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "unknown JBE target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    jb eax\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JB register target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "register JB target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    jnae [eax]\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNAE memory target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "memory JNAE target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\n    jnb 1234h\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNB immediate target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_BRANCH_TARGET_FORM, "immediate JNB target should use unsupported branch form");
+
+    failures += expect_parser_status(parse_for_test("INCLUDE Irvine32.inc\n.code\nmain PROC\n    jna exit\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNA to Irvine32 exit should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, "Irvine32 JNA target should use invalid-branch-target");
+
+    failures += expect_parser_status(parse_for_test(".data\nja DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JA data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JA data symbol should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".data\njNbE DWORD 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "mixed-case JNBE data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "mixed-case JNBE data symbol should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".code\nmain PROC\nJBE:\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JBE code label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JBE code label should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test("OPTION CASEMAP:NONE\n.code\nmain PROC\njNa:\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should not permit unsigned jump label");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "CASEMAP:NONE unsigned jump label should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test("jae = 1\n.code\nmain PROC\nmain ENDP\nEND main\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JAE numeric equate should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JAE numeric equate should use reserved-word-symbol");
+
+    failures += expect_parser_status(parse_for_test(".code\njnb PROC\njnb ENDP\nEND jnb\n", &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "JNB procedure name should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "JNB procedure name should use reserved-word-symbol");
+    failures += expect_size(result.code_label_count, 0U, "reserved unsigned jump procedure name should not be inserted");
+
+    return failures;
+}
+
 /// Verifies Phase 63 CMP register, immediate, and memory parsing.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -6191,6 +6287,8 @@ int main(void) {
     failures += test_phase60_jmp_form_rejections();
     failures += test_phase64_equality_jumps_parse_to_ir();
     failures += test_phase64_equality_jump_target_diagnostics();
+    failures += test_phase66_unsigned_relational_jumps_parse_to_ir();
+    failures += test_phase66_unsigned_relational_jump_diagnostics();
     failures += test_phase61e_reserved_word_symbol_diagnostics();
     failures += test_zero_instruction_procedure();
     failures += test_error_path_diagnostics();

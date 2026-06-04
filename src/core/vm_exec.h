@@ -9,8 +9,9 @@
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
  * signed relational conditional jumps, and Irvine32 exit forms over the
  * currently supported operand shapes. Phase 59 source-run code layers an
- * instruction-count watchdog over this executor. Unsigned relational branches,
- * stack behavior, and non-exit Irvine32 routines remain later milestones.
+ * instruction-count watchdog over this executor. Unsigned relational conditional
+ * jumps are supported for direct labels. Stack behavior and non-exit Irvine32
+ * routines remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H

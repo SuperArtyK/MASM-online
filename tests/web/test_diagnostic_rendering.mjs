@@ -1592,7 +1592,7 @@ main PROC
     inc counter
 
     cmp counter, 6
-    ja main_loop
+    loop main_loop
 
     invoke crt_printf, addr numberFmt, total
     invoke ExitProcess, 0
@@ -1617,16 +1617,16 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 65 runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 66 runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
-  phase57tConditionalJumpUnsupported: {
+  phase57tLoopUnsupported: {
     source: `.code
 main PROC
-    ja main_loop
+    loop main_loop
 main ENDP
 END main
 `,
-    reason: "Phase 57T unsigned conditional jump unsupported-instruction diagnostic fixture retained after Phase 65 signed jumps."
+    reason: "Phase 57T loop unsupported-instruction diagnostic fixture retained after Phase 66 unsigned jumps."
   },
   phase57tExitProcessUnsupported: {
     source: `INCLUDE Irvine32.inc
@@ -2194,7 +2194,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2232,9 +2232,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2260,7 +2260,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2287,7 +2287,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2312,7 +2312,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2336,7 +2336,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2362,7 +2362,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2402,7 +2402,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2433,8 +2433,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 65);
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phase, 66);
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2478,8 +2478,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 65);
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phase, 66);
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2505,7 +2505,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2529,7 +2529,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2553,7 +2553,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2578,7 +2578,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2602,7 +2602,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2626,7 +2626,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2651,9 +2651,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2667,6 +2667,34 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-branch-target-form line 3, column 9, byte offset 24, span length 1: JLE memory targets are not supported. Indirect branch behavior is deferred to a later branch phase.");
 });
 
+
+
+test("renders Phase 66 unsigned conditional jump memory-target diagnostic exactly", () => {
+  const name = "phase66UnsignedConditionalJumpMemoryTarget";
+  const source = `.code
+main PROC
+    ja [eax]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 66);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-branch-target-form",
+    message: "JA memory targets are not supported. Indirect branch behavior is deferred to a later branch phase.",
+    line: 3,
+    column: 8,
+    byteOffset: 23,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-branch-target-form line 3, column 8, byte offset 23, span length 1: JA memory targets are not supported. Indirect branch behavior is deferred to a later branch phase.");
+});
+
 test("renders Phase 65 signed conditional jump Irvine32-target diagnostic exactly", () => {
   const name = "phase65SignedConditionalJumpIrvineTarget";
   const source = `INCLUDE Irvine32.inc
@@ -2678,9 +2706,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2706,7 +2734,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2731,7 +2759,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2755,7 +2783,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -2972,7 +3000,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 65);
+    assert.equal(json.phase, 66);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -2985,7 +3013,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 65);
+  assert.equal(duplicateResult.json.phase, 66);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3484,7 +3512,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3505,7 +3533,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -4920,9 +4948,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -4962,6 +4990,67 @@ END main
   ].join("\n"));
 });
 
+
+
+test("renders Phase 66 unsigned conditional jump undefined flag-use warning exactly", () => {
+  const name = "phase66UnsignedConditionalJumpUndefinedFlagWarning";
+  const source = `.code
+main PROC
+    mov al, 1
+    shl al, 8
+    ja target
+    mov ebx, 1
+target:
+    nop
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 66);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.instructionCount, 5);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "undefined-shift-flag",
+      message: "SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+      line: 4,
+      column: 5,
+      byteOffset: 34,
+      spanLength: 9
+    },
+    {
+      kind: "simulator-warning",
+      code: "undefined-flag-use",
+      message: "JA reads CF, but CF is architecturally undefined from SHL at line 4. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+      line: 5,
+      column: 5,
+      byteOffset: 48,
+      spanLength: 9,
+      consumedFlags: ["CF"],
+      producerMnemonic: "SHL",
+      producerCode: "undefined-shift-flag",
+      producerLine: 4
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assert.equal(json.registers.EBX.hex, "00000001h");
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    "[simulator-warning] undefined-shift-flag line 4, column 5, byte offset 34, span length 9: SHL count 8 has effective count 8 for an 8-bit destination. ZF and SF were updated from the result. CF is architecturally undefined because the effective count is greater than or equal to the destination width. OF is architecturally undefined because the effective count is not 1. The simulator preserved CF and OF deterministically.",
+    "[simulator-warning] undefined-flag-use line 5, column 5, byte offset 48, span length 9: JA reads CF, but CF is architecturally undefined from SHL at line 4. The simulator preserved the flag deterministically; this flag-dependent behavior is not portable.",
+    "",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
 test("renders Phase 65 signed conditional jump undefined flag-use runtime error exactly", () => {
   const name = "phase65SignedConditionalJumpUndefinedFlagError";
   const source = `.code
@@ -4979,9 +5068,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 65);
+  assert.equal(json.phase, 66);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 65 - Signed Relational Conditional Jumps");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5963,7 +6052,7 @@ test("Phase 57T renders realistic playground diagnostics exactly", () => {
 [assembly-error] unsupported-instruction line 36, column 5, byte offset 769, span length 4: CALL is not supported yet.`);
 });
 
-test("Phase 57T renders RET, conditional jump, and WinAPI unsupported diagnostics exactly", () => {
+test("Phase 57T renders RET, loop, and WinAPI unsupported diagnostics exactly", () => {
   const retName = "phase57tRetUnsupported";
   const retSource = fixtureSource(retName);
   const retResult = runFixture(retName, retSource);
@@ -5971,12 +6060,12 @@ test("Phase 57T renders RET, conditional jump, and WinAPI unsupported diagnostic
   assertNoExecutionComplete(retResult.json.simulatorMessages);
   assertRenderedEquals(retName, retSource, retResult.rawJson, retResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 3: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 
-  const jumpName = "phase57tConditionalJumpUnsupported";
+  const jumpName = "phase57tLoopUnsupported";
   const jumpSource = fixtureSource(jumpName);
   const jumpResult = runFixture(jumpName, jumpSource);
   assertRunStatus(jumpResult.json, false, "parse-error");
   assertNoExecutionComplete(jumpResult.json.simulatorMessages);
-  assertRenderedEquals(jumpName, jumpSource, jumpResult.rawJson, jumpResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 2: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+  assertRenderedEquals(jumpName, jumpSource, jumpResult.rawJson, jumpResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 4: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
 
   const exitProcessName = "phase57tExitProcessUnsupported";
   const exitProcessSource = fixtureSource(exitProcessName);

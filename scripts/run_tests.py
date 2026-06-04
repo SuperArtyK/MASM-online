@@ -551,9 +551,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 65")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 66")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 65 - Signed Relational Conditional Jumps")
+    assert_text_contains("web/src/protocol.js", "Phase 66 - Unsigned Relational Conditional Jumps")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -621,7 +621,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 65 signed relational conditional jumps passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 66 unsigned relational conditional jumps passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1403,19 +1403,19 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase65_status_and_signed_jumps_present() -> None:
-    """Verify Phase 65 status, signed relational jumps, and preserved Phase 64 display behavior."""
+def assert_phase66_status_and_unsigned_jumps_present() -> None:
+    """Verify Phase 66 status, unsigned relational jumps, and preserved branch behavior."""
 
     required_status_fragments = [
         "Repository/archive milestone:",
-        "Phase 65 - Signed Relational Conditional Jumps",
+        "Phase 66 - Unsigned Relational Conditional Jumps",
         "Runtime/source-run MASM behavior phase:",
     ]
     status_block = """Repository/archive milestone:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66 - Unsigned Relational Conditional Jumps
 
 Runtime/source-run MASM behavior phase:
-Phase 65 - Signed Relational Conditional Jumps"""
+Phase 66 - Unsigned Relational Conditional Jumps"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1434,12 +1434,13 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "docs/BUILDING_AND_DEVELOPMENT.md",
-            "Phase 65 adds executable direct-label signed relational conditional jumps",
-            "`jl label` / `jnge label`",
-            "`jle label` / `jng label`",
-            "`jg label` / `jnle label`",
-            "`jge label` / `jnl label`",
+            "Phase 66 adds executable direct-label unsigned relational conditional jumps",
+            "`ja label` / `jnbe label`",
+            "`jae label` / `jnb label`",
+            "`jb label` / `jnae label`",
+            "`jbe label` / `jna label`",
             "`undefined-flag-use` policy",
+            "Phase 65 - Signed Relational Conditional Jumps remains implemented",
             "Phase 64 - Equality Conditional Jumps remains implemented",
             "Phase 64D - Memory Change Source Attribution Display remains implemented",
             "Memory-change rows show the source line that caused each successful mutation",
@@ -1455,7 +1456,6 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "`source-text-capacity-exceeded`",
             "`code-label-capacity-exceeded`",
             "`data-capacity-exceeded`",
-            "Unsigned relational jumps",
             "Phase 200 - Active Time Watchdog and Worker Responsiveness",
             "python3 -m http.server 8000 --directory web",
             "python3 scripts/run_tests.py --all",
@@ -1468,13 +1468,15 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "Signed relational jumps, unsigned relational jumps",
             "Accepted syntax remains the Phase 64 equality-jump subset",
             "runtime/source-run behavior phase remains Phase 64A",
-            "Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add accepted MASM syntax",
+            "Unsigned relational jumps, `loop`",
+            "Phase 65 does not add unsigned relational jumps",
         ],
     )
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 65:",
+            "Current status at Phase 66:",
+            "Phase 66 implements executable unsigned relational conditional jumps",
             "Phase 65 implements executable signed relational conditional jumps",
             "Phase 64D adds memory-change source attribution",
             "Phase 64A corrects source-run planned-read coverage",
@@ -1494,9 +1496,10 @@ Phase 65 - Signed Relational Conditional Jumps"""
     assert_all_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
-            "Phase 65 - Signed Relational Conditional Jumps",
+            "Phase 66 - Unsigned Relational Conditional Jumps",
             "The current direct-branch subset includes direct `jmp label`, equality conditional jumps",
             "signed relational conditional jumps",
+            "unsigned relational conditional jumps",
             "Phase 64D - Memory Change Source Attribution Display remains implemented",
             "Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS",
             "Phase 64B changes rendered Simulator Messages ordering and group separators",
@@ -1522,11 +1525,11 @@ Phase 65 - Signed Relational Conditional Jumps"""
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 65: Signed relational conditional jumps now execute for direct code-label targets",
-            "mov eax, -1",
+            "Milestone 66: Unsigned relational conditional jumps now execute for direct code-label targets",
+            "mov eax, 0FFFFFFFFh",
             "cmp eax, 1",
-            "jl less",
-            "less:",
+            "ja above",
+            "above:",
             "done:",
             "final-registers",
             "Program Console",
@@ -1539,17 +1542,20 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "Milestone 64D: Memory changes now show the source line",
             "Milestone 63: CMP Memory Operand Forms",
             "Milestone 64A: Planned-Read Coverage Correction",
+            "Milestone 65: Signed relational conditional jumps now execute for direct code-label targets",
         ],
     )
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Accepted MASM syntax now includes Phase 65 executable direct-label signed relational conditional jumps",
+            "Accepted MASM syntax now includes Phase 66 executable direct-label unsigned relational conditional jumps",
+            "`ja label` / `jnbe label`",
+            "`jae label` / `jnb label`",
+            "`jb label` / `jnae label`",
+            "`jbe label` / `jna label`",
+            "No unsigned relational conditional jump consumes `SF` or `OF`",
+            "Phase 66 - Unsigned Relational Conditional Jumps",
             "`jl label` / `jnge label`",
-            "`jle label` / `jng label`",
-            "`jg label` / `jnle label`",
-            "`jge label` / `jnl label`",
-            "No signed relational conditional jump consumes `CF`",
             "### Memory-change source attribution display",
             "a DWORD | line 10: inc a",
             "### Final register EFLAGS child display",
@@ -1566,7 +1572,7 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "`cmp mem, reg`",
             "`cmp mem, imm`",
             "planned-read validation",
-            "Phase 65 - Signed Relational Conditional Jumps",
+            "Phase 66 - Unsigned Relational Conditional Jumps",
             "Phase 64 - Equality Conditional Jumps",
             "Phase 64A - Planned-Read Coverage Correction for Existing Memory-Reading Instructions",
             "Phase 64D - Memory Change Source Attribution Display",
@@ -1593,11 +1599,14 @@ Phase 65 - Signed Relational Conditional Jumps"""
             "Accepted MASM syntax remains the Phase 64 equality-jump subset",
             "Signed relational jumps, unsigned relational jumps",
             "Deferred systems include signed relational conditional jumps",
+            "Unsigned relational jumps, `loop`",
         ],
     )
     assert_all_text_contains(
         "tests/core/test_wasm_source_run.c",
         [
+            "test_phase66_unsigned_relational_jumps_source_run_programs",
+            "test_phase66_unsigned_relational_jump_error_paths",
             "test_phase65_signed_relational_jumps_source_run_programs",
             "test_phase65_signed_relational_jump_source_run_diagnostics",
             "test_phase65_signed_relational_jump_instruction_limit",
@@ -1609,6 +1618,9 @@ Phase 65 - Signed Relational Conditional Jumps"""
     assert_all_text_contains(
         "tests/core/test_vm_exec.c",
         [
+            "test_phase66_unsigned_relational_conditional_jump_runtime",
+            "test_phase66_unsigned_relational_conditional_jump_aliases",
+            "test_phase66_unsigned_relational_flag_consumption_sets",
             "test_phase65_signed_relational_conditional_jump_runtime",
             "test_phase65_signed_relational_conditional_jump_aliases",
             "test_phase65_signed_relational_flag_consumption_sets",
@@ -1944,7 +1956,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase65_status_and_signed_jumps_present()
+    assert_phase66_status_and_unsigned_jumps_present()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

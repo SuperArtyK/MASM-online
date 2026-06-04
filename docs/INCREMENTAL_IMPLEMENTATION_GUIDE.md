@@ -226,6 +226,153 @@ When a milestone is a runtime behavior milestone and the two values match, the r
 
 
 
+
+### 2.4c-2 Standing Rule: Current-Status Surfaces Must Be Replaced, Not Appended
+
+Every milestone that updates current-status documentation must replace prior active current-status detail instead of appending another milestone paragraph.
+
+This rule exists because current-status surfaces are user-facing orientation surfaces, not milestone reports.
+
+Current-status surfaces include the surfaces listed in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. Common examples are:
+
+- `README.md`;
+- `docs/SUPPORTED_SYNTAX.md`;
+- `docs/BUILDING_AND_DEVELOPMENT.md`;
+- browser runtime-status text;
+- worker/protocol status text;
+- source-run JSON status text;
+- Wasm/source-run status strings;
+- tests that assert current status wording.
+
+Do not maintain a second divergent complete list in this guide. If a new stable current-status surface is added, update the specification list and refer to it here.
+
+Document ownership:
+
+- `README.md` is a concise project landing page.
+- `docs/SUPPORTED_SYNTAX.md` is the current accepted/rejected syntax and diagnostics reference.
+- `docs/BUILDING_AND_DEVELOPMENT.md` is the build, serve, environment, and test-command reference.
+- `docs/MILESTONE_HISTORY.md` is the accumulated milestone-history document.
+- Milestone reports are detailed records of one completed milestone.
+- Curated handoff/audit reports are historical navigation and stale-assumption prevention aids.
+
+Rules for README:
+
+1. Keep one compact active current-status block.
+2. Keep one compact current-scope block.
+3. Link to detailed docs instead of copying details into README.
+4. Do not paste milestone-report sections into README.
+5. Do not list every prior corrective phase in README current status.
+6. Do not duplicate the supported-syntax reference.
+7. Do not duplicate the implementation guide roadmap.
+8. README may name the current milestone and the immediately relevant current feature, but it must not become a rolling changelog.
+9. When a future milestone adds another feature category, update an existing category when possible instead of adding a new milestone-specific bullet.
+
+Rules for `docs/SUPPORTED_SYNTAX.md`:
+
+1. The opening status block must be concise.
+2. The body may contain detailed accepted syntax, rejected syntax, diagnostics, examples, and future/deferred syntax.
+3. Long detailed syntax sections are allowed. Milestone-by-milestone chronology in the opening status block is not.
+4. Do not place milestone-history prose in the opening status block.
+5. Do not repeat every previous milestone in order to explain current syntax.
+6. When a new instruction family is implemented, update the relevant instruction table or detailed syntax section and replace the current-status summary.
+7. Future/deferred syntax should be grouped by feature category, not by a growing chain of old milestones.
+
+Rules for `docs/BUILDING_AND_DEVELOPMENT.md`:
+
+1. This document must not define supported MASM behavior.
+2. It may include repository/archive and runtime/source-run phase labels only as orientation.
+3. It should link to `SUPPORTED_SYNTAX.md` for behavior and syntax.
+4. It should link to `MILESTONE_HISTORY.md` for milestone history.
+5. It should not accumulate feature summaries from each milestone.
+
+Rules for browser/protocol/source-run status text:
+
+1. Keep status strings short.
+2. Update runtime/source-run phase metadata only when the target phase changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
+3. Do not embed long feature histories in protocol or JSON status strings.
+4. Browser default-source examples may demonstrate the current feature but must not become changelog prose.
+
+Rules for milestone reports:
+
+1. Milestone reports may be detailed.
+2. Milestone reports must list changed current-status surfaces.
+3. Milestone reports must say whether current-status text was replaced or appended.
+4. Appending to current-status sections is allowed only when adding a separately labeled historical/changelog section, not when updating the active current-status block.
+5. A milestone report may summarize documentation cleanup, but it must not paste removed README clutter into the main report body as a substitute for explaining the cleanup.
+6. If a long before/after excerpt is necessary, place it in an appendix or describe it by section names.
+
+Documentation update checklist for every milestone:
+
+```text
+Current-status replacement checklist:
+- README current-status block replaced, not appended: yes/no/not applicable
+- README current-scope block remains concise: yes/no/not applicable
+- SUPPORTED_SYNTAX opening status block replaced, not appended: yes/no/not applicable
+- BUILDING_AND_DEVELOPMENT does not define feature behavior: yes/no/not applicable
+- MILESTONE_HISTORY receives historical detail when needed: yes/no/not applicable
+- Milestone report contains detailed milestone-specific prose instead of copying that prose into README: yes/no
+- Runtime/source-run phase metadata advanced only if runtime-visible behavior changed: yes/no/not applicable
+```
+
+Static documentation checks should flag likely current-status clutter in README and build docs when feasible.
+
+At minimum, static checks should warn or fail when the active current-status/current-scope sections of README or `docs/BUILDING_AND_DEVELOPMENT.md` contain:
+
+- several consecutive headings or paragraphs beginning with `Phase <N>`;
+- repeated phrases such as `Phase <N> adds`, `Phase <N> added`, `Phase <N> remains`, or `After Phase <N>`;
+- long TODO-style milestone ledgers outside `docs/MILESTONE_HISTORY.md`;
+- copied milestone-report sections such as `Exact requirements implemented`, `Assumptions used`, `TODO-style note disposition`, `Files changed`, `Tests added`, or `Commands used to test`.
+
+Static checks should be scoped to active current-status/current-scope sections where possible. If a document contains quoted examples or templates, those examples must be clearly outside the active current-status section and should be avoided unless necessary.
+
+A future assistant must not respond to a documentation-clutter problem by deleting history. Move history to `docs/MILESTONE_HISTORY.md` or the milestone report, then keep the current-status surface concise.
+
+### Milestone Report Requirement: Current-Status Documentation Disposition
+
+Every future milestone report must include a subsection named exactly:
+
+```text
+Current-status documentation disposition
+```
+
+The subsection must state:
+
+- whether README was changed;
+- whether README current-status text was replaced rather than appended;
+- whether README current-scope text remains concise;
+- whether `docs/SUPPORTED_SYNTAX.md` opening status text was replaced rather than appended;
+- whether `docs/BUILDING_AND_DEVELOPMENT.md` avoided feature-history accumulation;
+- whether `docs/MILESTONE_HISTORY.md` received any historical detail that would otherwise clutter README;
+- whether browser/protocol/source-run status text was changed;
+- whether runtime/source-run metadata advanced, and why;
+- whether documentation-only work preserved runtime/source-run metadata;
+- whether static documentation checks were added, updated, skipped, or handled manually.
+
+Use this format:
+
+```text
+Current-status documentation disposition:
+- README changed:
+- README current-status block replaced rather than appended:
+- README current-scope block remains concise:
+- SUPPORTED_SYNTAX opening status block replaced rather than appended:
+- BUILDING_AND_DEVELOPMENT avoided feature-history accumulation:
+- MILESTONE_HISTORY updated for historical detail:
+- Browser/protocol/source-run status text changed:
+- Runtime/source-run metadata advanced:
+- Reason runtime/source-run metadata did or did not advance:
+- Static documentation checks added or updated:
+- Manual documentation checks performed, if static checks were skipped:
+- Clutter risk remaining:
+```
+
+If the target milestone does not touch documentation, the report must still say that current-status documentation was not changed.
+
+This requirement applies to implementation milestones, documentation-only milestones, maintenance milestones, and corrective phases.
+
+The milestone report may summarize documentation cleanup, but it must not paste the removed README clutter into the main report body as a substitute for explaining the cleanup. If long before/after excerpts are necessary, place them in an appendix or describe them by section names.
+
+
 ### 2.4c-1 Branch-Phase Milestone Report Requirements
 
 Every milestone report for a branch or control-flow phase must include a branch-status block.
@@ -255,6 +402,36 @@ Rules:
 - If active-time watchdog behavior is not implemented, say so explicitly.
 - If debugger/editor branch behavior is not implemented, say so explicitly.
 - Do not write broad summaries such as "control flow is implemented" unless all listed control-flow families are actually implemented.
+
+
+For every branch or control-flow phase that adds new branch/control-flow mnemonics, changes recognized branch/control-flow keyword behavior, or makes a previously deferred branch form executable, the milestone report must also include a reserved-word and deferred-runtime-path disposition.
+
+Use this shape when applicable:
+
+```text
+Reserved-word and keyword status:
+- New branch/control-flow mnemonics added in this phase:
+- Case-insensitive mnemonic recognition verified: yes/no
+- New mnemonics rejected as user-defined symbols: yes/no
+- `OPTION CASEMAP:NONE` does not make new mnemonics available as user symbols: yes/no
+- `OPTION NOKEYWORD` remains unsupported unless this phase explicitly implements it: yes/no
+
+Deferred-runtime path status:
+- Valid branch/control-flow forms implemented in this phase use executable runtime behavior: yes/no
+- Valid branch/control-flow forms implemented in this phase avoid deferred-runtime diagnostics such as `branch-runtime-deferred`: yes/no
+- Metadata-only or deferred branch/control-flow forms intentionally preserved, if any:
+```
+
+Rules:
+
+- If a phase adds a new branch or control-flow mnemonic, that mnemonic must be treated as a case-insensitive reserved word unless the phase explicitly documents a different MASM-compatible rule.
+- New branch or control-flow mnemonics must not be accepted as data symbols, numeric equates, code labels, procedure names, or later user-defined symbol classes by default.
+- `OPTION CASEMAP:NONE` changes lookup for accepted user-defined symbols. It does not make reserved words available as user-defined symbols.
+- `OPTION NOKEYWORD` must remain unsupported unless the selected target phase explicitly implements keyword-control behavior.
+- If a phase makes a branch/control-flow form executable, valid instances of that form must not use a generic deferred-runtime diagnostic path such as `branch-runtime-deferred`.
+- Deferred-runtime diagnostics may remain only for forms that the current phase intentionally accepts as metadata-only or recognizes as still future-owned.
+- This subsection is not required for debugger/editor display-only phases, documentation-only phases, or maintenance phases that do not add mnemonics, change keyword behavior, or make a deferred branch/control-flow form executable.
+
 
 ### 2.4d Standing Rule: Modeled-Flag Consumers Must Use the Shared Undefined-Flag-Use Helper
 
@@ -12201,6 +12378,31 @@ Add tests proving:
 
 The Phase 57L milestone report must explicitly state that `.CONST` `region-boundary-crossing` regression coverage was preserved while adding `.code` memory-access diagnostics.
 
+
+### Post-audit corrective test-hardening note for `.code` protected-region diagnostics
+
+This note hardens Phase 57L tests after later audit review. It does not change the intended Phase 57L behavior and must not be read as a new runtime feature.
+
+At least one `.code` memory-access diagnostic must prove that the reported protected-region start address comes from active runtime layout metadata.
+
+The preferred test is a source-run or native diagnostic fixture that runs with a non-fixed layout mode or a test-only layout policy where the `.code` base differs from the fixed educational layout base.
+
+The test must prove all of the following:
+
+- the diagnostic identifies `.code` as the protected region;
+- the rendered protected-region start address equals the active layout metadata for `.code`;
+- the rendered protected-region start address is not hardcoded to the fixed educational layout base;
+- the same diagnostic still preserves source line, column, byte offset, and span length where source metadata is available;
+- no register mutation, flag mutation, flag-validity mutation, memory mutation, Program Console output, successful memory-change row, or `execution-complete` message occurs after the fatal `.code` access diagnostic.
+
+If the active source-run configuration cannot select a non-fixed `.code` base when this test-hardening note is implemented, add one of these instead:
+
+1. a native layout/diagnostic test that constructs or selects a non-fixed `.code` base through existing layout-policy APIs; or
+2. a milestone-report explanation stating why fixed-layout-only source-run coverage is unavoidable in the current repository, plus a TODO-style test note assigning non-fixed `.code` diagnostic coverage to the next layout-test expansion phase.
+
+Do not satisfy this requirement by asserting only the fixed-layout `.code` address. Fixed-layout-only tests can pass even when the implementation has accidentally hardcoded the protected-region start address.
+
+
 ### Required rendered-message tests
 
 Add exact rendered Simulator Messages tests for:
@@ -18121,6 +18323,34 @@ jna exit
 
 These forms must not be accepted as indirect branches, computed branches, Irvine32 calls, or data-symbol jumps.
 
+
+### Reserved-word and keyword policy
+
+The new Phase 66 mnemonics are simulator-recognized instruction mnemonics. They are therefore reserved words by default.
+
+These names must be rejected as user-defined symbols, case-insensitively:
+
+```text
+ja
+jnbe
+jae
+jnb
+jb
+jnae
+jbe
+jna
+```
+
+This applies to data symbols, numeric equates, code labels, procedure names, and later user-defined symbol categories where those categories exist.
+
+`OPTION CASEMAP:NONE` must not make these mnemonics available as user-defined symbols.
+
+`OPTION NOKEYWORD` remains unsupported unless a later explicit keyword-control phase implements it. Phase 66 must not silently enable any `OPTION NOKEYWORD` behavior.
+
+The implementation must not create a special branch-only reserved-word path that diverges from the standing reserved-word policy. Add these mnemonics to the same recognized-keyword or reserved-word classification path used by other implemented instruction mnemonics.
+
+Rejected reserved-word declarations must not be inserted into user-symbol tables. If parser recovery continues and later references produce follow-on diagnostics, the declaration-site reserved-word diagnostic remains the primary expected diagnostic.
+
 ### Runtime semantics
 
 - Count each unsigned conditional jump as one executed instruction.
@@ -18139,6 +18369,25 @@ These forms must not be accepted as indirect branches, computed branches, Irvine
 - Instruction-count watchdog enforcement applies to taken and not-taken jumps.
 - Active-time or wall-clock watchdog behavior remains future work.
 
+
+### Deferred-runtime diagnostic path
+
+Valid Phase 66 unsigned relational conditional jumps are executable runtime behavior.
+
+A valid Phase 66 direct-label branch must not emit:
+
+```text
+branch-runtime-deferred
+```
+
+or any equivalent deferred-runtime diagnostic.
+
+The deferred-runtime branch diagnostic path may remain only for explicitly metadata-only or future-owned branch forms. It must not be used for valid `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, or `jna` direct-label branches implemented by this phase.
+
+This requirement applies to both primary mnemonics and aliases.
+
+If a valid Phase 66 branch reaches a deferred-runtime diagnostic, the implementation is incomplete for Phase 66. Do not fix such a failure by weakening the test expectation or reclassifying valid Phase 66 syntax as metadata-only.
+
 ### Undefined-flag-use no-partial-mutation rule
 
 In strict/error mode, if any consumed flag is invalid:
@@ -18152,6 +18401,31 @@ In strict/error mode, if any consumed flag is invalid:
 - Program Console output remains unchanged;
 - memory-change rows remain unchanged;
 - no `execution-complete` message is emitted after the fatal diagnostic.
+
+
+### Planned-read/planned-write disposition
+
+Unsigned relational conditional jumps do not perform simulated memory reads or simulated memory writes.
+
+Phase 66 must not add or change planned-read/planned-write memory access collection unless the implementation discovers an existing bug unrelated to this phase and the user explicitly authorizes that separate fix.
+
+For Phase 66, the expected planned-access disposition is:
+
+```text
+No planned-read update.
+No planned-write update.
+No object-bounds planned-access update.
+No section-capacity planned-access update.
+No section-image planned-access update.
+No uninitialized-read policy update.
+No `.CONST` or `.code` protected-region access update.
+```
+
+Reason: unsigned relational conditional jumps consume modeled flags and branch metadata only. They do not dereference memory, mutate memory, perform read-modify-write behavior, use implicit stack memory, or call runtime routines that access memory.
+
+Successful unsigned relational conditional jumps must not create memory-change rows.
+
+Strict/error undefined-flag-use failure for an unsigned relational conditional jump must not create memory-change rows.
 
 ### Required tests
 
@@ -18200,6 +18474,33 @@ Undefined-flag-use tests:
 
 If a source-level fixture cannot isolate the validity of a single modeled flag, use the existing native/test-only flag-validity helpers for selective-consumption tests and still include source-run rendered-message tests for at least one invalid consumed-flag warning and one invalid consumed-flag strict/error case.
 
+
+Reserved-word and mnemonic-case tests:
+
+- Lowercase, uppercase, and mixed-case spellings of at least one primary mnemonic are accepted as instruction mnemonics.
+- Lowercase, uppercase, and mixed-case spellings of at least one alias mnemonic are accepted as instruction mnemonics.
+- At least one primary mnemonic is rejected as a data symbol.
+- At least one alias mnemonic is rejected as a data symbol.
+- At least one primary mnemonic is rejected as a code label.
+- At least one alias mnemonic is rejected as a code label.
+- At least one rejected symbol declaration uses mixed-case spelling.
+- `OPTION CASEMAP:NONE` does not make unsigned relational jump mnemonics available as user-defined symbols.
+- The diagnostic should be `reserved-word-symbol` or the current reserved-word diagnostic code used by the active reserved-word diagnostics phase.
+- Rejected reserved-word declarations must not be inserted into any user-symbol table.
+
+Deferred-runtime regression tests:
+
+- Valid `ja label` execution does not emit `branch-runtime-deferred`.
+- Valid alias execution, such as `jnbe label` or `jnb label`, does not emit `branch-runtime-deferred`.
+- A successful valid unsigned branch fixture includes `execution-complete`.
+- A strict/error undefined-flag-use fixture excludes `execution-complete` because execution stops before the branch decision.
+
+No-memory-access regression tests:
+
+- Successful unsigned relational jumps produce no memory-change rows.
+- Strict/error undefined-flag-use failure for an unsigned relational jump produces no memory-change rows.
+- The phase does not add uninitialized-read diagnostics, object-bounds diagnostics, section-capacity diagnostics, section-image diagnostics, `.CONST` write diagnostics, or `.code` access diagnostics merely because a branch executes.
+
 Instruction-limit tests:
 
 - A taken unsigned conditional backward loop reaches the existing instruction-count watchdog.
@@ -18247,6 +18548,19 @@ It must explicitly state:
 - which undefined-flag-use policy tests were run;
 - whether runtime/source-run MASM behavior metadata advanced.
 
+- which reserved-word tests were run for new unsigned relational jump mnemonics;
+- whether mixed-case mnemonic recognition was tested;
+- whether `OPTION CASEMAP:NONE` was tested to prove it does not make unsigned jump mnemonics available as user-defined symbols;
+- whether valid unsigned relational jumps avoid `branch-runtime-deferred` or equivalent deferred-runtime diagnostics;
+- whether the phase touched simulated memory access paths; for Phase 66 the expected answer is no, because unsigned relational jumps consume modeled flags and branch metadata only and do not perform simulated memory reads, simulated memory writes, read-modify-write behavior, or implicit stack/runtime memory access.
+
+The report must include this planned-access disposition:
+
+```text
+Planned-read/planned-write coverage:
+Phase 66 does not add, change, or reclassify simulated memory access. Unsigned relational conditional jumps consume modeled flags and branch metadata only. They do not read simulated memory, write simulated memory, perform read-modify-write behavior, use implicit stack memory, call runtime routines, or inspect object/section/uninitialized-origin memory metadata. No planned-read/planned-write collection changes were required.
+```
+
 ## B. Batch-wide test requirements
 
 Every revised phase in this batch must include:
@@ -18288,6 +18602,273 @@ This `_v2` revision also locks down the following cross-cutting rules:
 - All branch instructions in this batch use one shared branch target classifier.
 - Conditional jumps count as executed instructions whether taken or not taken.
 
+
+## 70A. Phase 66A - Current-Status Documentation De-Cluttering
+
+### Goal
+
+Clean current-status documentation after Phase 66 so README, supported syntax, and build/development docs remain concise orientation surfaces instead of becoming rolling milestone reports.
+
+This is a documentation and static-check phase only.
+
+It must not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic JSON fields, diagnostic codes, rendered Simulator Messages wording, Program Console behavior, source-run JSON behavior, runtime/source-run MASM behavior metadata advancement, or implementation code.
+
+### Status values after this phase
+
+Repository/archive milestone after acceptance:
+
+```text
+Phase 66A - Current-Status Documentation De-Cluttering
+```
+
+Runtime/source-run MASM behavior phase after acceptance:
+
+```text
+Phase 66 - Unsigned Relational Conditional Jumps
+```
+
+Status interpretation:
+
+The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this phase changes documentation organization and anti-clutter policy only. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, rendered Simulator Messages wording, Program Console behavior, source-run JSON behavior, or runtime-visible MASM behavior.
+
+Do not update runtime/source-run phase metadata, browser runtime-status text, worker/protocol runtime phase values, source-run JSON phase fields, or tests that assert runtime phase values merely because this documentation cleanup phase is accepted.
+
+Do not update `docs/SUPPORTED_SYNTAX.md` to claim new accepted syntax, new rejected syntax, new diagnostics, or a new runtime/source-run MASM behavior phase. This phase may update the repository/archive milestone label in `docs/SUPPORTED_SYNTAX.md` to Phase 66A while explicitly preserving the runtime/source-run MASM behavior phase as Phase 66.
+
+### Scope
+
+This phase owns:
+
+1. README current-status cleanup.
+2. README current-scope cleanup.
+3. `docs/SUPPORTED_SYNTAX.md` opening status cleanup.
+4. `docs/BUILDING_AND_DEVELOPMENT.md` current-status cleanup.
+5. `docs/MILESTONE_HISTORY.md` preservation of historical detail removed from README or build docs.
+6. Spec/guide anti-clutter rules that prevent recurrence.
+7. Static documentation checks, if the repository already has suitable static-check infrastructure or if they can be added safely within documentation-maintenance scope.
+8. Manual documentation checks if static checks are deferred.
+9. Milestone-report checklist updates for current-status replacement disposition.
+
+### Non-goals
+
+This phase must not:
+
+- change current accepted MASM syntax;
+- change current rejected MASM syntax;
+- change parser diagnostics;
+- change runtime diagnostics;
+- change source-run JSON behavior;
+- change worker protocol schema;
+- change browser UI behavior;
+- change default source programs;
+- change instruction execution;
+- advance runtime/source-run MASM behavior phase metadata;
+- delete milestone history;
+- move canonical spec/guide authority into README;
+- create a new roadmap numbering scheme.
+
+### Documentation ownership rules to enforce
+
+README owns:
+
+- project name;
+- one-paragraph product description;
+- compact repository/archive milestone label;
+- compact runtime/source-run MASM behavior phase label;
+- concise current simulator scope;
+- basic serve/build/test entry points;
+- links to deeper documentation.
+
+README does not own:
+
+- full milestone ledger;
+- exact syntax reference;
+- per-phase acceptance criteria;
+- long future roadmap;
+- changed-files lists;
+- TODO-style note disposition;
+- detailed implementation assumptions;
+- detailed diagnostic policy.
+
+`docs/SUPPORTED_SYNTAX.md` owns:
+
+- current accepted syntax;
+- current rejected syntax;
+- current diagnostics;
+- current future/deferred syntax categories;
+- examples of currently accepted and rejected source forms.
+
+`docs/SUPPORTED_SYNTAX.md` does not own:
+
+- full milestone history;
+- implementation assumptions;
+- changed-files lists;
+- report-style TODO dispositions.
+
+Long detailed syntax sections are allowed in `docs/SUPPORTED_SYNTAX.md`; milestone-by-milestone chronology in the opening status block is not.
+
+`docs/BUILDING_AND_DEVELOPMENT.md` owns:
+
+- prerequisites;
+- build commands;
+- serve commands;
+- aggregate and focused test commands;
+- Emscripten availability notes;
+- environment troubleshooting.
+
+`docs/BUILDING_AND_DEVELOPMENT.md` does not own:
+
+- current feature behavior;
+- exact MASM syntax tables;
+- detailed milestone history.
+
+`docs/MILESTONE_HISTORY.md` owns:
+
+- accumulated milestone history;
+- concise milestone ledger;
+- historical notes that would clutter README;
+- references to detailed milestone reports.
+
+### Required README replacement shape
+
+README must contain a compact current-status block using this shape:
+
+```markdown
+## Current status
+
+Repository/archive milestone:
+Phase 66A - Current-Status Documentation De-Cluttering
+
+Runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+Phase 66 is the latest runtime/source-run MASM behavior phase. Phase 66A is documentation cleanup only and does not add MASM syntax or runtime behavior.
+
+For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
+```
+
+README must contain a compact current-scope block using feature categories, not milestone chronology. When future milestones update the current-scope block, they should update existing feature categories when possible rather than appending milestone-specific bullets.
+
+### Required supported-syntax opening replacement shape
+
+`docs/SUPPORTED_SYNTAX.md` must contain a concise opening status block using this shape:
+
+```markdown
+Repository/archive milestone:
+Phase 66A - Current-Status Documentation De-Cluttering
+
+Runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
+
+Phase 66A is documentation cleanup only. It does not add or remove accepted MASM syntax.
+```
+
+Detailed current syntax tables and examples may remain below this opening block. The opening block must not become a milestone ledger.
+
+### Required build/development replacement shape
+
+`docs/BUILDING_AND_DEVELOPMENT.md` must contain a short status note using this shape:
+
+```markdown
+Current repository/archive milestone:
+Phase 66A - Current-Status Documentation De-Cluttering
+
+Current runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
+```
+
+### Required MILESTONE_HISTORY update
+
+`docs/MILESTONE_HISTORY.md` must receive a short Phase 66A entry explaining:
+
+- documentation clutter was corrected;
+- README was kept concise;
+- detailed history remains in milestone history and reports;
+- runtime/source-run MASM behavior remains Phase 66;
+- no code or syntax behavior changed.
+
+### Static and manual checks
+
+If the repository has static documentation checks, add checks that fail or warn when active README or `docs/BUILDING_AND_DEVELOPMENT.md` current-status/current-scope sections contain likely copied milestone-report sections.
+
+The check should flag these headings outside milestone reports and milestone history:
+
+```text
+Exact requirements implemented
+Assumptions used
+TODO-style note disposition
+Files changed
+Tests added
+Commands used to test
+```
+
+The check should also flag excessive repeated milestone status in active README current-status/current-scope sections, such as several paragraphs beginning with:
+
+```text
+Phase <number> adds
+Phase <number> added
+Phase <number> remains
+After Phase <number>
+```
+
+Static checks should be scoped to active current-status/current-scope sections where possible. They should not forbid normal phase references in the implementation guide, milestone history, milestone reports, historical audit notes, or clearly quoted examples outside active status sections.
+
+If static checks cannot be added safely in this phase, the milestone report must list the manual checks performed and preserve static-check implementation as future documentation-maintenance work. Do not silently skip both automated and manual clutter checks.
+
+### Required tests or verification
+
+- Static documentation checks pass, if updated.
+- If static documentation checks are not updated, manual documentation checks are listed in the milestone report.
+- README active current-status block contains exactly one repository/archive milestone label and one runtime/source-run MASM behavior phase label.
+- README does not contain copied milestone-report headings in active current-status/current-scope sections.
+- README does not contain a rolling list of prior milestone summaries in current status.
+- `docs/SUPPORTED_SYNTAX.md` opening status block is concise and does not contain a rolling milestone ledger.
+- `docs/SUPPORTED_SYNTAX.md` detailed syntax sections remain intact where they describe current accepted/rejected syntax.
+- `docs/BUILDING_AND_DEVELOPMENT.md` does not define feature behavior.
+- `docs/MILESTONE_HISTORY.md` contains the historical note for Phase 66A.
+- Runtime/source-run status metadata remains Phase 66.
+- Existing code, parser, source-run, diagnostics, protocol, and web tests remain unchanged except for documentation/static tests.
+
+### Acceptance criteria
+
+- README is a concise landing page again.
+- Current syntax details are in `docs/SUPPORTED_SYNTAX.md`, not README.
+- Milestone history is in `docs/MILESTONE_HISTORY.md`, not README.
+- Build/development instructions are in `docs/BUILDING_AND_DEVELOPMENT.md`, not README feature prose.
+- Runtime/source-run MASM behavior phase remains Phase 66.
+- Repository/archive milestone may advance to Phase 66A after acceptance.
+- The milestone report for Phase 66A includes `Current-status documentation disposition`.
+
+### Phase 66A milestone report requirements
+
+The Phase 66A milestone report must explicitly state:
+
+1. This phase is documentation-only.
+2. No MASM syntax changed.
+3. No parser behavior changed.
+4. No VM/executor behavior changed.
+5. No Wasm API behavior changed.
+6. No browser UI behavior changed.
+7. No worker protocol behavior changed.
+8. No diagnostic code, JSON, or rendered-message behavior changed.
+9. Runtime/source-run MASM behavior phase remains Phase 66.
+10. README current-status text was replaced, not appended.
+11. README current-scope text remains concise.
+12. `docs/SUPPORTED_SYNTAX.md` opening status text was replaced, not appended.
+13. `docs/SUPPORTED_SYNTAX.md` detailed syntax sections remain intact where they describe current behavior.
+14. `docs/BUILDING_AND_DEVELOPMENT.md` remains build/development-focused.
+15. Historical detail was preserved in `docs/MILESTONE_HISTORY.md` or milestone reports, not deleted.
+16. Static documentation checks added, updated, skipped, or handled manually are reported honestly.
+17. If static checks were skipped, the manual clutter checks performed are listed.
+18. Any future static-check implementation work is preserved as documentation-maintenance work.
+
+The report must not paste the full removed README clutter into the main report body unless it is necessary as a short before/after excerpt. If long before/after content is needed, place it in an appendix or describe it by section names.
+
+
 ## 71. Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 
 ### Goal
@@ -18301,7 +18882,10 @@ Run a validation-only harness over arithmetic, branch, and watchdog behavior.
 - Instruction-count watchdog behavior for a small loop made from `cmp`, Jcc, and `jmp`.
 - Arithmetic fault paths from `mul`, `imul`, `div`, and `idiv` preserve no-partial-mutation guarantees.
 - `lea`, `cmp`, `mul`, `imul`, `div`, `idiv`, `jmp`, and Jcc produce no successful memory-change rows unless the instruction actually writes memory in a later phase.
-- Rendered diagnostics for one parser target error, one runtime target error, one division runtime error, and one instruction-limit error.
+- Rendered diagnostics for one parser/lowering branch-target error reachable from ordinary source, such as an unknown label, data-symbol target, numeric-equate target, malformed target, or otherwise rejected direct target.
+- A runtime branch-target error may be covered by a native executor fixture, malformed-IR fixture, or deliberately constructed internal-metadata fixture. Do not weaken parser/lowering target validation merely to make a runtime target error reachable from normal source-run input.
+- Rendered diagnostics for one division runtime error from an already implemented multiply/divide phase.
+- Rendered diagnostics for one instruction-limit error from a small loop using already implemented branch behavior.
 
 ### Acceptance criteria
 
@@ -18311,19 +18895,23 @@ The harness is part of the aggregate test runner and adds no runtime features.
 
 ### Goal
 
-Add parser/link metadata for classifying CALL and INVOKE targets without executing CALL yet.
+Add parser/link metadata for classifying future CALL and INVOKE targets without executing CALL or INVOKE.
 
-This is a parser and metadata phase. It must not add CALL execution, RET execution, stack mutation, Irvine routine execution, or root procedure termination behavior.
+This is a parser and metadata phase. It must not add CALL execution, RET execution, stack mutation, Irvine routine execution, root procedure termination behavior, call-depth accounting, `PUSH`, `POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 routine dispatch.
 
 ### Dependencies
 
 - Procedure structural parsing from earlier `.code` / `PROC` / `ENDP` phases.
-- Code label table and direct branch target validation.
-- Stack initialization and PUSH/POP support should already exist before later CALL execution phases.
+- Existing code label table and direct branch target validation.
+- Existing global symbol policy, including the Phase 35A `OPTION CASEMAP` user-symbol policy correction.
+- Existing reserved-word policy.
+- Existing Phase 41 - Virtual Irvine32 Symbol Registry or its direct documented successor.
 
-### Accepted syntax
+Stack-region initialization and source-level `PUSH`/`POP` are not required for this metadata-only phase because this phase performs no stack mutation.
 
-This phase recognizes target names in metadata only:
+### Metadata sources recognized in this phase
+
+This phase recognizes declarations and registry entries as metadata sources:
 
 ```asm
 main PROC
@@ -18335,71 +18923,89 @@ Helper ENDP
 SomeLabel:
 ```
 
-It classifies target identifiers that appear in future CALL/INVOKE contexts but does not execute them yet.
+It also recognizes existing metadata for data symbols, numeric equates, virtual Irvine32 names, reserved words, and unknown identifiers when a classifier test asks about a potential future CALL/INVOKE target.
+
+This phase does not make CALL or INVOKE source syntax executable or newly accepted. If existing parser recovery already recognizes CALL or INVOKE as unsupported/deferred syntax, that diagnostic behavior may remain, but this phase must not silently accept executable CALL/INVOKE source programs.
 
 ### Required target classes
 
 The target classifier must distinguish:
 
 1. user procedure entry;
-2. non-procedure code label;
-3. supported virtual Irvine32 intrinsic;
-4. known Irvine32 intrinsic that is recognized but not implemented yet;
-5. explicit external/API/linker non-goal target;
-6. data symbol;
-7. numeric equate;
-8. local symbol if local metadata exists;
-9. unknown symbol;
-10. malformed target expression.
+2. non-procedure executable code label;
+3. supported virtual Irvine32 intrinsic or terminator that is implemented now;
+4. known Irvine32 routine that is recognized but not implemented yet;
+5. recognized Irvine32 routine that is explicitly unsupported in v1;
+6. explicit external/API/linker/import-library/host-filesystem non-goal target;
+7. data symbol;
+8. numeric equate;
+9. local symbol if local metadata exists;
+10. reserved word;
+11. unknown symbol;
+12. malformed target expression.
 
 ### Tasks
 
-1. Add procedure-entry metadata separate from ordinary code labels.
+1. Add or confirm procedure-entry metadata separate from ordinary code-label metadata.
 2. Preserve source declaration location for each procedure.
-3. Add a target-classification helper used by future `call` and `invoke` phases.
-4. Add a virtual Irvine32 symbol registry with at least these names classified:
-   - supported-now or planned: `exit`, `Crlf`, `WriteChar`, `WriteString`, `WriteDec`, `WriteInt`, `WriteHex`, `WriteBin`, `DumpRegs`, `DumpMem`, `Randomize`, `Random32`, `RandomRange`, `WaitMsg`, `ReadChar`, `ReadInt`, `ReadDec`, `ReadHex`, `ReadString`;
-   - explicit non-goal or deferred Windows/UI names as appropriate, such as `MsgBox`, `MsgBoxAsk`, file I/O routines, and color/cursor routines if not scheduled in v1.
-5. Preserve case policy: instructions and Irvine routine names are case-insensitive; user-defined procedure and label names follow the active user-symbol case policy.
+3. Add a documented target-classification helper intended for future `call` and `invoke` phases.
+4. Reuse the existing Phase 41 - Virtual Irvine32 Symbol Registry or its direct documented successor. If Phase 68 needs a call-target-facing wrapper, add a small documented wrapper over the existing registry rather than creating a second independent Irvine32 name table.
+5. Preserve case policy:
+   - instruction mnemonics are case-insensitive;
+   - directives are case-insensitive;
+   - registers and register aliases are case-insensitive;
+   - virtual include names are case-insensitive;
+   - recognized Irvine32 routine and terminator names are case-insensitive;
+   - user-defined procedure and label names follow the active user-symbol CASEMAP policy.
 6. Reject duplicate procedure names, duplicate labels, and collisions with existing data/equate symbols according to the existing global symbol policy.
-7. Add structured diagnostics for duplicate or invalid procedure metadata.
-8. Do not implement CALL, RET, INVOKE, or Irvine routine execution.
+7. Reject procedure names that collide with reserved words, including instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 routine or terminator names.
+8. Add structured diagnostics for duplicate, invalid, or reserved procedure metadata.
+9. Do not implement CALL, RET, INVOKE, Irvine routine execution, stack mutation, call-depth behavior, or root procedure termination.
 
 ### Diagnostics
 
-- `duplicate-symbol`: duplicate procedure/label/data/equate name according to current symbol policy.
+- `duplicate-symbol`: duplicate procedure/label/data/equate name according to the active user-symbol policy.
 - `invalid-procedure-name`: malformed procedure name.
-- `reserved-irvine-symbol`: user procedure collides with a reserved virtual Irvine name, if the project chooses to reserve those names.
-- `unsupported-call-target`: only for tests of the classifier API, not user CALL syntax yet.
+- `reserved-word-symbol`: user procedure or label collides with a reserved MASM/simulator word.
+- `reserved-irvine-symbol`, if retained as a more specific code: user procedure or label collides with a recognized Irvine32 routine or terminator name. This diagnostic must be backed by the central virtual Irvine32 registry or documented wrapper.
+- `unsupported-call-target`: only for classifier API tests, not ordinary executable CALL syntax yet.
 
-Diagnostics must include line, column, byte offset, and span length for the target or declaration name.
+Diagnostics must include line, column, byte offset, and span length for the target or declaration name whenever the source token exists.
 
 ### Required tests
 
 Native/parser tests:
 
-- Classify `Helper` declared as `Helper PROC` as user procedure.
-- Classify `SomeLabel:` as non-procedure code label.
-- Classify `value DWORD 1` as data symbol.
-- Classify `COUNT = 4` as numeric equate.
-- Classify `WriteString` and `writestring` as virtual Irvine32 intrinsic with case-insensitive lookup.
-- Prove `Helper` and `helper` are distinct user procedure names in MASM32 Educational Mode.
-- Duplicate procedure/data/equate names produce structured diagnostics.
+- Classify `Helper` declared as `Helper PROC` as a user procedure.
+- Classify `SomeLabel:` as a non-procedure executable code label.
+- Classify `value DWORD 1` as a data symbol.
+- Classify `COUNT = 4` as a numeric equate.
+- Classify `WriteString` and `writestring` as the same virtual Irvine32 routine through case-insensitive registry lookup.
+- Under default `CASEMAP:ALL` behavior, prove `Helper PROC` and `helper PROC` conflict as duplicate procedure declarations.
+- Under `OPTION CASEMAP:NONE`, prove `Helper PROC` and `helper PROC` are distinct procedure declarations and can be classified separately by exact spelling.
+- Prove that `OPTION CASEMAP:NONE` does not make Irvine32 names, instruction mnemonics, directives, registers, operators, data type names, or `PTR` names available as procedure names.
+- Reject a procedure named `WriteString`, `writestring`, or any other recognized Irvine32 routine name through the central registry path.
+- Reject procedure/data/equate collisions according to existing namespace rules.
+- Preserve prior duplicate-symbol and unknown-symbol diagnostics.
 
 Source-run tests:
 
 - Existing programs without CALL still run unchanged.
-- Unknown future CALL syntax, if still unsupported, remains diagnosed as unsupported rather than silently accepted.
+- CALL and INVOKE source syntax remains unsupported or deferred unless an already existing parser path recognizes it for diagnostics only.
+- If CALL syntax is still unsupported at this phase, it must remain diagnosed as unsupported or deferred rather than silently accepted.
 
 Rendered Simulator Messages tests:
 
-- Duplicate symbol diagnostics render with stable code and source location.
+- Duplicate procedure diagnostics render with stable code and source location.
+- Reserved-word procedure diagnostics render with stable code and source location.
+- Reserved Irvine32 procedure-name diagnostics render through the same Simulator Messages formatter as other diagnostics.
 
 ### Acceptance criteria
 
-A parser/classifier test can classify procedure, label, data, equate, virtual Irvine, unsupported external, and unknown targets without executing any CALL or INVOKE.
+A parser/classifier test can classify procedure, label, data, equate, virtual Irvine, unsupported external/API/linker, reserved-word, malformed, and unknown targets without executing any CALL, RET, INVOKE, stack mutation, or Irvine32 routine.
 
 ---
+
 
 ## 73. Phase 69 - Direct CALL to User Procedures
 
@@ -18407,7 +19013,25 @@ A parser/classifier test can classify procedure, label, data, equate, virtual Ir
 
 Implement direct near CALL to user procedure entries.
 
-This phase implements only `call procedureName` where the target is a user procedure entry. It must not implement RET, root RET behavior, CALL to code labels, CALL to registers/memory, far calls, INVOKE, PROC USES, LOCAL, or Irvine routine calls.
+This phase implements only:
+
+```asm
+call procedureName
+```
+
+where `procedureName` classifies as a user procedure entry through Phase 68 - Call Target Classification and Procedure Entry Metadata.
+
+This phase must not implement RET, root RET behavior, entry-procedure fallthrough changes, CALL to ordinary code labels, CALL to registers, CALL to memory, far calls, INVOKE, PROC USES, LOCAL, source-level PUSH/POP, LEAVE, RET imm16, or Irvine32 routine calls.
+
+### Dependencies
+
+- Phase 68 - Call Target Classification and Procedure Entry Metadata.
+- Stack region initialization.
+- Documented startup value for `ESP`.
+- Central checked memory write helpers.
+- Planned-write validation for the implicit stack write performed by CALL.
+
+Source-level `push` and `pop` instructions are not required for this phase. CALL performs an internal return-token stack write through the checked VM memory path.
 
 ### Accepted syntax
 
@@ -18416,7 +19040,10 @@ call Helper
 call helperName
 ```
 
-Target must classify as a user procedure entry using the target classifier from **Phase 68 - Call Target Classification and Procedure Entry Metadata**.
+The target must classify as a user procedure entry. Procedure-name lookup follows the active user-symbol CASEMAP policy:
+
+- default / `CASEMAP:ALL`: user procedure lookup is case-insensitive;
+- `OPTION CASEMAP:NONE`: user procedure lookup is exact-case from that directive forward.
 
 ### Rejected syntax
 
@@ -18425,29 +19052,35 @@ call eax
 call [eax]
 call DWORD PTR [eax]
 call OFFSET Helper
-call SomeLabel       ; if SomeLabel is not a PROC entry
+call SomeLabel       ; ordinary non-PROC code label
 call value           ; data symbol
 call COUNT           ; numeric equate
-call WriteString     ; virtual Irvine call deferred to Irvine call-dispatch phase
+call WriteString     ; recognized Irvine32 routine call deferred to an Irvine32 dispatch phase
 call ExitProcess     ; external/API non-goal
 ```
 
+Rejected forms must not be reclassified as successful direct CALL merely because the target name is known.
+
+Recognized Irvine32 routine names are not user procedure targets. Before the owning Irvine32 routine-dispatch phase implements a routine, `call WriteString` and similar routine calls must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic. After a later Irvine32 routine-dispatch phase implements a routine, CALL may route that routine name through the central registry to simulator-defined Irvine32 behavior. That later behavior still does not make the name a user-defined procedure.
+
 ### Runtime semantics
 
-1. Compute a 32-bit VM return token encoding the VM instruction index immediately after CALL. This token is not a native address.
-2. Validate the call-depth limit before stack mutation if **Phase 72 - Call Depth Limit and Call Trace Diagnostics** has already been implemented. If Phase 72 is not implemented yet, Phase 69 must not add a temporary or partial call-depth limit; it must preserve the later Phase 72 ownership of depth accounting and diagnostics.
-3. Decrement ESP by 4.
-4. Write the return token to `[ESP]` through the central checked memory write helper.
-5. Set VM instruction pointer to the target procedure entry instruction.
-6. Record stack memory change for the pushed return token.
-7. Preserve all modeled flags.
+1. Resolve the target through the Phase 68 classifier.
+2. Compute a 32-bit VM return token encoding the VM instruction index immediately after CALL. This token is not a native address and must not be displayed or treated as a real x86 return address.
+3. Validate the planned stack write before mutating visible state.
+4. Decrement `ESP` by 4.
+5. Write the return token to `[ESP]` through central checked VM memory helpers.
+6. Set the VM instruction pointer to the target procedure entry instruction.
+7. Record the stack memory change for the pushed return token.
+8. Preserve all modeled flags and flag-validity metadata.
 
-Phase-boundary note:
+### Phase-boundary note
 
 ```text
 Phase 69 owns direct CALL mechanics only:
   - classify a user procedure target;
-  - push one VM return token;
+  - create one VM return token;
+  - push that return token through checked stack memory;
   - branch to the procedure entry;
   - preserve modeled flags;
   - roll back on failed stack write.
@@ -18455,19 +19088,24 @@ Phase 69 owns direct CALL mechanics only:
 Phase 69 does not own:
   - RET execution;
   - root procedure termination;
-  - call-depth diagnostics;
+  - source-level PUSH or POP;
+  - call-depth diagnostics unless the guide has already placed Phase 72 before this phase;
   - PROC USES;
   - LOCAL frames;
   - INVOKE;
   - Irvine32 call dispatch.
 ```
 
+If Phase 72 - Call Depth Limit and Call Trace Diagnostics remains later in the canonical guide order, Phase 69 must not implement a temporary or partial call-depth limit. If a later documentation revision deliberately moves call-depth checks earlier, that revision must update this phase's dependency and tests explicitly.
+
 ### Runtime errors
 
-- `stack-overflow`: ESP decrement or return-token write fails.
-- `invalid-call-target`: target metadata became invalid after parsing; should normally be internal unless malformed IR is tested.
+- `stack-overflow` or the existing stack/memory diagnostic if `ESP - 4` or the return-token write is invalid.
+- `invalid-call-target` if target metadata became invalid after parsing. This should normally be unreachable from ordinary source and is appropriate for native executor or malformed-IR tests.
 
-No partial mutation rule: if the return-token push fails, the instruction pointer must not change and call-depth metadata must not change.
+No partial mutation rule:
+
+If the return-token push fails, the VM instruction pointer must not change, `ESP` must remain externally unchanged, call-depth metadata must not change if it exists, memory must not change, flags and flag-validity metadata must remain unchanged, Program Console output must not change, no memory-change row must be created, and no `execution-complete` message must be emitted after the fatal diagnostic.
 
 ### Diagnostics
 
@@ -18476,7 +19114,8 @@ Assembly diagnostics:
 - `invalid-call-target` for data/equate/non-procedure label targets.
 - `unsupported-call-form` for register, memory, far, or expression targets.
 - `unsupported-external-call` for Windows/API/external targets.
-- `unsupported-irvine-call` for virtual Irvine targets before their dispatch phase.
+- `unsupported-irvine-call` or the existing Irvine32 deferred diagnostic for virtual Irvine targets before their dispatch phase.
+- `unknown-symbol` or target-classifier-specific unknown-target diagnostic for unknown procedure names.
 
 Source span should point to the target operand, not the `call` mnemonic, unless the whole instruction is malformed.
 
@@ -18485,44 +19124,40 @@ Source span should point to the target operand, not the `call` mnemonic, unless 
 Parser tests:
 
 - `call Helper` parses when `Helper PROC` exists.
-- Rejected target classes produce correct diagnostic codes.
-- Case-sensitive user procedure lookup is enforced.
+- Rejected target classes produce correct diagnostic codes and target-token spans.
+- Default `CASEMAP:ALL` procedure lookup is case-insensitive: `call helper` resolves `Helper PROC` when there is exactly one ASCII-folded match.
+- `OPTION CASEMAP:NONE` procedure lookup is exact-case: `call Helper` and `call helper` resolve only declarations with matching source spelling.
+- `OPTION CASEMAP:NONE` does not make reserved words or recognized Irvine32 routine names available as user procedure names.
+- `call WriteString` is not resolved as a user procedure target.
 
 Executor tests:
 
 - CALL pushes one return token to stack.
-- CALL branches to procedure entry.
-- CALL preserves flags.
-- Failed stack write does not change instruction pointer.
+- CALL branches to the procedure entry.
+- CALL preserves modeled flags and flag-validity metadata.
+- Failed stack write does not change instruction pointer, `ESP`, memory, call-depth metadata if present, Program Console output, or memory-change rows.
+- Malformed target metadata can produce the runtime `invalid-call-target` diagnostic without weakening parser validation.
 
 Source-run tests:
 
-```asm
-.code
-main PROC
-    mov eax, 1
-    call Helper
-    mov ebx, 3
-main ENDP
-
-Helper PROC
-    mov eax, 2
-    ; no ret yet: this program should stop according to current missing-RET behavior or be used only in executor-level tests until RET is implemented
-Helper ENDP
-END main
-```
-
-Because RET is not implemented yet, full source-run success should be deferred or use a harness that steps only through CALL. The source-run test for this phase should primarily validate parser diagnostics and executor stepping, not full program completion.
+- Existing programs without CALL still run unchanged.
+- Source-run parser/lowering diagnostics for invalid CALL targets render through Simulator Messages.
+- Full source-run success for a program requiring CALL followed by RET is deferred until Phase 70 - RET Execution and Return Address Validation and Phase 71 - Root Procedure Termination Semantics.
+- Phase 69 must not add temporary fallthrough, missing-RET, root-return, or helper-procedure termination behavior merely to make a complete source-run CALL program finish.
 
 Rendered Simulator Messages tests:
 
-- Invalid CALL target diagnostics render exact target class wording.
+- Invalid CALL target diagnostics render exact target-class wording.
+- Runtime CALL stack-write failure renders as a runtime error and does not emit `execution-complete`.
 
 ### Acceptance criteria
 
-A VM stepping test executes one `call Helper`, observes ESP decreased by 4, observes a return token written through stack memory, and observes the VM instruction pointer set to `Helper`.
+A VM stepping test executes one `call Helper`, observes `ESP` decreased by 4, observes a return token written through checked stack memory, observes modeled flags preserved, and observes the VM instruction pointer set to `Helper`.
+
+A normal source-run program that requires RET to complete is not required to complete successfully in this phase.
 
 ---
+
 
 ## 74. Phase 70 - RET Execution and Return Address Validation
 
@@ -18609,7 +19244,7 @@ EAX = 0000002Ah / 42
 EBX = 0000002Ah / 42
 ```
 
-This source-run program is an integrated regression after the root-termination phase. this phase must use executor-level CALL/RET tests and parser diagnostics only; it must not implement `exit` or root termination early.
+This source-run program is an integrated regression after Phase 71 - Root Procedure Termination Semantics. During Phase 70 itself, use executor-level CALL/RET tests and parser diagnostics. Phase 70 must not implement `exit`, entry-procedure fallthrough changes, root RET success, or root termination behavior early.
 
 Rendered Simulator Messages tests:
 
@@ -18743,13 +19378,219 @@ Expected with a low test limit:
 
 ---
 
+
+## 76A. Phase 72A - PUSH and POP Stack Instructions
+
+### Goal
+
+Implement basic source-level 32-bit `push` and `pop` stack instructions before later phases use them in LEAVE, RET imm16, PROC USES, LOCAL, argument, and INVOKE source-run fixtures.
+
+This is a stack-instruction phase. It must not implement CALL, RET, root procedure termination, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, Irvine32 routine calls, calling-convention inference, or procedure-frame automation.
+
+This corrective phase is inserted without renumbering later phases. After Phase 72A, the next existing phase remains Phase 73 - LEAVE Instruction.
+
+### Dependencies
+
+- Stack region initialization.
+- Documented startup value for `ESP`.
+- Central checked VM memory helpers.
+- Current memory-width resolution policy.
+- Planned-read/planned-write coverage rules for implicit stack memory access.
+- Existing source-run JSON and rendered Simulator Messages diagnostic paths.
+
+### Accepted syntax
+
+This phase implements the first source-level stack-transfer subset for MASM32 Educational Mode:
+
+```asm
+push eax
+push ebx
+push ecx
+push edx
+push esi
+push edi
+push ebp
+push esp
+
+push 1234h
+push -1
+push DWORD PTR value
+push DWORD PTR [esp]
+
+pop eax
+pop ebx
+pop ecx
+pop edx
+pop esi
+pop edi
+pop ebp
+pop esp
+
+pop DWORD PTR value
+pop DWORD PTR [esp]
+```
+
+This phase is intentionally 32-bit-first. It moves `ESP` by 4 for every accepted `push` and every accepted `pop`.
+
+The preferred immediate rule for this phase is:
+
+```text
+PUSH immediate encodes the pushed value as a 32-bit simulator value after immediate range validation.
+```
+
+If a later phase wants 16-bit `push`/`pop`, it must add that behavior deliberately with its own width, `ESP` movement, range, display, diagnostics, and tests.
+
+### Rejected syntax
+
+```asm
+push
+pop
+
+push ax
+push al
+push WORD PTR value
+push BYTE PTR value
+push QWORD PTR value
+push SQWORD PTR value
+
+pop ax
+pop al
+pop WORD PTR value
+pop BYTE PTR value
+pop QWORD PTR value
+pop SQWORD PTR value
+
+pop 1234h
+pop OFFSET value
+push FAR PTR value
+pop FAR PTR value
+```
+
+Rejection of 8-bit and 16-bit forms in this phase is a simulator subset rule, not a claim that every real MASM stack form is invalid. The diagnostic must explain that this phase implements only 32-bit source-level stack transfers in MASM32 Educational Mode.
+
+Executable QWORD/SQWORD stack transfers remain unavailable in MASM32 Educational Mode unless a later Extended 32-bit Mode phase explicitly implements them.
+
+### Width and operand rules
+
+- Accepted register operands are 32-bit general-purpose registers only.
+- Memory operands must resolve to a 32-bit width through `DWORD PTR` or unambiguous symbol metadata.
+- Immediate PUSH uses the phase's 32-bit immediate rule.
+- Ambiguous memory forms must use the existing `ambiguous-memory-width` diagnostic.
+- Immediate range diagnostics must match 32-bit push behavior.
+
+### Runtime semantics
+
+`push source`:
+
+1. Resolve and validate the source operand.
+2. For memory sources, collect planned-read diagnostics before consuming the value.
+3. Treat the pushed width as 4 bytes.
+4. Validate the planned stack write to `[ESP - 4]`.
+5. Decrement `ESP` by 4.
+6. Write the 32-bit pushed value through central checked VM memory helpers.
+7. Record a memory-change row for the stack write.
+8. Preserve modeled flags and flag-validity metadata.
+
+`pop destination`:
+
+1. Treat the popped width as 4 bytes.
+2. Validate the planned stack read from `[ESP]`.
+3. Read the 32-bit value through central checked VM memory helpers.
+4. Validate the destination write if the destination is memory.
+5. Commit the destination write.
+6. Increment `ESP` by 4.
+7. Record a memory-change row only for a memory destination write, not for reading from the stack.
+8. Preserve modeled flags and flag-validity metadata.
+
+### No-partial-mutation rule
+
+For any fatal failure in `push`:
+
+- `ESP` is unchanged;
+- source registers are unchanged;
+- memory is unchanged;
+- modeled flags and flag-validity metadata are unchanged;
+- Program Console output is unchanged;
+- no memory-change row is created;
+- no `execution-complete` message is emitted.
+
+For any fatal failure in `pop`:
+
+- `ESP` is unchanged;
+- destination register or memory is unchanged;
+- memory is otherwise unchanged;
+- modeled flags and flag-validity metadata are unchanged;
+- Program Console output is unchanged;
+- no memory-change row is created;
+- no `execution-complete` message is emitted.
+
+### Diagnostics
+
+- `stack-overflow` or existing stack/memory diagnostic for invalid PUSH stack writes.
+- `stack-underflow` or existing stack/memory diagnostic for invalid POP stack reads.
+- `ambiguous-memory-width` for ambiguous memory operands.
+- `unsupported-runtime-feature`, `unsupported-stack-width`, or the nearest existing width diagnostic for byte, word, QWORD, and SQWORD stack transfers.
+- `invalid-instruction-operands` or a more specific existing diagnostic for malformed PUSH/POP forms.
+
+Diagnostics must preserve line, column, byte offset, and span length for the relevant operand or instruction.
+
+### Required tests
+
+Parser tests:
+
+- Accepted 32-bit register PUSH/POP forms.
+- Accepted 32-bit memory PUSH/POP forms with explicit `DWORD PTR`.
+- Accepted 32-bit memory PUSH/POP forms with unambiguous DWORD symbol metadata.
+- Rejected ambiguous memory forms.
+- Rejected byte and word forms.
+- Rejected QWORD/SQWORD executable stack transfers.
+- Rejected immediate POP.
+
+Executor/source-run tests:
+
+- DWORD register push followed by DWORD register pop preserves LIFO behavior.
+- Multiple pushes and pops produce expected values.
+- Memory source push.
+- Memory destination pop.
+- Immediate push using the 32-bit immediate rule.
+- Modeled flags and flag-validity metadata are preserved.
+- Stack overflow on PUSH has no partial mutation.
+- Stack underflow on POP has no partial mutation.
+- Failed memory destination POP has no partial mutation, including unchanged `ESP`.
+
+Planned-access tests:
+
+- Memory-source PUSH participates in planned-read diagnostics.
+- Memory-destination POP participates in planned-write diagnostics.
+- Stack write/read uses central checked memory helpers.
+- Strict planned-read or planned-write failures stop before mutation.
+- Mandatory `.CONST` and `.code` protected-region behavior is preserved where reachable through manipulated stack pointers.
+
+Rendered Simulator Messages tests:
+
+- Stack overflow or invalid stack write.
+- Stack underflow or invalid stack read.
+- Ambiguous memory width.
+- Unsupported byte/word/QWORD/SQWORD stack transfer.
+- At least one strict planned-access no-partial-mutation diagnostic.
+
+### Acceptance criteria
+
+A source-run program can push two DWORD values, pop them into registers in LIFO order, preserve modeled flags, and complete successfully.
+
+Later LEAVE and RET imm16 source-run acceptance programs may depend on this phase.
+
+---
+
 ## 77. Phase 73 - LEAVE Instruction
 
 ### Goal
 
 Implement `leave` as stack-frame teardown shorthand.
 
-This phase must not implement `ret imm16`, ENTER, PROC USES, LOCAL, or automatic frame creation. It assumes the earlier stack/PUSH/POP milestone is complete, but LEAVE tests should prefer executor-level frame setup unless they intentionally exercise PUSH as a regression dependency.
+This phase must not implement `ret imm16`, ENTER, PROC USES, LOCAL, source-level PUSH/POP, or automatic frame creation.
+
+This phase assumes Phase 72A - PUSH and POP Stack Instructions is already complete if its source-run acceptance program uses `push ebp`. LEAVE executor tests should still prefer direct frame setup so that LEAVE semantics remain isolated from PUSH/POP behavior. Source-run tests may include `push ebp` only as an integration regression after Phase 72A.
 
 ### Accepted syntax
 
@@ -18831,6 +19672,14 @@ Rendered Simulator Messages tests:
 Implement near `ret imm16` stack cleanup.
 
 This phase must not implement far returns, calling-convention inference, INVOKE, or PROC parameter cleanup beyond the immediate operand behavior.
+
+### Dependencies
+
+- Phase 70 - RET Execution and Return Address Validation.
+- Phase 71 - Root Procedure Termination Semantics for complete source-run programs that return to the entry procedure.
+- Phase 72A - PUSH and POP Stack Instructions if this phase uses source-level argument pushes in source-run acceptance programs.
+
+RET imm16 itself must not implement source-level PUSH/POP. It may use executor-level stack setup for focused tests, and it may use source-level argument pushes only as an integration regression after Phase 72A is complete.
 
 ### Accepted syntax
 

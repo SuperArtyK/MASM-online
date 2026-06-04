@@ -55,6 +55,73 @@ Current-status surfaces include, at minimum:
 - worker-generated `ui-error` messages;
 - newly created milestone reports and current handoff/status summaries, while historical milestone reports remain historical evidence and do not need retroactive cleanup unless the user explicitly asks for historical report cleanup.
 
+### Current-status surfaces are not changelogs
+
+Current-status surfaces must be concise replacement summaries. They must not accumulate one paragraph per accepted milestone.
+
+When a new milestone is accepted, current-status text must replace the previous active current-status summary instead of appending a new milestone summary below it.
+
+This rule applies to all active current-status surfaces, including:
+
+- `README.md` current-status and current-scope text;
+- `docs/SUPPORTED_SYNTAX.md` opening status text and expected-diagnostic summaries;
+- `docs/BUILDING_AND_DEVELOPMENT.md` status text;
+- browser runtime-status text;
+- worker/protocol status text;
+- source-run JSON phase/status fields and human-readable status strings;
+- Wasm/source-run status fields;
+- tests that assert current-status wording;
+- current handoff/status summaries.
+
+Historical accumulation belongs in:
+
+- `docs/MILESTONE_HISTORY.md`;
+- individual milestone reports;
+- curated audit/handoff reports;
+- changelog-style sections explicitly labeled as historical.
+
+Current-status surfaces may mention prior milestones only when the prior milestone is necessary to explain the current behavior. Even then, the prior milestone should be referenced by feature category or phase name, not repeated as a full milestone report.
+
+A current-status surface must not contain long milestone-ledger phrasing such as:
+
+```text
+Phase 66 adds...
+Phase 65 added...
+Phase 64D added...
+Phase 64C added...
+Phase 61E remains...
+Phase 61D remains...
+```
+
+Use compact feature-category wording instead:
+
+```text
+Current branch support includes direct JMP, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps. Loop-family instructions, indirect branches, stack/procedure transfer, and active-time watchdog behavior remain future work.
+```
+
+The current-status summary should answer:
+
+1. What is the current repository/archive milestone?
+2. What is the current runtime/source-run MASM behavior phase?
+3. What is the main current capability or current limitation that users need to know immediately?
+4. Where should the reader go for details?
+
+It should not answer:
+
+1. What did every previous milestone implement?
+2. What changed in every corrective phase?
+3. What was fixed in the last several implementation reports?
+4. Which exact files changed in previous milestones?
+
+If current-status documentation needs more detail than a short summary, move the detail to `docs/MILESTONE_HISTORY.md`, `docs/SUPPORTED_SYNTAX.md` detailed sections, or a milestone report.
+
+Long detailed syntax sections are allowed in `docs/SUPPORTED_SYNTAX.md`; milestone-by-milestone chronology in the opening status block is not. The problem is not document length by itself. The problem is using an active current-status block as milestone history.
+
+Maintenance-only documentation cleanup may advance the repository/archive milestone without advancing the runtime/source-run MASM behavior phase. Such cleanup must not update runtime/source-run phase metadata merely because README or documentation text was cleaned.
+
+If a documentation-only cleanup updates `docs/SUPPORTED_SYNTAX.md`, it may update the repository/archive milestone label while explicitly preserving the runtime/source-run MASM behavior phase. It must not claim new accepted syntax, new rejected syntax, new diagnostics, or a new runtime/source-run MASM behavior phase unless the selected target phase explicitly changes runtime-visible MASM/source behavior.
+
+
 When the repository/archive milestone and runtime/source-run MASM behavior phase differ, current-status documentation, newly created milestone reports, and current handoff/status summaries must state both values explicitly.
 
 Use this label format:
@@ -112,6 +179,30 @@ This rule prevents assistants from treating parser support, runtime execution, d
 
 
 Historical milestone reports may retain milestone-relative wording because they document what was true at the time. Current documentation, current supported-syntax text, live diagnostics, current browser status text, current protocol status text, current handoff/status summaries, and current tests must use stable behavior-specific wording.
+
+
+### Historical handoff and audit-report status
+
+Curated audit and handoff reports are current only for the repository/archive milestone and runtime/source-run MASM behavior phase explicitly named in that report.
+
+After a later accepted repository/archive milestone, an older handoff report becomes historical navigation even if that older report contains a section titled "Read this first", "current status", "current behavior", "canonical next phase", or similar wording.
+
+Future assistants must apply this rule:
+
+```text
+Use older handoff reports for provenance, stale-assumption detection, regression-watch notes, and historical implementation context. Do not use an older handoff report as the current behavior authority after a newer repository archive, newer accepted milestone report, or newer canonical spec/guide revision is available.
+```
+
+Current behavior must be determined from the current canonical spec/guide pair, the latest available repository archive, the latest accepted milestone report, and current repository tests.
+
+Older handoff reports and raw milestone reports remain useful evidence, but they do not override later verified behavior.
+
+If an older handoff report says a feature is future work, but a later canonical guide section, later milestone report, latest repository archive, and tests show that the feature is now implemented, the later verified behavior wins.
+
+If an older handoff report says a diagnostic family is reserved, inactive, or future-owned, but a later accepted phase activates that diagnostic family, the older statement is superseded. Do not reclassify the later behavior as future work merely because the older handoff predates it.
+
+When creating or updating a curated handoff report after a later accepted milestone, include a supersession note for any older handoff whose milestone-relative "current" wording could mislead future assistants.
+
 
 Target complete-v1 user capabilities, not necessarily current implementation:
 
@@ -1318,6 +1409,43 @@ Diagnostics for rejected branch targets must point at the target operand, not me
 Direct branch target classification must not be confused with procedure call target classification. A `PROC` name may be a valid direct branch target for `jmp`, but that does not implement or imply procedure-call semantics.
 
 This classification applies only to direct source-level branch operands. It does not define indirect branch target validation.
+
+#### 8.6.1.2 Direct CALL Target Classification
+
+Direct `CALL` target classification is related to direct branch target classification, but it is not identical.
+
+A target being executable is not sufficient to make it a valid direct CALL target. The parser must classify a direct CALL target by symbol kind before lowering it to executable CALL IR.
+
+For direct near user-procedure calls, accepted user targets are procedure-entry labels declared with `name PROC`, after the active user-symbol CASEMAP policy resolves the target name.
+
+Rejected direct user-procedure CALL targets include:
+
+- ordinary non-procedure code labels, unless a later phase explicitly adds a simulator-defined non-procedure CALL form;
+- data symbols;
+- numeric equates;
+- unknown symbols;
+- malformed target expressions;
+- registers;
+- memory operands;
+- immediate or numeric addresses;
+- `OFFSET` expressions;
+- far calls, segmented calls, or native-address calls;
+- external, Windows API, object-file, linker, import-library, or host-filesystem symbols.
+
+Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteString` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call.
+
+After a later phase implements an Irvine32 routine call, the central virtual Irvine32 registry must classify that routine as implemented, and CALL dispatch may route that target to the simulator-defined Irvine32 intrinsic path. This still does not make the name a user-defined procedure symbol.
+
+CALL target classification must reuse the same user-symbol CASEMAP policy as data symbols, numeric equates, code labels, and procedure names:
+
+- default behavior is equivalent to `OPTION CASEMAP:ALL`, so user procedure names are case-insensitive by default;
+- `OPTION CASEMAP:NONE` makes accepted user procedure names exact-case from that directive forward;
+- `OPTION CASEMAP:NONE` does not make instruction mnemonics, directives, registers, virtual include names, or recognized Irvine32 routine names case-sensitive;
+- `OPTION CASEMAP:NONE` does not make reserved words available as user procedure names.
+
+Recognized Irvine32 routine and terminator names must be classified through the centralized virtual Irvine32 symbol registry or a documented wrapper over that registry. The parser must not create a second independent Irvine32 routine-name table for CALL target classification.
+
+A future phase that implements Irvine32 routine calls must update the central registry classification for each newly implemented routine. It must not leave stale "deferred" or "unsupported Irvine32 routine" diagnostics active for routines that have become executable.
 
 #### 8.6.2 Additional Textbook v1 Instructions
 
@@ -3131,7 +3259,15 @@ A separate call-depth watchdog may be provided for clearer recursion diagnostics
 
 ### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
 
-CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, and ADDR depend on completed stack initialization plus `push` and `pop` behavior.
+CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, and ADDR depend on completed stack-region initialization, a documented startup value for `ESP`, and checked simulated stack memory access.
+
+Source-level `push` and `pop` instructions are part of the stack/procedure roadmap, but they are not the same mechanism as internal CALL/RET return-token handling.
+
+A direct `CALL` implementation may write its simulator-defined return token through checked stack memory before user-written `push` and `pop` instructions are implemented, if the implementation guide explicitly assigns that order. Such a CALL phase must still validate stack access before mutation, must use central checked VM memory helpers, must participate in applicable planned-write validation, and must not expose native host addresses or real x86 return addresses.
+
+Later source-level frame, argument, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, and ADDR fixtures may depend on user-written `push` and `pop`. If a later implementation-guide phase uses source-level `push` or `pop` in acceptance programs, the guide must provide a prior implementation phase for those instructions or clearly mark the fixture as a future-owned integration regression.
+
+The current guide may use a non-renumbering corrective phase, such as `Phase 72A`, to add source-level `push` and `pop` before the first later phase whose source-run fixtures rely on user-written stack instructions. Preserve later phase identifiers unless the user explicitly requests roadmap renumbering.
 
 The simulator uses 32-bit VM return tokens for call/return flow. Return tokens are not native addresses. The root return sentinel is `VM_RETURN_TOKEN_ROOT = 0xFFFFFFFFu`, reserved and never emitted as a normal instruction index.
 
@@ -5755,7 +5891,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally: stack initialization with `PUSH`/`POP`, then `CALL`/`RET`, then root termination and call-target classification, then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase order, but the current intended sequence separates these concepts: stack-region initialization and documented `ESP` startup behavior; CALL/procedure target classification; direct CALL return-token mechanics; plain RET return-token validation; root procedure termination semantics; call-depth diagnostics; source-level `PUSH`/`POP` before later source fixtures depend on them; LEAVE and RET imm16; then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`. If the guide uses a corrective non-renumbering phase such as `72A`, preserve later phase identifiers and document the dependency rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.

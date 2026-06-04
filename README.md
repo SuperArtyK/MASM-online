@@ -5,33 +5,62 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66A - Current-Status Documentation De-Cluttering
 
 Runtime/source-run MASM behavior phase:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66 - Unsigned Relational Conditional Jumps
 
-Status interpretation:
-Phase 65 adds executable direct-label signed relational conditional jumps. Repository/archive status and runtime/source-run MASM behavior status now match because this phase adds accepted MASM syntax, parser lowering, VM execution behavior, source-run diagnostics, and runtime phase metadata.
+Phase 66 is the latest runtime/source-run MASM behavior phase. It adds executable direct-label unsigned relational conditional jumps:
 
-The simulator accepts signed relational conditional jumps for executable code-label and procedure-entry targets: `jl label` / `jnge label`, `jle label` / `jng label`, `jg label` / `jnle label`, and `jge label` / `jnl label`. These jumps evaluate the modeled `ZF`, `SF`, and `OF` flags according to signed relational semantics, consume only the flags required by each mnemonic through the shared `undefined-flag-use` policy, count as one executed VM instruction, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and respect the Phase 59 `instructionLimit` instruction-count watchdog.
+- `ja` / `jnbe`
+- `jae` / `jnb`
+- `jb` / `jnae`
+- `jbe` / `jna`
 
-Phase 64 - Equality Conditional Jumps remains implemented. The simulator accepts executable equality conditional jumps: `je label`, `jz label`, `jne label`, and `jnz label`. These direct branch forms consume the modeled `ZF` flag through the shared undefined-flag-use policy path, branch to executable code-label or procedure-entry targets when their condition is true, fall through when their condition is false, count as one executed instruction, preserve registers, memory, and modeled flags, produce no memory-change rows, and respect the same instruction-count watchdog. Phase 61 - Direct JMP Runtime Execution and its direct `jmp label` forms remain implemented.
+Phase 66A is documentation cleanup only. It keeps current-status documentation concise and does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser UI behavior, worker protocol behavior, diagnostic behavior, source-run JSON behavior, or runtime/source-run MASM behavior metadata advancement.
 
-Phase 64D - Memory Change Source Attribution Display remains implemented. Memory-change rows show the source line that caused each successful mutation, for example `a DWORD | line 10: inc a` when preserved instruction source text is available. Source attribution points to the write-producing instruction, not to a data declaration or earlier address-loading line. Failed writes, strict planned-access failures, invalid writes, and read-only/no-write instructions still create no successful memory-change rows.
-
-Phase 64C - Expanded EFLAGS Flag Display remains implemented. Final register display keeps the canonical `EFLAGS` parent row and adds subordinate `CF`, `ZF`, `SF`, and `OF` child rows with `0` or `1` values derived from the modeled EFLAGS bits. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work. Unmodeled x86 flags such as `PF`, `AF`, `DF`, `IF`, and `TF` are not displayed or implied.
-
-Simulator Messages still render `startup-state-notice`, runtime diagnostics, and `execution-complete` as adjacent logical groups with exactly one blank rendered line between non-empty groups. `startup-state-notice=off` suppresses only the startup notice group and does not remove the separator between runtime warnings/notices and successful completion. Blank separators are formatter-only and do not appear in source-run JSON, diagnostics, Program Console output, or memory-change rows.
-
-Existing memory-destination read-modify-write forms still route their destination memory reads through planned-read validation before bytes are consumed or write-back occurs. This includes current forms such as `inc mem`, `dec mem`, arithmetic/logical memory destinations, shifts/rotates, and `xchg` memory forms. Phase 63 - CMP Memory Operand Forms remains implemented: `cmp reg, mem`, `cmp mem, reg`, and `cmp mem, imm` read memory through checked helpers and planned-read validation before flags are updated.
-
-Phase 61E - Reserved Word Symbol Diagnostics remains active through `reserved-word-symbol`: simulator-recognized reserved words such as `cmp`, `je`, `jz`, `jne`, `jnz`, `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` cannot be used as user-defined symbols. `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols, and `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase. Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies that parser/source-run capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` are pre-runtime capacity failures, not runtime `instructionLimit` failures such as `instruction-limit-exceeded`. Phase 61C - Branch Debugger Dependency Cleanup documented the debugger/editor boundary and does not implement debugger behavior. Active-time watchdog behavior is not part of Phase 61, Phase 61A, Phase 61B, Phase 61C, Phase 61D, Phase 61E, Phase 62, Phase 63, Phase 64, Phase 64A, Phase 64B, Phase 64C, Phase 64D, or Phase 65; it remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness. Unsigned relational jumps, `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, `call`, `ret`, stack behavior, procedure invocation, branch-distance/type overrides, debugger stepping, breakpoints, breakpoint binding, current-instruction highlighting, editor source navigation, CodeMirror gutter behavior, branch-target editor highlighting, and UI label navigation remain future work.
+For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
 ## Current simulator scope
 
-The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md): selected data sections, MASM compatibility directives, operands, arithmetic/logic/shift/rotate/multiply/divide instructions, `cmp` register/immediate and memory comparisons, code-label metadata, direct JMP runtime execution, equality conditional jumps, signed relational conditional jumps, instruction-count limits, diagnostic settings, startup notices, Simulator Messages grouping, memory-change source attribution display, modeled EFLAGS child display, display markers, unsupported-feature diagnostics, and the virtual Irvine32 `exit` terminator.
+The current runtime supports the MASM32 Educational Mode subset documented in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md).
 
-For exact accepted forms, rejected forms, diagnostics, and runtime-phase status, use [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) instead of this README.
+At a high level, the current subset includes:
+
+- selected MASM32-style data sections and declarations;
+- selected MASM compatibility directives;
+- checked simulated memory with layout, validation, `.DATA?`, `.CONST`, and uninitialized-origin teaching diagnostics;
+- selected register, memory, immediate, and expression operands;
+- selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions;
+- direct `jmp`;
+- equality conditional jumps;
+- signed relational conditional jumps;
+- unsigned relational conditional jumps;
+- instruction-count watchdog behavior;
+- modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
+- structured diagnostics and rendered Simulator Messages;
+- separate Program Console and Simulator Messages streams;
+- virtual Irvine32 `exit` terminator behavior where `INCLUDE Irvine32.inc` is active.
+
+Still future or unsupported unless a later accepted milestone says otherwise:
+
+- `loop`;
+- indirect/register/memory/immediate branch targets;
+- branch distance/type overrides;
+- source-level `push` and `pop`;
+- `call`, `ret`, `leave`, `ret imm16`, stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
+- Irvine32 callable routines beyond already implemented virtual terminator behavior;
+- active-time or wall-clock watchdog behavior;
+- debugger/editor branch behavior;
+- full MASM macro expansion;
+- Windows API execution;
+- PE loading or object-file linking;
+- host filesystem include loading;
+- native x86 execution.
+
+This README is intentionally concise. Exact accepted forms, rejected forms, diagnostic codes, examples, and future/deferred syntax belong in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md), not in this README.
+
+Future milestones should update this section by adjusting feature categories where possible. Do not append milestone-specific bullets such as `Phase <N> added...`.
 
 ## Quick start
 

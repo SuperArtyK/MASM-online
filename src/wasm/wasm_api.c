@@ -72,13 +72,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 65U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 66U
 
-/// Suffix for the current Phase 65 runtime/source-run behavior phase.
+/// Suffix for the current Phase 66 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 65 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 65 - Signed Relational Conditional Jumps"
+/// Full name of the current Phase 66 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 66 - Unsigned Relational Conditional Jumps"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -3650,6 +3650,23 @@ static size_t masm32_sim_wasm_consumed_flags_for_instruction(
                 out_flags[2] = VM_FLAG_OF;
             }
             return 3U;
+        case VM_IR_OPCODE_JAE:
+        case VM_IR_OPCODE_JNB:
+        case VM_IR_OPCODE_JB:
+        case VM_IR_OPCODE_JNAE:
+            if (out_flags != NULL && flag_capacity > 0U) {
+                out_flags[0] = VM_FLAG_CF;
+            }
+            return 1U;
+        case VM_IR_OPCODE_JA:
+        case VM_IR_OPCODE_JNBE:
+        case VM_IR_OPCODE_JBE:
+        case VM_IR_OPCODE_JNA:
+            if (out_flags != NULL && flag_capacity >= 2U) {
+                out_flags[0] = VM_FLAG_CF;
+                out_flags[1] = VM_FLAG_ZF;
+            }
+            return 2U;
         default:
             return 0U;
     }
@@ -4579,6 +4596,30 @@ static const char *masm32_sim_wasm_display_mnemonic(const char *mnemonic) {
     }
     if (strcmp(mnemonic, "jnl") == 0) {
         return "JNL";
+    }
+    if (strcmp(mnemonic, "ja") == 0) {
+        return "JA";
+    }
+    if (strcmp(mnemonic, "jnbe") == 0) {
+        return "JNBE";
+    }
+    if (strcmp(mnemonic, "jae") == 0) {
+        return "JAE";
+    }
+    if (strcmp(mnemonic, "jnb") == 0) {
+        return "JNB";
+    }
+    if (strcmp(mnemonic, "jb") == 0) {
+        return "JB";
+    }
+    if (strcmp(mnemonic, "jnae") == 0) {
+        return "JNAE";
+    }
+    if (strcmp(mnemonic, "jbe") == 0) {
+        return "JBE";
+    }
+    if (strcmp(mnemonic, "jna") == 0) {
+        return "JNA";
     }
 
     return mnemonic;

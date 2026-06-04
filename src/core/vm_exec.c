@@ -7,7 +7,8 @@
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
- * jumps, and Irvine32 exit over the currently supported register and memory operand forms. It records last-step
+ * jumps, Phase 66 unsigned relational conditional jumps, and Irvine32 exit over
+ * the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step.
  */
@@ -3082,6 +3083,14 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
         case VM_IR_OPCODE_JNLE:
         case VM_IR_OPCODE_JGE:
         case VM_IR_OPCODE_JNL:
+        case VM_IR_OPCODE_JA:
+        case VM_IR_OPCODE_JNBE:
+        case VM_IR_OPCODE_JAE:
+        case VM_IR_OPCODE_JNB:
+        case VM_IR_OPCODE_JB:
+        case VM_IR_OPCODE_JNAE:
+        case VM_IR_OPCODE_JBE:
+        case VM_IR_OPCODE_JNA:
             return vm_exec_validate_branch_target(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
@@ -3209,13 +3218,29 @@ static bool vm_exec_opcode_is_signed_relational_conditional_jump(VmIrOpcode opco
            opcode == VM_IR_OPCODE_JNL;
 }
 
+/// Returns whether an opcode is a Phase 66 unsigned relational conditional jump.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for unsigned relational conditional-jump mnemonics and aliases.
+static bool vm_exec_opcode_is_unsigned_relational_conditional_jump(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_JA ||
+           opcode == VM_IR_OPCODE_JNBE ||
+           opcode == VM_IR_OPCODE_JAE ||
+           opcode == VM_IR_OPCODE_JNB ||
+           opcode == VM_IR_OPCODE_JB ||
+           opcode == VM_IR_OPCODE_JNAE ||
+           opcode == VM_IR_OPCODE_JBE ||
+           opcode == VM_IR_OPCODE_JNA;
+}
+
 /// Returns whether an opcode is any implemented conditional branch.
 ///
 /// @param opcode Opcode to inspect.
 /// @return true when @p opcode is an implemented direct conditional jump.
 static bool vm_exec_opcode_is_conditional_jump(VmIrOpcode opcode) {
     return vm_exec_opcode_is_equality_conditional_jump(opcode) ||
-           vm_exec_opcode_is_signed_relational_conditional_jump(opcode);
+           vm_exec_opcode_is_signed_relational_conditional_jump(opcode) ||
+           vm_exec_opcode_is_unsigned_relational_conditional_jump(opcode);
 }
 
 /// Evaluates whether a committed Phase 64 equality conditional jump is taken.
@@ -3297,6 +3322,52 @@ static bool vm_exec_signed_relational_conditional_jump_taken(const VmCpu *cpu, V
     return false;
 }
 
+/// Evaluates whether a committed Phase 66 unsigned relational conditional jump is taken.
+///
+/// The caller is responsible for ensuring undefined-flag-use policy has already
+/// run for the exact flag set consumed by @p opcode. Native executor callers
+/// that use this helper directly receive deterministic preserved flag bits.
+///
+/// @param cpu CPU state containing CF and ZF bits to inspect.
+/// @param opcode Unsigned relational conditional-jump opcode.
+/// @param out_taken Receives whether the branch condition is true.
+/// @return true when @p opcode is a supported unsigned relational conditional
+/// jump and all required flag bits can be read.
+static bool vm_exec_unsigned_relational_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
+    bool cf_is_set = false;
+    bool zf_is_set = false;
+
+    if (cpu == NULL || out_taken == NULL || !vm_exec_opcode_is_unsigned_relational_conditional_jump(opcode)) {
+        return false;
+    }
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_CF, &cf_is_set)) {
+        return false;
+    }
+
+    if (opcode == VM_IR_OPCODE_JAE || opcode == VM_IR_OPCODE_JNB) {
+        *out_taken = !cf_is_set;
+        return true;
+    }
+    if (opcode == VM_IR_OPCODE_JB || opcode == VM_IR_OPCODE_JNAE) {
+        *out_taken = cf_is_set;
+        return true;
+    }
+
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_ZF, &zf_is_set)) {
+        return false;
+    }
+    if (opcode == VM_IR_OPCODE_JA || opcode == VM_IR_OPCODE_JNBE) {
+        *out_taken = !cf_is_set && !zf_is_set;
+        return true;
+    }
+    if (opcode == VM_IR_OPCODE_JBE || opcode == VM_IR_OPCODE_JNA) {
+        *out_taken = cf_is_set || zf_is_set;
+        return true;
+    }
+
+    return false;
+}
+
 /// Evaluates whether a committed direct conditional jump is taken.
 ///
 /// @param cpu CPU state containing modeled flags.
@@ -3308,7 +3379,10 @@ static bool vm_exec_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, 
     if (vm_exec_opcode_is_equality_conditional_jump(opcode)) {
         return vm_exec_equality_conditional_jump_taken(cpu, opcode, out_taken);
     }
-    return vm_exec_signed_relational_conditional_jump_taken(cpu, opcode, out_taken);
+    if (vm_exec_opcode_is_signed_relational_conditional_jump(opcode)) {
+        return vm_exec_signed_relational_conditional_jump_taken(cpu, opcode, out_taken);
+    }
+    return vm_exec_unsigned_relational_conditional_jump_taken(cpu, opcode, out_taken);
 }
 
 VmExecStatus vm_step(Vm *vm) {

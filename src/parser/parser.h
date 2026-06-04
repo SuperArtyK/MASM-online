@@ -3,7 +3,7 @@
  * @brief Parser API for the currently implemented MASM32 educational subset.
  *
  * This module converts the lexer token stream into data symbols, a .data image,
- * Phase 58 code-label metadata, Phase 60 direct-JMP lowering metadata, and
+ * Phase 58 code-label metadata, direct branch lowering metadata for direct JMP and implemented conditional jumps, and
  * the minimal IR currently supported by the executor. It intentionally remains
  * limited to implemented writable,
  * uninitialized, and constant data declarations, numeric equates, extended
@@ -458,15 +458,15 @@ typedef struct VmParserResult {
 /// signed/unsigned PTR width overrides on supported memory operands; destination
 /// operands may use registers, direct symbols, constant symbol-offset memory
 /// operands, register-indirect memory operands, or signed/unsigned PTR width
-/// overrides on supported memory operands. Direct JMP operands may target
-/// executable code labels or procedure-entry labels and are lowered to Phase 61
-/// runtime branch metadata. MASM32 header directives accepted in
+/// overrides on supported memory operands. Direct JMP and implemented conditional-jump operands may target
+/// executable code labels or procedure-entry labels and are lowered to runtime
+/// branch metadata. MASM32 header directives accepted in
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
 /// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
 /// storage with metadata; `.CONST` storage is read-only once loaded into VM
 /// memory. Code labels and procedure-entry labels are recorded as parser/source
-/// metadata; Phase 60 direct JMP lowering consumes that metadata, and Phase 61
-/// executes the resolved direct branch target.
+/// metadata; direct branch lowering consumes that metadata, and the executor
+/// transfers to resolved direct branch targets for implemented branch opcodes.
 ///
 /// @param config Parse configuration and caller-owned output buffers.
 /// @param out_result Receives parse counts and final status.

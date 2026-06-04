@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 65: Signed Relational Conditional Jumps.
+  Milestone 66: Unsigned Relational Conditional Jumps.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,16 +18,16 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 65: Signed relational conditional jumps now execute for direct code-label targets.</p>
+        <p class="muted">Milestone 66: Unsigned relational conditional jumps now execute for direct code-label targets.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
-    mov eax, -1
+    mov eax, 0FFFFFFFFh
     cmp eax, 1
-    jl less
+    ja above
     mov ebx, 0
     jmp done
-less:
+above:
     mov ebx, 1
 done:
     nop

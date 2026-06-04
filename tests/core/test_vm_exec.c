@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 65 signed relational conditional jump execution.
+ * @brief Unit tests for the VM executor through Phase 66 unsigned relational conditional jump execution.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -3996,6 +3996,118 @@ static int test_phase65_signed_relational_flag_consumption_sets(void) {
     return failures;
 }
 
+
+/// Verifies Phase 66 unsigned relational conditional jumps branch and preserve state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase66_unsigned_relational_conditional_jump_runtime(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_JA, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "ja above", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_JBE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "jbe below_or_equal", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov ebx, 2", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 3U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov ebx, 3", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 66 unsigned relational test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "unsigned relational program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, false) ? 0 : record_failure("seed CF before JA should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, false) ? 0 : record_failure("seed ZF before JA should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("seed SF before JA should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("seed OF before JA should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JA should execute when CF and ZF are clear");
+    failures += expect_size(vm.instruction_pointer, 2U, "JA should branch to the target instruction when unsigned above holds");
+    failures += expect_u64(vm.instruction_count, 1U, "JA should count as one executed instruction");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "JA should not produce register changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "JA should not produce flag changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "JA should not produce memory changes");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, false, "JA should preserve CF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "JA should preserve ZF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "JA should preserve SF");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "JA should preserve OF");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JBE should execute when reached");
+    failures += expect_size(vm.instruction_pointer, 3U, "JBE should fall through when CF and ZF are clear");
+    failures += expect_u64(vm.instruction_count, 2U, "not-taken JBE should count as one executed instruction");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fall-through MOV after JBE should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after unsigned relational jumps");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after unsigned relational jumps");
+    failures += expect_u32(eax, 0U, "taken JA should skip EAX mutation");
+    failures += expect_u32(ebx, 2U, "not-taken JBE should execute fall-through MOV");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 66 unsigned relational aliases and CF-only conditions.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase66_unsigned_relational_conditional_jump_aliases(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_JNBE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "jnbe above", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "mov eax, 1", 1U},
+        {VM_IR_OPCODE_JNB, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "jnb above_or_equal", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov ebx, 2", 3U},
+        {VM_IR_OPCODE_JNAE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 6U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "jnae below", 4U},
+        {VM_IR_OPCODE_JNA, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "jna below_or_equal", 5U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 6U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ecx, 6", 6U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EDX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov edx, 7", 7U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 66 alias test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "unsigned relational alias program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, false) ? 0 : record_failure("seed CF before aliases should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("seed ZF before aliases should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNBE should execute with ZF set");
+    failures += expect_size(vm.instruction_pointer, 1U, "JNBE should fall through when equality makes above false");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fall-through MOV after JNBE should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNB should execute with CF clear");
+    failures += expect_size(vm.instruction_pointer, 4U, "JNB should branch when unsigned above-or-equal is true");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNAE should execute with CF clear");
+    failures += expect_size(vm.instruction_pointer, 5U, "JNAE should fall through when below is false");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "JNA should execute with ZF set");
+    failures += expect_size(vm.instruction_pointer, 7U, "JNA should branch when equality makes below-or-equal true");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies native Phase 50B helper consumption sets for unsigned relational jumps.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase66_unsigned_relational_flag_consumption_sets(void) {
+    int failures = 0;
+    VmCpu cpu;
+    VmFlagUseDiagnostic diagnostic;
+    const VmIrInstruction jae = {VM_IR_OPCODE_JAE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "jae target", 0U};
+    const VmIrInstruction ja = {VM_IR_OPCODE_JA, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ja target", 0U};
+    const VmFlag jae_flags[] = {VM_FLAG_CF};
+    const VmFlag ja_flags[] = {VM_FLAG_CF, VM_FLAG_ZF};
+
+    vm_cpu_init(&cpu);
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_ZF, "seed-zf", "seed", "main.asm", 1U, 1U, 1U, 1U, "seed zf", 0U) ? 0 : record_failure("mark ZF invalid should succeed");
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_SF, "seed-sf", "seed", "main.asm", 1U, 1U, 1U, 1U, "seed sf", 0U) ? 0 : record_failure("mark SF invalid should succeed");
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_OF, "seed-of", "seed", "main.asm", 1U, 1U, 1U, 1U, "seed of", 0U) ? 0 : record_failure("mark OF invalid should succeed");
+    failures += expect_status(vm_check_flag_consumption(&cpu, &jae, jae_flags, sizeof(jae_flags) / sizeof(jae_flags[0]), VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic), VM_EXEC_STATUS_OK, "JAE consumption check should succeed in warning mode");
+    failures += expect_size(diagnostic.invalid_flag_count, 0U, "JAE should not consume invalid ZF, SF, or OF when CF is valid");
+
+    failures += vm_cpu_mark_flag_undefined(&cpu, VM_FLAG_CF, "seed-cf", "seed", "main.asm", 2U, 1U, 2U, 1U, "seed cf", 0U) ? 0 : record_failure("mark CF invalid should succeed");
+    failures += expect_status(vm_check_flag_consumption(&cpu, &ja, ja_flags, sizeof(ja_flags) / sizeof(ja_flags[0]), VM_UNDEFINED_FLAG_USE_POLICY_WARN, &diagnostic), VM_EXEC_STATUS_OK, "JA consumption check should succeed in warning mode");
+    failures += expect_size(diagnostic.invalid_flag_count, 2U, "JA should consume invalid CF and ZF but not SF or OF");
+
+    return failures;
+}
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4366,6 +4478,9 @@ int main(void) {
     failures += test_phase65_signed_relational_conditional_jump_runtime();
     failures += test_phase65_signed_relational_conditional_jump_aliases();
     failures += test_phase65_signed_relational_flag_consumption_sets();
+    failures += test_phase66_unsigned_relational_conditional_jump_runtime();
+    failures += test_phase66_unsigned_relational_conditional_jump_aliases();
+    failures += test_phase66_unsigned_relational_flag_consumption_sets();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_metadata_helpers();
 

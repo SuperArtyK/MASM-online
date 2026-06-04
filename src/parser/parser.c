@@ -4244,6 +4244,38 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_JNL;
         return true;
     }
+    if (vm_parser_token_equals(token, "ja")) {
+        *out_opcode = VM_IR_OPCODE_JA;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnbe")) {
+        *out_opcode = VM_IR_OPCODE_JNBE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jae")) {
+        *out_opcode = VM_IR_OPCODE_JAE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnb")) {
+        *out_opcode = VM_IR_OPCODE_JNB;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jb")) {
+        *out_opcode = VM_IR_OPCODE_JB;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jnae")) {
+        *out_opcode = VM_IR_OPCODE_JNAE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jbe")) {
+        *out_opcode = VM_IR_OPCODE_JBE;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "jna")) {
+        *out_opcode = VM_IR_OPCODE_JNA;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4267,7 +4299,7 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
 /// Returns whether an opcode uses direct branch-target parsing and fixups.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for direct JMP, Phase 64 equality conditional jumps, and Phase 65 signed relational jumps.
+/// @return true for direct JMP, equality jumps, signed relational jumps, and unsigned relational jumps.
 static bool vm_parser_opcode_is_direct_branch(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_JMP ||
            opcode == VM_IR_OPCODE_JE ||
@@ -4281,7 +4313,15 @@ static bool vm_parser_opcode_is_direct_branch(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_JG ||
            opcode == VM_IR_OPCODE_JNLE ||
            opcode == VM_IR_OPCODE_JGE ||
-           opcode == VM_IR_OPCODE_JNL;
+           opcode == VM_IR_OPCODE_JNL ||
+           opcode == VM_IR_OPCODE_JA ||
+           opcode == VM_IR_OPCODE_JNBE ||
+           opcode == VM_IR_OPCODE_JAE ||
+           opcode == VM_IR_OPCODE_JNB ||
+           opcode == VM_IR_OPCODE_JB ||
+           opcode == VM_IR_OPCODE_JNAE ||
+           opcode == VM_IR_OPCODE_JBE ||
+           opcode == VM_IR_OPCODE_JNA;
 }
 
 /// Returns an uppercase mnemonic for a direct branch opcode.
@@ -4316,6 +4356,22 @@ static const char *vm_parser_direct_branch_mnemonic(VmIrOpcode opcode) {
             return "JGE";
         case VM_IR_OPCODE_JNL:
             return "JNL";
+        case VM_IR_OPCODE_JA:
+            return "JA";
+        case VM_IR_OPCODE_JNBE:
+            return "JNBE";
+        case VM_IR_OPCODE_JAE:
+            return "JAE";
+        case VM_IR_OPCODE_JNB:
+            return "JNB";
+        case VM_IR_OPCODE_JB:
+            return "JB";
+        case VM_IR_OPCODE_JNAE:
+            return "JNAE";
+        case VM_IR_OPCODE_JBE:
+            return "JBE";
+        case VM_IR_OPCODE_JNA:
+            return "JNA";
         default:
             return "branch";
     }

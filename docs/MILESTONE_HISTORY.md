@@ -12,15 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 65:
+Current status at Phase 66A:
 
 Repository/archive milestone:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66A - Current-Status Documentation De-Cluttering
 
 Runtime/source-run MASM behavior phase:
-Phase 65 - Signed Relational Conditional Jumps
+Phase 66 - Unsigned Relational Conditional Jumps
 
-Phase 65 adds executable direct-label signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`. These branch forms use the modeled `ZF`, `SF`, and `OF` flags according to signed relational semantics, consume only the flags required by each mnemonic through the shared `undefined-flag-use` policy, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and respect the Phase 59 instruction-count watchdog.
+Phase 66 adds executable direct-label unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna`. These branch forms use modeled `CF` and `ZF` according to unsigned relational semantics, consume only the flags required by each mnemonic through the shared `undefined-flag-use` policy, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and respect the Phase 59 instruction-count watchdog.
+
+Phase 65 signed relational conditional jumps remain implemented: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`. These branch forms use the modeled `ZF`, `SF`, and `OF` flags according to signed relational semantics.
 
 Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior.
 
@@ -32,6 +34,7 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 
 ## Concise milestone ledger
 
+- Phase 66 implements executable unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` direct label branches. These consume the required unsigned-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 65 implements executable signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` direct label branches. These consume the required signed-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 64D adds memory-change source attribution to successful memory-change rows, including the one-based source line and preserved source text when available, without adding MASM syntax or changing runtime semantics.
 - Phase 64C expands final register display by keeping the EFLAGS parent row and adding subordinate CF, ZF, SF, and OF child rows without adding new flags, flag semantics, diagnostics, or MASM syntax.
@@ -88,6 +91,73 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
 
+
+## Phase 66A - Current-Status Documentation De-Cluttering
+
+Repository/archive milestone:
+Phase 66A - Current-Status Documentation De-Cluttering
+
+Runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+Phase 66A is a documentation-only corrective milestone.
+
+It cleans current-status documentation so README, supported syntax, and build/development docs remain concise orientation surfaces instead of rolling milestone reports.
+
+Implemented documentation changes:
+
+- README current-status text was replaced rather than appended.
+- README current-scope text was shortened to feature categories and documentation links.
+- `docs/SUPPORTED_SYNTAX.md` opening status text was replaced rather than appended.
+- `docs/SUPPORTED_SYNTAX.md` detailed syntax reference sections remained the owner of accepted/rejected syntax detail.
+- `docs/BUILDING_AND_DEVELOPMENT.md` was kept focused on build, serve, environment, and test workflows.
+- Historical detail remains in this milestone history document and milestone reports.
+- The spec and guide now include explicit anti-clutter rules for current-status surfaces.
+
+No runtime/source-run MASM behavior changed in this phase.
+
+Not implemented in this phase:
+
+- no MASM syntax changes;
+- no parser behavior changes;
+- no VM behavior changes;
+- no executor behavior changes;
+- no Wasm API behavior changes;
+- no browser UI behavior changes;
+- no worker protocol behavior changes;
+- no diagnostic code or rendered-message behavior changes;
+- no Program Console behavior changes;
+- no source-run JSON behavior changes;
+- no runtime/source-run MASM behavior metadata advancement.
+
+Future assistants should preserve this distinction: current-status summaries are replaced in place, while milestone history accumulates here.
+
+## Corrective audit note after Phase 66
+
+A post-Phase-66 audit identified roadmap wording risks in future stack/procedure phases. This note is documentation-only and does not change the Phase 66 implementation state.
+
+Current accepted implementation state remains:
+
+```text
+Repository/archive milestone:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+Runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+```
+
+Future roadmap clarifications to preserve:
+
+- Procedure names are user-defined symbols. They are case-insensitive by default under `CASEMAP:ALL` behavior and exact-case only after `OPTION CASEMAP:NONE`.
+- `OPTION CASEMAP:NONE` does not make instructions, directives, registers, virtual include names, or recognized Irvine32 routine names case-sensitive.
+- Recognized Irvine32 routine and terminator names remain reserved and must be classified through the central virtual Irvine32 registry or a documented wrapper.
+- Phase 68 - Call Target Classification and Procedure Entry Metadata is metadata-only and must not execute CALL, RET, INVOKE, stack mutation, Irvine routine dispatch, or root termination.
+- Phase 69 - Direct CALL to User Procedures owns only direct user-procedure CALL mechanics and implicit VM return-token stack writes. It does not own RET, root termination, source-level PUSH/POP, or Irvine32 routine calls.
+- If later source-run fixtures use source-level `push` or `pop`, the guide must provide a prior non-renumbering PUSH/POP phase, such as Phase 72A.
+- LEAVE and RET imm16 phases must not implement PUSH/POP incidentally.
+
+This note does not authorize implementation of future stack/procedure features before their selected target milestones.
+
 ## Detailed milestone report references
 
 Detailed milestone reports remain historical evidence and do not replace the canonical specification or implementation guide.
@@ -127,7 +197,7 @@ Phase 59 adds deterministic executed-instruction limit enforcement through the s
 
 ## Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures
 
-Phase 57T adds source-run and rendered Simulator Messages smoke fixtures for realistic unsupported MASM32 playground programs. The fixtures verify concise diagnostics for host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, external MASM32/CRT/WinAPI routine boundaries, high-level MASM flow, and still-unsupported `CALL`, `RET`, and unsigned conditional-jump syntax. Phase 57T is repository/test/documentation work and does not implement host include loading, library linking, invocation lowering, WinAPI execution, high-level-flow lowering, stack/procedure behavior, or branch execution. Runtime/source-run MASM behavior metadata remains Phase 57S.
+Phase 57T adds source-run and rendered Simulator Messages smoke fixtures for realistic unsupported MASM32 playground programs. The fixtures verify concise diagnostics for host include paths, `INCLUDELIB`, `INVOKE`, `ADDR`, external MASM32/CRT/WinAPI routine boundaries, high-level MASM flow, and then-still-unsupported `CALL`, `RET`, and unsigned conditional-jump syntax as it existed in the Phase 57T repository state. Phase 57T is repository/test/documentation work and does not implement host include loading, library linking, invocation lowering, WinAPI execution, high-level-flow lowering, stack/procedure behavior, or branch execution. Runtime/source-run MASM behavior metadata remains Phase 57S.
 
 ## Phase 57S - Unsupported High-Level Flow Diagnostics
 
