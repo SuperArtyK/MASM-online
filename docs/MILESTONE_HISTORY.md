@@ -12,17 +12,17 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 66A:
+Current status at Phase 67:
 
 Repository/archive milestone:
-Phase 66A - Current-Status Documentation De-Cluttering
+Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 
 Runtime/source-run MASM behavior phase:
 Phase 66 - Unsigned Relational Conditional Jumps
 
-Phase 66 adds executable direct-label unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna`. These branch forms use modeled `CF` and `ZF` according to unsigned relational semantics, consume only the flags required by each mnemonic through the shared `undefined-flag-use` policy, preserve registers, memory, modeled flags, Program Console output, and memory-change rows, and respect the Phase 59 instruction-count watchdog.
+Phase 67 is a validation-only harness milestone. It adds regression coverage for existing arithmetic, branch, and instruction-count watchdog behavior. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, source-run JSON behavior, worker protocol behavior, or browser UI behavior. Runtime/source-run MASM behavior remains Phase 66 - Unsigned Relational Conditional Jumps.
 
-Phase 65 signed relational conditional jumps remain implemented: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`. These branch forms use the modeled `ZF`, `SF`, and `OF` flags according to signed relational semantics.
+Phase 66 remains the latest runtime/source-run MASM behavior phase. It adds executable direct-label unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna`.
 
 Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior.
 
@@ -34,6 +34,7 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 
 ## Concise milestone ledger
 
+- Phase 67 adds validation harness coverage for existing arithmetic, branch, and instruction-count watchdog behavior without changing runtime/source-run MASM behavior.
 - Phase 66 implements executable unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` direct label branches. These consume the required unsigned-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 65 implements executable signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` direct label branches. These consume the required signed-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 64D adds memory-change source attribution to successful memory-change rows, including the one-based source line and preserved source text when available, without adding MASM syntax or changing runtime semantics.
@@ -91,6 +92,41 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
 
+
+## Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+
+Repository/archive milestone:
+Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+
+Runtime/source-run MASM behavior phase:
+Phase 66 - Unsigned Relational Conditional Jumps
+
+Phase 67 is a validation-only test harness and status-documentation milestone.
+
+Implemented validation coverage:
+
+- combined `cmp` followed by equality, signed relational, and unsigned relational Jcc in one source-run program;
+- direct `jmp` and Jcc regression coverage through the existing branch target classifier;
+- an instruction-count watchdog fixture using already implemented `cmp`, Jcc, and `jmp` behavior;
+- arithmetic fault no-partial-mutation coverage for `mul`, `imul`, `div`, and `idiv` paths;
+- no-memory-change-row coverage for existing `lea`, `cmp`, `mul`, `imul`, `div`, `idiv`, `jmp`, and Jcc behavior;
+- rendered Simulator Messages coverage for a branch-target classifier error, a division runtime error, and an instruction-limit runtime error.
+
+No runtime/source-run MASM behavior changed in this phase. Runtime/source-run metadata remains Phase 66.
+
+Not implemented in this phase:
+
+- no MASM syntax changes;
+- no parser behavior changes;
+- no VM behavior changes;
+- no executor behavior changes;
+- no Wasm API behavior changes;
+- no browser UI behavior changes;
+- no worker protocol behavior changes;
+- no new diagnostic codes or rendered-message categories;
+- no Program Console behavior changes;
+- no source-run JSON behavior changes;
+- no future branch, loop, stack, procedure, Irvine32, debugger, active-time watchdog, macro, WinAPI, PE/linker, or host-filesystem behavior.
 
 ## Phase 66A - Current-Status Documentation De-Cluttering
 

@@ -1,10 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 66 unsigned relational conditional jump execution.
+ * @brief Unit tests for the VM executor through Phase 67 arithmetic, branch, and watchdog harness coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
- * JMP and conditional-branch runtime transfer, and last-step delta capture. They intentionally avoid
+ * JMP and conditional-branch runtime transfer, arithmetic fault rollback, and
+ * last-step delta capture. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -4148,6 +4149,140 @@ static int test_phase61_invalid_jmp_metadata(void) {
     return failures;
 }
 
+/// Verifies Phase 67 arithmetic fault paths preserve pre-instruction state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase67_arithmetic_fault_no_partial_mutation_harness(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t edx = 0U;
+    uint32_t ebx = 0U;
+    const VmExecDelta *delta = NULL;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 67 arithmetic fault harness");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_MUL, vm_ir_operand_none(), vm_ir_operand_memory_register(VM_REGISTER_EAX, 0, 0U, 32U), "main.asm", 10U, "mul DWORD PTR [eax]", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 67 MUL invalid-memory program should load");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("MUL fault EAX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x13572468U) ? 0 : record_failure("MUL fault EDX setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("MUL fault CF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "Phase 67 MUL invalid memory read should fail before mutation");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after MUL fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after MUL fault should succeed"));
+    failures += expect_u32(eax, 0U, "MUL memory fault should preserve EAX");
+    failures += expect_u32(edx, 0x13572468U, "MUL memory fault should preserve EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "MUL memory fault should preserve CF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "MUL memory fault should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "MUL memory fault should not record memory changes");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IMUL, vm_ir_operand_none(), vm_ir_operand_memory_register(VM_REGISTER_EAX, 0, 0U, 32U), "main.asm", 20U, "imul DWORD PTR [eax]", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 67 IMUL invalid-memory program should load");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0U) ? 0 : record_failure("IMUL fault EAX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0x24681357U) ? 0 : record_failure("IMUL fault EDX setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("IMUL fault OF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "Phase 67 IMUL invalid memory read should fail before mutation");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after IMUL fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after IMUL fault should succeed"));
+    failures += expect_u32(eax, 0U, "IMUL memory fault should preserve EAX");
+    failures += expect_u32(edx, 0x24681357U, "IMUL memory fault should preserve EDX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "IMUL memory fault should preserve OF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "IMUL memory fault should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "IMUL memory fault should not record memory changes");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_DIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 30U, "div ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 67 DIV divide-by-zero program should load");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("DIV fault EAX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 2U) ? 0 : record_failure("DIV fault EDX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0U) ? 0 : record_failure("DIV fault divisor setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("DIV fault CF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_DIVIDE_BY_ZERO, "Phase 67 DIV divide by zero should fail before mutation");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after DIV fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after DIV fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after DIV fault should succeed"));
+    failures += expect_u32(eax, 100U, "DIV divide-by-zero should preserve EAX");
+    failures += expect_u32(edx, 2U, "DIV divide-by-zero should preserve EDX");
+    failures += expect_u32(ebx, 0U, "DIV divide-by-zero should preserve EBX divisor register");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "DIV divide-by-zero should preserve CF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "DIV divide-by-zero should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "DIV divide-by-zero should not record memory changes");
+
+    {
+        const VmIrInstruction program[] = {
+            vm_ir_instruction(VM_IR_OPCODE_IDIV, vm_ir_operand_none(), vm_ir_operand_register(VM_REGISTER_EBX, 0U), "main.asm", 40U, "idiv ebx", 0U)
+        };
+        failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 67 IDIV divide-by-zero program should load");
+    }
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 100U) ? 0 : record_failure("IDIV fault EAX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EDX, 0U) ? 0 : record_failure("IDIV fault EDX setup should succeed"));
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0U) ? 0 : record_failure("IDIV fault divisor setup should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_SF, true) ? 0 : record_failure("IDIV fault SF setup should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_DIVIDE_BY_ZERO, "Phase 67 IDIV divide by zero should fail before mutation");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after IDIV fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read after IDIV fault should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after IDIV fault should succeed"));
+    failures += expect_u32(eax, 100U, "IDIV divide-by-zero should preserve EAX");
+    failures += expect_u32(edx, 0U, "IDIV divide-by-zero should preserve EDX");
+    failures += expect_u32(ebx, 0U, "IDIV divide-by-zero should preserve EBX divisor register");
+    failures += expect_flag(&vm.cpu, VM_FLAG_SF, true, "IDIV divide-by-zero should preserve SF");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "IDIV divide-by-zero should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "IDIV divide-by-zero should not record memory changes");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 67 conditional branches reject malformed runtime target metadata without mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase67_conditional_branch_invalid_metadata_harness(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        vm_ir_instruction(VM_IR_OPCODE_JE, vm_ir_operand_branch_target(99U), vm_ir_operand_none(), "main.asm", 50U, "je broken", 0U)
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 67 invalid Jcc metadata harness");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 67 invalid Jcc program should load");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x12345678U) ? 0 : record_failure("seed EAX before invalid Jcc should succeed"));
+    failures += (vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("seed ZF before invalid Jcc should succeed"));
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_BRANCH_TARGET, "out-of-range JE target should fail at runtime metadata boundary");
+    failures += expect_size(vm.instruction_pointer, 0U, "invalid JE target should not advance instruction pointer");
+    failures += expect_u64(vm.instruction_count, 0U, "invalid JE target should not increment instruction count");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after invalid JE target should succeed"));
+    failures += expect_u32(eax, 0x12345678U, "invalid JE target should preserve EAX");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "invalid JE target should preserve consumed flag value");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "invalid JE target should not record register changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "invalid JE target should not record memory changes");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL || diagnostic->status != VM_EXEC_STATUS_INVALID_BRANCH_TARGET || !diagnostic->has_instruction || diagnostic->instruction.source_line != 50U) {
+        failures += record_failure("invalid JE target diagnostic should preserve instruction context");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies CMP register/register updates subtraction flags without mutating operands.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4482,6 +4617,8 @@ int main(void) {
     failures += test_phase66_unsigned_relational_conditional_jump_aliases();
     failures += test_phase66_unsigned_relational_flag_consumption_sets();
     failures += test_phase61_invalid_jmp_metadata();
+    failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
+    failures += test_phase67_conditional_branch_invalid_metadata_harness();
     failures += test_metadata_helpers();
 
     if (failures != 0) {
@@ -4489,6 +4626,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 64 passed.");
+    puts("Executor tests through Phase 67 arithmetic, branch, and watchdog harness coverage passed.");
     return 0;
 }

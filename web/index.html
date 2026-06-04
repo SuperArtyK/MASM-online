@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 66: Unsigned Relational Conditional Jumps.
+  Milestone 67: Arithmetic, Branch, and Watchdog Integration Harness.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,17 +18,27 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 66: Unsigned relational conditional jumps now execute for direct code-label targets.</p>
+        <p class="muted">Milestone 67: Integration tests cover existing arithmetic, branch, and instruction-limit behavior; runtime MASM support remains Phase 66.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
 main PROC
     mov eax, 0FFFFFFFFh
-    cmp eax, 1
-    ja above
-    mov ebx, 0
-    jmp done
-above:
+    cmp eax, eax
+    je equal_path
+    mov ebx, 99
+equal_path:
     mov ebx, 1
+    cmp eax, 1
+    jl signed_path
+    mov ecx, 99
+signed_path:
+    mov ecx, 2
+    cmp eax, 1
+    ja unsigned_path
+    mov edx, 99
+    jmp done
+unsigned_path:
+    mov edx, 3
 done:
     nop
 main ENDP

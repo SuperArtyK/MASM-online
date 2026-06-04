@@ -5,12 +5,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 66A - Current-Status Documentation De-Cluttering
+Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 
 Runtime/source-run MASM behavior phase:
 Phase 66 - Unsigned Relational Conditional Jumps
 
-Phase 66 is the latest runtime/source-run MASM behavior phase. Phase 66A is documentation cleanup only and does not add MASM syntax or runtime behavior.
+Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add MASM syntax or runtime behavior.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 

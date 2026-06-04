@@ -1,14 +1,14 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 66A - Current-Status Documentation De-Cluttering
+Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 
 Runtime/source-run MASM behavior phase:
 Phase 66 - Unsigned Relational Conditional Jumps
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 
-Phase 66 is the latest runtime/source-run MASM behavior phase. Phase 66A is documentation cleanup only and does not add or remove accepted MASM syntax.
+Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add or remove accepted MASM syntax.
 
 Current direct branch support includes:
 

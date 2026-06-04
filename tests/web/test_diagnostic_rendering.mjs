@@ -2222,6 +2222,48 @@ END main
 });
 
 
+test("renders Phase 67 branch-loop instruction-limit diagnostic exactly", () => {
+  const name = "phase67BranchLoopInstructionLimit";
+  const source = `.code
+main PROC
+again:
+    cmp eax, eax
+    je taken
+    mov ebx, 99
+taken:
+    jmp again
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 66);
+  assert.equal(json.instructionCount, 5);
+  assert.equal(json.instructionLimit, 5);
+  assert.equal(json.executedInstructionCount, 5);
+  assert.equal(json.attemptedNextInstructionIndex, 3);
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
+    kind: "runtime-error",
+    code: "instruction-limit-exceeded",
+    message: "Instruction limit exceeded: attempted to execute instruction #4 (limit: 5). Program stopped before executing that instruction.",
+    line: 8,
+    column: 5,
+    byteOffset: 80,
+    spanLength: 9
+  });
+  assertNoMessageWithCode(json.simulatorMessages, "branch-runtime-deferred");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}
+
+[runtime-error] instruction-limit-exceeded line 8, column 5, byte offset 80, span length 9: Instruction limit exceeded: attempted to execute instruction #4 (limit: 5). Program stopped before executing that instruction.`);
+});
+
 test("renders Phase 61E reserved code-label diagnostic exactly", () => {
   const name = "phase61eReservedCodeLabel";
   const source = `.code
@@ -2693,6 +2735,34 @@ END main
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-branch-target-form line 3, column 8, byte offset 23, span length 1: JA memory targets are not supported. Indirect branch behavior is deferred to a later branch phase.");
+});
+
+test("renders Phase 67 branch-target classifier diagnostic exactly", () => {
+  const name = "phase67BranchTargetClassifierDiagnostic";
+  const source = `.data
+value DWORD 1
+.code
+main PROC
+    ja value
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 66);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-branch-target",
+    message: "JA target cannot be a data symbol. Direct conditional jumps accept only code labels with executable instruction targets.",
+    line: 5,
+    column: 8,
+    byteOffset: 43,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-branch-target line 5, column 8, byte offset 43, span length 5: JA target cannot be a data symbol. Direct conditional jumps accept only code labels with executable instruction targets.");
 });
 
 test("renders Phase 65 signed conditional jump Irvine32-target diagnostic exactly", () => {
@@ -6605,6 +6675,36 @@ END main
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals("phase57-idiv-section-image-strict", source, rawJson, rendered, "[runtime-error] section-image-violation line 9, column 20, byte offset 119, span length 5: Memory read at 00500004h for 4 bytes covers range 00500004h..00500007h and leaves the section image range for .data/.DATA? (00500000h..00500003h).");
+});
+
+test("renders Phase 67 division runtime diagnostic exactly", () => {
+  const name = "phase67DivisionRuntimeDiagnostic";
+  const source = `.code
+main PROC
+    mov eax, 100
+    mov edx, 2
+    mov ebx, 0
+    div ebx
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 66);
+  assert.equal(json.memoryChanges.length, 0, rawJson);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "divide-by-zero",
+      message: "DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+      line: 6,
+      column: 5,
+      byteOffset: 67,
+      spanLength: 7
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] divide-by-zero line 6, column 5, byte offset 67, span length 7: DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
 });
 
 test("Phase 56 renders DIV divide-by-zero runtime error", () => {

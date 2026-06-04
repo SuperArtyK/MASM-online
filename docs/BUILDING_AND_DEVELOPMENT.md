@@ -12,7 +12,7 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 66A - Current-Status Documentation De-Cluttering
+Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 
 Current runtime/source-run MASM behavior phase:
 Phase 66 - Unsigned Relational Conditional Jumps

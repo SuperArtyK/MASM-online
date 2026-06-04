@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 66 unsigned relational conditional jumps.
+ * @brief Tests for the Wasm-facing source execution API through Phase 67 arithmetic, branch, and watchdog harness coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -9719,6 +9719,107 @@ static int test_phase66_source_run_phase_metadata(void) {
     return failures;
 }
 
+/// Verifies Phase 67 combined arithmetic, branch, and watchdog source-run coverage.
+///
+/// @return Number of failures.
+static int test_phase67_arithmetic_branch_watchdog_source_run_harness(void) {
+    char combined_json[TEST_JSON_COPY_CAPACITY];
+    char no_memory_json[TEST_JSON_COPY_CAPACITY];
+    char watchdog_json[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(combined_json, sizeof(combined_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 0FFFFFFFFh\n"
+        "    cmp eax, 0FFFFFFFFh\n"
+        "    je equal_path\n"
+        "    mov ebx, 99\n"
+        "equal_path:\n"
+        "    mov ebx, 1\n"
+        "    cmp eax, 1\n"
+        "    jl signed_path\n"
+        "    mov ecx, 99\n"
+        "signed_path:\n"
+        "    mov ecx, 2\n"
+        "    cmp eax, 1\n"
+        "    ja unsigned_path\n"
+        "    mov edx, 99\n"
+        "    jmp done\n"
+        "unsigned_path:\n"
+        "    mov edx, 3\n"
+        "done:\n"
+        "    nop\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(no_memory_json, sizeof(no_memory_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov ebx, 8\n"
+        "    lea eax, [ebx + 4]\n"
+        "    cmp eax, 12\n"
+        "    mul ebx\n"
+        "    mov eax, 100\n"
+        "    mov edx, 0\n"
+        "    div ebx\n"
+        "    mov eax, -12\n"
+        "    cdq\n"
+        "    mov ebx, 3\n"
+        "    idiv ebx\n"
+        "    mov eax, -2\n"
+        "    imul ebx\n"
+        "    cmp eax, 0FFFFFFFAh\n"
+        "    je equal_done\n"
+        "    mov esi, 99\n"
+        "equal_done:\n"
+        "    jb unsigned_done\n"
+        "    jl signed_done\n"
+        "signed_done:\n"
+        "    jmp final_done\n"
+        "unsigned_done:\n"
+        "    mov edi, 99\n"
+        "final_done:\n"
+        "    nop\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(watchdog_json, sizeof(watchdog_json), masm32_sim_wasm_run_source_json_with_instruction_limit(
+        ".code\n"
+        "main PROC\n"
+        "again:\n"
+        "    cmp eax, eax\n"
+        "    je taken\n"
+        "    mov ebx, 99\n"
+        "taken:\n"
+        "    jmp again\n"
+        "main ENDP\n"
+        "END main\n",
+        5U
+    ));
+
+    failures += expect_json_contains(combined_json, "\"ok\":true", "Phase 67 combined cmp/Jcc fixture should execute");
+    failures += expect_json_contains(combined_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "Phase 67 equality Jcc should take the equal path");
+    failures += expect_json_contains(combined_json, "\"ECX\":{\"hex\":\"00000002h\",\"unsigned\":2", "Phase 67 signed Jcc should take the signed less path");
+    failures += expect_json_contains(combined_json, "\"EDX\":{\"hex\":\"00000003h\",\"unsigned\":3", "Phase 67 unsigned Jcc should take the unsigned above path");
+    failures += expect_json_not_contains(combined_json, "branch-runtime-deferred", "Phase 67 combined branch fixture should not emit deferred branch diagnostics");
+    failures += expect_json_contains(combined_json, "\"memoryChanges\":[]", "Phase 67 combined branch fixture should not create memory changes");
+
+    failures += expect_json_contains(no_memory_json, "\"ok\":true", "Phase 67 no-memory-change arithmetic/branch fixture should execute");
+    failures += expect_json_contains(no_memory_json, "\"memoryChanges\":[]", "LEA, CMP, MUL, IMUL, DIV, IDIV, JMP, and Jcc should not create memory-change rows in this fixture");
+    failures += expect_json_contains(no_memory_json, "\"EAX\":{\"hex\":\"FFFFFFFAh\",\"unsigned\":4294967290", "Phase 67 arithmetic fixture should leave IMUL result in EAX");
+    failures += expect_json_not_contains(no_memory_json, "branch-runtime-deferred", "Phase 67 no-memory-change fixture should not emit deferred branch diagnostics");
+
+    failures += expect_json_contains(watchdog_json, "\"ok\":false", "Phase 67 branch-loop watchdog fixture should fail by instruction limit");
+    failures += expect_json_contains(watchdog_json, "\"code\":\"instruction-limit-exceeded\"", "Phase 67 branch-loop watchdog fixture should emit instruction-limit-exceeded");
+    failures += expect_json_contains(watchdog_json, "\"instructionCount\":5", "Phase 67 watchdog fixture should stop after the configured executed-instruction count");
+    failures += expect_json_contains(watchdog_json, "\"memoryChanges\":[]", "Phase 67 watchdog fixture should not create memory changes");
+    failures += expect_json_not_contains(watchdog_json, "branch-runtime-deferred", "Phase 67 watchdog fixture should not emit deferred branch diagnostics");
+    failures += expect_json_not_contains(watchdog_json, "execution-complete", "Phase 67 watchdog fixture should not complete after fatal instruction limit");
+
+    return failures;
+}
+
 
 
 /// Verifies Phase 63 CMP memory source, destination, symbol-offset, and .CONST reads.
@@ -12536,6 +12637,7 @@ int main(void) {
     failures += test_phase66_unsigned_relational_jumps_source_run_programs();
     failures += test_phase66_unsigned_relational_jump_error_paths();
     failures += test_phase66_source_run_phase_metadata();
+    failures += test_phase67_arithmetic_branch_watchdog_source_run_harness();
     failures += test_phase63_cmp_memory_source_run_programs();
     failures += test_phase63_cmp_uninitialized_read_policy();
     failures += test_phase63_cmp_section_and_object_planned_read_policy();
@@ -12589,6 +12691,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests through Phase 66 unsigned relational conditional jumps passed.");
+    puts("Source execution tests through Phase 67 arithmetic, branch, and watchdog harness coverage passed.");
     return 0;
 }
