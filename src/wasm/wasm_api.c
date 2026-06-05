@@ -11,7 +11,8 @@
  * instructions, carry/borrow arithmetic, carry-flag control, TEST,
  * INC/DEC, bitwise logical instructions, shifts, ROL/ROR, LEA, Phase 61
  * direct JMP runtime execution, unsigned MUL, one-operand signed
- * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, and recovered
+ * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, Phase 67A selected END-entry
+ * procedure startup and fallthrough boundaries, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -62,6 +63,9 @@
 /// Maximum code labels retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_CODE_LABELS 128U
 
+/// Maximum procedure ranges retained by the source-run API.
+#define MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES 128U
+
 /// Maximum declared-object map entries retained by one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES MASM32_SIM_WASM_MAX_RUN_SYMBOLS
 
@@ -72,13 +76,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 66U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 67U
 
-/// Suffix for the current Phase 66 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
+/// Suffix for the current Phase 67A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
 
-/// Full name of the current Phase 66 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 66 - Unsigned Relational Conditional Jumps"
+/// Full name of the current Phase 67A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -366,6 +370,8 @@ typedef struct Masm32SimWasmRunStorage {
     VmSymbol symbols[MASM32_SIM_WASM_MAX_RUN_SYMBOLS];
     /// Code labels emitted by the parser.
     VmCodeLabel code_labels[MASM32_SIM_WASM_MAX_RUN_CODE_LABELS];
+    /// Procedure ranges emitted by the parser for selected-entry runtime boundaries.
+    VmProcedureRange procedure_ranges[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
     /// Declared-object map entries built from final selected-layout symbols.
     VmObjectMapEntry object_map_entries[MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES];
     /// Number of valid declared-object map entries.
@@ -6278,6 +6284,152 @@ static VmExecStatus masm32_sim_wasm_validate_instruction_limit_before_step(
     return VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED;
 }
 
+/// Returns whether an opcode is an implemented conditional direct branch.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for implemented equality, signed relational, and unsigned relational Jcc opcodes.
+static bool masm32_sim_wasm_opcode_is_conditional_jump(VmIrOpcode opcode) {
+    switch (opcode) {
+        case VM_IR_OPCODE_JE:
+        case VM_IR_OPCODE_JZ:
+        case VM_IR_OPCODE_JNE:
+        case VM_IR_OPCODE_JNZ:
+        case VM_IR_OPCODE_JL:
+        case VM_IR_OPCODE_JNGE:
+        case VM_IR_OPCODE_JLE:
+        case VM_IR_OPCODE_JNG:
+        case VM_IR_OPCODE_JG:
+        case VM_IR_OPCODE_JNLE:
+        case VM_IR_OPCODE_JGE:
+        case VM_IR_OPCODE_JNL:
+        case VM_IR_OPCODE_JA:
+        case VM_IR_OPCODE_JNBE:
+        case VM_IR_OPCODE_JAE:
+        case VM_IR_OPCODE_JNB:
+        case VM_IR_OPCODE_JB:
+        case VM_IR_OPCODE_JNAE:
+        case VM_IR_OPCODE_JBE:
+        case VM_IR_OPCODE_JNA:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Evaluates whether an implemented conditional branch opcode is taken.
+///
+/// The VM has already run the undefined-flag-use policy before this helper is
+/// called. Branch instructions do not mutate modeled flags, so reading the
+/// post-step CPU flags gives the same decision that @ref vm_step used.
+///
+/// @param cpu CPU state containing modeled flag bits.
+/// @param opcode Conditional branch opcode to evaluate.
+/// @param out_taken Receives the branch decision.
+/// @return true when the opcode and flag reads were valid.
+static bool masm32_sim_wasm_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
+    bool cf = false;
+    bool zf = false;
+    bool sf = false;
+    bool of = false;
+
+    if (cpu == NULL || out_taken == NULL || !masm32_sim_wasm_opcode_is_conditional_jump(opcode)) {
+        return false;
+    }
+    if (!vm_cpu_read_flag(cpu, VM_FLAG_CF, &cf) ||
+        !vm_cpu_read_flag(cpu, VM_FLAG_ZF, &zf) ||
+        !vm_cpu_read_flag(cpu, VM_FLAG_SF, &sf) ||
+        !vm_cpu_read_flag(cpu, VM_FLAG_OF, &of)) {
+        return false;
+    }
+
+    switch (opcode) {
+        case VM_IR_OPCODE_JE:
+        case VM_IR_OPCODE_JZ:
+            *out_taken = zf;
+            return true;
+        case VM_IR_OPCODE_JNE:
+        case VM_IR_OPCODE_JNZ:
+            *out_taken = !zf;
+            return true;
+        case VM_IR_OPCODE_JL:
+        case VM_IR_OPCODE_JNGE:
+            *out_taken = sf != of;
+            return true;
+        case VM_IR_OPCODE_JLE:
+        case VM_IR_OPCODE_JNG:
+            *out_taken = zf || (sf != of);
+            return true;
+        case VM_IR_OPCODE_JG:
+        case VM_IR_OPCODE_JNLE:
+            *out_taken = !zf && (sf == of);
+            return true;
+        case VM_IR_OPCODE_JGE:
+        case VM_IR_OPCODE_JNL:
+            *out_taken = sf == of;
+            return true;
+        case VM_IR_OPCODE_JA:
+        case VM_IR_OPCODE_JNBE:
+            *out_taken = !cf && !zf;
+            return true;
+        case VM_IR_OPCODE_JAE:
+        case VM_IR_OPCODE_JNB:
+            *out_taken = !cf;
+            return true;
+        case VM_IR_OPCODE_JB:
+        case VM_IR_OPCODE_JNAE:
+            *out_taken = cf;
+            return true;
+        case VM_IR_OPCODE_JBE:
+        case VM_IR_OPCODE_JNA:
+            *out_taken = cf || zf;
+            return true;
+        default:
+            return false;
+    }
+}
+
+/// Returns whether a completed step reached the selected entry boundary by ordinary fallthrough.
+///
+/// @param parser_result Parser result containing selected-entry procedure bounds.
+/// @param instruction Instruction that just executed.
+/// @param before_ip Instruction pointer before the step.
+/// @param after_ip Instruction pointer after the step.
+/// @param cpu CPU state after the step, used only to distinguish taken and non-taken Jcc.
+/// @return true when source-run should halt successfully at the selected `ENDP` boundary.
+static bool masm32_sim_wasm_reached_selected_entry_boundary_by_fallthrough(
+    const VmParserResult *parser_result,
+    const VmIrInstruction *instruction,
+    size_t before_ip,
+    size_t after_ip,
+    const VmCpu *cpu
+) {
+    size_t start_index = 0U;
+    size_t end_index = 0U;
+
+    if (parser_result == NULL || instruction == NULL || !parser_result->has_selected_entry_procedure) {
+        return false;
+    }
+
+    start_index = parser_result->selected_entry_start_instruction_index;
+    end_index = parser_result->selected_entry_end_instruction_index;
+    if (before_ip < start_index || before_ip >= end_index || after_ip != end_index) {
+        return false;
+    }
+
+    if (instruction->opcode == VM_IR_OPCODE_JMP) {
+        return false;
+    }
+    if (masm32_sim_wasm_opcode_is_conditional_jump(instruction->opcode)) {
+        bool branch_taken = false;
+        if (masm32_sim_wasm_conditional_jump_taken(cpu, instruction->opcode, &branch_taken)) {
+            return !branch_taken;
+        }
+        return false;
+    }
+
+    return after_ip == before_ip + 1U;
+}
+
 /// Parses, optionally applies policy-selected layout, and executes source.
 ///
 /// @param source Source text to run.
@@ -6380,6 +6532,8 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     config.symbol_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_SYMBOLS;
     config.code_labels = g_masm32_sim_wasm_run_storage.code_labels;
     config.code_label_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_CODE_LABELS;
+    config.procedure_ranges = g_masm32_sim_wasm_run_storage.procedure_ranges;
+    config.procedure_range_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES;
     config.data_image = g_masm32_sim_wasm_run_storage.data_image;
     config.data_image_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
     config.data_initialized_mask = g_masm32_sim_wasm_run_storage.data_initialized_mask;
@@ -6486,6 +6640,18 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     vm_memory_clear_changes(&vm.memory);
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
+    if (exec_status == VM_EXEC_STATUS_OK && parser_result.has_selected_entry_procedure) {
+        if (parser_result.selected_entry_start_instruction_index > parser_result.instruction_count ||
+            parser_result.selected_entry_end_instruction_index > parser_result.instruction_count ||
+            parser_result.selected_entry_start_instruction_index > parser_result.selected_entry_end_instruction_index) {
+            exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
+        } else {
+            vm.instruction_pointer = parser_result.selected_entry_start_instruction_index;
+            if (parser_result.selected_entry_start_instruction_index == parser_result.selected_entry_end_instruction_index) {
+                vm.halted = true;
+            }
+        }
+    }
     if (exec_status == VM_EXEC_STATUS_OK && startup_register_flag_mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM) {
         vm_cpu_init_seeded_registers_and_flags(&vm.cpu, startup_state_seed);
     }
@@ -6541,7 +6707,23 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             break;
         }
 
-        exec_status = vm_step(&vm);
+        {
+            size_t instruction_pointer_before_step = vm.instruction_pointer;
+            const VmIrInstruction *instruction_before_step = vm.program != NULL && vm.instruction_pointer < vm.program_count ?
+                &vm.program[vm.instruction_pointer] : NULL;
+
+            exec_status = vm_step(&vm);
+            if (exec_status == VM_EXEC_STATUS_OK &&
+                masm32_sim_wasm_reached_selected_entry_boundary_by_fallthrough(
+                    &parser_result,
+                    instruction_before_step,
+                    instruction_pointer_before_step,
+                    vm.instruction_pointer,
+                    &vm.cpu
+                )) {
+                vm.halted = true;
+            }
+        }
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
             exec_status = masm32_sim_wasm_validate_section_accesses(&g_masm32_sim_wasm_run_storage, &vm, capacity_policy, image_policy, runtime_policy);

@@ -12,28 +12,22 @@ Source-of-truth rule:
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 
-Current status at Phase 67:
+Current status at Phase 67A:
 
 Repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 Runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
-Phase 67 is a validation-only harness milestone. It adds regression coverage for existing arithmetic, branch, and instruction-count watchdog behavior. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, source-run JSON behavior, worker protocol behavior, or browser UI behavior. Runtime/source-run MASM behavior remains Phase 66 - Unsigned Relational Conditional Jumps.
+Phase 67A corrects source-run entry procedure startup and selected-entry procedure fallthrough. `END entryName` is now authoritative for source-run startup: helper procedures before the selected entry do not run automatically, empty selected entries complete successfully, and ordinary fallthrough at the selected entry `ENDP` boundary completes without falling into later procedures.
 
-Phase 66 remains the latest runtime/source-run MASM behavior phase. It adds executable direct-label unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna`.
+Phase 67A does not implement CALL, RET, stack mutation, procedure frames, Irvine32 routine dispatch, or Phase 68 call-target classification.
 
-Phase 64D changes source-run result metadata and rendered memory-change display by showing the source line that produced each successful memory write. It does not add MASM syntax, parser behavior, VM instruction behavior, executor semantics, memory semantics, diagnostic codes, or diagnostic-policy behavior.
-
-Phase 64C changes final-state display formatting by showing modeled flag child rows under EFLAGS. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new modeled flags, new flag semantics, new diagnostic codes, new diagnostic-policy families, or new source-run status fields. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work.
-
-Phase 64B changes rendered Simulator Messages ordering and group separators for existing source-less notices, runtime diagnostics, and final execution-status messages. It does not add MASM syntax, parser behavior, VM instruction behavior, executor behavior, new diagnostic codes, new diagnostic-policy families, or new source-run status fields.
-
-Phase 64A corrects source-run planned-read coverage for already implemented memory-reading instructions. Existing memory-destination read-modify-write instructions expose their destination memory read to `uninitialized-read` and related planned-read policy checks before the instruction consumes bytes or performs write-back. Phase 64 - Equality Conditional Jumps remains implemented, and Phase 63 - CMP Memory Operand Forms remains implemented: CMP memory reads participate in planned-read validation before flags are updated. Phase 61D capacity diagnostics such as `token-capacity-exceeded`, `source-text-capacity-exceeded`, `code-label-capacity-exceeded`, and `data-capacity-exceeded` remain pre-runtime source-run failures, not runtime `instructionLimit` failures. Active-time watchdog behavior remains future work owned by Phase 200 - Active Time Watchdog and Worker Responsiveness.
 
 ## Concise milestone ledger
 
+- Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
 - Phase 67 adds validation harness coverage for existing arithmetic, branch, and instruction-count watchdog behavior without changing runtime/source-run MASM behavior.
 - Phase 66 implements executable unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` direct label branches. These consume the required unsigned-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
 - Phase 65 implements executable signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl` direct label branches. These consume the required signed-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
@@ -92,6 +86,34 @@ Phase 64A corrects source-run planned-read coverage for already implemented memo
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
 
+
+## Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+
+Repository/archive milestone:
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+
+Runtime/source-run MASM behavior phase:
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+
+Phase 67A makes `END entryName` authoritative for source-run startup and selected-entry procedure fallthrough.
+
+Implemented behavior:
+
+- source-run starts at the first executable instruction inside the selected `END entryName` procedure;
+- helper procedures before the selected entry procedure do not execute by source order;
+- helper procedures after the selected entry procedure do not execute by ordinary fallthrough;
+- an empty selected entry procedure completes successfully without executing another procedure;
+- ordinary fallthrough at the selected entry `ENDP` boundary emits normal completion;
+- existing direct branch behavior to labels and procedure-entry labels remains executable;
+- existing Irvine32 virtual `exit` behavior remains successful from inside the selected entry procedure;
+- runtime/source-run phase metadata advances to Phase 67A.
+
+Non-goals preserved:
+
+- no CALL or RET behavior;
+- no stack mutation or procedure-frame behavior;
+- no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
+- no Phase 68 call-target classification.
 
 ## Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
 

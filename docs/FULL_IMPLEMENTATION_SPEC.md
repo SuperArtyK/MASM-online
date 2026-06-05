@@ -500,9 +500,105 @@ Initial supported structural directives:
 - `ENDP`
 - `END`
 
-These affect source structure, symbol layout, procedure boundaries, or entry-point validation.
+These directives affect source structure, symbol layout, procedure boundaries, and entry-point validation. Their runtime meaning is phase-sensitive and must not be inferred beyond the latest accepted implementation-guide phase.
 
-`PROC` starts as a simple structural marker. Later procedure phases add `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, and calling-convention metadata.
+`PROC` and `ENDP` define a named source procedure range. A procedure range has:
+
+- a procedure name;
+- a declaration source location;
+- a body range;
+- a first executable instruction inside the procedure, if any;
+- an exclusive end boundary at the matching `ENDP`.
+
+`END entryName` selects the source-run entry procedure. After the corrective entry-boundary phase is implemented, source-run execution must start inside the procedure named by `END entryName`, not at the first lowered instruction in source order.
+
+The simulator must not execute instructions that appear before the selected entry procedure merely because they are physically earlier in the file. It also must not fall through from the selected entry procedure into a later procedure merely because that later procedure is physically adjacent in the lowered IR stream.
+
+Before CALL and RET behavior is implemented, multiple procedures may still be accepted as structural declarations. Accepting multiple procedure declarations does not mean those procedures execute automatically. A non-entry procedure executes only when reached by an explicitly supported control-transfer feature.
+
+`PROC` starts with limited structural and entry-boundary behavior. Later procedure phases add richer metadata, `CALL`, `RET`, root-return behavior, `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, stack-frame behavior, and calling-convention metadata.
+
+This distinction is mandatory:
+
+- accepting a procedure declaration does not implement procedure calls;
+- selecting an entry procedure with `END entryName` does not implement `CALL`;
+- terminating at the selected entry procedure boundary does not implement `RET`;
+- recognizing an Irvine32 routine name does not insert that name into the ordinary user procedure namespace.
+
+#### 8.1.1A Entry Procedure and Procedure Boundary Contract
+
+The selected entry procedure is the procedure named by the final accepted `END entryName` directive.
+
+The simulator must distinguish these concepts:
+
+- **procedure declaration**: a `name PROC` / `name ENDP` source range;
+- **entry procedure**: the accepted procedure selected by `END entryName`;
+- **ordinary code label**: a `label:` target inside executable code;
+- **future call target metadata**: procedure-entry information used later by CALL and INVOKE phases;
+- **Irvine32 registry entry**: a recognized virtual routine or terminator name, not a user procedure.
+
+The corrective entry-boundary phase owns only the runtime startup and selected-entry boundary behavior. The richer call-target classifier remains owned by Phase 68 - Call Target Classification and Procedure Entry Metadata.
+
+After the corrective entry-boundary phase is accepted, source-run startup must follow these rules:
+
+1. The selected `END` target must resolve to an accepted user procedure entry.
+2. Execution starts at the first executable instruction inside the selected entry procedure.
+3. If the entry procedure contains no executable instruction, the program completes successfully without executing any other procedure or code block.
+4. Executable instructions physically before the selected entry procedure do not run unless later reached through explicit supported control flow.
+5. Executable instructions physically after the selected entry procedure do not run merely because the selected entry procedure reached `ENDP`.
+6. Falling off the selected entry procedure at its `ENDP` boundary completes successfully exactly once.
+7. The already implemented Irvine32-style `exit` terminator, where available, continues to terminate successfully from inside the selected entry procedure.
+8. A non-entry procedure must not execute by source-order fallthrough from the entry procedure.
+9. A non-entry procedure must not be treated as a completed program merely because it reaches its own `ENDP`.
+10. Later CALL/RET phases may define additional legal ways to enter and leave non-entry procedures.
+
+This contract protects users from accidental execution of helper procedures before or after `main` and gives later CALL/RET phases a stable procedure-range model.
+
+Example that must not execute the first procedure merely because it appears before `main`:
+
+```asm
+.code
+aa PROC
+    mov ecx, 1000
+aa ENDP
+
+main PROC
+    mov eax, 100
+main ENDP
+END main
+```
+
+Expected behavior after the corrective entry-boundary phase:
+
+```text
+EAX = 00000064h / 100
+ECX remains 00000000h / 0
+execution-complete
+```
+
+Example that must not fall through from `main` into a later helper procedure:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+main ENDP
+
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+```
+
+Expected behavior after the corrective entry-boundary phase:
+
+```text
+EAX = 00000001h / 1
+ECX remains 00000000h / 0
+execution-complete
+```
+
+This entry-boundary contract does not implement `CALL`, `RET`, stack mutation, procedure frames, source-level `PUSH` or `POP`, Irvine32 routine dispatch, `USES`, `LOCAL`, `PROTO`, `INVOKE`, or `ADDR`.
 
 #### 8.1.2 Additional Data Sections
 
@@ -3259,15 +3355,35 @@ A separate call-depth watchdog may be provided for clearer recursion diagnostics
 
 ### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
 
-CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, and ADDR depend on completed stack-region initialization, a documented startup value for `ESP`, and checked simulated stack memory access.
+CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, ADDR, Irvine32 routine dispatch, source-level `PUSH`, and source-level `POP` depend on a deliberately staged procedure and stack model.
 
-Source-level `push` and `pop` instructions are part of the stack/procedure roadmap, but they are not the same mechanism as internal CALL/RET return-token handling.
+The required staging is:
 
-A direct `CALL` implementation may write its simulator-defined return token through checked stack memory before user-written `push` and `pop` instructions are implemented, if the implementation guide explicitly assigns that order. Such a CALL phase must still validate stack access before mutation, must use central checked VM memory helpers, must participate in applicable planned-write validation, and must not expose native host addresses or real x86 return addresses.
+1. **Entry procedure boundary correction.** `END entryName` selects the source-run entry procedure, execution starts inside that selected procedure, and ordinary fallthrough at that selected procedure's `ENDP` terminates successfully. Helper procedures before or after the entry procedure must not execute by linear source-order fallthrough.
 
-Later source-level frame, argument, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, and ADDR fixtures may depend on user-written `push` and `pop`. If a later implementation-guide phase uses source-level `push` or `pop` in acceptance programs, the guide must provide a prior implementation phase for those instructions or clearly mark the fixture as a future-owned integration regression.
+2. **Procedure target metadata.** User procedure entries, ordinary code labels, data symbols, equates, reserved words, recognized Irvine32 registry entries, and unknown symbols are classified separately. This metadata is used by later CALL and INVOKE phases but does not itself execute CALL or INVOKE.
 
-The current guide may use a non-renumbering corrective phase, such as `Phase 72A`, to add source-level `push` and `pop` before the first later phase whose source-run fixtures rely on user-written stack instructions. Preserve later phase identifiers unless the user explicitly requests roadmap renumbering.
+3. **Stack startup contract.** The runtime stack region is initialized, `ESP` has a documented startup value derived from the active stack layout, and later stack-writing features can rely on that value.
+
+4. **Direct CALL mechanics.** Direct near CALL to user procedure entries may push a simulator return token through checked stack memory and transfer control to the target procedure.
+
+5. **RET mechanics.** RET may pop a simulator return token through checked stack memory, validate it, and return to the instruction after CALL.
+
+6. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL/RET make those paths meaningful.
+
+7. **Expanded procedure and stack features.** Source-level PUSH/POP, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 dispatch, and call-depth diagnostics are implemented only in their owning phases.
+
+Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
+
+A phase must not implement future procedure or stack behavior merely to make its own acceptance program easier. For example:
+
+- an entry-boundary corrective phase must not implement CALL, RET, or call-target classification;
+- a metadata/classification phase must not implement CALL, RET, root termination, or stack mutation;
+- a stack-startup phase must not add source-level PUSH or POP;
+- a CALL phase must not add temporary RET behavior;
+- a RET phase must not add root RET behavior unless the phase explicitly owns it;
+- an Irvine32 registry phase must not insert Irvine32 names into the user procedure namespace;
+- a procedure-metadata phase must not make CALL or INVOKE source programs executable.
 
 The simulator uses 32-bit VM return tokens for call/return flow. Return tokens are not native addresses. The root return sentinel is `VM_RETURN_TOKEN_ROOT = 0xFFFFFFFFu`, reserved and never emitted as a normal instruction index.
 
@@ -3296,17 +3412,29 @@ it should intercept the call and execute the corresponding simulated routine if 
 
 ### 13.1 Virtual Irvine32 Include
 
-`INCLUDE Irvine32.inc` is a built-in virtual include. It should not read host files. When this include is present, the parser should register known Irvine32 routine names as virtual intrinsic procedure symbols.
+`INCLUDE Irvine32.inc` is a built-in virtual include. It must not read host files. The simulator provides recognized Irvine32 routine and terminator names through the centralized virtual Irvine32 registry or its documented successor.
+
+Recognized Irvine32 names are registry entries. They are not ordinary user-defined procedure symbols and must not be inserted into the user procedure namespace merely because `INCLUDE Irvine32.inc` appears.
 
 Known Irvine32 symbols should be classified as:
 
-- supported intrinsic;
-- known but unsupported Irvine32 routine;
-- unsupported file I/O routine;
-- unsupported Windows/console-control routine;
+- implemented virtual intrinsic or terminator;
+- known Irvine32 routine planned for a later phase;
+- known Irvine32 routine explicitly unsupported in v1;
+- Windows/API/external/linker/host-filesystem non-goal;
 - unknown symbol.
 
-Unsupported known Irvine32 routines should produce diagnostics such as `unsupported-irvine32-routine`, not generic `unknown-symbol` diagnostics.
+Unsupported known Irvine32 routines should produce diagnostics such as `unsupported-irvine32-routine`, `unsupported-irvine-call`, or the current registry-owned diagnostic code, not generic `unknown-symbol` diagnostics.
+
+CALL target classification must preserve this boundary:
+
+- `call UserProc` may become a user procedure call only when `UserProc PROC` exists and the CALL phase accepts direct user-procedure calls.
+- `call WriteString` must classify through the Irvine32 registry, not through the user procedure table.
+- Before the owning Irvine32 dispatch phase implements `WriteString`, `call WriteString` must produce a recognized-deferred or recognized-unsupported Irvine32 diagnostic.
+- After a later Irvine32 dispatch phase implements `WriteString`, dispatch may route to simulator-defined Irvine32 behavior, but `WriteString` still does not become an ordinary user procedure symbol.
+- A user declaration such as `WriteString PROC` must be rejected or otherwise handled through the reserved-word/registry collision policy. It must not silently shadow the virtual Irvine32 routine.
+
+`OPTION CASEMAP:NONE` affects accepted user-defined symbols. It does not make recognized Irvine32 routine names case-sensitive, and it does not make recognized Irvine32 routine names available as user procedure names.
 
 `INCLUDE Macros.inc` is accepted as a virtual no-op for paste compatibility. Macro invocations remain unsupported until selected Irvine macro compatibility is implemented.
 
@@ -3804,14 +3932,31 @@ Instruction: <instruction>
 
 ### 17.2 Active Time Limit
 
-Default:
+Active-time watchdog behavior is planned for Phase 200 - Active Time Watchdog and Worker Responsiveness.
+
+Until Phase 200 is implemented and accepted, the simulator must not claim that active-time or wall-clock watchdog behavior is available. Current loop protection is provided by the implemented instruction-count watchdog only.
+
+This is a documentation correction until Phase 200 is selected. It must not be treated as permission to implement active-time measurement, worker-yield behavior, Stop-button responsiveness, wall-clock timeout settings, fake monotonic clocks, or browser responsiveness controls during an unrelated phase.
+
+After Phase 200 is implemented, the active-time watchdog must:
+
+- measure active VM execution time, not time waiting for user input;
+- run in the worker without blocking the browser main thread;
+- check elapsed time between chunks or logical instruction batches rather than on every hot instruction if per-instruction checks would create excessive overhead;
+- use an injected fake monotonic clock for native/unit tests;
+- avoid nondeterministic real-time assertions in unit tests;
+- report timeout failures through Simulator Messages;
+- preserve the no-partial-mutation and terminal-status rules defined by the owning guide phase.
+
+The default active-time limit value is owned by Phase 200 in the implementation guide. Before Phase 200 implementation begins, this specification and the guide must state the same default value. If the guide continues to use:
 
 ```text
-Enabled: yes
-Limit: 10 seconds active VM execution time
+VM_DEFAULT_ACTIVE_TIME_LIMIT_MS = 2000
 ```
 
-The timer pauses while the VM is waiting for user input.
+then this specification must not continue to describe the default as ten seconds.
+
+This section is roadmap behavior until Phase 200 is accepted.
 
 ### 17.3 Optional Input Wait Timeout
 

@@ -432,6 +432,31 @@ Rules:
 - Deferred-runtime diagnostics may remain only for forms that the current phase intentionally accepts as metadata-only or recognizes as still future-owned.
 - This subsection is not required for debugger/editor display-only phases, documentation-only phases, or maintenance phases that do not add mnemonics, change keyword behavior, or make a deferred branch/control-flow form executable.
 
+### 2.4c-3 Procedure and Entry-Boundary Milestone Report Requirements
+
+Every milestone report for Phase 67A and every later procedure, CALL, RET, stack, Irvine32 dispatch, debugger-stack, or control-transfer phase must include a procedure and entry-boundary disposition block.
+
+Use this shape:
+
+```text
+Procedure and entry-boundary disposition:
+- Selected END entry procedure:
+- Source-run startup begins at selected entry procedure:
+- Instructions before selected entry procedure can execute only through explicit supported control flow:
+- Instructions after selected entry procedure can execute only through explicit supported control flow:
+- Entry procedure fallthrough behavior:
+- Non-entry procedure fallthrough behavior:
+- CALL behavior changed:
+- RET behavior changed:
+- Stack mutation changed:
+- Irvine32 registry/user procedure namespace boundary preserved:
+- Source-run tests added:
+- Rendered Simulator Messages tests added:
+- Runtime/source-run MASM behavior phase advanced:
+```
+
+If a phase is adjacent to procedure, CALL, RET, or stack work but does not touch procedure or entry-boundary behavior, the report must say `not applicable` for the fields rather than omitting the subsection. This prevents future implementation reports from losing the distinction between accepted structural procedures, selected entry-procedure startup, CALL/RET behavior, root termination, and Irvine32 routine dispatch.
+
 
 ### 2.4d Standing Rule: Modeled-Flag Consumers Must Use the Shared Undefined-Flag-Use Helper
 
@@ -18891,6 +18916,319 @@ Run a validation-only harness over arithmetic, branch, and watchdog behavior.
 
 The harness is part of the aggregate test runner and adds no runtime features.
 
+## 71A. Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+
+### Goal
+
+Correct source-run entry behavior before procedure metadata and CALL work begins.
+
+The parser already accepts `PROC`, `ENDP`, and `END entryName` structure. This phase makes that structure authoritative for runtime startup and selected-entry procedure fallthrough.
+
+This phase fixes the current linear-IR behavior where execution can start at the first lowered instruction in source order, even when that instruction belongs to a helper procedure or code block before the declared `END` entry procedure.
+
+This is a corrective runtime-boundary phase. It must not implement `CALL`, `RET`, source-level `PUSH`, source-level `POP`, stack mutation, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, Irvine32 routine dispatch, debugger stack display, procedure-frame behavior, call-depth accounting, or the Phase 68 call-target classifier.
+
+After this phase is accepted, the next planned phase remains Phase 68 - Call Target Classification and Procedure Entry Metadata. Do not renumber Phase 68 or later phases.
+
+### Scope boundary with Phase 68
+
+Phase 67A owns only the minimum procedure-range information needed for:
+
+- finding the procedure selected by `END entryName`;
+- starting execution inside that selected procedure;
+- detecting ordinary fallthrough at that selected procedure's `ENDP` boundary;
+- preventing accidental source-order execution of code outside the selected procedure.
+
+Phase 68 owns richer target-classification metadata for future CALL and INVOKE work. Phase 67A must not implement or expose a full future-call target classifier.
+
+### Problem being corrected
+
+Before this phase, source-run execution can begin at the first lowered instruction in the file rather than at the procedure named by `END entryName`. That allows code such as this to mutate registers before `main` begins:
+
+```asm
+.code
+aa PROC
+    mov ecx, 1000
+aa ENDP
+
+main PROC
+    mov eax, 100
+main ENDP
+END main
+```
+
+The selected entry procedure is `main`, so `aa PROC` must not run merely because it appears first in source order.
+
+The same flaw can also allow fallthrough from the selected entry procedure into a later helper procedure:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+main ENDP
+
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+```
+
+The `helper` procedure must not execute merely because it physically follows `main`.
+
+### Required behavior
+
+1. `END entryName` selects the runtime entry procedure.
+2. The selected `END` target must be an accepted `PROC` entry.
+3. Source-run execution must start at the first executable instruction inside the selected entry procedure.
+4. If the selected entry procedure has no executable instruction, source-run execution must complete successfully without executing instructions from any other procedure or code block.
+5. Executable instructions before the selected entry procedure must not run unless reached later through explicitly supported control flow.
+6. Executable instructions after the selected entry procedure must not run merely because the selected entry procedure reached `ENDP`.
+7. Falling off the selected entry procedure at its `ENDP` boundary must terminate successfully exactly once.
+8. The existing Irvine32-style `exit` terminator, if already implemented, must continue to terminate successfully from inside the selected entry procedure.
+9. Non-entry procedures may remain accepted as structural declarations, but they must not execute unless reached by explicitly supported control flow in a later or existing phase.
+10. Existing direct branch behavior must continue to work inside the selected entry procedure.
+11. Existing instruction-count watchdog behavior must continue to apply after the corrected entry start is selected.
+12. Existing fatal runtime diagnostics inside the selected entry procedure must still stop execution and suppress `execution-complete`.
+13. Fatal runtime diagnostics inside the selected entry procedure must not be preceded by accidental side effects from procedures or code blocks before the selected entry procedure.
+14. Fatal runtime diagnostics inside the selected entry procedure must not be followed by accidental side effects from procedures or code blocks after the selected entry procedure.
+
+### Implementation requirements
+
+The parser, lowering layer, loader, or VM must preserve enough procedure-range metadata to identify:
+
+- procedure name;
+- declaration source location;
+- first executable instruction inside the procedure, if any;
+- exclusive end boundary for the procedure body;
+- whether the procedure is the selected `END entryName` procedure.
+
+The source-run loader or VM must start execution from the selected entry procedure's first executable instruction, not from linear IR index `0`.
+
+The VM/source-run loop must stop successfully when ordinary fallthrough reaches the selected entry procedure's exclusive end boundary.
+
+The implementation must not rely on hardcoded procedure names such as `main`. The selected entry point is the identifier supplied by `END entryName`.
+
+The implementation must not make non-entry procedure fallthrough a successful program termination. Non-entry procedure fallthrough should become a diagnostic only when later CALL/RET/root procedure phases make non-entry procedure execution reachable. In this phase, non-entry procedures should not execute by accident.
+
+### Required source-run tests
+
+Procedure before entry procedure does not execute:
+
+```asm
+.code
+aa PROC
+    mov ecx, 1000
+aa ENDP
+
+main PROC
+    mov eax, 100
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000064h / 100
+ECX remains 00000000h / 0
+execution-complete
+```
+
+Procedure after entry procedure does not execute by fallthrough:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+main ENDP
+
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000001h / 1
+ECX remains 00000000h / 0
+execution-complete
+```
+
+Executable code outside the selected entry procedure does not run before entry startup:
+
+```asm
+.code
+mov ecx, 111
+
+main PROC
+    mov eax, 222
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 000000DEh / 222
+ECX remains 00000000h / 0
+execution-complete
+```
+
+Empty selected entry procedure completes without executing later procedure:
+
+```asm
+.code
+main PROC
+main ENDP
+
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+```
+
+Expected:
+
+```text
+ECX remains 00000000h / 0
+execution-complete
+```
+
+`END helper` starts at `helper`, not at `main`:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+main ENDP
+
+helper PROC
+    mov ecx, 2
+helper ENDP
+END helper
+```
+
+Expected:
+
+```text
+EAX remains 00000000h / 0
+ECX = 00000002h / 2
+execution-complete
+```
+
+Fatal runtime diagnostic inside selected entry procedure does not allow earlier helper side effects:
+
+```asm
+.code
+aa PROC
+    mov ecx, 1000
+aa ENDP
+
+main PROC
+    mov eax, 100
+    mov edx, 2
+    mov ebx, 0
+    div ebx
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+ECX remains 00000000h / 0
+division runtime diagnostic is emitted
+execution-complete is absent
+```
+
+Fatal runtime diagnostic inside selected entry procedure does not allow later helper side effects:
+
+```asm
+.code
+main PROC
+    mov eax, 100
+    mov edx, 2
+    mov ebx, 0
+    div ebx
+main ENDP
+
+helper PROC
+    mov ecx, 1000
+helper ENDP
+END main
+```
+
+Expected:
+
+```text
+ECX remains 00000000h / 0
+division runtime diagnostic is emitted
+execution-complete is absent
+```
+
+Existing `exit` still terminates inside entry procedure:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+    exit
+    mov eax, 2
+main ENDP
+END main
+```
+
+Expected:
+
+```text
+EAX = 00000001h / 1
+execution-complete
+```
+
+### Rendered Simulator Messages tests
+
+Add exact rendered-message tests proving:
+
+- successful entry-procedure fallthrough emits exactly one `execution-complete`;
+- an empty entry procedure emits exactly one `execution-complete`;
+- fatal runtime diagnostics inside the selected entry procedure suppress `execution-complete`;
+- no new procedure-boundary warning is emitted for ordinary successful selected-entry fallthrough.
+
+### Non-goals
+
+This phase must not implement:
+
+- `CALL`;
+- `RET`;
+- root `RET`;
+- source-level `PUSH`;
+- source-level `POP`;
+- stack mutation;
+- `LEAVE`;
+- `RET imm16`;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- Irvine32 routine dispatch;
+- call-depth diagnostics;
+- debugger stack display;
+- procedure-frame display;
+- full Phase 68 target classification.
+
+### Acceptance criteria
+
+Source-run startup is controlled by `END entryName`.
+
+Programs with helper procedures before or after the selected entry procedure no longer execute those helpers unless reached by explicit supported control flow.
+
+Existing branch, arithmetic, division-error, instruction-count watchdog, and `exit` behavior inside the selected entry procedure remains unchanged.
+
+No CALL, RET, stack mutation, or Irvine32 routine dispatch behavior is added.
+
 ## 72. Phase 68 - Call Target Classification and Procedure Entry Metadata
 
 ### Goal
@@ -18901,13 +19239,15 @@ This is a parser and metadata phase. It must not add CALL execution, RET executi
 
 ### Dependencies
 
-- Procedure structural parsing from earlier `.code` / `PROC` / `ENDP` phases.
+- Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection.
 - Existing code label table and direct branch target validation.
 - Existing global symbol policy, including the Phase 35A `OPTION CASEMAP` user-symbol policy correction.
 - Existing reserved-word policy.
 - Existing Phase 41 - Virtual Irvine32 Symbol Registry or its direct documented successor.
 
 Stack-region initialization and source-level `PUSH`/`POP` are not required for this metadata-only phase because this phase performs no stack mutation.
+
+CALL, RET, root procedure termination, Irvine32 routine dispatch, call-depth accounting, stack-frame behavior, and source-level stack instructions remain future work after this phase.
 
 ### Metadata sources recognized in this phase
 
@@ -18988,6 +19328,22 @@ Native/parser tests:
 - Reject procedure/data/equate collisions according to existing namespace rules.
 - Preserve prior duplicate-symbol and unknown-symbol diagnostics.
 
+Procedure-boundary regression tests inherited from Phase 67A:
+
+- Classifier metadata must use procedure declarations and procedure body ranges consistent with the entry-boundary metadata used by source-run startup.
+- A procedure before the selected `END` entry procedure is recognized as a structural procedure entry but is not treated as the source-run startup point unless selected by `END`.
+- A procedure after the selected `END` entry procedure is recognized as a structural procedure entry but is not treated as a fallthrough continuation of the entry procedure.
+- Empty procedures are valid metadata entries when structurally well-formed.
+- Procedure-entry metadata must distinguish procedure declarations from ordinary code labels.
+
+Irvine32 namespace tests:
+
+- Recognized Irvine32 routine and terminator names classify through the centralized virtual Irvine32 registry or documented wrapper.
+- Recognized Irvine32 routine and terminator names are not inserted into the user procedure namespace.
+- A user procedure declaration that collides with a recognized Irvine32 routine or terminator name is rejected through the reserved-word or reserved-Irvine diagnostic path.
+- `OPTION CASEMAP:NONE` does not make recognized Irvine32 names case-sensitive.
+- `OPTION CASEMAP:NONE` does not make recognized Irvine32 names available as user procedure names.
+
 Source-run tests:
 
 - Existing programs without CALL still run unchanged.
@@ -19007,6 +19363,85 @@ A parser/classifier test can classify procedure, label, data, equate, virtual Ir
 ---
 
 
+## 72A. Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+
+### Goal
+
+Initialize and document the runtime stack startup state required before direct CALL, RET, frame, LOCAL, USES, INVOKE, Irvine32 dispatch, or source-level PUSH/POP behavior can safely execute.
+
+This is a stack-runtime contract phase. It must not implement CALL, RET, PUSH, POP, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, Irvine32 routine dispatch, debugger stack display, call-depth accounting, or procedure-frame behavior.
+
+After this phase is accepted, the next planned runtime procedure phase remains Phase 69 - Direct CALL to User Procedures. Do not renumber Phase 69 or later phases.
+
+### Dependencies
+
+- Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection.
+- Existing `.stack` metadata parsing.
+- Existing fixed-layout stack-region metadata.
+- Existing layout-policy stack metadata where available.
+- Central checked VM memory helpers.
+- Source-run JSON/runtime status surfaces.
+
+### Required behavior
+
+When a program is loaded for execution, initialize `ESP` to the documented empty-stack position for the active stack region.
+
+The empty-stack position must be defined in terms of active layout metadata, not hardcoded fixed-layout addresses. The definition must work for fixed educational layout and for any later layout mode that already exists in the repository.
+
+This phase must not introduce new automatic sizing, randomized layout, heap sizing, stack sizing, UI settings, URL state, or layout-policy behavior. In fixed layout, this phase may initialize `ESP` from the existing fixed stack region without changing region size. In automatic or layout-policy modes that already honor `.stack`, verify that the selected stack capacity is used. Do not add new layout-sizing behavior merely to satisfy this phase.
+
+The initialized `ESP` value must be stable for the same source, settings, and layout seed.
+
+The phase must document whether the empty-stack value points one byte past the last valid stack byte or to the highest aligned stack slot. All later stack, CALL, RET, PUSH, POP, frame, and Irvine32 routine phases must use the same convention.
+
+Recommended convention:
+
+```text
+ESP starts at the first address past the top/high end of the stack region.
+A 32-bit push or CALL return-token write first computes ESP - 4, then writes 4 bytes at the new ESP through checked stack memory.
+```
+
+If the implementation already uses a different convention, this phase must document that convention explicitly and update later stack/CALL/RET tests to match it.
+
+### Runtime-status behavior
+
+If this phase changes user-visible startup register state, current-status surfaces must describe the repository/archive milestone and runtime/source-run MASM behavior phase according to the existing status-surface rules.
+
+The phase must not claim that source-level stack instructions are implemented.
+
+### Required tests
+
+Native/layout tests:
+
+- Default fixed-layout runs initialize `ESP` to the documented empty-stack value.
+- The initialized `ESP` is derived from active runtime layout metadata.
+- Stack base/limit values are not hardcoded in the executor.
+- Excessive or invalid stack-size metadata still fails through existing resource/stack diagnostics where applicable.
+
+Source-run tests:
+
+- A simple program can observe the documented startup `ESP` value.
+- In fixed layout, stack-region size remains the existing fixed stack-region size.
+- In automatic or layout-policy modes that already honor `.stack`, `.stack size` metadata influences stack capacity according to the existing layout behavior.
+- No source-level `push`, `pop`, `call`, `ret`, frame, `LOCAL`, `USES`, `INVOKE`, or Irvine32 dispatch behavior is implemented in this phase.
+- Existing entry-procedure boundary behavior from Phase 67A remains unchanged.
+
+Rendered Simulator Messages tests:
+
+- Any startup-state notice or stack-size diagnostic renders with stable wording.
+- Successful programs still emit exactly one `execution-complete`.
+- Stack metadata errors suppress `execution-complete`.
+
+### Acceptance criteria
+
+- Source-run programs start with the documented `ESP`.
+- Existing non-stack programs otherwise behave as before, except for the documented startup `ESP` value.
+- No new layout sizing behavior is introduced.
+- Phase 69 - Direct CALL to User Procedures can rely on `ESP` being initialized before CALL executes.
+
+---
+
+
 ## 73. Phase 69 - Direct CALL to User Procedures
 
 ### Goal
@@ -19021,17 +19456,18 @@ call procedureName
 
 where `procedureName` classifies as a user procedure entry through Phase 68 - Call Target Classification and Procedure Entry Metadata.
 
-This phase must not implement RET, root RET behavior, entry-procedure fallthrough changes, CALL to ordinary code labels, CALL to registers, CALL to memory, far calls, INVOKE, PROC USES, LOCAL, source-level PUSH/POP, LEAVE, RET imm16, or Irvine32 routine calls.
+This phase must not implement RET, root RET behavior, entry-procedure fallthrough changes beyond Phase 67A, CALL to ordinary code labels, CALL to registers, CALL to memory, far calls, INVOKE, PROC USES, LOCAL, source-level PUSH/POP, LEAVE, RET imm16, or Irvine32 routine calls.
 
 ### Dependencies
 
 - Phase 68 - Call Target Classification and Procedure Entry Metadata.
-- Stack region initialization.
-- Documented startup value for `ESP`.
+- Phase 68A - Stack Runtime Initialization and ESP Startup Contract.
 - Central checked memory write helpers.
 - Planned-write validation for the implicit stack write performed by CALL.
 
 Source-level `push` and `pop` instructions are not required for this phase. CALL performs an internal return-token stack write through the checked VM memory path.
+
+RET is not required for this phase. Successful source-run programs that require returning from the called procedure are owned by Phase 70 - RET Execution and Return Address Validation.
 
 ### Accepted syntax
 
@@ -19068,7 +19504,7 @@ Recognized Irvine32 routine names are not user procedure targets. Before the own
 1. Resolve the target through the Phase 68 classifier.
 2. Compute a 32-bit VM return token encoding the VM instruction index immediately after CALL. This token is not a native address and must not be displayed or treated as a real x86 return address.
 3. Validate the planned stack write before mutating visible state.
-4. Decrement `ESP` by 4.
+4. Decrement `ESP` by 4 using the convention documented by Phase 68A.
 5. Write the return token to `[ESP]` through central checked VM memory helpers.
 6. Set the VM instruction pointer to the target procedure entry instruction.
 7. Record the stack memory change for the pushed return token.
@@ -19078,23 +19514,28 @@ Recognized Irvine32 routine names are not user procedure targets. Before the own
 
 ```text
 Phase 69 owns direct CALL mechanics only:
-  - classify a user procedure target;
+  - classify a direct user procedure target through Phase 68;
+  - consume the documented ESP startup contract from Phase 68A;
   - create one VM return token;
   - push that return token through checked stack memory;
-  - branch to the procedure entry;
-  - preserve modeled flags;
-  - roll back on failed stack write.
+  - branch to the target user procedure entry;
+  - preserve modeled flags and flag-validity metadata;
+  - roll back all visible state on failed stack write.
 
 Phase 69 does not own:
   - RET execution;
-  - root procedure termination;
+  - root RET behavior;
+  - entry-procedure fallthrough changes beyond Phase 67A;
+  - non-entry procedure fallthrough diagnostics;
   - source-level PUSH or POP;
-  - call-depth diagnostics unless the guide has already placed Phase 72 before this phase;
+  - call-depth diagnostics unless the guide has already deliberately moved call-depth before this phase;
   - PROC USES;
   - LOCAL frames;
   - INVOKE;
   - Irvine32 call dispatch.
 ```
+
+A normal source-run program that requires RET to complete is not required to complete successfully in Phase 69. Use VM stepping or focused executor tests for successful CALL mechanics until Phase 70 - RET Execution and Return Address Validation is implemented.
 
 If Phase 72 - Call Depth Limit and Call Trace Diagnostics remains later in the canonical guide order, Phase 69 must not implement a temporary or partial call-depth limit. If a later documentation revision deliberately moves call-depth checks earlier, that revision must update this phase's dependency and tests explicitly.
 
@@ -19142,7 +19583,7 @@ Source-run tests:
 
 - Existing programs without CALL still run unchanged.
 - Source-run parser/lowering diagnostics for invalid CALL targets render through Simulator Messages.
-- Full source-run success for a program requiring CALL followed by RET is deferred until Phase 70 - RET Execution and Return Address Validation and Phase 71 - Root Procedure Termination Semantics.
+- Full source-run success for a program requiring CALL followed by RET is deferred until Phase 70 - RET Execution and Return Address Validation.
 - Phase 69 must not add temporary fallthrough, missing-RET, root-return, or helper-procedure termination behavior merely to make a complete source-run CALL program finish.
 
 Rendered Simulator Messages tests:
@@ -19187,21 +19628,21 @@ retf
 
 1. Read a 32-bit return token from `[ESP]` through the central checked memory read helper.
 2. Validate that the token maps to a valid VM instruction boundary or the reserved root-return sentinel.
-3. Increment ESP by 4.
+3. Increment `ESP` by 4 using the convention documented by Phase 68A.
 4. Set the VM instruction pointer to the mapped return instruction.
 5. Decrease call depth if call-depth metadata exists.
 6. Preserve all modeled flags.
 
 ### Runtime errors
 
-- `stack-underflow`: read from `[ESP]` fails because ESP is outside the stack or below the valid range.
+- `stack-underflow`: read from `[ESP]` fails because `ESP` is outside the stack or below the valid range.
 - `invalid-return-address`: popped token does not map to a valid VM return target.
 - `return-with-empty-call-stack`: RET is executed when there is no non-root call frame and root RET is not yet enabled.
 
 No partial mutation rule:
 
 - If token read or token validation fails, instruction pointer must not change.
-- ESP must remain externally unchanged on failed RET. Implementations may pre-validate before incrementing or roll back internally, but tests must observe no ESP or instruction-pointer mutation.
+- `ESP` must remain externally unchanged on failed RET. Implementations may pre-validate before incrementing or roll back internally, but tests must observe no `ESP` or instruction-pointer mutation.
 
 ### Tests
 
@@ -19210,7 +19651,7 @@ Executor tests:
 - CALL followed by RET returns to the instruction after CALL.
 - RET preserves flags.
 - Invalid token in stack memory produces `invalid-return-address` and does not branch.
-- RET with ESP outside stack produces `stack-underflow`.
+- RET with `ESP` outside stack produces `stack-underflow`.
 - Failed RET produces no memory-change rows.
 
 Parser tests:
@@ -19219,7 +19660,7 @@ Parser tests:
 - `ret 4` is deferred to **Phase 74 - RET imm16 Instruction**, which models the caller-cleanup stack-adjustment form. Phase 70 implements only near `ret` with no immediate operand.
 - `retf` rejected as explicit non-goal.
 
-Source-run acceptance program:
+### Source-run acceptance program
 
 ```asm
 .code
@@ -19242,9 +19683,27 @@ Expected:
 ```text
 EAX = 0000002Ah / 42
 EBX = 0000002Ah / 42
+execution-complete
 ```
 
-This source-run program is an integrated regression after Phase 71 - Root Procedure Termination Semantics. During Phase 70 itself, use executor-level CALL/RET tests and parser diagnostics. Phase 70 must not implement `exit`, entry-procedure fallthrough changes, root RET success, or root termination behavior early.
+This source-run program is owned by Phase 70.
+
+Reason: Phase 69 implements direct CALL mechanics, Phase 70 implements RET back to the instruction after CALL, and the already existing `exit` terminator can end the entry procedure after control returns to `main`.
+
+This test must not require Phase 71 root procedure termination behavior because it does not depend on entry-procedure fallthrough or root `ret`. It terminates through `exit`.
+
+Phase 70 must still not implement:
+
+- root `RET` success;
+- entry-procedure fallthrough changes beyond those already corrected by Phase 67A;
+- non-entry procedure fallthrough diagnostics;
+- `RET imm16`;
+- `LEAVE`;
+- `PROC USES`;
+- `LOCAL`;
+- `INVOKE`;
+- source-level `PUSH` or `POP`;
+- Irvine32 routine dispatch beyond already implemented terminator behavior.
 
 Rendered Simulator Messages tests:
 
@@ -19252,22 +19711,28 @@ Rendered Simulator Messages tests:
 
 ---
 
+
 ## 75. Phase 71 - Root Procedure Termination Semantics
 
 ### Goal
 
-Define and implement successful termination at the entry procedure boundary.
+Define and implement root RET and non-entry procedure fallthrough semantics after CALL/RET are available.
 
 This phase is about terminal-state semantics. It must not add new call forms, new stack-frame behavior, INVOKE, or Irvine output routines.
 
 ### Required behavior
 
-1. Falling off the entry procedure terminates successfully.
-2. `ret` from the entry procedure terminates successfully in MASM32 Educational Mode.
-3. `exit`, when implemented by the earlier virtual Irvine terminator phase, continues to terminate successfully. If that phase is not part of the actual sequence, this phase relies on entry-procedure fallthrough and root RET only; it must not implement `exit` here.
-4. Falling off a non-entry procedure without RET is a runtime error.
-5. Returning to an instruction after CALL continues execution normally.
-6. Only one terminal status may be emitted.
+Phase 67A already corrected source-run startup and ordinary successful fallthrough at the selected entry procedure boundary. Phase 71 completes root procedure termination semantics for RET and for non-entry procedure misuse that becomes reachable after CALL/RET exists.
+
+Required behavior in this phase:
+
+1. `ret` from the entry procedure terminates successfully in MASM32 Educational Mode when it represents a root return.
+2. Falling off a non-entry procedure without RET is a runtime error once non-entry procedure execution is reachable through CALL.
+3. Returning to an instruction after CALL continues execution normally.
+4. `exit`, when implemented by the earlier virtual Irvine terminator phase, continues to terminate successfully. If that phase is not part of the actual sequence, this phase relies on entry-procedure fallthrough and root RET only; it must not implement `exit` here.
+5. Only one terminal status may be emitted.
+6. Terminal-state diagnostics must preserve source location where available and must not create successful memory-change rows.
+7. No new CALL target forms, stack-frame behavior, INVOKE behavior, Irvine32 routine dispatch, source-level PUSH/POP, LOCAL, USES, or RET imm16 behavior is introduced here.
 
 ### Runtime diagnostics
 
@@ -19278,8 +19743,8 @@ This phase is about terminal-state semantics. It must not add new call forms, ne
 
 Source-run tests:
 
-- Entry procedure fallthrough completes successfully.
-- Entry procedure `ret` completes successfully after this phase.
+- Entry procedure root `ret` completes successfully after this phase.
+- Entry procedure fallthrough behavior from Phase 67A remains successful and does not regress.
 - Non-entry procedure fallthrough after CALL reports runtime error.
 - `exit` still completes successfully.
 - No duplicate `execution-complete` messages are emitted.

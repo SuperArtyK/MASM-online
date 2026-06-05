@@ -12,10 +12,10 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 Current runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -189,6 +189,35 @@ py scripts\run_tests.py --diagnostics
 ```
 
 Use [`TESTING_GUIDE.md`](TESTING_GUIDE.md) for the full runner contract, focused-group ownership, source-run fixture inventory, timeout-safe assistant reporting rules, and failure-output policy.
+
+### Source-run verification in constrained environments
+
+The aggregate test runner remains the normal full-suite verification command.
+
+In hosted assistant/container environments, the aggregate command or full source-run group may time out even when focused groups pass. A timeout in that environment must be reported honestly and must not be described as a successful aggregate pass.
+
+When the aggregate or full source-run group times out, run the smallest available focused groups or fixture families that cover the changed area. Report the exact groups run.
+
+For procedure-entry and future CALL/RET work, focused verification should include:
+
+- structure/static checks;
+- native executor tests when CALL/RET or stack tokens are involved;
+- source-run tests for `END entryName` startup;
+- rendered Simulator Messages tests for success and fatal runtime paths;
+- branch/watchdog regressions when procedure entry changes instruction-pointer startup behavior.
+
+Do not weaken exact structured diagnostic or rendered-message assertions merely to reduce runtime.
+
+Use this report wording when applicable:
+
+```text
+aggregate timed out in assistant/container environment
+focused groups passed:
+- <group>
+- <group>
+
+aggregate success was not claimed
+```
 
 ## Browser/Wasm smoke guidance
 

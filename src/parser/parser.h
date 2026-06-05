@@ -50,7 +50,9 @@ typedef enum VmParserStatus {
     /// Parsing stopped because the caller-provided symbol table was full.
     VM_PARSER_STATUS_SYMBOL_CAPACITY_EXCEEDED,
     /// Parsing stopped because the caller-provided code-label table was full.
-    VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED
+    VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED,
+    /// Parsing stopped because the caller-provided procedure-range table was full.
+    VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED
 } VmParserStatus;
 
 /// Identifies one structured parser diagnostic code for the implemented grammar.
@@ -237,6 +239,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
     /// The caller-provided code-label table was full.
     VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
+    /// The caller-provided procedure-range table was full.
+    VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -294,6 +298,25 @@ typedef struct VmCodeLabel {
     /// Source span length of the label name in bytes.
     size_t source_span_length;
 } VmCodeLabel;
+
+
+/// Describes one accepted `PROC` / `ENDP` source procedure range.
+typedef struct VmProcedureRange {
+    /// Null-terminated original source spelling of the procedure name.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Active CASEMAP policy at the procedure declaration location.
+    VmSymbolCasePolicy case_policy;
+    /// Zero-based first IR instruction index inside the procedure body.
+    size_t start_instruction_index;
+    /// Exclusive zero-based IR instruction index at the matching `ENDP` boundary.
+    size_t end_instruction_index;
+    /// Whether the procedure contains at least one executable IR instruction.
+    bool has_executable_instruction;
+    /// Source location of the procedure name token on the `PROC` line.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the procedure name in bytes.
+    size_t source_span_length;
+} VmProcedureRange;
 
 /// Returns a stable display name for a code-label declaration kind.
 ///
@@ -374,6 +397,10 @@ typedef struct VmParserConfig {
     VmCodeLabel *code_labels;
     /// Number of entries available in @ref code_labels.
     size_t code_label_capacity;
+    /// Caller-owned output procedure-range table. May be NULL only when procedure-range capacity is zero.
+    VmProcedureRange *procedure_ranges;
+    /// Number of entries available in @ref procedure_ranges.
+    size_t procedure_range_capacity;
     /// Caller-owned .data/.DATA? image bytes laid out from VM_MEMORY_DEFAULT_DATA_BASE.
     uint8_t *data_image;
     /// Number of bytes available in @ref data_image.
@@ -426,6 +453,16 @@ typedef struct VmParserResult {
     size_t symbol_count;
     /// Number of code labels written to the configured code-label buffer.
     size_t code_label_count;
+    /// Number of procedure ranges written to the configured procedure-range buffer.
+    size_t procedure_range_count;
+    /// Whether @ref selected_entry_procedure_index identifies the `END entryName` procedure.
+    bool has_selected_entry_procedure;
+    /// Procedure-range index selected by the accepted `END entryName` directive.
+    size_t selected_entry_procedure_index;
+    /// Zero-based first instruction index where source-run execution should start.
+    size_t selected_entry_start_instruction_index;
+    /// Exclusive instruction index of the selected entry procedure's `ENDP` boundary.
+    size_t selected_entry_end_instruction_index;
     /// Number of bytes written to the configured .data/.DATA? image buffer.
     size_t data_size;
     /// Number of bytes written to the configured .CONST image buffer.

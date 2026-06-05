@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 67: Arithmetic, Branch, and Watchdog Integration Harness.
+  Milestone 67A: Entry Procedure Runtime Boundary and END Entry Selection.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,30 +18,25 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 67: Integration tests cover existing arithmetic, branch, and instruction-limit behavior; runtime MASM support remains Phase 66.</p>
+        <p class="muted">Milestone 67A: source-run now starts at the procedure named by <code>END entryName</code> and stops normal fallthrough at that procedure boundary.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.code
+helperBefore PROC
+    mov ecx, 111      ; does not run automatically
+helperBefore ENDP
+
 main PROC
-    mov eax, 0FFFFFFFFh
-    cmp eax, eax
-    je equal_path
-    mov ebx, 99
-equal_path:
+    mov eax, 100      ; END main starts here
+    cmp eax, 100
+    je selectedPath
+    mov ebx, 999
+selectedPath:
     mov ebx, 1
-    cmp eax, 1
-    jl signed_path
-    mov ecx, 99
-signed_path:
-    mov ecx, 2
-    cmp eax, 1
-    ja unsigned_path
-    mov edx, 99
-    jmp done
-unsigned_path:
-    mov edx, 3
-done:
-    nop
-main ENDP
+main ENDP             ; normal fallthrough completes here
+
+helperAfter PROC
+    mov edx, 222      ; does not run by fallthrough
+helperAfter ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

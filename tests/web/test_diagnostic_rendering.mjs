@@ -1617,7 +1617,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 66 runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 67A runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2194,7 +2194,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2237,7 +2237,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2274,9 +2274,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2302,8 +2302,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2329,8 +2329,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2354,8 +2354,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2378,8 +2378,8 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2404,8 +2404,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2444,7 +2444,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2475,8 +2475,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2520,8 +2520,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2547,7 +2547,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2571,7 +2571,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2595,7 +2595,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2644,7 +2644,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2668,7 +2668,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2693,9 +2693,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2721,9 +2721,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2749,9 +2749,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2776,9 +2776,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2829,7 +2829,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2853,7 +2853,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3070,7 +3070,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 66);
+    assert.equal(json.phase, 67);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3083,7 +3083,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 66);
+  assert.equal(duplicateResult.json.phase, 67);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3582,7 +3582,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3603,7 +3603,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5018,9 +5018,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5079,9 +5079,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5138,9 +5138,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 66 - Unsigned Relational Conditional Jumps");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5159,6 +5159,100 @@ END main
   ]);
   assert.equal(json.registers.EBX.hex, "00000000h");
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] undefined-flag-use line 5, column 5, byte offset 48, span length 9: JL reads OF, but OF is architecturally undefined from SHL at line 4. Execution stopped before using the undefined flag.");
+});
+
+
+test("renders Phase 67A selected-entry fallthrough completion exactly", () => {
+  const name = "phase67aSelectedEntryFallthroughCompletion";
+  const source = `.code
+main PROC
+    mov eax, 1
+main ENDP
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.executedInstructionCount, 1);
+  assert.equal(json.registers.EAX.hex, "00000001h");
+  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 67A empty selected-entry completion exactly", () => {
+  const name = "phase67aEmptySelectedEntryCompletion";
+  const source = `.code
+main PROC
+main ENDP
+helper PROC
+    mov ecx, 2
+helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.executedInstructionCount, 0);
+  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 67A selected-entry fatal diagnostic without completion", () => {
+  const name = "phase67aSelectedEntryFatalDiagnostic";
+  const source = `.code
+helper PROC
+    mov ecx, 55
+helper ENDP
+main PROC
+    mov eax, 5
+    mov ebx, 0
+    div ebx
+main ENDP
+after PROC
+    mov edx, 99
+after ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 67);
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.executedInstructionCount, 2);
+  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.equal(json.registers.EDX.hex, "00000000h");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "runtime-error",
+    code: "divide-by-zero",
+    message: "DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.",
+    line: 8,
+    column: 5,
+    byteOffset: 90,
+    spanLength: 7
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] divide-by-zero line 8, column 5, byte offset 90, span length 7: DIV divisor operand EBX evaluated to zero. Division by zero is not allowed. Execution stopped before updating the quotient register EAX and remainder register EDX.");
 });
 
 test("renders NOT ambiguous memory-width diagnostic exactly", () => {
@@ -6690,7 +6784,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 66);
+  assert.equal(json.phase, 67);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

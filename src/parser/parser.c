@@ -76,15 +76,17 @@ static void vm_parser_format_u64_with_commas(uint64_t value, char *buffer, size_
     (void)snprintf(buffer, buffer_size, "%s", grouped);
 }
 
-/// Stores the first parsed procedure name so END can validate the entry point.
-typedef struct VmParserProcedureName {
+/// Stores the currently open procedure so ENDP can validate and close it.
+typedef struct VmParserOpenProcedure {
     /// Pointer into the source buffer at the procedure name.
     const char *lexeme;
     /// Procedure-name length in bytes.
     size_t length;
-    /// Whether a procedure name has been recorded.
+    /// Index into the caller-owned procedure-range table.
+    size_t range_index;
+    /// Whether an open procedure has been recorded.
     bool is_set;
-} VmParserProcedureName;
+} VmParserOpenProcedure;
 
 /// Identifies the top-level section currently being parsed.
 typedef enum VmParserSection {
@@ -162,8 +164,8 @@ typedef struct VmParserState {
     uint32_t const_offset;
     /// Current top-level parser section.
     VmParserSection section;
-    /// Recorded procedure name for END validation.
-    VmParserProcedureName procedure_name;
+    /// Currently open procedure for ENDP validation and boundary metadata.
+    VmParserOpenProcedure open_procedure;
     /// Whether the required .code directive has been consumed.
     bool saw_code_directive;
     /// Whether an optional data-section directive has been consumed.
@@ -520,6 +522,26 @@ static bool vm_parser_user_symbol_tokens_equal(const VmParserState *state, const
     }
 
     return vm_parser_token_lexemes_equal(left, right);
+}
+
+/// Compares a source token to a stored user-symbol name using active CASEMAP policy.
+///
+/// @param state Parser state containing the active user-symbol policy.
+/// @param token Source token to compare.
+/// @param name Null-terminated stored user-symbol name.
+/// @return true when the token and stored name match under the active policy.
+static bool vm_parser_user_symbol_name_matches(const VmParserState *state, const VmLexerToken *token, const char *name) {
+    VmLexerToken name_token;
+
+    if (token == NULL || name == NULL) {
+        return false;
+    }
+
+    memset(&name_token, 0, sizeof(name_token));
+    name_token.kind = VM_LEXER_TOKEN_IDENTIFIER;
+    name_token.lexeme = name;
+    name_token.lexeme_length = strlen(name);
+    return vm_parser_user_symbol_tokens_equal(state, token, &name_token);
 }
 
 /// Returns whether a token can begin a compile-time constant expression.
@@ -936,6 +958,89 @@ static void vm_parser_finalize_pending_code_labels_without_target(VmParserState 
         }
     }
     state->pending_code_label_count = 0U;
+}
+
+/// Copies a procedure name from a source token into a procedure-range entry.
+///
+/// @param procedure Procedure range to mutate.
+/// @param name_token Source token containing the procedure name.
+/// @return true when the name fit the fixed storage.
+static bool vm_parser_set_procedure_range_name(VmProcedureRange *procedure, const VmLexerToken *name_token) {
+    if (procedure == NULL || name_token == NULL || name_token->lexeme == NULL ||
+        name_token->lexeme_length == 0U || name_token->lexeme_length >= VM_SYMBOL_NAME_CAPACITY) {
+        return false;
+    }
+
+    memcpy(procedure->name, name_token->lexeme, name_token->lexeme_length);
+    procedure->name[name_token->lexeme_length] = '\0';
+    return true;
+}
+
+/// Adds a procedure range for one accepted `PROC` declaration.
+///
+/// @param state Parser state to mutate.
+/// @param name_token Source token containing the procedure name.
+/// @param out_range_index Receives the inserted procedure-range index.
+/// @return true when the range was recorded.
+static bool vm_parser_add_procedure_range(VmParserState *state, const VmLexerToken *name_token, size_t *out_range_index) {
+    VmProcedureRange *range = NULL;
+    size_t range_index = 0U;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || name_token == NULL || out_range_index == NULL) {
+        return false;
+    }
+
+    if (state->config->procedure_range_capacity == 0U) {
+        *out_range_index = (size_t)-1;
+        return true;
+    }
+
+    if (state->config->procedure_ranges == NULL || state->result->procedure_range_count >= state->config->procedure_range_capacity) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED, name_token, "Procedure range capacity exceeded.");
+        state->stop_status = VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED;
+        return false;
+    }
+
+    range_index = state->result->procedure_range_count;
+    range = &state->config->procedure_ranges[range_index];
+    memset(range, 0, sizeof(*range));
+    if (!vm_parser_set_procedure_range_name(range, name_token)) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED, name_token, "Procedure name is too long for the current fixed procedure table.");
+        return false;
+    }
+
+    range->case_policy = vm_parser_symbol_case_policy(state->user_symbol_case_policy);
+    range->start_instruction_index = state->result->instruction_count;
+    range->end_instruction_index = state->result->instruction_count;
+    range->has_executable_instruction = false;
+    range->source_location = name_token->location;
+    range->source_span_length = name_token->lexeme_length;
+
+    state->result->procedure_range_count += 1U;
+    *out_range_index = range_index;
+    return true;
+}
+
+/// Finds an accepted procedure range by applying the active user-symbol lookup policy.
+///
+/// @param state Parser state to inspect.
+/// @param name_token Source token containing the procedure name reference.
+/// @return Matching procedure range, or NULL when no accepted procedure matches.
+static VmProcedureRange *vm_parser_find_procedure_range(VmParserState *state, const VmLexerToken *name_token) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->procedure_ranges == NULL || name_token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->result->procedure_range_count; index += 1U) {
+        VmProcedureRange *range = &state->config->procedure_ranges[index];
+        if (vm_parser_user_symbol_name_matches(state, name_token, range->name)) {
+            return range;
+        }
+    }
+
+    return NULL;
 }
 
 /// Adds an accepted code-label declaration after duplicate/conflict checks.
@@ -8002,6 +8107,11 @@ static bool vm_parser_emit_instruction(
     }
 
     instruction_index = (uint32_t)state->result->instruction_count;
+    if (state->open_procedure.is_set && state->config->procedure_ranges != NULL &&
+        state->open_procedure.range_index < state->result->procedure_range_count) {
+        VmProcedureRange *range = &state->config->procedure_ranges[state->open_procedure.range_index];
+        range->has_executable_instruction = true;
+    }
     vm_parser_resolve_pending_code_labels(state, (size_t)instruction_index);
     instruction = &state->config->instructions[state->result->instruction_count];
     *instruction = vm_ir_instruction(
@@ -8555,13 +8665,20 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
         return false;
     }
 
-    if (!vm_parser_add_code_label(state, name_token, VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY)) {
-        return false;
-    }
+    {
+        size_t procedure_range_index = 0U;
+        if (!vm_parser_add_code_label(state, name_token, VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY)) {
+            return false;
+        }
+        if (!vm_parser_add_procedure_range(state, name_token, &procedure_range_index)) {
+            return false;
+        }
 
-    state->procedure_name.lexeme = name_token->lexeme;
-    state->procedure_name.length = name_token->lexeme_length;
-    state->procedure_name.is_set = true;
+        state->open_procedure.lexeme = name_token->lexeme;
+        state->open_procedure.length = name_token->lexeme_length;
+        state->open_procedure.range_index = procedure_range_index;
+        state->open_procedure.is_set = true;
+    }
 
     vm_parser_advance(state);
     vm_parser_advance(state);
@@ -8583,22 +8700,29 @@ static bool vm_parser_parse_endp_line(VmParserState *state) {
         return false;
     }
 
-    if (state->procedure_name.is_set) {
+    if (state->open_procedure.is_set) {
         VmLexerToken procedure_token;
         memset(&procedure_token, 0, sizeof(procedure_token));
-        procedure_token.lexeme = state->procedure_name.lexeme;
-        procedure_token.lexeme_length = state->procedure_name.length;
+        procedure_token.lexeme = state->open_procedure.lexeme;
+        procedure_token.lexeme_length = state->open_procedure.length;
         if (!vm_parser_user_symbol_tokens_equal(state, &procedure_token, name_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, name_token, "ENDP procedure name does not match the parsed procedure name under the active CASEMAP policy.");
             return false;
+        }
+        if (state->config != NULL && state->config->procedure_ranges != NULL &&
+            state->open_procedure.range_index < state->result->procedure_range_count) {
+            VmProcedureRange *range = &state->config->procedure_ranges[state->open_procedure.range_index];
+            range->end_instruction_index = state->result->instruction_count;
+            range->has_executable_instruction = range->end_instruction_index > range->start_instruction_index;
         }
     }
 
     vm_parser_advance(state);
     vm_parser_advance(state);
-    state->procedure_name.lexeme = NULL;
-    state->procedure_name.length = 0U;
-    state->procedure_name.is_set = false;
+    state->open_procedure.lexeme = NULL;
+    state->open_procedure.length = 0U;
+    state->open_procedure.range_index = 0U;
+    state->open_procedure.is_set = false;
     return vm_parser_expect_line_end(state);
 }
 
@@ -8616,11 +8740,25 @@ static bool vm_parser_parse_end_line(VmParserState *state) {
     }
 
     vm_parser_finalize_pending_code_labels_without_target(state);
+    if (state->open_procedure.is_set && state->config != NULL && state->config->procedure_ranges != NULL &&
+        state->open_procedure.range_index < state->result->procedure_range_count) {
+        VmProcedureRange *range = &state->config->procedure_ranges[state->open_procedure.range_index];
+        range->end_instruction_index = state->result->instruction_count;
+        range->has_executable_instruction = range->end_instruction_index > range->start_instruction_index;
+    }
     {
         VmCodeLabel *entry_label = vm_parser_find_code_label(state, entry_token);
-        if (entry_label == NULL || entry_label->declaration_kind != VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY) {
+        VmProcedureRange *entry_range = vm_parser_find_procedure_range(state, entry_token);
+        if (entry_label == NULL || entry_label->declaration_kind != VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY ||
+            (state->config->procedure_range_capacity > 0U && entry_range == NULL)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, entry_token, "END entry point does not match an accepted procedure-entry label under the active CASEMAP policy.");
             return false;
+        }
+        if (entry_range != NULL) {
+            state->result->has_selected_entry_procedure = true;
+            state->result->selected_entry_procedure_index = (size_t)(entry_range - state->config->procedure_ranges);
+            state->result->selected_entry_start_instruction_index = entry_range->start_instruction_index;
+            state->result->selected_entry_end_instruction_index = entry_range->end_instruction_index;
         }
     }
 
@@ -9495,6 +9633,7 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->source_text_storage == NULL && config->source_text_capacity > 0U) ||
         (config->symbols == NULL && config->symbol_capacity > 0U) ||
         (config->code_labels == NULL && config->code_label_capacity > 0U) ||
+        (config->procedure_ranges == NULL && config->procedure_range_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
         (config->data_initialized_mask == NULL && config->data_initialized_mask_capacity > 0U) ||
         (config->const_image == NULL && config->const_image_capacity > 0U) ||
@@ -9534,6 +9673,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
     if (config->code_labels != NULL && config->code_label_capacity > 0U) {
         memset(config->code_labels, 0, sizeof(config->code_labels[0]) * config->code_label_capacity);
+    }
+    if (config->procedure_ranges != NULL && config->procedure_range_capacity > 0U) {
+        memset(config->procedure_ranges, 0, sizeof(config->procedure_ranges[0]) * config->procedure_range_capacity);
     }
     if (config->data_image != NULL && config->data_image_capacity > 0U) {
         memset(config->data_image, 0, config->data_image_capacity);
@@ -9742,6 +9884,8 @@ const char *vm_parser_status_name(VmParserStatus status) {
             return "symbol-capacity-exceeded";
         case VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED:
             return "code-label-capacity-exceeded";
+        case VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED:
+            return "procedure-capacity-exceeded";
         default:
             return NULL;
     }
@@ -9931,6 +10075,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "label-symbol-conflict";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:
             return "code-label-capacity-exceeded";
+        case VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED:
+            return "procedure-capacity-exceeded";
         default:
             return NULL;
     }

@@ -1,11 +1,11 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 64 equality conditional jumps.
+ * @brief Unit and integration tests for the parser through Phase 67A procedure-range metadata.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
- * unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
+ * Phase 67A procedure-range metadata, unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -39,6 +39,9 @@
 /// Number of code labels available to parser tests.
 #define TEST_CODE_LABEL_CAPACITY 16U
 
+/// Number of procedure ranges available to parser tests.
+#define TEST_PROCEDURE_RANGE_CAPACITY 16U
+
 /// Number of .data/.DATA? image bytes available to parser tests.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
@@ -61,6 +64,8 @@ typedef struct ParserTestBuffers {
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
     /// Code labels emitted from .code labels and PROC entries.
     VmCodeLabel code_labels[TEST_CODE_LABEL_CAPACITY];
+    /// Procedure ranges emitted from PROC/ENDP boundaries.
+    VmProcedureRange procedure_ranges[TEST_PROCEDURE_RANGE_CAPACITY];
     /// Data image emitted from optional .data/.DATA? declarations.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Constant image emitted from optional .CONST declarations.
@@ -243,6 +248,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
     config.code_labels = buffers->code_labels;
     config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
+    config.procedure_ranges = buffers->procedure_ranges;
+    config.procedure_range_capacity = TEST_PROCEDURE_RANGE_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
@@ -525,6 +532,108 @@ static int test_phase58_non_executable_procedure_metadata_has_no_target(void) {
     return failures;
 }
 
+
+
+/// Verifies Phase 67A procedure ranges and selected END-entry metadata.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase67a_procedure_range_metadata(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "helper PROC\n"
+        "    mov ecx, 1\n"
+        "helper ENDP\n"
+        "main PROC\n"
+        "    mov eax, 2\n"
+        "main ENDP\n"
+        "empty PROC\n"
+        "empty ENDP\n"
+        "END main\n";
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 67A procedure-range source should parse");
+    failures += expect_size(result.instruction_count, 2U, "Phase 67A procedure-range source should emit two instructions");
+    failures += expect_size(result.procedure_range_count, 3U, "Phase 67A should record three procedure ranges");
+    failures += expect_bool(result.has_selected_entry_procedure, "Phase 67A should record selected END entry procedure");
+    failures += expect_size(result.selected_entry_procedure_index, 1U, "END main should select the main procedure range");
+    failures += expect_size(result.selected_entry_start_instruction_index, 1U, "main should start at instruction index 1");
+    failures += expect_size(result.selected_entry_end_instruction_index, 2U, "main should end before instruction index 2");
+
+    failures += expect_string(buffers.procedure_ranges[0].name, "helper", "helper procedure spelling should be preserved");
+    failures += expect_size(buffers.procedure_ranges[0].start_instruction_index, 0U, "helper should start at instruction 0");
+    failures += expect_size(buffers.procedure_ranges[0].end_instruction_index, 1U, "helper should end at instruction 1");
+    failures += expect_bool(buffers.procedure_ranges[0].has_executable_instruction, "helper should be marked executable");
+
+    failures += expect_string(buffers.procedure_ranges[1].name, "main", "main procedure spelling should be preserved");
+    failures += expect_size(buffers.procedure_ranges[1].start_instruction_index, 1U, "main should start at instruction 1");
+    failures += expect_size(buffers.procedure_ranges[1].end_instruction_index, 2U, "main should end at instruction 2");
+    failures += expect_bool(buffers.procedure_ranges[1].has_executable_instruction, "main should be marked executable");
+
+    failures += expect_string(buffers.procedure_ranges[2].name, "empty", "empty procedure spelling should be preserved");
+    failures += expect_size(buffers.procedure_ranges[2].start_instruction_index, 2U, "empty should start at current instruction count");
+    failures += expect_size(buffers.procedure_ranges[2].end_instruction_index, 2U, "empty should end at same instruction index");
+    failures += expect_bool(!buffers.procedure_ranges[2].has_executable_instruction, "empty should not be marked executable");
+
+    return failures;
+}
+
+/// Verifies Phase 67A procedure-range capacity diagnostics remain structured.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase67a_procedure_range_capacity_diagnostic(void) {
+    int failures = 0;
+    const char *source =
+        ".code\n"
+        "first PROC\n"
+        "first ENDP\n"
+        "second PROC\n"
+        "second ENDP\n"
+        "END first\n";
+    ParserTestBuffers buffers;
+    VmParserConfig config;
+    VmParserResult result;
+
+    memset(&buffers, 0, sizeof(buffers));
+    memset(&config, 0, sizeof(config));
+    memset(&result, 0, sizeof(result));
+    config.source = source;
+    config.source_file = "main.asm";
+    config.tokens = buffers.tokens;
+    config.token_capacity = TEST_TOKEN_CAPACITY;
+    config.lexer_diagnostics = buffers.lexer_diagnostics;
+    config.lexer_diagnostic_capacity = TEST_LEXER_DIAGNOSTIC_CAPACITY;
+    config.instructions = buffers.instructions;
+    config.instruction_capacity = TEST_INSTRUCTION_CAPACITY;
+    config.source_text_storage = buffers.source_text;
+    config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
+    config.symbols = buffers.symbols;
+    config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.code_labels = buffers.code_labels;
+    config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
+    config.procedure_ranges = buffers.procedure_ranges;
+    config.procedure_range_capacity = 1U;
+    config.data_image = buffers.data_image;
+    config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
+    config.const_image = buffers.const_image;
+    config.const_image_capacity = TEST_CONST_IMAGE_CAPACITY;
+    config.const_initialized_mask = buffers.const_initialized_mask;
+    config.const_initialized_mask_capacity = TEST_CONST_IMAGE_CAPACITY;
+    config.diagnostics = buffers.diagnostics;
+    config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
+
+    failures += expect_parser_status(vm_parser_parse_program(&config, &result), VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED, "small procedure-range table should produce a capacity status");
+    failures += expect_size(result.procedure_range_count, 1U, "rejected procedure range should not be inserted after capacity failure");
+    failures += expect_size(result.diagnostic_count, 1U, "procedure range capacity should emit one diagnostic");
+    failures += expect_u32((uint32_t)buffers.diagnostics[0].code, (uint32_t)VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED, "procedure range capacity should use the structured diagnostic code");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Procedure range capacity exceeded", "procedure range capacity diagnostic should be descriptive");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "procedure capacity diagnostic should point at the second PROC name line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "procedure capacity diagnostic should point at the second PROC name column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "procedure capacity diagnostic should span the second PROC name");
+
+    return failures;
+}
 
 /// Verifies Phase 58 CASEMAP behavior for code labels.
 ///
@@ -6279,6 +6388,8 @@ int main(void) {
     failures += test_phase58_multiple_labels_share_target();
     failures += test_phase58_empty_and_adjacent_procedure_labels();
     failures += test_phase58_non_executable_procedure_metadata_has_no_target();
+    failures += test_phase67a_procedure_range_metadata();
+    failures += test_phase67a_procedure_range_capacity_diagnostic();
     failures += test_phase58_label_casemap_policy();
     failures += test_phase58_label_conflict_diagnostics();
     failures += test_phase60_jmp_parse_to_ir();

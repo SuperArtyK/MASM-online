@@ -473,8 +473,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness")
-    assert_text_contains("README.md", "Phase 66 - Unsigned Relational Conditional Jumps")
+    assert_text_contains("README.md", "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection")
+    assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -552,9 +552,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 66")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 66 - Unsigned Relational Conditional Jumps")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 67")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
+    assert_text_contains("web/src/protocol.js", "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1405,12 +1405,12 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase67_current_status_and_harness_documented() -> None:
-    """Verify Phase 67 repository status and preserved Phase 66 runtime metadata."""
+    """Verify Phase 67A current status and entry-boundary coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness"""
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection"""
     runtime_status = """Runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps"""
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1421,41 +1421,36 @@ Phase 66 - Unsigned Relational Conditional Jumps"""
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness""",
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps""",
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection""",
     )
 
     assert_all_text_contains(
         "README.md",
         [
-            "Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add MASM syntax or runtime behavior.",
-            "docs/FULL_IMPLEMENTATION_SPEC.md",
-            "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+            "The current runtime honors `END entryName` as the source-run entry procedure.",
+            "selected-entry source-run startup from `END entryName`",
+            "successful completion at the selected entry procedure's `ENDP` boundary",
+            "Phase 68 - Call Target Classification and Procedure Entry Metadata",
             "docs/SUPPORTED_SYNTAX.md",
-            "docs/TESTING_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
-            "docs/BUILDING_AND_DEVELOPMENT.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
             "direct `jmp`",
             "equality conditional jumps",
             "signed relational conditional jumps",
             "unsigned relational conditional jumps",
-            "python3 -m http.server 8000 --directory web",
-            "python3 scripts/run_tests.py --all",
-            "./scripts/build_wasm.sh",
         ],
     )
     assert_all_text_not_contains(
         "README.md",
         [
-            "Phase 66 adds executable direct-label unsigned relational conditional jumps",
-            "Phase 65 - Signed Relational Conditional Jumps remains implemented",
-            "Phase 64D - Memory Change Source Attribution Display remains implemented",
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening clarifies",
+            "Phase 66 remains the latest runtime/source-run MASM behavior phase",
+            "current source-run execution can still follow linear lowered-instruction order",
+            "corrected `END entryName` source-run entry behavior",
             "Exact requirements implemented",
             "Assumptions used",
             "TODO-style note disposition",
@@ -1469,47 +1464,31 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
         "docs/SUPPORTED_SYNTAX.md",
         [
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
-            "Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add or remove accepted MASM syntax.",
+            "`END entryName` selects the source-run entry procedure.",
+            "If the selected entry procedure has no executable instruction, source-run completes successfully without executing another procedure.",
+            "Helper procedures before the selected entry procedure do not run automatically.",
+            "Helper procedures after the selected entry procedure do not run by ordinary fallthrough.",
+            "Existing explicit supported control flow, such as direct `jmp label`, may still transfer to ordinary code labels or procedure-entry labels.",
+            "This behavior is not CALL/RET support.",
             "direct `jmp label`",
             "equality conditional jumps: `je`, `jz`, `jne`, `jnz`",
             "signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, `jnl`",
             "unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, `jna`",
             "`ja label` / `jnbe label`",
-            "`jae label` / `jnb label`",
-            "`jb label` / `jnae label`",
-            "`jbe label` / `jna label`",
             "No unsigned relational conditional jump consumes `SF` or `OF`",
-            "### Memory-change source attribution display",
-            "### Final register EFLAGS child display",
-            "### Simulator Messages grouping",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
-            "`cmp reg, mem`",
-            "`cmp mem, reg`",
-            "`cmp mem, imm`",
-            "planned-read validation",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
-            "Phase 61D documents and tests source-run/parser capacity behavior",
-            "`diagnostic-capacity-exceeded`",
-            "`data-capacity-exceeded`",
-            "not MASM syntax errors unless malformed source also produced a syntax diagnostic",
-            "not evidence that a runtime loop exceeded `instructionLimit`",
-            "no Program Console output",
-            "no `execution-complete` message",
-            "Memory-region capacity limits are distinct from parser/source-run capacity",
-            "Program Console output limits and Simulator Messages output limits are separate UI/result-surface concerns",
-            "Worker/browser hard failures are not a supported diagnostic surface",
-            "does not claim arbitrary large MASM program support",
         ],
     )
     assert_all_text_not_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Accepted MASM syntax remains the Phase 64 equality-jump subset",
-            "Signed relational jumps, unsigned relational jumps",
-            "Deferred systems include signed relational conditional jumps",
-            "Unsigned relational jumps, `loop`",
+            "Known pre-Phase-67A defect",
+            "Do not rely on helper procedure placement before or after `main` until Phase 67A",
+            "corrected `END entryName` source-run entry behavior",
+            "source-run execution may begin at the first lowered instruction",
         ],
     )
 
@@ -1517,9 +1496,8 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness",
+            "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Current runtime/source-run MASM behavior phase:",
-            "Phase 66 - Unsigned Relational Conditional Jumps",
             "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1529,7 +1507,6 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
             "python3 scripts/run_tests.py --diagnostics",
             "missing `emcc`",
             "Browser/Wasm smoke guidance",
-            "Visual Studio External Tools",
         ],
     )
     assert_all_text_not_contains(
@@ -1541,23 +1518,18 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
             "Files changed",
             "Tests added",
             "Commands used to test",
-            "Phase 64D - Memory Change Source Attribution Display remains implemented",
-            "Phase 61D - Source-Run Capacity Documentation and Diagnostic Hardening remains",
         ],
     )
 
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 67:",
-            "Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness",
-            "Phase 66 implements executable unsigned relational conditional jumps",
-            "README current-status text was replaced rather than appended",
-            "README current-scope text was shortened to feature categories and documentation links",
-            "No runtime/source-run MASM behavior changed in this phase.",
-            "Phase 67 is a validation-only test harness and status-documentation milestone.",
-            "combined `cmp` followed by equality, signed relational, and unsigned relational Jcc",
-            "Runtime/source-run metadata remains Phase 66.",
+            "Current status at Phase 67A:",
+            "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
+            "Phase 67A corrects source-run entry procedure startup",
+            "Phase 67A does not implement CALL, RET, stack mutation",
+            "## Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
+            "Phase 67 adds validation harness coverage",
             "Concise milestone ledger",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
@@ -1568,77 +1540,50 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 67: Integration tests cover existing arithmetic, branch, and instruction-limit behavior; runtime MASM support remains Phase 66.",
-            "mov eax, 0FFFFFFFFh",
-            "cmp eax, eax",
-            "je equal_path",
-            "jl signed_path",
-            "ja unsigned_path",
-            "done:",
+            "Milestone 67A: source-run now starts at the procedure named by",
+            "helperBefore PROC",
+            "does not run automatically",
+            "main PROC",
+            "END main starts here",
+            "helperAfter PROC",
+            "does not run by fallthrough",
             "final-registers",
             "Program Console",
-        ],
-    )
-    assert_all_text_not_contains(
-        "web/index.html",
-        [
-            "Accepted syntax remains the Phase 64 equality-jump subset",
-            "Milestone 64D: Memory changes now show the source line",
-            "Milestone 63: CMP Memory Operand Forms",
-            "Milestone 64A: Planned-Read Coverage Correction",
-            "Milestone 65: Signed relational conditional jumps now execute for direct code-label targets",
-            "Milestone 66A",
         ],
     )
 
     assert_all_text_contains(
         "tests/core/test_wasm_source_run.c",
         [
-            "test_phase66_unsigned_relational_jumps_source_run_programs",
-            "test_phase66_unsigned_relational_jump_error_paths",
+            "test_phase67a_entry_procedure_runtime_boundary_source_run",
+            "test_phase67a_entry_boundary_error_and_transfer_regressions",
+            "helper before main must not execute by source order",
+            "helper after main must not execute by fallthrough",
+            "explicit JMP to procedure-entry label",
             "test_phase67_arithmetic_branch_watchdog_source_run_harness",
-            "test_phase65_signed_relational_jumps_source_run_programs",
-            "test_phase65_signed_relational_jump_source_run_diagnostics",
-            "test_phase65_signed_relational_jump_instruction_limit",
-            "test_phase65_signed_relational_undefined_flag_use_policy",
-            "branch-runtime-deferred",
-            "instruction-limit-exceeded",
+            "test_phase66_unsigned_relational_jumps_source_run_programs",
+        ],
+    )
+    assert_all_text_contains(
+        "tests/core/test_parser.c",
+        [
+            "test_phase67a_procedure_range_metadata",
+            "Phase 67A should record selected END entry procedure",
         ],
     )
     assert_all_text_contains(
         "tests/core/test_vm_exec.c",
         [
-            "test_phase66_unsigned_relational_conditional_jump_runtime",
-            "test_phase66_unsigned_relational_conditional_jump_aliases",
-            "test_phase66_unsigned_relational_flag_consumption_sets",
             "test_phase67_arithmetic_fault_no_partial_mutation_harness",
             "test_phase67_conditional_branch_invalid_metadata_harness",
-            "test_phase65_signed_relational_conditional_jump_runtime",
-            "test_phase65_signed_relational_conditional_jump_aliases",
-            "test_phase65_signed_relational_flag_consumption_sets",
         ],
     )
     assert_all_text_contains(
         "tests/web/test_diagnostic_rendering.mjs",
         [
-            "renders Phase 65 signed conditional jump memory-target diagnostic exactly",
-            "renders Phase 65 signed conditional jump Irvine32-target diagnostic exactly",
-            "renders Phase 65 signed conditional jump undefined flag-use warning exactly",
-            "renders Phase 65 signed conditional jump undefined flag-use runtime error exactly",
-            "undefined-flag-use",
             "renders Phase 67 branch-target classifier diagnostic exactly",
             "renders Phase 67 division runtime diagnostic exactly",
             "renders Phase 67 branch-loop instruction-limit diagnostic exactly",
-        ],
-    )
-    assert_all_text_contains(
-        "tests/web/test_formatters.mjs",
-        [
-            "formats Phase 64D memory-change source line and text attribution",
-            "formats Phase 64C modeled flag child rows under EFLAGS",
-            "formats Phase 64B startup, runtime warning, and completion groups",
-            "startup-state-notice",
-            "execution-complete",
         ],
     )
 
@@ -1646,10 +1591,9 @@ Phase 66 - Unsigned Relational Conditional Jumps""",
         assert_all_text_not_contains(
             path,
             [
-                "capacity diagnostics prove arbitrary large MASM program support",
-                "token-capacity-exceeded is an instruction-limit failure",
-                "source-text-capacity-exceeded is an instruction-limit failure",
-                "code-label-capacity-exceeded is an instruction-limit failure",
+                "unsupported by the current milestone",
+                "not implemented in this milestone",
+                "not supported in this milestone",
             ],
         )
 

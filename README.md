@@ -5,12 +5,19 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 Runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
-Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add MASM syntax or runtime behavior.
+The current runtime honors `END entryName` as the source-run entry procedure. Execution starts inside the selected procedure, helper procedures before the selected entry do not run automatically, and ordinary fallthrough at the selected entry procedure boundary completes successfully without falling into later procedures.
+
+The current runtime also supports the implemented MASM32 Educational Mode subset through unsigned relational conditional jumps, plus earlier arithmetic, data, memory, diagnostics, layout, and Irvine32 virtual `exit` behavior.
+
+Next recommended implementation work:
+Phase 68 - Call Target Classification and Procedure Entry Metadata
+
+Phase 68 should add richer call-target/procedure-entry metadata for later CALL/RET work. It should not be treated as already implementing CALL, RET, stack mutation, procedure frames, or Irvine32 callable routine dispatch.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -29,6 +36,8 @@ At a high level, the current subset includes:
 - equality conditional jumps;
 - signed relational conditional jumps;
 - unsigned relational conditional jumps;
+- selected-entry source-run startup from `END entryName`;
+- successful completion at the selected entry procedure's `ENDP` boundary;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;

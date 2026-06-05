@@ -1,14 +1,12 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 67 - Arithmetic, Branch, and Watchdog Integration Harness
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 Runtime/source-run MASM behavior phase:
-Phase 66 - Unsigned Relational Conditional Jumps
+Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
-
-Phase 66 remains the latest runtime/source-run MASM behavior phase. Phase 67 is a validation-only harness milestone and does not add or remove accepted MASM syntax.
 
 Current direct branch support includes:
 
@@ -18,6 +16,23 @@ Current direct branch support includes:
 - unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, `jna`.
 
 All current branch forms target executable code labels or procedure-entry labels only.
+
+### Procedure and entry-point status
+
+Current procedure behavior is limited and phase-sensitive.
+
+Implemented entry-boundary behavior:
+
+- `END entryName` selects the source-run entry procedure.
+- Execution starts at the first executable instruction inside the selected procedure.
+- If the selected entry procedure has no executable instruction, source-run completes successfully without executing another procedure.
+- Helper procedures before the selected entry procedure do not run automatically.
+- Helper procedures after the selected entry procedure do not run by ordinary fallthrough.
+- Ordinary fallthrough at the selected entry procedure boundary completes successfully.
+- Existing explicit supported control flow, such as direct `jmp label`, may still transfer to ordinary code labels or procedure-entry labels.
+- Existing Irvine32 virtual `exit` behavior still terminates successfully from inside the selected entry procedure.
+
+This behavior is not CALL/RET support. A non-entry procedure executes only when reached by an explicitly supported control-transfer instruction.
 
 Still future or unsupported unless a later accepted milestone updates this document:
 
