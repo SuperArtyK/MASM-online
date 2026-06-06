@@ -229,6 +229,87 @@ static int test_vm_initialization_accepts_layout_policy(void) {
 }
 
 
+/// Verifies Phase 68A initializes ESP from the default fixed stack region limit.
+///
+/// @return Number of failures.
+static int test_phase68a_fixed_layout_initializes_esp_from_stack_limit(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmMemoryRegion *stack_region = NULL;
+
+    if (vm_init(&vm, NULL) != VM_EXEC_STATUS_OK) {
+        return record_failure("default VM init should succeed for Phase 68A ESP startup");
+    }
+
+    stack_region = vm_memory_get_region(&vm.memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL) {
+        failures += record_failure("default stack region should exist for Phase 68A ESP startup");
+    } else {
+        failures += expect_u32(stack_region->base + stack_region->size, VM_LAYOUT_FIXED_STACK_TOP, "default stack limit should remain the fixed educational top");
+        failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? record_failure("ESP read should succeed after default init") : 0;
+        failures += expect_u32(esp, stack_region->base + stack_region->size, "ESP should equal the active fixed stack exclusive limit");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 68A program loading reapplies ESP after resetting CPU state.
+///
+/// @return Number of failures.
+static int test_phase68a_load_program_reinitializes_esp(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    VmIrInstruction program[1];
+
+    memset(&program, 0, sizeof(program));
+    program[0].opcode = VM_IR_OPCODE_NOP;
+
+    if (vm_init(&vm, NULL) != VM_EXEC_STATUS_OK) {
+        return record_failure("default VM init should succeed before load-program ESP test");
+    }
+
+    vm.cpu.esp = 123U;
+    failures += expect_u32((uint32_t)vm_load_program(&vm, program, 1U), (uint32_t)VM_EXEC_STATUS_OK, "load program should succeed");
+    failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? record_failure("ESP read should succeed after load program") : 0;
+    failures += expect_u32(esp, VM_LAYOUT_FIXED_STACK_TOP, "load program should restore ESP to the active stack exclusive limit");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 68A derives ESP from explicit layout-policy stack metadata.
+///
+/// @return Number of failures.
+static int test_phase68a_policy_layout_initializes_esp_from_selected_stack_limit(void) {
+    int failures = 0;
+    Vm vm;
+    VmLayoutPolicy policy = vm_layout_default_policy();
+    const uint32_t stack_base = 0x01020000U;
+    const uint32_t stack_size = 0x00003000U;
+    uint32_t esp = 0U;
+
+    policy.regions[VM_LAYOUT_REGION_STACK].base = stack_base;
+    policy.regions[VM_LAYOUT_REGION_STACK].limit = stack_base + stack_size;
+    policy.regions[VM_LAYOUT_REGION_STACK].minimum_size = stack_size;
+    for (size_t tier_index = 0U; tier_index < (size_t)VM_LAYOUT_SAFETY_TIER_COUNT; tier_index += 1U) {
+        policy.regions[VM_LAYOUT_REGION_STACK].maximum_size_by_tier[tier_index] = stack_size;
+    }
+    policy.stack_size_request = stack_size;
+
+    if (vm_init_with_layout_policy(&vm, &policy) != VM_EXEC_STATUS_OK) {
+        return record_failure("explicit stack policy should initialize VM");
+    }
+
+    failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? record_failure("ESP read should succeed after policy init") : 0;
+    failures += expect_u32(esp, stack_base + stack_size, "ESP should come from the selected stack policy limit");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies automatic deterministic sizing uses aligned minimum regions for tiny programs.
 ///
 /// @return Number of failures.
@@ -765,6 +846,9 @@ int main(void) {
     failures += test_invalid_layout_policies_are_rejected();
     failures += test_memory_initialization_uses_layout_policy();
     failures += test_vm_initialization_accepts_layout_policy();
+    failures += test_phase68a_fixed_layout_initializes_esp_from_stack_limit();
+    failures += test_phase68a_load_program_reinitializes_esp();
+    failures += test_phase68a_policy_layout_initializes_esp_from_selected_stack_limit();
     failures += test_automatic_layout_uses_minimum_aligned_sizes();
     failures += test_automatic_layout_grows_deterministically_from_metadata();
     failures += test_automatic_layout_rejects_region_resource_limit();

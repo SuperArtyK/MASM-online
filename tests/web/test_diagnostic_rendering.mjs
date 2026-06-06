@@ -52,16 +52,16 @@ function resolveProducerPath() {
 const PRODUCER_PATH = resolveProducerPath();
 
 /** Exact zero-startup notice text. */
-const STARTUP_STATE_NOTICE_TEXT = "The simulator starts registers and modeled flags at 0. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const STARTUP_STATE_NOTICE_TEXT = "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
 /** Exact Phase 57F seeded startup notice text. */
-const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator started general-purpose registers and modeled flags from the configured deterministic seed. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, and modeled flags from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
 /** Exact Phase 57G seeded uninitialized-storage startup notice text. */
-const SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts registers and modeled flags at 0. Visible bytes for uninitialized storage were initialized from the configured deterministic seed, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, initializes ESP to the documented empty-stack address from the active stack region, and initializes visible bytes for uninitialized storage from the configured deterministic seed while preserving uninitialized-origin metadata for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
 
 /** Exact notice text when both seeded startup axes are enabled. */
-const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator started general-purpose registers, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
 
 /** Exact rendered zero-startup notice line. */
 const STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${STARTUP_STATE_NOTICE_TEXT}`;
@@ -1617,7 +1617,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 67A runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 68A runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2194,7 +2194,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2237,7 +2237,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2274,9 +2274,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2302,7 +2302,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2329,7 +2329,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2354,7 +2354,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2378,7 +2378,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2404,7 +2404,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2444,7 +2444,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2475,8 +2475,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phase, 68);
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2520,8 +2520,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phase, 68);
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2547,7 +2547,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2571,7 +2571,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2595,7 +2595,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2644,7 +2644,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2668,7 +2668,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2693,9 +2693,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2721,9 +2721,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2749,9 +2749,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2776,9 +2776,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2829,7 +2829,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2853,7 +2853,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3070,7 +3070,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 67);
+    assert.equal(json.phase, 68);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3083,7 +3083,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 67);
+  assert.equal(duplicateResult.json.phase, 68);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3571,10 +3571,13 @@ test("renders runtime invalid address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 10,
+    byteOffset: 40,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 10, byte offset 40, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () => {
@@ -3582,7 +3585,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3603,7 +3606,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -3714,10 +3717,13 @@ test("renders DEC invalid-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 19,
+    byteOffset: 49,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 19, byte offset 49, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders AND ambiguous memory width diagnostic exactly", () => {
@@ -3818,10 +3824,13 @@ test("renders AND invalid source-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 24,
+    byteOffset: 54,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 24, byte offset 54, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders XOR invalid destination-address diagnostic exactly", () => {
@@ -3834,10 +3843,13 @@ test("renders XOR invalid destination-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 19,
+    byteOffset: 49,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 19, byte offset 49, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 
@@ -4313,10 +4325,13 @@ test("renders ROR invalid destination-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 19,
+    byteOffset: 49,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 19, byte offset 49, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 
@@ -4384,10 +4399,13 @@ test("renders MUL invalid source-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 19,
+    byteOffset: 49,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 19, byte offset 49, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders MUL QWORD source diagnostic exactly", () => {
@@ -4490,10 +4508,13 @@ test("renders IMUL invalid source-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 20,
+    byteOffset: 50,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 20, byte offset 50, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders IMUL QWORD source diagnostic exactly", () => {
@@ -5018,9 +5039,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5079,9 +5100,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5138,9 +5159,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5175,9 +5196,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000000h");
@@ -5203,9 +5224,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.executedInstructionCount, 0);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
@@ -5236,9 +5257,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -5353,10 +5374,13 @@ test("renders NOT invalid destination-address diagnostic exactly", () => {
     kind: "runtime-error",
     code: "invalid-address",
     message: "Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.",
-    line: 4
+    line: 4,
+    column: 19,
+    byteOffset: 49,
+    spanLength: 5
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 19, byte offset 49, span length 5: Invalid memory read at 00000000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("renders runtime CONST permission diagnostic exactly without memory change rows", () => {
@@ -6216,6 +6240,79 @@ test("Phase 57T renders realistic playground diagnostics exactly", () => {
 [assembly-error] unsupported-instruction line 36, column 5, byte offset 769, span length 4: CALL is not supported yet.`);
 });
 
+test("Phase 68 renders duplicate procedure diagnostic exactly", () => {
+  const name = "phase68DuplicateProcedure";
+  const source = `.code
+Helper PROC
+Helper ENDP
+helper PROC
+helper ENDP
+END Helper
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "duplicate-label",
+      message: "procedure-entry label `helper` conflicts with `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.",
+      line: 4,
+      column: 1,
+      byteOffset: 30,
+      spanLength: 6
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] duplicate-label line 4, column 1, byte offset 30, span length 6: procedure-entry label `helper` conflicts with `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.");
+});
+
+test("Phase 68 renders reserved Irvine32 procedure-name diagnostic exactly", () => {
+  const name = "phase68ReservedIrvineProcedureName";
+  const source = `.code
+WriteString PROC
+WriteString ENDP
+END WriteString
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "reserved-word-symbol",
+      message: "'WriteString' is a reserved MASM Irvine32 registry name and cannot be used as a procedure name.",
+      line: 2,
+      column: 1,
+      byteOffset: 6,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 2, column 1, byte offset 6, span length 11: 'WriteString' is a reserved MASM Irvine32 registry name and cannot be used as a procedure name.");
+});
+
+test("Phase 68 renders malformed procedure-name diagnostic exactly", () => {
+  const name = "phase68MalformedProcedureName";
+  const source = `.code
+123 PROC
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-procedure-name",
+      message: "Procedure name must be an identifier before PROC.",
+      line: 2,
+      column: 1,
+      byteOffset: 6,
+      spanLength: 3
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-procedure-name line 2, column 1, byte offset 6, span length 3: Procedure name must be an identifier before PROC.");
+});
+
 test("Phase 57T renders RET, loop, and WinAPI unsupported diagnostics exactly", () => {
   const retName = "phase57tRetUnsupported";
   const retSource = fixtureSource(retName);
@@ -6517,7 +6614,7 @@ END main
     {
       kind: "simulator-notice",
       code: "compatibility-metadata-only",
-      message: ".stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred.",
+      message: ".stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
       line: 3,
       column: 1,
       byteOffset: 26,
@@ -6559,7 +6656,7 @@ END main
   assertRenderedEquals("phase53d-compatibility-notices", source, rawJson, rendered, [
     "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
     "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
-    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
@@ -6784,7 +6881,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 67);
+  assert.equal(json.phase, 68);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

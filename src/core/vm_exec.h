@@ -10,8 +10,10 @@
  * signed relational conditional jumps, and Irvine32 exit forms over the
  * currently supported operand shapes. Phase 59 source-run code layers an
  * instruction-count watchdog over this executor. Unsigned relational conditional
- * jumps are supported for direct labels. Stack behavior and non-exit Irvine32
- * routines remain later milestones.
+ * jumps are supported for direct labels. Phase 68A initializes ESP from the
+ * active stack region at program startup; source-level stack instructions,
+ * procedure frames, CALL/RET stack mutation, and non-exit Irvine32 routines
+ * remain later milestones.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -210,13 +212,26 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config);
 
 /// Initializes a VM instance from an explicit memory layout policy.
 ///
-/// Passing NULL for @p layout_policy uses @ref vm_layout_default_policy. Phase 32
-/// supports fixed layout only and preserves existing source-run behavior.
+/// Passing NULL for @p layout_policy uses @ref vm_layout_default_policy. The
+/// selected layout metadata also supplies the Phase 68A ESP startup value.
 ///
 /// @param vm VM instance to initialize.
 /// @param layout_policy Optional memory layout policy.
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_policy);
+
+/// Initializes ESP to the active stack region's documented empty-stack value.
+///
+/// Phase 68A defines the empty stack as the first address past the high end of
+/// the active stack region. Future 32-bit push-like operations must compute
+/// ESP - 4 first and then write the 4-byte value through checked stack memory.
+/// This helper uses initialized memory-region metadata rather than fixed-layout
+/// constants, so fixed, automatic, seeded-randomized, and future layout-policy
+/// callers share the same startup contract.
+///
+/// @param vm VM whose initialized memory layout supplies the stack region.
+/// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
+VmExecStatus vm_initialize_stack_pointer(Vm *vm);
 
 /// Releases resources owned by a VM instance.
 ///
@@ -226,8 +241,8 @@ void vm_deinit(Vm *vm);
 /// Loads a caller-owned IR instruction array into the VM.
 ///
 /// Loading resets instruction position, instruction count, halted state, delta,
-/// diagnostics, CPU state, and memory-change recording. Memory contents remain
-/// initialized but are not otherwise rewritten.
+/// diagnostics, CPU state, ESP startup state, and memory-change recording.
+/// Memory contents remain initialized but are not otherwise rewritten.
 ///
 /// @param vm VM instance to mutate.
 /// @param program Caller-owned instruction array.

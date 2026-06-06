@@ -10,7 +10,9 @@
  * jumps, Phase 66 unsigned relational conditional jumps, and Irvine32 exit over
  * the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
- * each successful step.
+ * each successful step. Phase 68A initializes ESP from the active stack region
+ * at startup; source-level stack instructions, procedure frames, CALL/RET stack
+ * mutation, and non-exit Irvine32 routines remain later milestones.
  */
 
 #include "vm_exec.h"
@@ -3109,6 +3111,30 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
     }
 }
 
+VmExecStatus vm_initialize_stack_pointer(Vm *vm) {
+    const VmMemoryRegion *stack_region = NULL;
+    uint64_t stack_limit = 0U;
+
+    if (vm == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL || stack_region->size == 0U) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    stack_limit = (uint64_t)stack_region->base + (uint64_t)stack_region->size;
+    if (stack_limit > (uint64_t)UINT32_MAX) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm->cpu.esp = (uint32_t)stack_limit;
+    return VM_EXEC_STATUS_OK;
+}
+
 VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_policy) {
     VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
 
@@ -3123,6 +3149,13 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_MEMORY_ERROR);
         vm->last_diagnostic.memory_status = memory_status;
         return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    {
+        VmExecStatus stack_status = vm_initialize_stack_pointer(vm);
+        if (stack_status != VM_EXEC_STATUS_OK) {
+            return stack_status;
+        }
     }
 
     vm_exec_clear_delta(&vm->last_delta);
@@ -3148,6 +3181,13 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
         vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_MEMORY_ERROR);
         vm->last_diagnostic.memory_status = memory_status;
         return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    {
+        VmExecStatus stack_status = vm_initialize_stack_pointer(vm);
+        if (stack_status != VM_EXEC_STATUS_OK) {
+            return stack_status;
+        }
     }
 
     vm_exec_clear_delta(&vm->last_delta);
@@ -3179,6 +3219,12 @@ VmExecStatus vm_load_program(Vm *vm, const VmIrInstruction *program, size_t prog
     }
 
     vm_cpu_init(&vm->cpu);
+    {
+        VmExecStatus stack_status = vm_initialize_stack_pointer(vm);
+        if (stack_status != VM_EXEC_STATUS_OK) {
+            return stack_status;
+        }
+    }
     vm_memory_clear_changes(&vm->memory);
     vm->program = program;
     vm->program_count = program_count;

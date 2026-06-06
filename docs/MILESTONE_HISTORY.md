@@ -11,22 +11,30 @@ Source-of-truth rule:
 - [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md) remains the current reference for accepted MASM32 Educational Mode syntax and diagnostics.
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
+- Curated audit and handoff reports are stored under [`history/`](history/), and standalone milestone reports are stored under [`history/reports/`](history/reports/). These archived files are historical evidence, not current behavior authority.
 
-Current status at Phase 67A:
+Current status at Phase 68A:
 
 Repository/archive milestone:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
 Runtime/source-run MASM behavior phase:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
-Phase 67A corrects source-run entry procedure startup and selected-entry procedure fallthrough. `END entryName` is now authoritative for source-run startup: helper procedures before the selected entry do not run automatically, empty selected entries complete successfully, and ordinary fallthrough at the selected entry `ENDP` boundary completes without falling into later procedures.
+Phase 68A initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
 
-Phase 67A does not implement CALL, RET, stack mutation, procedure frames, Irvine32 routine dispatch, or Phase 68 call-target classification.
+Phase 68A preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement executable CALL, RET, stack mutation instructions, procedure frames, Irvine32 routine dispatch, source-level PUSH/POP, or root procedure termination.
+
+Next planned milestone:
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+
+Phase 68B is a corrective, non-renumbering milestone inserted before Phase 69. It converts EIP from source-writable register-like behavior into derived VM pseudo-code-address display, rejects EIP as a source operand, preserves direct ESP writes, and defines pseudo-code addresses for future CALL/RET return tokens. Phase 69 remains Direct CALL to User Procedures and depends on Phase 68B.
 
 
 ## Concise milestone ledger
 
+- Phase 68A initializes `ESP` from the active stack region's empty-stack address without making stack instructions, CALL, or RET executable.
+- Phase 68 adds parser metadata and a classifier for future direct CALL/INVOKE target resolution without making CALL executable.
 - Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
 - Phase 67 adds validation harness coverage for existing arithmetic, branch, and instruction-count watchdog behavior without changing runtime/source-run MASM behavior.
 - Phase 66 implements executable unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` direct label branches. These consume the required unsigned-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
@@ -85,6 +93,88 @@ Phase 67A does not implement CALL, RET, stack mutation, procedure frames, Irvine
 - Phase 61 executes already-lowered direct `jmp label` forms by transferring to the resolved VM instruction index, counting JMP as one executed instruction, preserving modeled flags, and producing no memory-change row.
 - Phase 61A hardens direct-JMP accounting/status tests and documentation while keeping runtime/source-run MASM behavior metadata at Phase 61.
 
+
+
+## Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+
+Repository/archive milestone:
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+
+Runtime/source-run MASM behavior phase:
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+
+Phase 68A initializes `ESP` from the active stack region when a program is loaded. The empty-stack value is the first address past the high end of the selected stack region. Later stack-writing phases must compute `ESP - 4` before writing a 32-bit value through checked stack memory.
+
+Implemented behavior:
+
+- default fixed-layout runs initialize `ESP` to `00900000h`, the fixed stack region's exclusive high limit;
+- automatic and layout-policy runs initialize `ESP` from the selected stack region metadata rather than from hardcoded executor constants;
+- seeded register/flag startup remains deterministic for the other modeled registers and flags while `ESP` uses the stack startup contract;
+- `.stack size` remains parser/layout metadata and can influence automatic/layout-policy stack capacity through existing layout behavior;
+- Phase 67A selected-entry boundaries and Phase 68 call-target classification remain unchanged.
+
+Non-goals preserved:
+
+- no executable CALL, RET, LEAVE, RET imm16, source-level PUSH/POP, or stack mutation instructions;
+- no procedure frames, PROC USES, LOCAL, PROTO, INVOKE, or ADDR behavior;
+- no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
+- no new stack sizing UI, URL state, layout sizing behavior, heap sizing behavior, or randomized layout behavior.
+
+
+
+## Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+
+Status:
+Planned next milestone after Phase 68A.
+
+Phase 68B is a corrective, non-renumbering milestone. It must not change Phase 69 or later phase numbers.
+
+Planned behavior:
+
+- displayed `EIP` becomes a derived VM pseudo-code address rather than a source-writable general-purpose register;
+- pseudo-EIP uses `VM_CODE_BASE + lowered_instruction_index * VM_CODE_STRIDE`, initially `00401000h + index * 4`;
+- pseudo-EIP values are control-flow tokens, not VM data-memory addresses, not PE RVAs, not linker addresses, and not native x86 instruction byte offsets;
+- `EIP` and `IP` are rejected as ordinary source operands and memory-address bases/indexes;
+- direct `ESP` writes such as `mov esp, 1` remain legal when the instruction form is otherwise supported;
+- invalid `ESP` values are diagnosed only when a later implicit stack operation performs a checked stack memory access;
+- Phase 69 direct CALL will use pseudo-EIP return tokens after Phase 68B is complete;
+- Phase 70 RET will validate pseudo-EIP return tokens after Phase 69 is complete.
+
+Non-goals preserved:
+
+- no CALL or RET execution in Phase 68B;
+- no source-level PUSH or POP execution;
+- no stack-overflow, stack-underflow, or suspicious-stack-pointer diagnostics;
+- no real x86 instruction-length decoding;
+- no executable code memory, PE loading, object linking, or linker/RVA modeling.
+
+
+## Phase 68 - Call Target Classification and Procedure Entry Metadata
+
+Repository/archive milestone:
+Phase 68 - Call Target Classification and Procedure Entry Metadata
+
+Runtime/source-run MASM behavior phase:
+Phase 68 - Call Target Classification and Procedure Entry Metadata
+
+Phase 68 adds parser-owned metadata for future `CALL` and `INVOKE` target resolution. It records procedure entries as procedure-entry targets distinct from ordinary code labels and exposes a documented classifier for parser/tests and later execution phases.
+
+Implemented behavior:
+
+- procedure declarations preserve procedure-entry metadata, source location, and source span information;
+- future-call target classification distinguishes user procedure entries, ordinary executable code labels, data symbols, numeric equates, supported/planned/unsupported Irvine32 registry names, external/API/linker non-goal names, reserved words, unknown symbols, and malformed target expressions;
+- Irvine32 classification reuses the central virtual Irvine32 registry instead of creating a separate call-target table;
+- user procedure and label names continue to follow the active `OPTION CASEMAP` policy;
+- mnemonics, directives, registers, data types, `PTR` names, virtual include names, and recognized Irvine32 names remain case-insensitive reserved names;
+- duplicate procedure names and procedure collisions with labels, data symbols, equates, and reserved words continue to produce structured diagnostics;
+- Phase 67A selected-entry startup and selected-entry procedure-boundary fallthrough remain unchanged.
+
+Non-goals preserved:
+
+- no executable CALL or INVOKE behavior;
+- no RET, root RET, LEAVE, RET imm16, stack mutation, source-level PUSH/POP, or procedure-frame behavior;
+- no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
+- no Windows API execution, PE loading, object-file linking, import-library behavior, or host filesystem include loading.
 
 
 ## Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection

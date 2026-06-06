@@ -144,7 +144,7 @@ Expected final output:
 All implemented milestone tests passed.
 ```
 
-### Phase 56A focused runner groups
+### Focused runner groups
 
 The default command remains valid and is equivalent to full aggregate verification:
 
@@ -177,11 +177,11 @@ Group ownership:
 
 - `structure`: repository structure, expected files, public header comments, Doxygen/static source-shape checks, and milestone metadata checks.
 - `native`: native C unit/parser/executor/helper tests that do not require Node and do not run the source-run integration binary.
-- `source-run`: native source-run JSON/integration coverage. In Phase 56A this is `tests/core/test_wasm_source_run.c`, kept whole for Phase 56A because `python3 scripts/run_tests.py --source-run` runs it independently from native, web, protocol, static, and rendered diagnostic tests.
+- `source-run`: native source-run JSON/integration coverage in `tests/core/test_wasm_source_run.c`. This group is intentionally runnable independently from native, web, protocol, static, and rendered diagnostic tests.
 - `web`: browser-side Node module tests that do not require the native diagnostic producer.
 - `diagnostics`: native diagnostic JSON producer build plus exact rendered Simulator Messages checks.
 - `protocol`: worker/protocol schema tests separated from general web tests.
-- `static`: runner help, group-name documentation, timeout-policy, failure-reporting, and fixture-inventory consistency checks.
+- `static`: runner help, group-name documentation, timeout-policy, failure-reporting, fixture-inventory consistency checks, and selected current-status or stale-wording guards.
 
 Output controls:
 
@@ -200,11 +200,24 @@ python3 scripts/run_tests.py --quick
 
 A milestone report that uses only `--quick` must say that full verification was not performed. Do not report `All implemented milestone tests passed` from a quick-only run.
 
-Source-run subgroups such as `--source-run=memory-layout` are not implemented in Phase 56A because the preserved source-run binary runs independently as a focused group. If `--source-run` later becomes too large for hosted assistant/container verification, the future test-runner decomposition maintenance owner should split it by behavior family, preferably memory/layout, instruction smoke, diagnostic policies, settings, and regressions.
+Source-run subgroups such as `--source-run=memory-layout` are not currently implemented because the preserved source-run binary runs independently as a focused group. If `--source-run` later becomes too large for hosted assistant/container verification, the future test-runner decomposition maintenance owner should split it by behavior family, preferably memory/layout, instruction smoke, diagnostic policies, settings, and regressions.
 
-Diagnostic subgroups such as `--diagnostics=memory` are not implemented in Phase 56A because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
+Diagnostic subgroups such as `--diagnostics=memory` are not currently implemented because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
 
 Failure output must identify the failing group, failing command, subprocess exit code, stdout/stderr tail, and any available fixture context. Source-run fixture failures include the fixture name through the source-run test binary's assertion context.
+
+### Test-output current-coverage wording
+
+Test binaries and runner static checks may include short human-readable coverage summaries, but those summaries must not become stale milestone ledgers.
+
+When a test file begins covering a later implemented milestone, any success banner in that same test file must either:
+
+- use neutral wording that does not name a specific old phase; or
+- be updated to include the newest implemented behavior covered by that file.
+
+For example, a source-run test binary that contains stack-startup fixtures must not print a success line implying that source-run coverage stops at an older arithmetic or branch phase. The matching `scripts/run_tests.py --static` assertion must be updated at the same time as the success banner.
+
+Milestone history belongs in `docs/MILESTONE_HISTORY.md` and `docs/history/reports/`. Test success banners should communicate the current coverage surface of the binary, not preserve every historical milestone name.
 
 ### Assistant/container timeout policy
 
@@ -239,23 +252,23 @@ If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `
 
 ### Source-run fixture inventory
 
-The Phase 56A source-run fixture inventory is intentionally a navigation aid. It does not duplicate every assertion in `tests/core/test_wasm_source_run.c`.
+The source-run fixture inventory is intentionally a navigation aid. It does not duplicate every assertion in `tests/core/test_wasm_source_run.c`. It records the major fixture families kept in the focused `source-run` group so future assistants do not split, weaken, or remove them without an explicit test-runner maintenance phase.
 
-| Fixture or family | Focused group | Category | Phase 56A disposition |
+| Fixture or family | Focused group | Category | Current disposition |
 | --- | --- | --- | --- |
-| minimal source execution sample | `source-run` | focused success fixture | kept whole for Phase 56A |
-| lexer/parser diagnostic source-run failures | `source-run` | focused error fixture | kept whole for Phase 56A |
-| memory/layout and automatic layout programs | `source-run` | regression fixture | kept whole for Phase 56A |
-| uninitialized-read and memory-validation policy programs | `source-run` | warning/notice fixture | kept whole for Phase 56A |
-| phase51-layout-fixed-automatic-equivalence | `source-run` | integration smoke fixture | kept whole for Phase 56A |
-| phase51-const-permission-precedence | `source-run` | integration smoke fixture | kept whole for Phase 56A |
-| phase51-uninitialized-rmw-warning | `source-run` | integration smoke fixture | kept whole for Phase 56A |
-| phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run` | integration smoke fixture | kept whole for Phase 56A |
-| phase53e-ui-settings-policy-routing | `source-run` | focused settings fixture | kept whole for Phase 56A |
-| phase56-div-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept whole for Phase 56A |
-| phase57-idiv-source-run-coverage | `source-run` | focused success/error/regression fixture family | added for Phase 57 signed IDIV and kept whole in the focused source-run group |
+| minimal source execution sample | `source-run` | focused success fixture | kept in the focused source-run group |
+| lexer/parser diagnostic source-run failures | `source-run` | focused error fixture | kept in the focused source-run group |
+| memory/layout and automatic layout programs | `source-run` | regression fixture | kept in the focused source-run group |
+| uninitialized-read and memory-validation policy programs | `source-run` | warning/notice fixture | kept in the focused source-run group |
+| phase51-layout-fixed-automatic-equivalence | `source-run` | integration smoke fixture | kept in the focused source-run group |
+| phase51-const-permission-precedence | `source-run` | integration smoke fixture | kept in the focused source-run group |
+| phase51-uninitialized-rmw-warning | `source-run` | integration smoke fixture | kept in the focused source-run group |
+| phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run` | integration smoke fixture | kept in the focused source-run group |
+| phase53e-ui-settings-policy-routing | `source-run` | focused settings fixture | kept in the focused source-run group |
+| phase56-div-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept in the focused source-run group |
+| phase57-idiv-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept in the focused source-run group |
 
-Large individual MASM source fixtures were reviewed for Phase 56A. The Phase 51 instruction-family programs are intentionally labeled integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as focused success, error, warning/notice, edge-case, or regression fixtures. No fixture was moved, renamed, split, or weakened in Phase 56A.
+Large individual MASM source fixtures remain intentionally grouped under `--source-run`. The Phase 51 instruction-family programs are intentionally labeled integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as focused success, error, warning/notice, edge-case, or regression fixtures. No fixture should be moved, renamed, split, or weakened unless a future test-runner maintenance phase explicitly owns that change and updates this inventory.
 
 The test runner writes native test binaries under:
 

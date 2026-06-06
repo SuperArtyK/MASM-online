@@ -146,11 +146,17 @@ void vm_cpu_init(VmCpu *cpu);
 
 /// Initializes general-purpose registers and modeled flags from a deterministic seed.
 ///
-/// This helper implements the Phase 57F register/flag startup policy. It
-/// initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the currently
+/// This helper implements the Phase 57F raw CPU register/flag startup policy.
+/// It initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the currently
 /// modeled flag bits from a portable deterministic pseudo-random stream. EIP
 /// remains zero, unmodeled EFLAGS bits remain zero, and flag-validity metadata
 /// remains architecturally valid.
+///
+/// This helper operates at the CPU-state layer only. VM/source-run startup
+/// paths that must honor the Phase 68A stack startup contract must restore or
+/// initialize ESP from active stack-region metadata after calling this helper.
+/// Source-run startup must not leave source-visible ESP at the raw seeded value
+/// when the Phase 68A active-stack startup contract applies.
 ///
 /// @param cpu CPU state to initialize. A NULL pointer is ignored.
 /// @param seed Deterministic startup-state seed.

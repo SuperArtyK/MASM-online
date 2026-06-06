@@ -1,11 +1,12 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 67A procedure-range metadata.
+ * @brief Unit and integration tests for the parser through Phase 68 call-target classification metadata.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
- * Phase 67A procedure-range metadata, unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
+ * Phase 67A procedure-range metadata, Phase 68 call-target classification
+ * metadata, unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -62,6 +63,8 @@ typedef struct ParserTestBuffers {
     char source_text[TEST_SOURCE_TEXT_CAPACITY];
     /// Data symbols emitted from optional .data declarations.
     VmSymbol symbols[TEST_SYMBOL_CAPACITY];
+    /// Numeric equates emitted as metadata for classifier tests.
+    VmNumericEquate numeric_equates[TEST_SYMBOL_CAPACITY];
     /// Code labels emitted from .code labels and PROC entries.
     VmCodeLabel code_labels[TEST_CODE_LABEL_CAPACITY];
     /// Procedure ranges emitted from PROC/ENDP boundaries.
@@ -193,6 +196,27 @@ static int expect_parser_diagnostic_severity(VmParserDiagnosticSeverity actual, 
     return 0;
 }
 
+/// Verifies that two Phase 68 call-target classes are equal.
+///
+/// @param actual Actual classifier result.
+/// @param expected Expected classifier result.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_call_target_class(VmParserCallTargetClass actual, VmParserCallTargetClass expected, const char *message) {
+    if (actual != expected) {
+        fprintf(
+            stderr,
+            "FAIL: %s (actual=%s expected=%s)\n",
+            message,
+            vm_parser_call_target_class_name(actual),
+            vm_parser_call_target_class_name(expected)
+        );
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Verifies that a C string equals an expected value.
 ///
 /// @param actual Actual string pointer.
@@ -246,6 +270,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
     config.symbols = buffers->symbols;
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.numeric_equates = buffers->numeric_equates;
+    config.numeric_equate_capacity = TEST_SYMBOL_CAPACITY;
     config.code_labels = buffers->code_labels;
     config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.procedure_ranges = buffers->procedure_ranges;
@@ -260,6 +286,32 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.diagnostic_capacity = TEST_PARSER_DIAGNOSTIC_CAPACITY;
 
     return vm_parser_parse_program(&config, out_result);
+}
+
+/// Builds a Phase 68 call-target classifier context from parser test buffers.
+///
+/// @param buffers Parser buffers containing metadata tables.
+/// @param result Parser result containing table counts.
+/// @param policy Reference-time CASEMAP policy for the query.
+/// @return Classifier context for direct helper calls.
+static VmParserCallTargetContext call_target_context_for_test(
+    const ParserTestBuffers *buffers,
+    const VmParserResult *result,
+    VmSymbolCasePolicy policy
+) {
+    VmParserCallTargetContext context;
+
+    memset(&context, 0, sizeof(context));
+    context.symbols = buffers->symbols;
+    context.symbol_count = result->symbol_count;
+    context.code_labels = buffers->code_labels;
+    context.code_label_count = result->code_label_count;
+    context.procedure_ranges = buffers->procedure_ranges;
+    context.procedure_range_count = result->procedure_range_count;
+    context.numeric_equates = buffers->numeric_equates;
+    context.numeric_equate_count = result->numeric_equate_count;
+    context.case_policy = policy;
+    return context;
 }
 
 /// Verifies one source sample reports the generic unsupported-feature diagnostic.
@@ -610,6 +662,8 @@ static int test_phase67a_procedure_range_capacity_diagnostic(void) {
     config.source_text_capacity = TEST_SOURCE_TEXT_CAPACITY;
     config.symbols = buffers.symbols;
     config.symbol_capacity = TEST_SYMBOL_CAPACITY;
+    config.numeric_equates = buffers.numeric_equates;
+    config.numeric_equate_capacity = TEST_SYMBOL_CAPACITY;
     config.code_labels = buffers.code_labels;
     config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.procedure_ranges = buffers.procedure_ranges;
@@ -635,9 +689,244 @@ static int test_phase67a_procedure_range_capacity_diagnostic(void) {
     return failures;
 }
 
-/// Verifies Phase 58 CASEMAP behavior for code labels.
+/// Verifies Phase 68 classifies future CALL targets without executing CALL.
 ///
 /// @return Zero on success, otherwise a positive failure count.
+static int test_phase68_call_target_classifier_metadata(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserCallTargetContext context;
+    VmParserCallTargetClassification classification;
+    VmLexerToken malformed_token;
+    VmLexerToken register_token;
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 4\n"
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "SomeLabel:\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 68 classifier fixture should parse without diagnostics");
+
+    context = call_target_context_for_test(&buffers, &result, VM_SYMBOL_CASE_POLICY_ALL);
+    failures += expect_size(result.numeric_equate_count, 1U, "accepted numeric equate should be published for classifier metadata");
+    failures += expect_string(buffers.numeric_equates[0].name, "COUNT", "numeric equate metadata should preserve spelling");
+    failures += expect_size((size_t)buffers.numeric_equates[0].value, 4U, "numeric equate metadata should preserve value");
+    failures += expect_size(buffers.numeric_equates[0].source_location.line, 1U, "numeric equate metadata should preserve source line");
+
+    classification = vm_parser_classify_call_target_name(&context, "Helper", strlen("Helper"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY, "Helper PROC should classify as user procedure entry");
+    failures += expect_bool(classification.has_metadata_index, "Helper procedure classification should include a metadata index");
+
+    classification = vm_parser_classify_call_target_name(&context, "SomeLabel", strlen("SomeLabel"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_CODE_LABEL, "ordinary code label should not classify as procedure entry");
+    failures += expect_bool(classification.has_metadata_index, "ordinary code label classification should include a metadata index");
+
+    classification = vm_parser_classify_call_target_name(&context, "value", strlen("value"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_DATA_SYMBOL, "data symbol should classify as data-symbol target");
+    failures += expect_bool(classification.has_metadata_index, "data symbol classification should include a metadata index");
+
+    classification = vm_parser_classify_call_target_name(&context, "COUNT", strlen("COUNT"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_NUMERIC_EQUATE, "numeric equate should classify as numeric-equate target");
+    failures += expect_bool(classification.has_metadata_index, "numeric equate classification should include a metadata index");
+
+    classification = vm_parser_classify_call_target_name(&context, "WriteString", strlen("WriteString"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "WriteString should classify as planned Irvine32 routine");
+    failures += expect_u32((uint32_t)classification.irvine32_symbol_class, (uint32_t)VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE, "WriteString should expose the central registry class");
+
+    classification = vm_parser_classify_call_target_name(&context, "writestring", strlen("writestring"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "Irvine32 lookup should be case-insensitive");
+
+    classification = vm_parser_classify_call_target_name(&context, "exit", strlen("exit"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED, "exit should classify as supported virtual Irvine32 terminator");
+
+    classification = vm_parser_classify_call_target_name(&context, "OpenInputFile", strlen("OpenInputFile"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED, "OpenInputFile should classify as unsupported v1 Irvine32 routine");
+
+    classification = vm_parser_classify_call_target_name(&context, "ExitProcess", strlen("ExitProcess"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL, "ExitProcess should classify as external/Windows API non-goal");
+
+    classification = vm_parser_classify_call_target_name(&context, "_DATA", strlen("_DATA"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL, "MASM linker segment symbols should classify as external non-goals");
+
+    classification = vm_parser_classify_call_target_name(&context, "mov", strlen("mov"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_RESERVED_WORD, "instruction mnemonic should classify as reserved word");
+
+    classification = vm_parser_classify_call_target_name(&context, "Missing", strlen("Missing"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL, "unknown identifier-shaped target should classify as unknown symbol");
+
+    classification = vm_parser_classify_call_target_name(&context, "", 0U);
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION, "empty target should classify as malformed expression");
+
+    memset(&malformed_token, 0, sizeof(malformed_token));
+    malformed_token.kind = VM_LEXER_TOKEN_NUMBER;
+    malformed_token.lexeme = "1234";
+    malformed_token.lexeme_length = 4U;
+    classification = vm_parser_classify_call_target_token(&context, &malformed_token);
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION, "numeric target token should classify as malformed expression");
+
+    memset(&register_token, 0, sizeof(register_token));
+    register_token.kind = VM_LEXER_TOKEN_REGISTER;
+    register_token.lexeme = "eax";
+    register_token.lexeme_length = 3U;
+    classification = vm_parser_classify_call_target_token(&context, &register_token);
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_RESERVED_WORD, "register target token should classify as reserved word");
+
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION), "malformed-target-expression", "call-target helper should name malformed expressions");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY), "user-procedure-entry", "call-target helper should name user procedure entries");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_CODE_LABEL), "code-label", "call-target helper should name code labels");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED), "irvine32-supported", "call-target helper should name supported Irvine32 targets");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_IRVINE32_PLANNED), "irvine32-planned", "call-target helper should name planned Irvine32 targets");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED), "irvine32-unsupported", "call-target helper should name unsupported Irvine32 targets");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL), "external-non-goal", "call-target helper should name external non-goal targets");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_DATA_SYMBOL), "data-symbol", "call-target helper should name data symbols");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_NUMERIC_EQUATE), "numeric-equate", "call-target helper should name numeric equates");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_LOCAL_SYMBOL), "local-symbol", "call-target helper should name local symbols");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_RESERVED_WORD), "reserved-word", "call-target helper should name reserved words");
+    failures += expect_string(vm_parser_call_target_class_name(VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL), "unknown-symbol", "call-target helper should name unknown symbols");
+
+    if (vm_parser_call_target_class_name((VmParserCallTargetClass)999) != NULL) {
+        failures += record_failure("invalid call target class name should be NULL");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 68 classifier and procedure metadata preserve CASEMAP policy.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase68_call_target_classifier_casemap_policy(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserCallTargetContext context;
+    VmParserCallTargetClassification classification;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "Helper PROC\n"
+        "Helper ENDP\n"
+        "helper PROC\n"
+        "helper ENDP\n"
+        "END Helper\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "default CASEMAP should reject folded duplicate procedures");
+    failures += expect_size(result.diagnostic_count, 1U, "folded duplicate procedure should emit one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "folded duplicate procedure should reuse duplicate-label diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "procedure-entry label", "duplicate procedure diagnostic should identify procedure-entry metadata");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "OPTION CASEMAP:NONE\n"
+        "Helper PROC\n"
+        "Helper ENDP\n"
+        "helper PROC\n"
+        "helper ENDP\n"
+        "END Helper\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should allow procedures that differ only by case");
+    failures += expect_size(result.procedure_range_count, 2U, "CASEMAP:NONE fixture should record two procedure ranges");
+
+    context = call_target_context_for_test(&buffers, &result, VM_SYMBOL_CASE_POLICY_NONE);
+    classification = vm_parser_classify_call_target_name(&context, "Helper", strlen("Helper"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY, "exact Helper lookup should classify as procedure");
+    failures += expect_size(classification.metadata_index, 0U, "exact Helper lookup should use first procedure metadata entry");
+
+    classification = vm_parser_classify_call_target_name(&context, "helper", strlen("helper"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY, "exact helper lookup should classify as procedure");
+    failures += expect_size(classification.metadata_index, 1U, "exact helper lookup should use second procedure metadata entry");
+
+    classification = vm_parser_classify_call_target_name(&context, "HELPER", strlen("HELPER"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL, "CASEMAP:NONE classifier should not fold user procedure names");
+
+    classification = vm_parser_classify_call_target_name(&context, "writestring", strlen("writestring"));
+    failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "CASEMAP:NONE should not make Irvine32 names case-sensitive");
+
+    return failures;
+}
+
+/// Verifies Phase 68 procedure-name diagnostics for reserved and malformed names.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase68_procedure_name_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    static const char *reserved_sources[] = {
+        ".code\nWriteString PROC\nWriteString ENDP\nEND WriteString\n",
+        ".code\nwritestring PROC\nwritestring ENDP\nEND writestring\n",
+        ".code\nmov PROC\nmov ENDP\nEND mov\n",
+        ".code\neax PROC\neax ENDP\nEND eax\n",
+        ".code\nDWORD PROC\nDWORD ENDP\nEND DWORD\n",
+        ".code\nPTR PROC\nPTR ENDP\nEND PTR\n",
+        ".code\nINCLUDE PROC\nINCLUDE ENDP\nEND INCLUDE\n",
+        ".code\nOFFSET PROC\nOFFSET ENDP\nEND OFFSET\n",
+        ".code\nEQ PROC\nEQ ENDP\nEND EQ\n",
+        ".code\nIrvine32 PROC\nIrvine32 ENDP\nEND Irvine32\n",
+        ".code\nOPTION CASEMAP:NONE\nWriteString PROC\nWriteString ENDP\nEND WriteString\n",
+        ".code\nOPTION CASEMAP:NONE\ninclude PROC\ninclude ENDP\nEND include\n"
+    };
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(reserved_sources) / sizeof(reserved_sources[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(reserved_sources[index], &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "reserved procedure name should diagnose");
+        failures += expect_size(result.procedure_range_count, 0U, "reserved procedure name must not publish procedure metadata");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "reserved procedure name should use reserved-word-symbol");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "Thing DWORD 1\n"
+        ".code\n"
+        "Thing PROC\n"
+        "Thing ENDP\n"
+        "END Thing\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "procedure name should conflict with existing data symbol");
+    failures += expect_size(result.procedure_range_count, 0U, "data/procedure conflict must not publish procedure metadata");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT, "data/procedure conflict should use label-symbol-conflict");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "data symbol", "data/procedure conflict message should identify data-symbol category");
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 4\n"
+        ".code\n"
+        "COUNT PROC\n"
+        "COUNT ENDP\n"
+        "END COUNT\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "procedure name should conflict with existing numeric equate");
+    failures += expect_size(result.procedure_range_count, 0U, "equate/procedure conflict must not publish procedure metadata");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT, "equate/procedure conflict should use label-symbol-conflict");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "numeric equate", "equate/procedure conflict message should identify numeric-equate category");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "123 PROC\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "malformed procedure name should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME, "malformed procedure name should use invalid-procedure-name");
+    failures += expect_size(buffers.diagnostics[0].location.line, 2U, "malformed procedure name diagnostic should preserve line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "malformed procedure name diagnostic should preserve column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "malformed procedure name diagnostic should preserve span");
+
+    return failures;
+}
+
 static int test_phase58_label_casemap_policy(void) {
     int failures = 0;
     ParserTestBuffers buffers;
@@ -2806,7 +3095,7 @@ static int test_phase41_irvine32_routine_diagnostics(void) {
     }
 
     failures += expect_parser_status(parse_for_test(windows_name, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Windows/API name should produce a specific Irvine32-context diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "Windows/API name diagnostic should use Irvine32 routine code until CALL classification exists");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "Windows/API bare-routine diagnostic should use the Irvine32 routine diagnostic before executable Irvine32 dispatch exists");
     failures += expect_string_contains(buffers.diagnostics[0].message, "Windows/API", "Windows/API diagnostic should describe non-goal behavior");
 
     failures += expect_parser_status(parse_for_test(exit_line, &buffers, &result), VM_PARSER_STATUS_OK, "exit should parse as an Irvine32 virtual terminator in Phase 42");
@@ -5737,6 +6026,12 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED), "compatibility-limited") != 0) {
         failures += record_failure("parser diagnostic helper should name compatibility limited-behavior notices");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME), "invalid-procedure-name") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid procedure-name diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET), "unsupported-call-target") != 0) {
+        failures += record_failure("parser diagnostic helper should name unsupported call-target diagnostics");
+    }
     if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC), "supported-virtual-intrinsic") != 0) {
         failures += record_failure("Irvine32 symbol-class helper should name supported virtual intrinsics");
     }
@@ -6390,6 +6685,9 @@ int main(void) {
     failures += test_phase58_non_executable_procedure_metadata_has_no_target();
     failures += test_phase67a_procedure_range_metadata();
     failures += test_phase67a_procedure_range_capacity_diagnostic();
+    failures += test_phase68_call_target_classifier_metadata();
+    failures += test_phase68_call_target_classifier_casemap_policy();
+    failures += test_phase68_procedure_name_diagnostics();
     failures += test_phase58_label_casemap_policy();
     failures += test_phase58_label_conflict_diagnostics();
     failures += test_phase60_jmp_parse_to_ir();

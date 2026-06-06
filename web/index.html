@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 67A: Entry Procedure Runtime Boundary and END Entry Selection.
+  Milestone 68A: Stack Runtime Initialization and ESP Startup Contract.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,25 +18,16 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 67A: source-run now starts at the procedure named by <code>END entryName</code> and stops normal fallthrough at that procedure boundary.</p>
+        <p class="muted">Milestone 68A: <code>ESP</code> starts at the active stack region's empty-stack address while <code>CALL</code>, <code>RET</code>, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.code
-helperBefore PROC
-    mov ecx, 111      ; does not run automatically
-helperBefore ENDP
-
+        <textarea id="editor" spellcheck="false">.stack 4096
+.data
+value DWORD 7
+.code
 main PROC
-    mov eax, 100      ; END main starts here
-    cmp eax, 100
-    je selectedPath
-    mov ebx, 999
-selectedPath:
-    mov ebx, 1
+    mov eax, esp      ; ESP starts at the active stack region top
+    mov ebx, value
 main ENDP             ; normal fallthrough completes here
-
-helperAfter PROC
-    mov edx, 222      ; does not run by fallthrough
-helperAfter ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

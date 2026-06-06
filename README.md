@@ -5,19 +5,25 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
 Runtime/source-run MASM behavior phase:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
-The current runtime honors `END entryName` as the source-run entry procedure. Execution starts inside the selected procedure, helper procedures before the selected entry do not run automatically, and ordinary fallthrough at the selected entry procedure boundary completes successfully without falling into later procedures.
+The current runtime initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
+
+The runtime continues to honor `END entryName` as the source-run entry procedure. Execution starts inside the selected procedure, helper procedures before the selected entry do not run automatically, and ordinary fallthrough at the selected entry procedure boundary completes successfully without falling into later procedures.
+
+Procedure entries remain callable-target metadata distinct from ordinary code labels for future `CALL` and `INVOKE` phases. The classifier distinguishes user procedure entries, ordinary executable labels, data symbols, numeric equates, central-registry Irvine32 names, external/API non-goals, reserved words, unknown names, and malformed target expressions without making `CALL` executable.
 
 The current runtime also supports the implemented MASM32 Educational Mode subset through unsigned relational conditional jumps, plus earlier arithmetic, data, memory, diagnostics, layout, and Irvine32 virtual `exit` behavior.
 
 Next recommended implementation work:
-Phase 68 - Call Target Classification and Procedure Entry Metadata
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
-Phase 68 should add richer call-target/procedure-entry metadata for later CALL/RET work. It should not be treated as already implementing CALL, RET, stack mutation, procedure frames, or Irvine32 callable routine dispatch.
+Phase 68B is a corrective control-state milestone inserted before direct CALL/RET implementation. It does not renumber the roadmap. Its purpose is to ensure that displayed `EIP` behaves as a derived VM pseudo-code address rather than as a source-writable general-purpose register. It also preserves the Phase 68A rule that direct writes to `ESP` remain legal and that invalid stack-pointer values are diagnosed only when a later implicit stack operation performs a checked memory access.
+
+Phase 69 remains the next procedure-execution phase after Phase 68B. Phase 69 may then consume the Phase 68A `ESP` startup contract and the Phase 68B pseudo-EIP contract for direct user-procedure `CALL`. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -37,7 +43,9 @@ At a high level, the current subset includes:
 - signed relational conditional jumps;
 - unsigned relational conditional jumps;
 - selected-entry source-run startup from `END entryName`;
+- `ESP` startup initialized from the active stack region empty-stack address;
 - successful completion at the selected entry procedure's `ENDP` boundary;
+- procedure-entry and future-call target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -99,7 +107,11 @@ For detailed setup, Windows command files, Visual Studio notes, missing-`emcc` t
 - [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) - current accepted MASM32 Educational Mode subset and diagnostics.
 - [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) - aggregate and focused test guidance.
 - [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md) - milestone history moved out of the README and kept as historical evidence.
+- [`docs/history/HISTORY_README.md`](docs/history/HISTORY_README.md) - archive index for curated audit/handoff reports and standalone milestone reports.
 - [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md) - local serving, build commands, prerequisites, Visual Studio notes, and development workflow.
+
+
+Historical audit and milestone material is stored under `docs/history/` for curated audit and handoff reports and `docs/history/reports/` for standalone milestone reports. These files are preserved for provenance, stale-assumption detection, and regression-risk review. They do not replace the canonical specification, implementation guide, supported-syntax reference, latest repository state, or latest accepted milestone report.
 
 ## Project boundaries
 

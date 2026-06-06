@@ -12,10 +12,17 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
 Current runtime/source-run MASM behavior phase:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+
+Next development milestone:
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+
+Phase 68B is a corrective, non-renumbering milestone. It must be completed before Phase 69 because Phase 69 CALL return tokens should be pseudo-EIP values, not raw VM instruction indexes and not source-written EIP register contents.
+
+During Phase 68B development, do not implement CALL, RET, PUSH, POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, or stack-pointer warning diagnostics.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -46,9 +53,37 @@ web/index.html
 web/src/
 web/dist/
 docs/
+docs/history/
+docs/history/reports/
 ```
 
 Core simulator code is C99 and lives under `src/core`, `src/parser`, and `src/wasm`. Browser code lives under `web/src`. Generated or rebuilt WebAssembly artifacts live under `web/dist`.
+
+## Historical reports and archive paths
+
+Milestone reports are stored under:
+
+```text
+docs/history/reports/
+```
+
+Curated audit and handoff reports are stored under:
+
+```text
+docs/history/
+```
+
+These files are historical evidence. They are useful when auditing assumptions, test coverage, skipped dependencies, and regression risks. They are not the active source of truth for current MASM syntax or runtime behavior.
+
+For current behavior, use:
+
+```text
+docs/FULL_IMPLEMENTATION_SPEC.md
+docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md
+docs/SUPPORTED_SYNTAX.md
+```
+
+Moving or reorganizing historical reports is documentation organization only. It must not change runtime/source-run MASM behavior metadata.
 
 ## Local website serving
 

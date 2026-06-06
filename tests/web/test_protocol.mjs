@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 67);
+  assert.equal(IMPLEMENTED_PHASE, 68);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "A");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 67,
+      phase: 68,
       phaseSuffix: "A",
-      phaseName: "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection"
+      phaseName: "Phase 68A - Stack Runtime Initialization and ESP Startup Contract"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 67,
+      phase: 68,
       phaseSuffix: "A",
-      phaseName: "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection"
+      phaseName: "Phase 68A - Stack Runtime Initialization and ESP Startup Contract"
     }
   });
 });
@@ -326,7 +326,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 68A - Stack Runtime Initialization and ESP Startup Contract. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });

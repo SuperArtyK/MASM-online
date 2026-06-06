@@ -5,9 +5,10 @@
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, records code-label metadata,
  * lowers Phase 60 direct JMP branch-target metadata, and emits only the minimal
- * IR supported by the current executor. Conditional control-flow transfer,
- * stack behavior, scaled-index addressing, Irvine32 routine bodies, and full
- * MASM expression parsing remain later milestones. The parser records
+ * IR supported by the current executor. Conditional control-flow transfer is
+ * implemented for direct labels and procedure-entry labels; source-level stack
+ * instructions, stack frames, scaled-index addressing, Irvine32 routine bodies,
+ * and full MASM expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -122,6 +123,8 @@ typedef struct VmParserEquate {
     bool is_invalid;
     /// Whether this equate is currently being evaluated.
     bool is_resolving;
+    /// CASEMAP policy active at the equate declaration.
+    VmSymbolCasePolicy case_policy;
     /// Source location of the equate name.
     VmLexerSourceLocation source_location;
     /// Source span length of the equate name in bytes.
@@ -328,6 +331,8 @@ static bool vm_parser_parse_data_initializer(
 static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state);
 
 static bool vm_parser_parse_option_directive(VmParserState *state);
+
+static void vm_parser_publish_numeric_equate(VmParserState *state, const VmParserEquate *equate);
 
 static bool vm_parser_has_conflicting_data_symbol(VmParserState *state, const VmLexerToken *token);
 
@@ -542,6 +547,32 @@ static bool vm_parser_user_symbol_name_matches(const VmParserState *state, const
     name_token.lexeme = name;
     name_token.lexeme_length = strlen(name);
     return vm_parser_user_symbol_tokens_equal(state, token, &name_token);
+}
+
+/// Publishes one accepted numeric equate to the optional caller-owned metadata table.
+///
+/// @param state Parser state whose public result should be updated.
+/// @param equate Internal accepted equate to copy.
+static void vm_parser_publish_numeric_equate(VmParserState *state, const VmParserEquate *equate) {
+    VmNumericEquate *published = NULL;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || equate == NULL ||
+        state->config->numeric_equates == NULL || state->config->numeric_equate_capacity == 0U) {
+        return;
+    }
+
+    if (state->result->numeric_equate_count >= state->config->numeric_equate_capacity) {
+        return;
+    }
+
+    published = &state->config->numeric_equates[state->result->numeric_equate_count];
+    memset(published, 0, sizeof(*published));
+    memcpy(published->name, equate->name, strlen(equate->name) + 1U);
+    published->value = equate->value;
+    published->case_policy = equate->case_policy;
+    published->source_location = equate->source_location;
+    published->source_span_length = equate->source_span_length;
+    state->result->numeric_equate_count += 1U;
 }
 
 /// Returns whether a token can begin a compile-time constant expression.
@@ -8139,10 +8170,10 @@ static bool vm_parser_token_is_exit_terminator(const VmLexerToken *token) {
 
 /// Emits an unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
 ///
-/// The registry is active only after `INCLUDE Irvine32.inc`. CALL target
-/// classification is deliberately deferred until CALL exists, so this helper
-/// handles only bare mnemonic-like executable forms currently recognized by the
-/// parser.
+/// The registry is active only after `INCLUDE Irvine32.inc`. Phase 68 future
+/// CALL/INVOKE target queries use the documented classifier helpers; this
+/// routine remains limited to bare mnemonic-like executable forms currently
+/// recognized by the parser and does not make CALL executable.
 ///
 /// @param state Parser state to mutate.
 /// @param mnemonic_token Candidate executable mnemonic token.
@@ -8660,8 +8691,16 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
     const VmLexerToken *name_token = vm_parser_current_token(state);
     const VmLexerToken *proc_token = vm_parser_peek_token(state, 1U);
 
-    if (name_token == NULL || proc_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(proc_token, "PROC")) {
+    if (name_token == NULL || proc_token == NULL || !vm_parser_token_equals(proc_token, "PROC")) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_PROC, name_token, "Expected procedure name followed by PROC.");
+        return false;
+    }
+
+    if (name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        if (vm_parser_reject_reserved_symbol_declaration(state, name_token, "procedure name")) {
+            return false;
+        }
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME, name_token, "Procedure name must be an identifier before PROC.");
         return false;
     }
 
@@ -8844,7 +8883,7 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return vm_parser_parse_end_line(state);
     }
 
-    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && next != NULL && vm_parser_token_equals(next, "PROC")) {
+    if (next != NULL && vm_parser_token_equals(next, "PROC")) {
         vm_parser_finalize_pending_code_labels_without_target(state);
         return vm_parser_parse_proc_line(state);
     }
@@ -8991,7 +9030,7 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
         state,
         VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
         stack_token,
-        ".stack size is recorded as parser metadata, but runtime stack instructions and procedure frames remain deferred."
+        ".stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred."
     );
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);
@@ -9395,6 +9434,7 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
         vm_parser_recover_skip_line(state);
         return true;
     }
+    equate->case_policy = vm_parser_symbol_case_policy(state->user_symbol_case_policy);
     equate->source_location = name_token->location;
     equate->source_span_length = name_token->lexeme_length;
     state->equate_count += 1U;
@@ -9450,6 +9490,7 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
 
     equate->value = expression.value;
     equate->is_defined = true;
+    vm_parser_publish_numeric_equate(state, equate);
     return true;
 }
 
@@ -9632,6 +9673,7 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->instructions == NULL && config->instruction_capacity > 0U) ||
         (config->source_text_storage == NULL && config->source_text_capacity > 0U) ||
         (config->symbols == NULL && config->symbol_capacity > 0U) ||
+        (config->numeric_equates == NULL && config->numeric_equate_capacity > 0U) ||
         (config->code_labels == NULL && config->code_label_capacity > 0U) ||
         (config->procedure_ranges == NULL && config->procedure_range_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
@@ -9670,6 +9712,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
 
     if (config->symbols != NULL && config->symbol_capacity > 0U) {
         memset(config->symbols, 0, sizeof(config->symbols[0]) * config->symbol_capacity);
+    }
+    if (config->numeric_equates != NULL && config->numeric_equate_capacity > 0U) {
+        memset(config->numeric_equates, 0, sizeof(config->numeric_equates[0]) * config->numeric_equate_capacity);
     }
     if (config->code_labels != NULL && config->code_label_capacity > 0U) {
         memset(config->code_labels, 0, sizeof(config->code_labels[0]) * config->code_label_capacity);
@@ -9860,6 +9905,331 @@ const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind) {
         default:
             return NULL;
     }
+}
+
+/// Returns whether two source/user-symbol names match under a CASEMAP policy.
+///
+/// @param stored Null-terminated stored metadata name.
+/// @param target Source target bytes.
+/// @param target_length Number of bytes in @p target.
+/// @param policy Reference-time user-symbol CASEMAP policy.
+/// @return true when the names match under @p policy.
+static bool vm_parser_metadata_name_matches_policy(
+    const char *stored,
+    const char *target,
+    size_t target_length,
+    VmSymbolCasePolicy policy
+) {
+    size_t index = 0U;
+
+    if (stored == NULL || target == NULL) {
+        return false;
+    }
+
+    if (policy == VM_SYMBOL_CASE_POLICY_NONE) {
+        return strlen(stored) == target_length && memcmp(stored, target, target_length) == 0;
+    }
+
+    while (index < target_length && stored[index] != '\0') {
+        if (vm_parser_ascii_lower(stored[index]) != vm_parser_ascii_lower(target[index])) {
+            return false;
+        }
+        index += 1U;
+    }
+
+    return index == target_length && stored[index] == '\0';
+}
+
+/// Converts an Irvine32 registry class into the matching Phase 68 call-target class.
+///
+/// @param symbol_class Irvine32 registry class to map.
+/// @return Matching call-target class, or unknown-symbol when @p symbol_class is unknown.
+static VmParserCallTargetClass vm_parser_call_target_class_from_irvine32_class(VmIrvine32SymbolClass symbol_class) {
+    switch (symbol_class) {
+        case VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC:
+            return VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED;
+        case VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE:
+            return VM_PARSER_CALL_TARGET_IRVINE32_PLANNED;
+        case VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE:
+            return VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED;
+        case VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL:
+            return VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL;
+        case VM_IRVINE32_SYMBOL_CLASS_UNKNOWN:
+        default:
+            return VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL;
+    }
+}
+
+/// Returns an empty Phase 68 call-target classification result.
+///
+/// @param target_class Primary class to assign.
+/// @return Classification with no metadata index and unknown Irvine32 class.
+static VmParserCallTargetClassification vm_parser_make_call_target_classification(VmParserCallTargetClass target_class) {
+    VmParserCallTargetClassification result;
+    memset(&result, 0, sizeof(result));
+    result.target_class = target_class;
+    result.irvine32_symbol_class = VM_IRVINE32_SYMBOL_CLASS_UNKNOWN;
+    result.metadata_index = 0U;
+    result.has_metadata_index = false;
+    return result;
+}
+
+/// Returns whether a target name matches a known MASM/object external non-goal symbol.
+///
+/// @param target Source target bytes.
+/// @param target_length Number of bytes in @p target.
+/// @param policy Reference-time user-symbol CASEMAP policy.
+/// @return true when @p target names an explicit external/linker non-goal symbol.
+static bool vm_parser_call_target_is_external_non_goal_name(
+    const char *target,
+    size_t target_length,
+    VmSymbolCasePolicy policy
+) {
+    const VmParserUnsupportedSegmentSymbol *symbols = NULL;
+    size_t symbol_count = 0U;
+    size_t index = 0U;
+
+    if (target == NULL || target_length == 0U) {
+        return false;
+    }
+
+    symbols = vm_parser_unsupported_segment_symbols(&symbol_count);
+    for (index = 0U; index < symbol_count; index += 1U) {
+        if (vm_parser_metadata_name_matches_policy(symbols[index].spelling, target, target_length, policy)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Finds a procedure-range metadata entry by future call target spelling.
+///
+/// @param context Classifier context to inspect.
+/// @param target Source target bytes.
+/// @param target_length Number of bytes in @p target.
+/// @param out_index Receives the procedure index when a match exists.
+/// @return true when a procedure range matches the target.
+static bool vm_parser_find_call_target_procedure(
+    const VmParserCallTargetContext *context,
+    const char *target,
+    size_t target_length,
+    size_t *out_index
+) {
+    size_t index = 0U;
+
+    if (out_index != NULL) {
+        *out_index = 0U;
+    }
+    if (context == NULL || context->procedure_ranges == NULL || target == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < context->procedure_range_count; index += 1U) {
+        if (vm_parser_metadata_name_matches_policy(context->procedure_ranges[index].name, target, target_length, context->case_policy)) {
+            if (out_index != NULL) {
+                *out_index = index;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Finds a code-label metadata entry by future call target spelling.
+///
+/// @param context Classifier context to inspect.
+/// @param target Source target bytes.
+/// @param target_length Number of bytes in @p target.
+/// @param out_index Receives the label index when a match exists.
+/// @return true when a code label matches the target.
+static bool vm_parser_find_call_target_code_label(
+    const VmParserCallTargetContext *context,
+    const char *target,
+    size_t target_length,
+    size_t *out_index
+) {
+    size_t index = 0U;
+
+    if (out_index != NULL) {
+        *out_index = 0U;
+    }
+    if (context == NULL || context->code_labels == NULL || target == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < context->code_label_count; index += 1U) {
+        if (vm_parser_metadata_name_matches_policy(context->code_labels[index].name, target, target_length, context->case_policy)) {
+            if (out_index != NULL) {
+                *out_index = index;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Finds a numeric-equate metadata entry by future call target spelling.
+///
+/// @param context Classifier context to inspect.
+/// @param target Source target bytes.
+/// @param target_length Number of bytes in @p target.
+/// @param out_index Receives the equate index when a match exists.
+/// @return true when a numeric equate matches the target.
+static bool vm_parser_find_call_target_numeric_equate(
+    const VmParserCallTargetContext *context,
+    const char *target,
+    size_t target_length,
+    size_t *out_index
+) {
+    size_t index = 0U;
+
+    if (out_index != NULL) {
+        *out_index = 0U;
+    }
+    if (context == NULL || context->numeric_equates == NULL || target == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < context->numeric_equate_count; index += 1U) {
+        if (vm_parser_metadata_name_matches_policy(context->numeric_equates[index].name, target, target_length, context->case_policy)) {
+            if (out_index != NULL) {
+                *out_index = index;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+const char *vm_parser_call_target_class_name(VmParserCallTargetClass target_class) {
+    switch (target_class) {
+        case VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION:
+            return "malformed-target-expression";
+        case VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY:
+            return "user-procedure-entry";
+        case VM_PARSER_CALL_TARGET_CODE_LABEL:
+            return "code-label";
+        case VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED:
+            return "irvine32-supported";
+        case VM_PARSER_CALL_TARGET_IRVINE32_PLANNED:
+            return "irvine32-planned";
+        case VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED:
+            return "irvine32-unsupported";
+        case VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL:
+            return "external-non-goal";
+        case VM_PARSER_CALL_TARGET_DATA_SYMBOL:
+            return "data-symbol";
+        case VM_PARSER_CALL_TARGET_NUMERIC_EQUATE:
+            return "numeric-equate";
+        case VM_PARSER_CALL_TARGET_LOCAL_SYMBOL:
+            return "local-symbol";
+        case VM_PARSER_CALL_TARGET_RESERVED_WORD:
+            return "reserved-word";
+        case VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL:
+            return "unknown-symbol";
+        default:
+            return NULL;
+    }
+}
+
+VmParserCallTargetClassification vm_parser_classify_call_target_name(
+    const VmParserCallTargetContext *context,
+    const char *target,
+    size_t target_length
+) {
+    VmLexerToken token;
+
+    memset(&token, 0, sizeof(token));
+    token.kind = VM_LEXER_TOKEN_IDENTIFIER;
+    token.lexeme = target;
+    token.lexeme_length = target_length;
+    return vm_parser_classify_call_target_token(context, &token);
+}
+
+VmParserCallTargetClassification vm_parser_classify_call_target_token(
+    const VmParserCallTargetContext *context,
+    const VmLexerToken *target_token
+) {
+    VmParserCallTargetClassification result;
+    VmIrvine32SymbolClass irvine32_class = VM_IRVINE32_SYMBOL_CLASS_UNKNOWN;
+    VmParserReservedWordClassification reserved;
+    VmSymbolLookupStatus symbol_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    size_t metadata_index = 0U;
+    const VmSymbol *symbol = NULL;
+
+    if (target_token == NULL || target_token->lexeme == NULL || target_token->lexeme_length == 0U) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION);
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_REGISTER) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_RESERVED_WORD);
+    }
+    if (target_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION);
+    }
+
+    irvine32_class = vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length);
+    if (irvine32_class != VM_IRVINE32_SYMBOL_CLASS_UNKNOWN) {
+        result = vm_parser_make_call_target_classification(vm_parser_call_target_class_from_irvine32_class(irvine32_class));
+        result.irvine32_symbol_class = irvine32_class;
+        return result;
+    }
+
+    if (context != NULL && vm_parser_call_target_is_external_non_goal_name(target_token->lexeme, target_token->lexeme_length, context->case_policy)) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL);
+    }
+
+    reserved = vm_parser_classify_reserved_word(target_token);
+    if (reserved.is_reserved) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_RESERVED_WORD);
+    }
+
+    if (vm_parser_find_call_target_procedure(context, target_token->lexeme, target_token->lexeme_length, &metadata_index)) {
+        result = vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY);
+        result.metadata_index = metadata_index;
+        result.has_metadata_index = true;
+        return result;
+    }
+
+    if (vm_parser_find_call_target_code_label(context, target_token->lexeme, target_token->lexeme_length, &metadata_index)) {
+        result = vm_parser_make_call_target_classification(
+            context->code_labels[metadata_index].declaration_kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY ?
+                VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY : VM_PARSER_CALL_TARGET_CODE_LABEL
+        );
+        result.metadata_index = metadata_index;
+        result.has_metadata_index = true;
+        return result;
+    }
+
+    if (context != NULL && context->symbols != NULL) {
+        symbol = vm_symbol_find_by_name_with_policy(
+            context->symbols,
+            context->symbol_count,
+            target_token->lexeme,
+            target_token->lexeme_length,
+            context->case_policy,
+            &symbol_status
+        );
+        if (symbol != NULL && symbol_status == VM_SYMBOL_LOOKUP_FOUND) {
+            result = vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_DATA_SYMBOL);
+            result.metadata_index = (size_t)(symbol - context->symbols);
+            result.has_metadata_index = true;
+            return result;
+        }
+    }
+
+    if (vm_parser_find_call_target_numeric_equate(context, target_token->lexeme, target_token->lexeme_length, &metadata_index)) {
+        result = vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_NUMERIC_EQUATE);
+        result.metadata_index = metadata_index;
+        result.has_metadata_index = true;
+        return result;
+    }
+
+    return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL);
 }
 
 const char *vm_parser_status_name(VmParserStatus status) {
@@ -10073,6 +10443,10 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "reserved-word-symbol";
         case VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT:
             return "label-symbol-conflict";
+        case VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME:
+            return "invalid-procedure-name";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET:
+            return "unsupported-call-target";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:
             return "code-label-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED:

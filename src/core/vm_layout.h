@@ -5,8 +5,8 @@
  * This module centralizes fixed educational memory layout defaults and the
  * policy object that layout phases can extend. Automatic sizing, stack/heap
  * size metadata, and seeded/fresh randomized base placement are modeled while
- * deliberately keeping object-bounds diagnostics, stack behavior, and heap
- * allocation out of scope.
+ * deliberately keeping object-bounds diagnostics, source-level stack
+ * instruction behavior, stack frames, and heap allocation out of scope.
  */
 
 #ifndef MASM32_SIM_VM_LAYOUT_H
@@ -45,7 +45,7 @@
 /// Fixed educational stack region size in bytes.
 #define VM_LAYOUT_FIXED_STACK_SIZE 0x00010000U
 
-/// Named default stack-size request used before stack runtime behavior exists.
+/// Named default stack-size request used by layout-policy stack metadata and ESP startup.
 #define VM_LAYOUT_DEFAULT_STACK_SIZE_REQUEST VM_LAYOUT_FIXED_STACK_SIZE
 
 /// Named default heap-size request used before heap allocation behavior exists.

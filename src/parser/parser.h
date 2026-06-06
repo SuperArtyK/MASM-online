@@ -14,7 +14,8 @@
  * diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow
  * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
- * and virtual Irvine32 registry metadata.
+ * virtual Irvine32 registry metadata, and Phase 68 call-target classification
+ * metadata for future procedure-call milestones.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -237,6 +238,10 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL,
     /// A code label declaration conflicts with another user-defined symbol category.
     VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
+    /// A procedure declaration used malformed procedure-name syntax.
+    VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME,
+    /// A future CALL/INVOKE classifier query identified an unsupported target.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET,
     /// The caller-provided code-label table was full.
     VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
     /// The caller-provided procedure-range table was full.
@@ -318,6 +323,82 @@ typedef struct VmProcedureRange {
     size_t source_span_length;
 } VmProcedureRange;
 
+/// Describes one accepted numeric equate declaration published for metadata consumers.
+typedef struct VmNumericEquate {
+    /// Null-terminated original source spelling of the equate name.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Evaluated signed 64-bit equate value.
+    int64_t value;
+    /// Source-order CASEMAP policy active at the declaration.
+    VmSymbolCasePolicy case_policy;
+    /// Source location of the equate name token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the equate name in bytes.
+    size_t source_span_length;
+} VmNumericEquate;
+
+/// Identifies one Phase 68 future CALL/INVOKE target classification.
+typedef enum VmParserCallTargetClass {
+    /// Target syntax is absent or uses a non-identifier expression form.
+    VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION = 0,
+    /// Target names an accepted user procedure entry declared with `PROC`.
+    VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY,
+    /// Target names an ordinary executable code label, not a procedure entry.
+    VM_PARSER_CALL_TARGET_CODE_LABEL,
+    /// Target names a virtual Irvine32 intrinsic or terminator implemented now.
+    VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED,
+    /// Target names a recognized Irvine32 routine planned for a later phase.
+    VM_PARSER_CALL_TARGET_IRVINE32_PLANNED,
+    /// Target names a recognized Irvine32 routine explicitly unsupported in v1.
+    VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED,
+    /// Target names Windows API, external, linker, import-library, or host-environment behavior outside simulator scope.
+    VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL,
+    /// Target names an accepted data symbol.
+    VM_PARSER_CALL_TARGET_DATA_SYMBOL,
+    /// Target names an accepted numeric equate.
+    VM_PARSER_CALL_TARGET_NUMERIC_EQUATE,
+    /// Target names a local symbol if future local-symbol metadata is supplied.
+    VM_PARSER_CALL_TARGET_LOCAL_SYMBOL,
+    /// Target names a reserved MASM/simulator word.
+    VM_PARSER_CALL_TARGET_RESERVED_WORD,
+    /// Target is identifier-shaped but has no known metadata entry.
+    VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL
+} VmParserCallTargetClass;
+
+/// Supplies metadata tables used by the Phase 68 call-target classifier.
+typedef struct VmParserCallTargetContext {
+    /// Accepted data-symbol table.
+    const VmSymbol *symbols;
+    /// Number of accepted entries in @ref symbols.
+    size_t symbol_count;
+    /// Accepted code-label table.
+    const VmCodeLabel *code_labels;
+    /// Number of accepted entries in @ref code_labels.
+    size_t code_label_count;
+    /// Accepted procedure-range table.
+    const VmProcedureRange *procedure_ranges;
+    /// Number of accepted entries in @ref procedure_ranges.
+    size_t procedure_range_count;
+    /// Accepted numeric-equate metadata table.
+    const VmNumericEquate *numeric_equates;
+    /// Number of accepted entries in @ref numeric_equates.
+    size_t numeric_equate_count;
+    /// User-symbol CASEMAP policy active at the target reference.
+    VmSymbolCasePolicy case_policy;
+} VmParserCallTargetContext;
+
+/// Describes the result of one Phase 68 call-target classification query.
+typedef struct VmParserCallTargetClassification {
+    /// Primary target class.
+    VmParserCallTargetClass target_class;
+    /// Irvine32 registry class when @ref target_class is an Irvine32-backed class.
+    VmIrvine32SymbolClass irvine32_symbol_class;
+    /// Index into the matching metadata table when @ref has_metadata_index is true.
+    size_t metadata_index;
+    /// Whether @ref metadata_index identifies a matching metadata entry.
+    bool has_metadata_index;
+} VmParserCallTargetClassification;
+
 /// Returns a stable display name for a code-label declaration kind.
 ///
 /// @param kind Declaration kind to inspect.
@@ -329,6 +410,45 @@ const char *vm_code_label_declaration_kind_name(VmCodeLabelDeclarationKind kind)
 /// @param kind Target kind to inspect.
 /// @return Static target-kind name, or NULL for invalid values.
 const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind);
+
+/// Returns a stable display name for a Phase 68 call-target class.
+///
+/// @param target_class Target class to inspect.
+/// @return Static target-class name, or NULL for invalid values.
+const char *vm_parser_call_target_class_name(VmParserCallTargetClass target_class);
+
+/// Classifies an identifier-shaped future CALL/INVOKE target by parser metadata.
+///
+/// The helper performs no lowering or execution. It is intended for future CALL
+/// and INVOKE parser phases to distinguish user procedures, ordinary labels,
+/// data symbols, numeric equates, Irvine32 registry names, external non-goals,
+/// reserved words, malformed operands, and unknown symbols before execution
+/// support exists.
+///
+/// @param context Metadata tables and reference-time CASEMAP policy.
+/// @param target Source target bytes to classify as an identifier.
+/// @param target_length Number of bytes in @p target.
+/// @return Classification result.
+VmParserCallTargetClassification vm_parser_classify_call_target_name(
+    const VmParserCallTargetContext *context,
+    const char *target,
+    size_t target_length
+);
+
+/// Classifies a lexer token as a future CALL/INVOKE target.
+///
+/// Non-identifier tokens classify as malformed target expressions. Identifier
+/// tokens are classified using the same metadata and reserved-word policy as
+/// @ref vm_parser_classify_call_target_name, while register tokens remain
+/// distinguishable as reserved non-identifier target forms.
+///
+/// @param context Metadata tables and reference-time CASEMAP policy.
+/// @param target_token Lexer token carrying the candidate target.
+/// @return Classification result.
+VmParserCallTargetClassification vm_parser_classify_call_target_token(
+    const VmParserCallTargetContext *context,
+    const VmLexerToken *target_token
+);
 
 /// Identifies whether a parser diagnostic blocks execution.
 typedef enum VmParserDiagnosticSeverity {
@@ -427,6 +547,10 @@ typedef struct VmParserConfig {
     uint8_t *const_image;
     /// Number of bytes available in @ref const_image.
     size_t const_image_capacity;
+    /// Optional caller-owned numeric-equate metadata output buffer.
+    VmNumericEquate *numeric_equates;
+    /// Number of entries available in @ref numeric_equates.
+    size_t numeric_equate_capacity;
     /// Caller-owned parser diagnostic output buffer.
     VmParserDiagnostic *diagnostics;
     /// Number of entries available in @ref diagnostics; this also bounds recovery diagnostics.
@@ -455,6 +579,8 @@ typedef struct VmParserResult {
     size_t code_label_count;
     /// Number of procedure ranges written to the configured procedure-range buffer.
     size_t procedure_range_count;
+    /// Number of numeric equates written to the configured numeric-equate metadata buffer.
+    size_t numeric_equate_count;
     /// Whether @ref selected_entry_procedure_index identifies the `END entryName` procedure.
     bool has_selected_entry_procedure;
     /// Procedure-range index selected by the accepted `END entryName` directive.
@@ -475,7 +601,7 @@ typedef struct VmParserResult {
     size_t stack_directive_source_span_length;
     /// Whether a `.stack size` directive requested a specific stack size.
     bool has_requested_stack_size;
-    /// Requested stack size in bytes from `.stack size`; runtime stack behavior is deferred.
+    /// Requested stack size in bytes from `.stack size`; source-level stack instructions and frames remain deferred.
     uint32_t requested_stack_size;
     /// Whether `INCLUDE Irvine32.inc` registered the virtual Irvine32 symbol table.
     bool has_irvine32_virtual_include;
@@ -499,8 +625,9 @@ typedef struct VmParserResult {
 /// executable code labels or procedure-entry labels and are lowered to runtime
 /// branch metadata. MASM32 header directives accepted in
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
-/// change runtime stack behavior. `.DATA?` storage is deterministic zero-filled
-/// storage with metadata; `.CONST` storage is read-only once loaded into VM
+/// change source-level stack instruction behavior or procedure frames. `.DATA?`
+/// storage is deterministic zero-filled with metadata; `.CONST` storage is
+/// read-only once loaded into VM
 /// memory. Code labels and procedure-entry labels are recorded as parser/source
 /// metadata; direct branch lowering consumes that metadata, and the executor
 /// transfers to resolved direct branch targets for implemented branch opcodes.

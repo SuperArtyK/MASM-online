@@ -255,6 +255,116 @@ Document ownership:
 - Milestone reports are detailed records of one completed milestone.
 - Curated handoff/audit reports are historical navigation and stale-assumption prevention aids.
 
+### Historical Report Archival Rule
+
+Historical reports should be organized so current implementation sessions can find the latest evidence without treating older reports as current source of truth.
+
+Recommended paths:
+
+```text
+docs/history/
+  PROJECT_AUDIT_AND_HANDOFF_REPORT_THROUGH_MILESTONE_<N>.md
+  other curated historical audit or handoff reports
+
+docs/history/reports/
+  Milestone <N> report.md
+```
+
+The repository root should not accumulate old handoff reports or old milestone reports as active-looking files. Root-level historical reports increase the risk that a future assistant will read an old "current status" section as if it still describes the latest repository state.
+
+When historical files are moved:
+
+1. Do not rewrite their historical claims as if they were written for the current milestone.
+2. Do not delete useful assumptions, command records, skipped-dependency notes, TODO-style note disposition, or regression-watch notes.
+3. Add a supersession note only when the report's old "current" wording could mislead future assistants.
+4. Update active links from `README.md`, `docs/BUILDING_AND_DEVELOPMENT.md`, and current startup or handoff instructions.
+5. Do not update runtime/source-run phase metadata merely because historical files moved.
+6. Do not change accepted syntax, rejected syntax, diagnostics, runtime behavior, tests, or current-status phase labels merely because historical files moved.
+7. Do not treat an archive move as an implementation milestone unless the user explicitly asks to make documentation organization the target milestone.
+
+Moving or indexing historical files is documentation organization only. It must not change parser behavior, source-run behavior, diagnostics, runtime metadata, supported syntax, or current-status phase labels.
+
+#### Missing early milestone reports
+
+If standalone milestone reports are available only from a later milestone onward, document that archival gap instead of fabricating original-looking reports.
+
+For example, if standalone reports exist only from Milestone 42 onward, use this interpretation:
+
+```text
+Standalone milestone reports are preserved from Milestone 42 onward because those are the report files available in this repository history.
+
+Milestones 0-41 do not have individual standalone milestone-report files in this archive. Their historical implementation summaries are covered by the completed phase definitions in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, accumulated history in `docs/MILESTONE_HISTORY.md` where available, and curated audit/handoff reports such as `docs/history/PROJECT_AUDIT_AND_HANDOFF_REPORT_THROUGH_MILESTONE_42.md`.
+```
+
+Future assistants must not create files named as original reports for missing early milestones unless the user explicitly asks for reconstructed historical summaries.
+
+If reconstructed summaries are created, their filenames and first headings must make reconstruction explicit.
+
+Acceptable reconstructed-summary filename examples:
+
+```text
+docs/history/reports/Reconstructed Milestones 0-41 summary.md
+docs/history/reports/Milestones 0-41 reconstructed historical summary.md
+```
+
+Avoid one reconstructed file per early milestone unless the user explicitly requests that archival reconstruction. A single reconstructed summary is less likely to be mistaken for original milestone evidence.
+
+Do not name a reconstructed summary:
+
+```text
+Milestone 0 report.md
+Milestone 1 report.md
+Milestone 2 report.md
+```
+
+unless each file is clearly marked in its filename, first heading, and first paragraph as reconstructed, not original.
+
+#### Required path for future milestone reports
+
+Future milestone reports should be saved under:
+
+```text
+docs/history/reports/Milestone <TARGET_MILESTONE> report.md
+```
+
+unless the user explicitly requests a different location.
+
+The report content requirements do not change because of the path. Future milestone reports must still include all normal report sections required by this guide, including:
+
+- milestone title and scope;
+- source-of-truth files used;
+- exact requirements implemented;
+- explicit non-goals and future work not implemented;
+- assumptions used;
+- relevant TODO-style notes reviewed;
+- TODO-style note disposition;
+- design summary;
+- files changed;
+- tests added;
+- commands used to test;
+- skipped dependency checks;
+- current-status documentation disposition;
+- any phase-specific required blocks, such as branch/control-flow status, procedure and entry-boundary disposition, or planned-read/planned-write coverage.
+
+When a future milestone moves or reorganizes historical documentation, its own milestone report must include the current-status documentation disposition block and must state whether runtime/source-run MASM behavior metadata advanced.
+
+For a documentation-organization-only milestone, the report must state that runtime/source-run MASM behavior metadata did not advance because the milestone did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages categories.
+
+#### Static checks for archival organization
+
+Static documentation checks may be added when the selected target phase includes documentation-organization work or when suitable static-check infrastructure already exists.
+
+Do not block unrelated runtime milestones solely to add archive-path checks.
+
+Useful static checks, when feasible, include:
+
+- warning when root-level links point to moved historical reports;
+- warning when a new root-level `Milestone <N> report.md` appears after the archival path policy is accepted;
+- warning when a historical handoff report lacks a supersession note after a newer accepted milestone report exists;
+- warning when active current-status surfaces link to an older handoff report as if it were current authority.
+
+These static checks are documentation hygiene checks. They must not be treated as parser/runtime behavior tests.
+
 Rules for README:
 
 1. Keep one compact active current-status block.
@@ -946,10 +1056,10 @@ Implement canonical register storage and alias read/write behavior.
 ### Tasks
 
 1. Define CPU state for MASM32 mode.
-2. Add canonical registers:
+2. Add canonical CPU/display storage rows:
    - `EAX`, `EBX`, `ECX`, `EDX`
    - `ESI`, `EDI`, `EBP`, `ESP`
-   - `EIP`
+   - `EIP` as an early stored/display row only
    - `EFLAGS`
 3. Add alias support:
    - `AX`, `AH`, `AL`
@@ -959,6 +1069,8 @@ Implement canonical register storage and alias read/write behavior.
    - `SI`, `DI`, `BP`, `SP`
 4. Implement register read/write helpers.
 5. Add unit tests for aliases.
+
+Corrective note: Phase 1 predated the later distinction between source-writable register families and displayed control-state rows. Phase 68B owns the correction that makes `EIP` a derived pseudo-code-address display/control-state row rather than a source-writable general-purpose register. Future work must read Phase 1 together with Phase 68B instead of treating this early task list as permission to accept `EIP` as a normal source operand.
 
 ### Acceptance Criteria
 
@@ -6641,7 +6753,7 @@ Register display:
 - 8-bit aliases such as `AL`, `AH`, `BL`, `BH`, `CL`, `CH`, `DL`, and `DH` use 8-bit signed interpretation.
 - 16-bit aliases such as `AX`, `BX`, `CX`, `DX`, `SI`, `DI`, `BP`, and `SP` use 16-bit signed interpretation.
 - 32-bit general-purpose registers such as `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and `ESP` use 32-bit signed interpretation.
-- `EIP` may use 32-bit signed interpretation only if it is already displayed as a generic integer row.
+- `EIP`, after Phase 68B, is displayed as a pseudo-code-address control token. It must not be treated as a generic signed integer register row unless a later display phase explicitly defines that additional presentation.
 - `EFLAGS` is not required to show signed decimal. It may continue to show hexadecimal, unsigned decimal, and named modeled flag bits.
 - If a future mode displays 64-bit registers, this phase does not authorize lossy signed 64-bit display.
 
@@ -19371,7 +19483,7 @@ Initialize and document the runtime stack startup state required before direct C
 
 This is a stack-runtime contract phase. It must not implement CALL, RET, PUSH, POP, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, Irvine32 routine dispatch, debugger stack display, call-depth accounting, or procedure-frame behavior.
 
-After this phase is accepted, the next planned runtime procedure phase remains Phase 69 - Direct CALL to User Procedures. Do not renumber Phase 69 or later phases.
+After this phase is accepted, the next planned corrective phase is Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions. Phase 69 - Direct CALL to User Procedures remains the next procedure-execution phase after Phase 68B. Do not renumber Phase 69 or later phases.
 
 ### Dependencies
 
@@ -19437,7 +19549,209 @@ Rendered Simulator Messages tests:
 - Source-run programs start with the documented `ESP`.
 - Existing non-stack programs otherwise behave as before, except for the documented startup `ESP` value.
 - No new layout sizing behavior is introduced.
-- Phase 69 - Direct CALL to User Procedures can rely on `ESP` being initialized before CALL executes.
+- Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions can rely on selected-entry startup and stack startup being complete before it synchronizes displayed EIP with the VM instruction pointer.
+- Phase 69 - Direct CALL to User Procedures can rely on `ESP` being initialized before CALL executes and on Phase 68B having defined EIP as pseudo-code-address control-state display rather than a source-writable general-purpose register.
+
+---
+
+
+
+## 72B. Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+
+### Goal
+
+Correct the simulator's `EIP` model before executable CALL and RET are implemented.
+
+Phase 68B changes `EIP` from source-writable register-like behavior into derived VM control-state display. The simulator still displays `EIP` to users, but source code must not be able to read it, write it, or use it as an ordinary operand.
+
+Phase 68B also preserves the Phase 68A `ESP` startup contract and explicitly confirms that direct source writes to `ESP` remain legal. This phase must not add stack-pointer range validation to ordinary register-writing instructions.
+
+This phase is corrective and non-renumbering. Phase 69 remains the next procedure-execution phase after this correction.
+
+### Dependencies
+
+- Phase 57H - Register Write Origin and Unchanged Markers, for final-register display/write-origin behavior.
+- Phase 61 - Direct JMP Runtime Execution, for committed instruction-pointer transfer behavior.
+- Phase 64 through Phase 66 branch phases, for conditional branch transfer behavior.
+- Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection, for selected-entry startup.
+- Phase 68A - Stack Runtime Initialization and ESP Startup Contract, for current startup notices and source-run state initialization.
+
+### Required behavior
+
+Displayed `EIP` is derived from the VM's internal instruction pointer.
+
+Displayed `EIP` uses the canonical pseudo-code-address formula:
+
+```text
+pseudo_eip = VM_CODE_BASE + lowered_instruction_index * VM_CODE_STRIDE
+```
+
+Use these initial constants unless a later explicit layout phase changes them:
+
+```text
+VM_CODE_BASE   = 00401000h
+VM_CODE_STRIDE = 4
+```
+
+`lowered_instruction_index` means the zero-based index in the executable VM instruction stream after parsing, semantic validation, procedure metadata construction, and lowering. It excludes source-only labels, comments, blank lines, PROC/ENDP markers, and directives that do not lower to executable VM instructions.
+
+`VM_CODE_STRIDE = 4` is a deterministic pseudo-address stride. It is not a native x86 instruction size. It must not be used to infer real instruction lengths, source text offsets, PE RVAs, linker offsets, or code-section byte offsets.
+
+Pseudo-EIP values are control-flow tokens, not VM data-memory addresses. Phase 68B must not allocate a `.code` memory region, make pseudo-code addresses readable through data-memory helpers, create executable memory, or reserve bytes in the VM memory map for instructions.
+
+The first executable lowered instruction has pseudo-EIP `00401000h`.
+
+Each later executable lowered instruction advances by `VM_CODE_STRIDE`.
+
+Directives, labels, PROC/ENDP markers, comments, blank lines, and non-executable metadata entries must not receive executable pseudo-EIP addresses unless they already lower to executable VM instructions.
+
+Label and procedure-entry metadata used by branch/CALL phases must be able to map from a target instruction index to its pseudo-EIP.
+
+A reverse mapping must exist from valid executable pseudo-EIP values back to lowered VM instruction indexes for future RET validation.
+
+Displayed `EIP` must update when the internal VM instruction pointer changes through fallthrough, direct JMP, conditional JMP, `exit`, runtime error stop, watchdog stop, and no-instruction termination.
+
+`exit`, fatal runtime errors, and watchdog stops must leave displayed `EIP` at the pseudo-code address of the instruction that caused termination or stop. Phase 68B must not advance displayed `EIP` to a synthetic terminal pseudo-address.
+
+If a parsed program has no executable lowered VM instruction, displayed `EIP` must be `VM_CODE_BASE`. This value represents the start of the pseudo-code stream, not an executable instruction address. The terminal state must also report that no instruction executed.
+
+Displayed `EIP` must not be stored as an ordinary mutable register field that source instructions can modify.
+
+### Source-operand restrictions
+
+The parser, resolver, or semantic validator must reject `EIP` wherever an ordinary source-level register operand would otherwise be accepted.
+
+Reject at minimum:
+
+```asm
+mov eip, 1
+mov eax, eip
+add eip, 4
+sub eip, 4
+cmp eip, eax
+xchg eip, eax
+lea eip, [eax]
+push eip
+pop eip
+mov eax, [eip]
+mov eax, [eax + eip]
+mov [eip], eax
+```
+
+`EIP` must be rejected in memory operands even when the same syntactic position would accept `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, or `ESP`.
+
+Use diagnostic code `invalid-eip-operand` unless the repository already has a semantically equivalent register-role diagnostic at the time Phase 68B is implemented. Do not reuse a generic `unknown-register`, `invalid-register`, or `unsupported-instruction` diagnostic if the parser already recognizes the token `EIP`. The problem is not that the name is unknown; the problem is that `EIP` is derived VM control state and cannot be used as a source operand.
+
+The diagnostic must include line, column, byte offset, span length, severity, and rendered Simulator Messages text.
+
+The diagnostic wording must explain that `EIP` is displayed VM control state, not a source-writable general-purpose register.
+
+### ESP regression guardrail
+
+Phase 68B must not make `ESP` non-writable.
+
+These forms must remain legal if the relevant instruction forms are otherwise supported:
+
+```asm
+mov esp, 1
+mov esp, eax
+add esp, 4
+sub esp, 4
+```
+
+Phase 68B must not warn or error solely because an explicit register instruction assigns an out-of-stack-range value to `ESP`.
+
+Invalid `ESP` values must be diagnosed only when a later implicit stack operation actually attempts a checked stack memory access, unless a later explicit educational warning phase defines a non-fatal suspicious-stack-pointer warning with structured and rendered tests.
+
+A source-run program that writes an out-of-range value to `ESP` but never performs an implicit stack access must not fail solely because of that explicit `ESP` write.
+
+Example accepted behavior:
+
+```asm
+.code
+main PROC
+    mov esp, 1
+    mov eax, 2
+    exit
+main ENDP
+END main
+```
+
+### Non-goals
+
+Phase 68B must not implement:
+
+- CALL execution;
+- RET execution;
+- PUSH or POP source-level stack execution;
+- stack-overflow or stack-underflow diagnostics;
+- suspicious-stack-pointer warnings;
+- root procedure termination;
+- procedure frames;
+- PROC USES;
+- LOCAL;
+- RET imm16 cleanup;
+- Irvine32 routine dispatch;
+- real x86 instruction byte lengths;
+- PE image layout;
+- linker RVAs;
+- executable code memory;
+- reading instruction bytes through data-memory helpers;
+- self-modifying code;
+- host filesystem behavior;
+- host executable memory behavior.
+
+### Required tests
+
+Native/parser/semantic tests:
+
+- `mov eip, 1` is rejected with the selected EIP diagnostic.
+- `mov eax, eip` is rejected.
+- `add eip, 4` is rejected.
+- `cmp eip, eax` is rejected.
+- `[eip]` is rejected in memory operands.
+- `[eax + eip]` is rejected in memory operands.
+- `mov [eip], eax` is rejected.
+- `push eip` and `pop eip` are rejected if PUSH/POP operand parsing exists; otherwise add these tests when PUSH/POP parsing is introduced.
+- `mov esp, 1` remains accepted.
+- `mov esp, eax` remains accepted.
+- `add esp, 4` and `sub esp, 4` remain accepted if those instruction forms are already implemented for 32-bit general registers.
+- Existing general-register behavior for EAX, EBX, ECX, EDX, ESI, EDI, EBP, and ESP remains unchanged.
+
+Source-run tests:
+
+- A simple program's startup state reports displayed `EIP = 00401000h` at the first executable lowered instruction.
+- Fallthrough advances displayed `EIP` by `VM_CODE_STRIDE`.
+- Direct JMP updates displayed `EIP` to the target instruction's pseudo-code address.
+- Conditional JMP taken updates displayed `EIP` to the target pseudo-code address.
+- Conditional JMP not taken advances displayed `EIP` by `VM_CODE_STRIDE`.
+- `exit` leaves displayed `EIP` at the pseudo-code address of the executed `exit` instruction.
+- A fatal runtime error leaves displayed `EIP` at the pseudo-code address of the failing instruction.
+- Watchdog stop leaves displayed `EIP` at the pseudo-code address of the instruction where execution stopped.
+- A program with no executable lowered VM instruction reports displayed `EIP = VM_CODE_BASE` and reports that no instruction executed.
+- A program that executes `mov esp, 1` and then exits without any implicit stack operation succeeds. This proves that out-of-range ESP is not diagnosed at assignment time.
+- Pseudo-EIP values are not treated as VM data-memory addresses.
+
+Protocol/UI tests:
+
+- Register output still contains an `EIP` row.
+- The `EIP` row is marked or documented as derived control state if the protocol has metadata capable of expressing that.
+- The UI-visible `EIP` value changes according to VM control flow, not according to source writes.
+- Rendered Simulator Messages tests cover at least one rejected EIP source operand.
+
+Static/documentation tests:
+
+- Supported syntax documentation, after Phase 68B is implemented, states that `EIP` is displayed but not source-writable.
+- Supported syntax documentation, after Phase 68B is implemented, states that direct `ESP` writes remain legal.
+- Phase 69 documentation references Phase 68B pseudo-EIP return tokens instead of raw VM instruction indexes.
+
+### Acceptance criteria
+
+- EIP is no longer described as a source-writable register in source-of-truth documentation.
+- EIP source-operand rejection is covered by structured diagnostics and rendered Simulator Messages tests.
+- Displayed EIP follows VM control flow through ordinary fallthrough, direct branch transfer, conditional branch transfer, `exit`, runtime error stop, watchdog stop, and no-executable programs.
+- Direct ESP writes remain legal and are not diagnosed merely because the resulting ESP value is outside the active stack region.
+- Phase 69 can rely on pseudo-EIP return tokens without implementing CALL in Phase 68B.
 
 ---
 
@@ -19462,8 +19776,11 @@ This phase must not implement RET, root RET behavior, entry-procedure fallthroug
 
 - Phase 68 - Call Target Classification and Procedure Entry Metadata.
 - Phase 68A - Stack Runtime Initialization and ESP Startup Contract.
+- Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions.
 - Central checked memory write helpers.
 - Planned-write validation for the implicit stack write performed by CALL.
+
+Direct CALL must use the Phase 68B pseudo-code-address model for return tokens. CALL must not store raw VM instruction indexes in stack memory once Phase 68B exists.
 
 Source-level `push` and `pop` instructions are not required for this phase. CALL performs an internal return-token stack write through the checked VM memory path.
 
@@ -19501,14 +19818,19 @@ Recognized Irvine32 routine names are not user procedure targets. Before the own
 
 ### Runtime semantics
 
-1. Resolve the target through the Phase 68 classifier.
-2. Compute a 32-bit VM return token encoding the VM instruction index immediately after CALL. This token is not a native address and must not be displayed or treated as a real x86 return address.
-3. Validate the planned stack write before mutating visible state.
-4. Decrement `ESP` by 4 using the convention documented by Phase 68A.
-5. Write the return token to `[ESP]` through central checked VM memory helpers.
-6. Set the VM instruction pointer to the target procedure entry instruction.
-7. Record the stack memory change for the pushed return token.
-8. Preserve all modeled flags and flag-validity metadata.
+1. Resolve the target to a user procedure entry already discovered by earlier procedure metadata phases.
+2. Compute the return token as the pseudo-EIP of the executable lowered VM instruction immediately following the CALL.
+3. Derive the stack write destination from the current `ESP` value using the documented downward-growing 32-bit stack convention.
+4. Validate the return-token write through the central checked memory write helper.
+5. If the write fails, report the selected existing checked-memory diagnostic and stop without changing the instruction pointer, without changing externally visible ESP, without writing memory, without emitting memory-change rows, and without mutating flags.
+6. If the write succeeds, commit the stack write, update `ESP` according to the stack convention, and set the internal VM instruction pointer to the target procedure entry.
+7. Record the stack memory change for the pushed pseudo-EIP return token.
+8. Displayed `EIP` after a successful CALL must be derived from the target procedure entry's pseudo-code address.
+9. Preserve all modeled flags and flag-validity metadata.
+
+The return token must be a pseudo-EIP value. It must not be a native x86 byte address, PE RVA, linker address, source line number, source byte offset, or raw VM instruction array index.
+
+If CALL is the final executable instruction in a fixture before root termination exists, the "instruction after CALL" edge case must not be used as a Phase 69 acceptance requirement unless this phase explicitly defines it. Phase 69 tests should use CALL fixtures with a real executable lowered instruction after CALL.
 
 ### Phase-boundary note
 
@@ -19516,7 +19838,8 @@ Recognized Irvine32 routine names are not user procedure targets. Before the own
 Phase 69 owns direct CALL mechanics only:
   - classify a direct user procedure target through Phase 68;
   - consume the documented ESP startup contract from Phase 68A;
-  - create one VM return token;
+  - consume the Phase 68B pseudo-EIP control-token contract;
+  - create one pseudo-EIP return token;
   - push that return token through checked stack memory;
   - branch to the target user procedure entry;
   - preserve modeled flags and flag-validity metadata;
@@ -19541,7 +19864,7 @@ If Phase 72 - Call Depth Limit and Call Trace Diagnostics remains later in the c
 
 ### Runtime errors
 
-- `stack-overflow` or the existing stack/memory diagnostic if `ESP - 4` or the return-token write is invalid.
+- Existing central checked-memory diagnostic for invalid internal CALL stack writes. Phase 69 must not introduce a new `stack-overflow` diagnostic unless this phase is explicitly broadened to define that diagnostic code, severity, JSON fields, source span, rendered Simulator Messages wording, precedence, and no-partial-mutation behavior. In the default Phase 69 scope, the CALL return-token destination is derived from the current `ESP` value using the documented 32-bit stack convention, and the resulting write must be validated through the central checked-memory write path. Invalid destination address, permission failure, section protection failure, object-bounds failure, or any failed return-token write must be reported through the existing central memory diagnostic path.
 - `invalid-call-target` if target metadata became invalid after parsing. This should normally be unreachable from ordinary source and is appropriate for native executor or malformed-IR tests.
 
 No partial mutation rule:
@@ -19555,10 +19878,10 @@ Assembly diagnostics:
 - `invalid-call-target` for data/equate/non-procedure label targets.
 - `unsupported-call-form` for register, memory, far, or expression targets.
 - `unsupported-external-call` for Windows/API/external targets.
-- `unsupported-irvine-call` or the existing Irvine32 deferred diagnostic for virtual Irvine targets before their dispatch phase.
+- Existing Irvine32 registry-owned deferred or unsupported diagnostic for recognized virtual Irvine32 routine targets before their dispatch phase. Phase 69 must not add a new `unsupported-irvine-call` code unless the full spec and this guide first define that new code, severity, JSON fields, source-span behavior, rendered Simulator Messages wording, and precedence against the existing Irvine32 registry diagnostics. Recognized Irvine32 routine names must not be resolved as user procedure CALL targets.
 - `unknown-symbol` or target-classifier-specific unknown-target diagnostic for unknown procedure names.
 
-Source span should point to the target operand, not the `call` mnemonic, unless the whole instruction is malformed.
+Assembly diagnostic source spans should point to the target operand, not the `call` mnemonic, unless the whole instruction is malformed. Runtime diagnostics produced after an accepted CALL starts executing must use the source span required by the relevant runtime test, such as the executed CALL instruction or the narrower target operand span when existing runtime diagnostic conventions require that narrower span.
 
 ### Required tests
 
@@ -19583,17 +19906,51 @@ Source-run tests:
 
 - Existing programs without CALL still run unchanged.
 - Source-run parser/lowering diagnostics for invalid CALL targets render through Simulator Messages.
+- Add one source-run fixture that reaches the accepted direct-CALL runtime path without requiring RET. This fixture must prove that `call Helper` is parsed, classified, lowered, and executed as an accepted direct user-procedure CALL far enough to attempt the internal return-token stack write.
+
+Preferred fixture shape:
+
+```asm
+.code
+main PROC
+    mov esp, 0
+    call Helper
+main ENDP
+
+Helper PROC
+    mov eax, 1
+Helper ENDP
+END main
+```
+
+Expected behavior:
+
+- `call Helper` is accepted as a direct CALL to a user procedure entry.
+- The fixture deliberately writes `ESP` to an address that cannot hold a valid 32-bit return token under the current memory layout. The purpose is to test Phase 69 CALL lowering and no-partial-mutation behavior, not to define general stack-overflow or stack-underflow semantics.
+- The internal return-token stack write fails through the selected existing central checked-memory diagnostic.
+- The diagnostic is reported as a fatal runtime error.
+- The diagnostic source location is the executed `CALL` instruction, unless the existing runtime diagnostic convention for operand-caused runtime failures requires the narrower target operand span. The test must assert the exact selected span.
+- The VM instruction pointer does not transfer to `Helper`.
+- `ESP` remains externally unchanged at the value written before CALL.
+- No stack memory is written.
+- No memory-change row is emitted.
+- Modeled flags and flag-validity metadata are preserved.
+- Program Console output is unchanged.
+- No `execution-complete` message is emitted.
+
+This fixture exists because full successful source-run CALL followed by RET is owned by Phase 70, not Phase 69.
+
 - Full source-run success for a program requiring CALL followed by RET is deferred until Phase 70 - RET Execution and Return Address Validation.
 - Phase 69 must not add temporary fallthrough, missing-RET, root-return, or helper-procedure termination behavior merely to make a complete source-run CALL program finish.
 
 Rendered Simulator Messages tests:
 
 - Invalid CALL target diagnostics render exact target-class wording.
-- Runtime CALL stack-write failure renders as a runtime error and does not emit `execution-complete`.
+- Runtime CALL stack-write failure renders as a runtime error, uses the exact selected existing central checked-memory diagnostic, asserts the selected CALL source span, and does not emit `execution-complete`.
 
 ### Acceptance criteria
 
-A VM stepping test executes one `call Helper`, observes `ESP` decreased by 4, observes a return token written through checked stack memory, observes modeled flags preserved, and observes the VM instruction pointer set to `Helper`.
+A VM stepping test executes one `call Helper`, observes `ESP` decreased by 4, observes the pseudo-EIP return token for the executable instruction after CALL written through checked stack memory, observes modeled flags preserved, observes the VM instruction pointer set to `Helper`, and observes displayed `EIP` derived from `Helper`'s pseudo-code address.
 
 A normal source-run program that requires RET to complete is not required to complete successfully in this phase.
 
@@ -19626,33 +19983,44 @@ retf
 
 ### Runtime semantics
 
-1. Read a 32-bit return token from `[ESP]` through the central checked memory read helper.
-2. Validate that the token maps to a valid VM instruction boundary or the reserved root-return sentinel.
-3. Increment `ESP` by 4 using the convention documented by Phase 68A.
-4. Set the VM instruction pointer to the mapped return instruction.
-5. Decrease call depth if call-depth metadata exists.
-6. Preserve all modeled flags.
+Phase 70 depends on Phase 68B pseudo-EIP behavior and Phase 69 CALL return-token writes.
+
+1. Read a 32-bit return token from `[ESP]` through the central checked-memory read helper. If this read fails, stop before mutating `ESP`, instruction pointer, call-depth metadata, flags, memory, Program Console output, memory-change rows, or terminal status.
+2. Validate that the token maps to a valid pseudo-EIP value for an executable lowered VM instruction boundary. A successful checked read is not enough to transfer control.
+3. For Phase 70, a token is valid if it maps to an executable pseudo-EIP in the lowered VM instruction stream. Phase 70 does not need to prove that the token was produced by an active CALL frame unless the phase is deliberately broadened to define active-call-frame metadata, diagnostics, and tests. A later call-depth or active-frame validation phase may make RET stricter.
+4. Reject return tokens that are not known pseudo-EIP values, pseudo-EIP values for non-executable metadata entries, pseudo-EIP values outside the lowered instruction stream, raw VM instruction indexes, data-memory addresses that are not also valid executable pseudo-EIP control tokens, arbitrary integers, or root-return sentinels before Phase 71 defines root procedure termination.
+5. Phase 70 must not treat a root-return sentinel as successful program termination. Root procedure termination is owned by Phase 71 - Root Procedure Termination Semantics.
+6. Increment `ESP` by 4 using the convention documented by Phase 68A.
+7. Set the VM instruction pointer to the mapped return instruction. Displayed `EIP` is then derived from that instruction index through the Phase 68B pseudo-EIP formula.
+8. Decrease call-depth metadata only if call-depth metadata already exists and only after token validation succeeds.
+9. Preserve all modeled flags and flag-validity metadata.
+
+RET must not treat pseudo-EIP values as readable instruction bytes or data-memory addresses.
 
 ### Runtime errors
 
-- `stack-underflow`: read from `[ESP]` fails because `ESP` is outside the stack or below the valid range.
-- `invalid-return-address`: popped token does not map to a valid VM return target.
-- `return-with-empty-call-stack`: RET is executed when there is no non-root call frame and root RET is not yet enabled.
+- Existing central checked-memory diagnostic when reading the 32-bit return token from `[ESP]` fails. This includes the empty-stack case where `ESP` still equals the active stack region's exclusive high limit from the Phase 68A startup contract. Phase 70 must not introduce a new `stack-underflow` or `return-with-empty-call-stack` diagnostic unless this phase is explicitly broadened to define that code, severity, JSON fields, source span, rendered Simulator Messages wording, precedence, and no-partial-mutation behavior.
+- `invalid-return-address` when a successfully read token does not map to a valid executable pseudo-EIP return target under the Phase 70 validation rule.
+- Root RET success and user-facing root-return terminal behavior remain owned by Phase 71 - Root Procedure Termination Semantics.
 
 No partial mutation rule:
 
 - If token read or token validation fails, instruction pointer must not change.
 - `ESP` must remain externally unchanged on failed RET. Implementations may pre-validate before incrementing or roll back internally, but tests must observe no `ESP` or instruction-pointer mutation.
+- Failed RET must not mutate call-depth metadata, flags, flag-validity metadata, memory, Program Console output, memory-change rows, or terminal status.
+- Failed RET must not emit `execution-complete`.
 
 ### Tests
 
 Executor tests:
 
 - CALL followed by RET returns to the instruction after CALL.
-- RET preserves flags.
+- RET preserves modeled flags and flag-validity metadata.
 - Invalid token in stack memory produces `invalid-return-address` and does not branch.
-- RET with `ESP` outside stack produces `stack-underflow`.
-- Failed RET produces no memory-change rows.
+- RET rejects raw VM instruction indexes, arbitrary address-shaped integers, and pseudo-EIP values for non-executable metadata entries.
+- RET with `ESP` outside stack, including startup `ESP` at the Phase 68A active stack exclusive high limit before any CALL, produces the selected existing central checked-memory diagnostic.
+- Failed RET does not mutate `ESP`, instruction pointer, call-depth metadata, modeled flags, flag-validity metadata, memory, Program Console output, memory-change rows, or terminal status.
+- Failed RET does not emit `execution-complete`.
 
 Parser tests:
 
@@ -19686,7 +20054,7 @@ EBX = 0000002Ah / 42
 execution-complete
 ```
 
-This source-run program is owned by Phase 70.
+This source-run program is owned by Phase 70. It must complete with CALL writing a pseudo-EIP return token and RET returning to that displayed pseudo-EIP.
 
 Reason: Phase 69 implements direct CALL mechanics, Phase 70 implements RET back to the instruction after CALL, and the already existing `exit` terminator can end the entry procedure after control returns to `main`.
 
@@ -19707,7 +20075,10 @@ Phase 70 must still not implement:
 
 Rendered Simulator Messages tests:
 
-- `invalid-return-address` and `stack-underflow` render as runtime errors with source span on the RET instruction.
+- `invalid-return-address` renders as a runtime error with source span on the executed RET instruction.
+- The selected existing central checked-memory diagnostic for a failed `[ESP]` return-token read renders as a runtime error with source span on the executed RET instruction.
+- Failed RET does not emit `execution-complete`.
+- Phase 70 tests must not assert root RET success; root RET success belongs to Phase 71.
 
 ---
 
@@ -19991,8 +20362,8 @@ For any fatal failure in `pop`:
 
 ### Diagnostics
 
-- `stack-overflow` or existing stack/memory diagnostic for invalid PUSH stack writes.
-- `stack-underflow` or existing stack/memory diagnostic for invalid POP stack reads.
+- Existing central checked-memory diagnostic for invalid PUSH stack writes unless this phase is explicitly broadened to define a stack-specific `stack-overflow` diagnostic with the full diagnostic ownership details required by the full spec.
+- Existing central checked-memory diagnostic for invalid POP stack reads unless this phase is explicitly broadened to define a stack-specific `stack-underflow` diagnostic with the full diagnostic ownership details required by the full spec.
 - `ambiguous-memory-width` for ambiguous memory operands.
 - `unsupported-runtime-feature`, `unsupported-stack-width`, or the nearest existing width diagnostic for byte, word, QWORD, and SQWORD stack transfers.
 - `invalid-instruction-operands` or a more specific existing diagnostic for malformed PUSH/POP forms.
@@ -21442,7 +21813,7 @@ Implement deterministic virtual Irvine32 `DumpRegs` output for modeled VM state.
 ### Runtime behavior
 
 - `DumpRegs` writes canonical registers and modeled flags to Program Console.
-- It reports EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, EIP/VM instruction token, and EFLAGS or modeled flag bits.
+- It reports EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, displayed pseudo-EIP/control-state value, and EFLAGS or modeled flag bits.
 - It reports only modeled flags with exact labels: CF, ZF, SF, OF. Other real Irvine flags are omitted in the first implementation.
 - It preserves all registers and flags.
 - It writes no Simulator Messages unless a console output limit is exceeded.
@@ -21454,7 +21825,7 @@ The first implementation must use an exact deterministic multi-line format. Exam
 ```text
 EAX=00000001 EBX=00000002 ECX=00000000 EDX=00000000
 ESI=00000000 EDI=00000000 EBP=00000000 ESP=007FFFE0
-EIP=00000003 EFLAGS=00000041
+EIP=0040100Ch EFLAGS=00000041
 CF=1 ZF=1 SF=0 OF=0
 ```
 
@@ -25460,7 +25831,7 @@ Expose a stable backend register/flag state snapshot for debugger UI phases.
 ### Tasks
 
 1. Return canonical registers in stable order:
-   - `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, `ESP`, `EIP`, `EFLAGS`.
+   - `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, `ESP`, displayed pseudo-EIP/control-state value, and `EFLAGS`.
 2. Return aliases in grouped form:
    - `AX/AH/AL`, `BX/BH/BL`, `CX/CH/CL`, `DX/DH/DL`, `SI`, `DI`, `BP`, `SP`.
 3. Return modeled flags only.

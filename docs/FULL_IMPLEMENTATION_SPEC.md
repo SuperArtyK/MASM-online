@@ -204,6 +204,80 @@ If an older handoff report says a diagnostic family is reserved, inactive, or fu
 When creating or updating a curated handoff report after a later accepted milestone, include a supersession note for any older handoff whose milestone-relative "current" wording could mislead future assistants.
 
 
+### Historical Artifact Storage and Authority
+
+Historical audit reports, curated handoff reports, and standalone milestone reports may be stored outside the repository root so that the root directory remains focused on active project files.
+
+Recommended archival locations:
+
+```text
+docs/history/
+  curated audit reports and handoff reports
+
+docs/history/reports/
+  standalone milestone reports
+```
+
+Moving a historical report into an archive path changes only the file location. It does not change the report's authority, does not make the report current, and does not change simulator behavior.
+
+Historical artifacts are evidence. They are not the canonical source of truth for current behavior unless the artifact is also the latest accepted milestone report for the current repository/archive state.
+
+The current source-of-truth order remains:
+
+1. current canonical `docs/FULL_IMPLEMENTATION_SPEC.md`;
+2. current canonical `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`;
+3. current `docs/SUPPORTED_SYNTAX.md` for implemented accepted/rejected syntax and current diagnostic behavior;
+4. latest accepted repository archive or current repository checkout;
+5. latest accepted milestone report;
+6. older milestone reports, audit reports, and handoff reports only as historical evidence.
+
+Curated audit and handoff reports are useful for:
+
+- provenance;
+- stale-assumption detection;
+- regression-watch notes;
+- understanding why prior implementation or documentation choices were made;
+- reconstructing older project context when a later milestone audits earlier decisions.
+
+Curated audit and handoff reports are not current behavior authority after a newer accepted repository archive, newer accepted milestone report, or newer canonical spec/guide revision is available.
+
+Standalone milestone reports are useful for:
+
+- recording the exact scope completed by one accepted milestone;
+- preserving assumptions used during that milestone;
+- preserving tests and commands run during that milestone;
+- recording skipped dependency checks such as unavailable Emscripten;
+- documenting explicit non-goals and future work not implemented by that milestone;
+- preserving TODO-style note disposition and risk notes from that milestone.
+
+Standalone milestone reports do not override the current canonical specification or implementation guide. If a historical milestone report contradicts the current canonical spec or guide, the current canonical spec/guide wins unless the user explicitly requests restoration of the older behavior.
+
+If early standalone milestone reports are missing, do not fabricate replacement files as if they were original milestone reports. A later archival cleanup may create reconstructed summaries, but those files must be clearly labeled as reconstructed summaries rather than original milestone reports.
+
+Acceptable reconstructed-summary labels include:
+
+```text
+Reconstructed summary for Milestones 0-41
+Historical summary reconstructed from the implementation guide, milestone history, and later audit reports
+```
+
+Do not create one reconstructed file per early milestone unless the user explicitly requests that archival reconstruction.
+
+Do not name a reconstructed summary as if it were an original report, for example:
+
+```text
+Milestone 0 report.md
+Milestone 1 report.md
+Milestone 2 report.md
+```
+
+unless each file is explicitly marked in its filename, heading, and first paragraph as reconstructed rather than original.
+
+Moving, indexing, or reorganizing historical files is documentation organization only. It must not change parser behavior, source-run behavior, VM behavior, diagnostics, runtime metadata, supported syntax, current-status wording, or current-status phase labels.
+
+Historical artifact movement must not advance the runtime/source-run MASM behavior phase. It also must not update source-run JSON phase fields, browser runtime-status text, worker/protocol phase strings, Wasm/source-run status fields, or tests that assert runtime/source-run phase metadata.
+
+
 Target complete-v1 user capabilities, not necessarily current implementation:
 
 The following list describes the intended complete v1 user experience. It is not a statement that every listed capability is implemented in the current repository. Current support remains limited to the latest accepted repository/archive milestone and, for MASM/source execution behavior, the latest runtime/source-run MASM behavior phase. Future assistants must not claim that an item in this list is currently supported unless the current canonical guide, current repository state, tests, or latest milestone evidence confirm that support.
@@ -1829,9 +1903,14 @@ Unsupported or deferred constructs must continue to receive explicit diagnostics
 
 ## 9. Register Model
 
-### 9.1 32-bit Mode Canonical Registers
+### 9.1 32-bit Mode Register and Control-State Rows
 
-Canonical stored registers:
+MASM32 Educational Mode has two related but distinct concepts:
+
+1. **Source-writable general-purpose register families.** These may appear as ordinary register operands in implemented instructions when the instruction's own operand rules allow them.
+2. **Displayed control-state rows.** These may appear in final-state display, debugger output, or Irvine32 debugging routines, but they are not necessarily valid source operands.
+
+Source-writable 32-bit register families in the current 32-bit mode are:
 
 - `EAX`
 - `EBX`
@@ -1841,12 +1920,10 @@ Canonical stored registers:
 - `EDI`
 - `EBP`
 - `ESP`
-- `EIP`
-- `EFLAGS`
 
 Aliases should be derived dynamically, not stored independently.
 
-Displayed aliases:
+Displayed aliases for source-writable register families:
 
 - `EAX`, `AX`, `AH`, `AL`
 - `EBX`, `BX`, `BH`, `BL`
@@ -1856,9 +1933,47 @@ Displayed aliases:
 - `EDI`, `DI`
 - `EBP`, `BP`
 - `ESP`, `SP`
-- `EIP`
 
-`IP` may be optionally displayed in an advanced alias mode.
+`ESP` and `SP` are legal explicit source operands wherever the implemented instruction accepts their width and operand role. The simulator must not reject `mov esp, 1`, `mov sp, 0`, or similar explicit stack-pointer writes merely because the resulting stack pointer is outside the active stack region. Later implicit stack accesses through CALL, RET, PUSH, POP, frame setup, frame teardown, or Irvine32 routines must validate the effective stack read/write through the central checked-memory path.
+
+`EIP` is not a source-writable general-purpose register. It is a displayed control-state row representing a VM pseudo-code address derived from the internal instruction pointer, not a native x86 code address and not an ordinary integer register. Source instructions must not accept `EIP` or `IP` as register operands, memory-address bases, memory-address indexes, arithmetic destinations, MOV destinations, LEA destinations, NOP register operands, or user-defined symbols. `EIP` and `IP` must remain reserved simulator/MASM words for declaration diagnostics. If internal CPU storage keeps an `eip` field, that field is owned by VM instruction sequencing and control-transfer helpers, not by generic source-register writes.
+
+`EFLAGS` is also a displayed control-state row. The implemented source language manipulates modeled flag bits through instruction semantics and named flag helpers, not by treating `EFLAGS` as an ordinary writable general-purpose register.
+
+The implementation guide owns the corrective Phase 68B milestone that brings source-operand validation and final-state display into this model. That phase must not turn the simulator into a native x86 emulator: displayed `EIP` values are pseudo-code control tokens, not byte-accurate instruction addresses, instruction lengths, code-section offsets, PE RVAs, linker addresses, or host addresses.
+
+### 9.1A EIP and ESP Modeling Policy
+
+The simulator models `EIP` and `ESP` differently because they have different educational roles.
+
+`ESP` is both a normal explicit 32-bit register operand for many source-level instructions and the implicit stack pointer for stack-using instructions and runtime routines. Source instructions that otherwise accept a 32-bit general register must be allowed to write `ESP`. For example, `mov esp, 1`, `mov esp, eax`, `add esp, 4`, and `sub esp, 4` are legal source-level forms when the corresponding instruction form is otherwise implemented.
+
+The simulator must not reject a direct `ESP` write merely because the assigned value is outside the active stack region. The assignment itself is legal. Invalid or nonsensical `ESP` values become observable only when a later instruction or runtime routine uses `ESP` implicitly as a stack pointer. CALL, RET, PUSH, POP, procedure frame setup, procedure frame teardown, PROC USES handling, LOCAL allocation, RET imm16 cleanup, and Irvine32 runtime routines must validate their actual stack memory reads and writes through the central checked VM memory helpers. A bad `ESP` value must be reported at the implicit stack access point, not at the earlier explicit register write, unless a later educational warning phase explicitly defines a non-fatal suspicious-stack-pointer warning.
+
+`EIP` is different. `EIP` is not a source-writable general-purpose register in this simulator. It is displayed VM control state derived from the simulator's internal instruction pointer. Source code must not be able to write `EIP`, read `EIP` as a normal operand, use `EIP` as a memory base, use `EIP` as a memory index, or use `EIP` in arithmetic, data movement, comparison, stack, LEA, or exchange instructions.
+
+Because this project is not a full x86 emulator, not a PE loader, not a linker, and not a native instruction encoder, displayed `EIP` must not attempt to be a byte-accurate native x86 instruction address. Instead, displayed `EIP` is a deterministic pseudo-code address derived from the executable lowered VM instruction stream:
+
+```text
+pseudo_eip = VM_CODE_BASE + lowered_instruction_index * VM_CODE_STRIDE
+```
+
+The initial canonical values are:
+
+```text
+VM_CODE_BASE   = 00401000h
+VM_CODE_STRIDE = 4
+```
+
+`lowered_instruction_index` means the zero-based index in the executable VM instruction stream after parsing, semantic validation, procedure metadata construction, and lowering. It excludes source-only labels, comments, blank lines, PROC/ENDP markers, and directives that do not lower to executable VM instructions. If a future phase introduces generated executable VM instructions, that phase must define whether those generated instructions receive pseudo-EIP values and how their source spans are reported.
+
+`VM_CODE_STRIDE = 4` is a display and tokenization stride only. It does not mean that every source instruction encodes to four native x86 bytes, and it must not be used to infer native instruction lengths, source text offsets, real code-section byte offsets, linker RVAs, or executable memory layout.
+
+Pseudo-code addresses are in a separate control-token namespace from VM data memory. A pseudo-EIP value such as `00401000h` must not reserve, allocate, protect, or imply any bytes in VM memory. If the same numeric value is otherwise valid as a data-memory address under a memory-layout mode, the simulator must still treat pseudo-EIP and data-memory address use as separate concepts unless a later executable-code-memory phase explicitly changes that rule.
+
+The simulator may show `EIP` in register output, snapshots, final state, and protocol JSON. That displayed value must be derived from VM control flow. It must not be stored as an ordinary mutable general-purpose register value that source code can modify.
+
+Pseudo-code addresses are valid only as VM control-flow tokens. They may be used by JMP, CALL, RET, procedure-entry metadata, branch-target display, return-token validation, and register display logic. They must not imply support for reading instruction bytes through data-memory helpers, executing from arbitrary memory, self-modifying code, PE section mapping, linker relocation, or host executable memory.
 
 ### 9.2 Extended 32-bit Canonical Registers
 
@@ -3375,6 +3490,34 @@ The required staging is:
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
+Explicit source writes to `ESP` and `SP` are legal register writes in MASM32 Educational Mode when the current instruction accepts a 32-bit or 16-bit register destination. The simulator must not reject or immediately warn on `mov esp, 1` merely because the value is outside the active stack region. That value becomes the stack pointer for the simulator's later implicit stack operations. When a later CALL, RET, PUSH, POP, frame, or Irvine32 routine uses `ESP`, the resulting memory read or write must go through the central checked-memory path. Optional suspicious-stack-pointer warnings, stack summaries, or invalid-ESP UI annotations must be owned by explicit diagnostic/UI phases and must not be smuggled into Phase 68A, Phase 68B, Phase 69, or Phase 70.
+
+CALL and RET must use pseudo-EIP control-flow tokens once Phase 68B pseudo-EIP is implemented.
+
+A direct user-procedure CALL must store the pseudo-EIP value of the next executable lowered VM instruction as the return token. The return token must be written through the central checked memory write helper using the current `ESP` value and the documented downward-growing stack convention. CALL must not push a raw VM instruction array index into stack memory once pseudo-EIP exists.
+
+A RET must read a 32-bit return token from `[ESP]` through the central checked memory read helper. If the read succeeds, RET must validate that the token maps to a known pseudo-EIP value for an executable lowered VM instruction boundary. RET must not jump to arbitrary data-memory addresses, arbitrary integers, source byte offsets, source line numbers, raw VM instruction indexes, or source-written `EIP` values.
+
+For Phase 70, a return token is valid if it maps to an executable pseudo-EIP in the lowered VM instruction stream. A later call-depth or active-call-frame validation phase may restrict this further if that phase explicitly defines the metadata, diagnostics, and tests. Phase 70 must not require active-call-frame proof unless that requirement is deliberately added to the guide.
+
+This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, or full x86 code-segment emulation.
+
+Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, frame setup, frame teardown, PROC USES, LOCAL, RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.
+
+A phase that introduces, replaces, or changes a stack-specific diagnostic code must define all of the following in the implementation guide before implementation:
+
+- the exact diagnostic code;
+- severity;
+- source line, source column, byte offset, and span-length behavior;
+- JSON fields;
+- rendered Simulator Messages wording;
+- precedence against existing address, permission, section, object-bounds, uninitialized-read, and memory-validation diagnostics;
+- no-partial-mutation behavior;
+- structured diagnostic tests;
+- rendered Simulator Messages tests.
+
+This rule does not prevent later stack phases from introducing stack-specific diagnostics. It only prevents an implementation from silently adding such diagnostics, choosing between a stack-specific diagnostic and a central memory diagnostic without documented ownership, or changing diagnostic precedence without exact tests.
+
 A phase must not implement future procedure or stack behavior merely to make its own acceptance program easier. For example:
 
 - an entry-boundary corrective phase must not implement CALL, RET, or call-target classification;
@@ -3424,7 +3567,9 @@ Known Irvine32 symbols should be classified as:
 - Windows/API/external/linker/host-filesystem non-goal;
 - unknown symbol.
 
-Unsupported known Irvine32 routines should produce diagnostics such as `unsupported-irvine32-routine`, `unsupported-irvine-call`, or the current registry-owned diagnostic code, not generic `unknown-symbol` diagnostics.
+Unsupported or deferred known Irvine32 routines must produce a diagnostic owned by the centralized virtual Irvine32 registry or by the specific Irvine32 dispatch phase that introduces the routine. The diagnostic must not be a generic `unknown-symbol` diagnostic. A future CALL, INVOKE, PROTO, or runtime-dispatch phase must not add a duplicate Irvine32 diagnostic code merely because the routine name appears as a CALL target. A new CALL-specific Irvine32 diagnostic is allowed only if the full spec and implementation guide first define the exact code, severity, source-span behavior, JSON fields, rendered Simulator Messages wording, and precedence against the existing registry-owned Irvine32 diagnostics.
+
+Recognized Irvine32 routine names are not user procedure names. Direct user-procedure CALL resolution must not claim, shadow, or execute virtual Irvine32 routine names unless an owning Irvine32 dispatch phase explicitly defines that behavior.
 
 CALL target classification must preserve this boundary:
 
@@ -4410,12 +4555,12 @@ The signed interpretation is width-aware:
 32-bit:  unsigned range 0..4294967295, signed range -2147483648..2147483647
 ```
 
-For register display:
+For register and control-state display:
 
 - canonical 32-bit general-purpose registers such as `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and `ESP` use 32-bit interpretation;
 - 16-bit aliases such as `AX`, `BX`, `CX`, `DX`, `SI`, `DI`, `BP`, and `SP` use 16-bit interpretation;
 - 8-bit aliases such as `AL`, `AH`, `BL`, `BH`, `CL`, `CH`, `DL`, and `DH` use 8-bit interpretation;
-- `EIP` may use 32-bit signed interpretation only if it is already displayed as a generic integer row;
+- `EIP`, when displayed after Phase 68B, uses the 32-bit pseudo-code-address token format and must be labeled or documented so future assistant work does not mistake it for a native x86 byte address;
 - `EFLAGS` is not required to show signed decimal. It may continue to show hexadecimal, unsigned decimal, and named modeled flag bits;
 - the signed value of an alias is computed from the alias value and alias width, not from the full parent register.
 
@@ -4949,8 +5094,10 @@ The simulator must remain deterministic by default.
 
 Default startup behavior:
 
-- modeled registers, including EIP, start at zero;
-- modeled flag bits start cleared;
+- source-writable general-purpose registers start deterministically according to the selected startup-state mode;
+- default zero-startup sets `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, and `EBP` to zero and initializes `ESP` from the active stack region when the stack-startup contract applies;
+- displayed `EIP` is a VM pseudo-code-address token after Phase 68B. It must be initialized from the selected entry instruction after source-run entry selection is known, and then updated only by VM sequencing and control-transfer behavior;
+- modeled flag bits start cleared unless a seeded startup mode for modeled flags is active;
 - declared memory bytes are deterministic: initialized declarations use their encoded initializer bytes, and uninitialized storage is zero-filled for visible byte values;
 - `.DATA?`, `?`, and `DUP(?)` storage preserve uninitialized-origin metadata even when their visible byte value is deterministic zero;
 - repeated runs with the same source, settings, and input produce the same result.
@@ -5060,9 +5207,10 @@ ESI family: ESI, SI
 EDI family: EDI, DI
 EBP family: EBP, BP
 ESP family: ESP, SP
-EIP family: EIP
 EFLAGS family: EFLAGS
 ```
+
+`EIP` is a control-state display row, not a source-writable register family. Ordinary source instructions must not mark an `EIP` register family as written merely because VM sequencing advanced to the next instruction. If a UI later annotates `EIP`, it must use a control-flow/state label rather than the general `[unchanged]` source-register marker unless a phase explicitly defines a different display rule.
 
 When a canonical register family is unchanged by the executed program, the display may append a compact marker to the canonical parent row only:
 
@@ -6036,7 +6184,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase order, but the current intended sequence separates these concepts: stack-region initialization and documented `ESP` startup behavior; CALL/procedure target classification; direct CALL return-token mechanics; plain RET return-token validation; root procedure termination semantics; call-depth diagnostics; source-level `PUSH`/`POP` before later source fixtures depend on them; LEAVE and RET imm16; then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`. If the guide uses a corrective non-renumbering phase such as `72A`, preserve later phase identifiers and document the dependency rather than renumbering the roadmap.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase order, but the current intended sequence separates these concepts: stack-region initialization and documented `ESP` startup behavior; a corrective EIP pseudo-code-address/control-state phase before executable CALL/RET; CALL/procedure target classification; direct CALL return-token mechanics using pseudo-EIP tokens; plain RET return-token validation using pseudo-EIP tokens; root procedure termination semantics; call-depth diagnostics; source-level `PUSH`/`POP` before later source fixtures depend on them; LEAVE and RET imm16; then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`. If the guide uses a corrective non-renumbering phase such as `68B`, preserve later phase identifiers and document the dependency rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.

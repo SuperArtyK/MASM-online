@@ -1,10 +1,10 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
 Runtime/source-run MASM behavior phase:
-Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection
+Phase 68A - Stack Runtime Initialization and ESP Startup Contract
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 
@@ -32,7 +32,15 @@ Implemented entry-boundary behavior:
 - Existing explicit supported control flow, such as direct `jmp label`, may still transfer to ordinary code labels or procedure-entry labels.
 - Existing Irvine32 virtual `exit` behavior still terminates successfully from inside the selected entry procedure.
 
-This behavior is not CALL/RET support. A non-entry procedure executes only when reached by an explicitly supported control-transfer instruction.
+Implemented procedure-entry and future-call target metadata:
+
+- `name PROC` records a procedure-entry symbol distinct from an ordinary `name:` code label.
+- Procedure declarations preserve source location and source span metadata.
+- A parser classifier can distinguish user procedure entries, ordinary executable code labels, data symbols, numeric equates, central-registry Irvine32 names, external/API/linker non-goal names, reserved words, unknown symbols, and malformed target expressions for later `CALL` and `INVOKE` phases.
+- Recognized Irvine32 routine and terminator names are classified through the central virtual Irvine32 registry, not a separate call-target table.
+- Procedure names remain user symbols for `OPTION CASEMAP` purposes, while mnemonics, directives, registers, data types, `PTR` names, virtual include names, and Irvine32 names remain case-insensitive reserved words.
+
+This behavior is not CALL/RET support. A non-entry procedure executes only when reached by an explicitly supported control-transfer instruction, and the classifier does not make `CALL`, `RET`, stack mutation, argument handling, frames, or calling conventions executable.
 
 Still future or unsupported unless a later accepted milestone updates this document:
 
@@ -199,8 +207,8 @@ Accepted before `.data` or `.code` as compatibility no-ops, metadata-only direct
 
 - `.386`, `.486`, `.586`, `.686` processor compatibility declarations.
 - `.model flat, stdcall`. Other `.model` forms report `unsupported-model`.
-- `.stack` and `.stack size`, where the optional size is stored as parser metadata. In automatic layout selected by tests/configuration, the parsed size controls stack region capacity metadata. Fixed-layout browser execution and runtime stack behavior are still deferred.
-- `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. `INCLUDE Irvine32.inc` registers known Irvine32 names as virtual metadata for classification and diagnostics. It also enables the zero-operand virtual `exit` terminator. It does not implement `call`, `ret`, ExitProcess behavior, stack behavior, Program Console routines, other Irvine32 bodies, Windows API behavior, linking, or host include loading. `INCLUDE Macros.inc` remains a virtual no-op and does not populate the Irvine32 registry. `INCLUDELIB` directives are not virtual includes and are not accepted as no-ops; they report linker/library diagnostics such as `unsupported-includelib`, `unsupported-masm32-library`, or `unsupported-windows-api-library`. Basename-only unsupported include files report `unsupported-include`. Host/path-like include operands such as `include \masm32\include\masm32.inc`, `include C:\masm32\include\kernel32.inc`, `include ..\include\file.inc`, `include .\local.inc`, and `include /usr/local/include/file.inc` report host/path diagnostics such as `unsupported-host-include-path`, `unsupported-masm32-library-include`, or `unsupported-windows-api-include` instead of repeated lexer path-separator errors.
+- `.stack` and `.stack size`, where the optional size is stored as parser metadata. In automatic layout selected by tests/configuration, the parsed size controls stack region capacity metadata. Runtime startup initializes `ESP` from the active stack region's exclusive high limit. Source-level stack instructions, procedure frames, and CALL/RET stack mutation remain deferred.
+- `INCLUDE Irvine32.inc` and `INCLUDE Macros.inc` as virtual built-ins. The simulator does not load host files. `INCLUDE Irvine32.inc` registers known Irvine32 names as virtual metadata for classification and diagnostics. It also enables the zero-operand virtual `exit` terminator. It does not implement `call`, `ret`, ExitProcess behavior, source-level stack instructions, procedure frames, Program Console routines, other Irvine32 bodies, Windows API behavior, linking, or host include loading. `INCLUDE Macros.inc` remains a virtual no-op and does not populate the Irvine32 registry. `INCLUDELIB` directives are not virtual includes and are not accepted as no-ops; they report linker/library diagnostics such as `unsupported-includelib`, `unsupported-masm32-library`, or `unsupported-windows-api-library`. Basename-only unsupported include files report `unsupported-include`. Host/path-like include operands such as `include \masm32\include\masm32.inc`, `include C:\masm32\include\kernel32.inc`, `include ..\include\file.inc`, `include .\local.inc`, and `include /usr/local/include/file.inc` report host/path diagnostics such as `unsupported-host-include-path`, `unsupported-masm32-library-include`, or `unsupported-windows-api-include` instead of repeated lexer path-separator errors.
 
 Unsupported `INVOKE` diagnostics: `INVOKE` remains unsupported and is not lowered into calls or stack arguments. `ADDR` operands remain unsupported. `StdOut` is diagnosed as an external MASM32 runtime-style routine, `crt_printf` as a C runtime routine, and `ExitProcess` as WinAPI/external process behavior outside the simulator boundary. These diagnostics are emitted through Simulator Messages, refuse execution, and do not write to Program Console.
 - `OPTION CASEMAP:ALL` as an explicit selection of the default user-symbol case-insensitive policy.
@@ -223,7 +231,7 @@ Memory diagnostics and optional validation policies:
 - The default memory validation mode is region-only: final byte ranges, permissions, `.CONST` protection, uninitialized-origin reads, and unaligned accesses are runtime concerns routed through checked VM memory helpers.
 - Optional source-run/test-facing validation policies can report declared-object, section-capacity, and section-image warnings or strict errors without changing the default browser behavior.
 - Uninitialized-origin metadata is tracked for `.DATA?`, `?`, `DUP(?)`, and accepted `.CONST ?` / `.CONST DUP(?)` storage. Default source-run behavior warns on uninitialized reads while preserving deterministic visible bytes.
-- The virtual Irvine32 registry recognizes known routine names for classification and diagnostics. Only the zero-operand virtual `exit` terminator is executable in the current subset; other Irvine32 routines, `CALL`, stack behavior, and Windows/API execution remain deferred or outside scope.
+- The virtual Irvine32 registry recognizes known routine names for classification and diagnostics, including Phase 68 future-call target classification. Only the zero-operand virtual `exit` terminator is executable in the current subset; other Irvine32 routines, `CALL`, source-level stack instructions, procedure frames, and Windows/API execution remain deferred or outside scope.
 - The current instruction subset includes the arithmetic, logic, shift, rotate, multiply, divide, conversion, exchange, negation, NOP, and effective-address forms listed below.
 
 
@@ -527,4 +535,4 @@ Expression parser expansion tracked for later compatibility work:
 
 ## Still deferred
 
-Deferred systems include `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, stack initialization, `push`, `pop`, `call`, `ret`, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility. Equality conditional jumps `je`, `jz`, `jne`, and `jnz`, signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`, and unsigned relational conditional jumps `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` are already implemented for direct executable code-label and procedure-entry targets.
+Deferred systems include `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, source-level `push`, source-level `pop`, `call`, `ret`, stack frames, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility. Equality conditional jumps `je`, `jz`, `jne`, and `jnz`, signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`, and unsigned relational conditional jumps `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` are already implemented for direct executable code-label and procedure-entry targets. `ESP` startup initialization from the active stack region is implemented, but it does not make stack instructions or CALL/RET executable.
