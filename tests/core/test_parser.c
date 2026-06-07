@@ -1,12 +1,13 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 68 call-target classification metadata.
+ * @brief Unit and integration tests for the parser through Phase 68B EIP pseudo-control-state restrictions.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
- * metadata, unsupported syntax, INCLUDELIB non-goal diagnostics, INVOKE/ADDR
+ * metadata, Phase 68B EIP source-operand restrictions, unsupported syntax,
+ * INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -923,6 +924,74 @@ static int test_phase68_procedure_name_diagnostics(void) {
     failures += expect_size(buffers.diagnostics[0].location.line, 2U, "malformed procedure name diagnostic should preserve line");
     failures += expect_size(buffers.diagnostics[0].location.column, 1U, "malformed procedure name diagnostic should preserve column");
     failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "malformed procedure name diagnostic should preserve span");
+
+    return failures;
+}
+
+/// Verifies Phase 68B rejects EIP as source-level operand and declaration state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase68b_eip_control_state_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    static const char *operand_sources[] = {
+        ".code\nmain PROC\n    mov eip, 1\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    mov eax, eip\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    add eip, 4\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    sub eip, 4\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    cmp eip, eax\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    xchg eip, eax\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    lea eip, [eax]\nmain ENDP\nEND main\n",
+        ".code\nmain PROC\n    nop eip\nmain ENDP\nEND main\n",
+        ".data\nvalue DWORD 1\n.code\nmain PROC\n    mov eax, [eip]\nmain ENDP\nEND main\n",
+        ".data\nvalue DWORD 1\n.code\nmain PROC\n    mov eax, [eax + eip]\nmain ENDP\nEND main\n",
+        ".data\nvalue DWORD 1\n.code\nmain PROC\n    mov [eip], eax\nmain ENDP\nEND main\n"
+    };
+    static const char *declaration_sources[] = {
+        ".data\nEIP DWORD 1\n.code\nEND\n",
+        "EIP = 4\n.code\nEND\n",
+        ".code\nEIP:\n    mov eax, 1\nEND\n",
+        ".code\nEIP PROC\nEND\n"
+    };
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(operand_sources) / sizeof(operand_sources[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(operand_sources[index], &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "EIP source operand should diagnose");
+        failures += expect_size(result.diagnostic_count, 1U, "EIP source operand should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EIP_OPERAND, "EIP source operand should use invalid-eip-operand");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "displayed VM control state", "EIP diagnostic should explain control-state display");
+        failures += expect_u32(buffers.diagnostics[0].location.line, 3U + (index >= 8U ? 2U : 0U), "EIP operand diagnostic should preserve source line");
+        if (buffers.diagnostics[0].lexeme_length != 3U) {
+            failures += record_failure("EIP operand diagnostic should span EIP");
+        }
+    }
+
+    for (index = 0U; index < sizeof(declaration_sources) / sizeof(declaration_sources[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(declaration_sources[index], &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "EIP declaration should diagnose");
+        if (result.diagnostic_count < 1U) {
+            failures += record_failure("EIP declaration should emit a diagnostic");
+            continue;
+        }
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_EIP_OPERAND, "EIP declaration should use invalid-eip-operand");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "not a source-writable general-purpose register", "EIP declaration diagnostic should explain source restrictions");
+        if (result.symbol_count != 0U || result.numeric_equate_count != 0U || result.code_label_count != 0U || result.procedure_range_count != 0U) {
+            failures += record_failure("rejected EIP declaration should not publish user metadata");
+        }
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    mov eax, ip\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IP should remain unsupported as a built-in register alias");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "IP source operand should remain an unknown symbol, not a register alias");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\nmain PROC\n    mov esp, 1\n    mov esp, eax\n    add esp, 4\n    sub esp, 4\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 68B should preserve supported explicit ESP writes");
 
     return failures;
 }
@@ -6688,6 +6757,7 @@ int main(void) {
     failures += test_phase68_call_target_classifier_metadata();
     failures += test_phase68_call_target_classifier_casemap_policy();
     failures += test_phase68_procedure_name_diagnostics();
+    failures += test_phase68b_eip_control_state_diagnostics();
     failures += test_phase58_label_casemap_policy();
     failures += test_phase58_label_conflict_diagnostics();
     failures += test_phase60_jmp_parse_to_ir();

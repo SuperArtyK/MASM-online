@@ -31,8 +31,8 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 68);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "A");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "B");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -43,8 +43,8 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       },
       wasmTestValue: 32,
       phase: 68,
-      phaseSuffix: "A",
-      phaseName: "Phase 68A - Stack Runtime Initialization and ESP Startup Contract"
+      phaseSuffix: "B",
+      phaseName: "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
     }
   });
 });
@@ -61,8 +61,8 @@ test("ready message supports not-built wasm status", () => {
       },
       wasmTestValue: null,
       phase: 68,
-      phaseSuffix: "A",
-      phaseName: "Phase 68A - Stack Runtime Initialization and ESP Startup Contract"
+      phaseSuffix: "B",
+      phaseName: "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
     }
   });
 });
@@ -326,7 +326,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 68A - Stack Runtime Initialization and ESP Startup Contract. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });

@@ -5,12 +5,14 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
 Runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
-The current runtime initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
+The current runtime displays `EIP` as derived VM pseudo-code-address control state. The displayed value starts at `00401000h` for lowered executable instruction index 0 and advances by 4 per lowered executable VM instruction. Labels, blank lines, comments, procedure markers, and non-executable directives do not receive pseudo-EIP addresses. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such attempts produce `invalid-eip-operand`.
+
+The runtime initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; direct supported writes to `ESP` remain legal, and future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
 
 The runtime continues to honor `END entryName` as the source-run entry procedure. Execution starts inside the selected procedure, helper procedures before the selected entry do not run automatically, and ordinary fallthrough at the selected entry procedure boundary completes successfully without falling into later procedures.
 
@@ -19,11 +21,9 @@ Procedure entries remain callable-target metadata distinct from ordinary code la
 The current runtime also supports the implemented MASM32 Educational Mode subset through unsigned relational conditional jumps, plus earlier arithmetic, data, memory, diagnostics, layout, and Irvine32 virtual `exit` behavior.
 
 Next recommended implementation work:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+Phase 69 - Direct CALL to User Procedures
 
-Phase 68B is a corrective control-state milestone inserted before direct CALL/RET implementation. It does not renumber the roadmap. Its purpose is to ensure that displayed `EIP` behaves as a derived VM pseudo-code address rather than as a source-writable general-purpose register. It also preserves the Phase 68A rule that direct writes to `ESP` remain legal and that invalid stack-pointer values are diagnosed only when a later implicit stack operation performs a checked memory access.
-
-Phase 69 remains the next procedure-execution phase after Phase 68B. Phase 69 may then consume the Phase 68A `ESP` startup contract and the Phase 68B pseudo-EIP contract for direct user-procedure `CALL`. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
+Phase 69 is the next procedure-execution phase after Phase 68B. Phase 69 may consume the Phase 68A `ESP` startup contract and the Phase 68B pseudo-EIP contract for direct user-procedure `CALL`. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -44,6 +44,7 @@ At a high level, the current subset includes:
 - unsigned relational conditional jumps;
 - selected-entry source-run startup from `END entryName`;
 - `ESP` startup initialized from the active stack region empty-stack address;
+- displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
 - successful completion at the selected entry procedure's `ENDP` boundary;
 - procedure-entry and future-call target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
@@ -52,7 +53,7 @@ At a high level, the current subset includes:
 - separate Program Console and Simulator Messages streams;
 - virtual Irvine32 `exit` terminator behavior where `INCLUDE Irvine32.inc` is active.
 
-Still future or unsupported unless a later accepted milestone says otherwise:
+Future/deferred simulator features include:
 
 - `loop`;
 - indirect/register/memory/immediate branch targets;
@@ -62,11 +63,19 @@ Still future or unsupported unless a later accepted milestone says otherwise:
 - Irvine32 callable routines beyond already implemented virtual terminator behavior;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;
-- full MASM macro expansion;
-- Windows API execution;
-- PE loading or object-file linking;
+- selected macro-compatibility conveniences explicitly assigned to later accepted milestones.
+
+Permanent non-goals remain outside the simulator unless the canonical full specification and implementation guide are deliberately revised:
+
+- full MASM macro expansion and full MASM macro compatibility;
+- Windows API execution or modeling;
+- PE loading;
+- object-file linking;
+- import-library behavior;
 - host filesystem include loading;
-- native x86 execution.
+- native x86 execution;
+- full x86 emulation;
+- Windows process, DLL, handle, or kernel behavior.
 
 This README is intentionally concise. Exact accepted forms, rejected forms, diagnostic codes, examples, and future/deferred syntax belong in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md), not in this README.
 

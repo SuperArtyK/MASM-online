@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 68A ESP startup and prior runtime behavior.
+ * @brief Tests for the Wasm-facing source execution API through Phase 68B pseudo-EIP display and prior runtime behavior.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -17,16 +17,16 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact zero-startup notice wording expected in source-run JSON.
-#define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+#define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// Exact Phase 57F seeded register/flag startup notice wording expected in source-run JSON.
-#define TEST_SEEDED_STARTUP_NOTICE_TEXT "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, and modeled flags from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+#define TEST_SEEDED_STARTUP_NOTICE_TEXT "The simulator starts modeled flags and ordinary registers from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// Exact Phase 57G seeded uninitialized-storage startup notice wording expected in source-run JSON.
-#define TEST_SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, initializes ESP to the documented empty-stack address from the active stack region, and initializes visible bytes for uninitialized storage from the configured deterministic seed while preserving uninitialized-origin metadata for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
+#define TEST_SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register, and visible bytes for uninitialized storage are initialized from the configured deterministic seed while uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
 
 /// Exact notice wording expected when both Phase 57F and Phase 57G seeded startup axes are enabled.
-#define TEST_SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
+#define TEST_SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT "The simulator starts modeled flags, ordinary registers, and visible bytes for uninitialized storage from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
 
 /// Records a source-run test failure.
 ///
@@ -8918,8 +8918,8 @@ static int test_phase58_label_source_run_behavior(void) {
         )
     );
 
-    failures += expect_json_contains(labeled_copy, "\"phase\":68", "Labeled source should report numeric Phase 68A metadata base");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "Labeled source should report Phase 68A runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phase\":68", "Labeled source should report numeric Phase 68 metadata base");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "Labeled source should report Phase 68B runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":2", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -9027,8 +9027,8 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
-    failures += expect_json_contains(acceptance_json, "\"phase\":68", "Equality-jump regression should report current Phase 68A numeric metadata base");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "Equality-jump regression should report current Phase 68A runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phase\":68", "Equality-jump regression should report current Phase 68B numeric metadata base");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "Equality-jump regression should report current Phase 68B runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9270,7 +9270,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":68", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -9617,7 +9617,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":68", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -9701,10 +9701,10 @@ static int test_phase66_unsigned_relational_jump_error_paths(void) {
     return failures;
 }
 
-/// Verifies Phase 68A runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies Phase 68B runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
-static int test_phase67a_source_run_phase_metadata(void) {
+static int test_phase68b_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -9712,9 +9712,177 @@ static int test_phase67a_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":68", "Runtime metadata should report numeric Phase 68A metadata base");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 68A should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "Phase 68A should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phase\":68", "Runtime metadata should report numeric Phase 68 metadata base");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"B\"", "Phase 68B should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "Phase 68B should report the runtime phase name");
+
+    return failures;
+}
+
+
+/// Verifies Phase 68B source-run EIP display and source-operand restrictions.
+///
+/// @return Number of failures.
+static int test_phase68b_eip_pseudo_display_and_rejections(void) {
+    int failures = 0;
+    char fallthrough_copy[TEST_JSON_COPY_CAPACITY];
+    char jmp_copy[TEST_JSON_COPY_CAPACITY];
+    char empty_entry_copy[TEST_JSON_COPY_CAPACITY];
+    char no_executable_copy[TEST_JSON_COPY_CAPACITY];
+    char conditional_taken_copy[TEST_JSON_COPY_CAPACITY];
+    char conditional_not_taken_copy[TEST_JSON_COPY_CAPACITY];
+    char runtime_error_copy[TEST_JSON_COPY_CAPACITY];
+    char watchdog_copy[TEST_JSON_COPY_CAPACITY];
+    char invalid_copy[TEST_JSON_COPY_CAPACITY];
+    char esp_copy[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(fallthrough_copy, sizeof(fallthrough_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    mov ebx, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(fallthrough_copy, "\"ok\":true", "Phase 68B fallthrough fixture should run");
+    failures += expect_json_contains(fallthrough_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "selected-entry fallthrough should leave displayed EIP at the last executed pseudo-address");
+    failures += expect_json_contains(fallthrough_copy, "\"registerRoles\":{\"EIP\":\"derived-control-state\",\"ESP\":\"stack-pointer\"}", "Phase 68B should expose register display-role metadata");
+    failures += expect_json_contains(fallthrough_copy, "\"EIP\":false", "Phase 68B should not report displayed EIP as a source-written register");
+
+    copy_source_run_json(jmp_copy, sizeof(jmp_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    jmp target\n"
+        "    mov eax, 1\n"
+        "target:\n"
+        "    mov eax, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(jmp_copy, "\"ok\":true", "Phase 68B direct JMP fixture should run");
+    failures += expect_json_contains(jmp_copy, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "Phase 68B JMP fixture should execute the branch target");
+    failures += expect_json_contains(jmp_copy, "\"EIP\":{\"hex\":\"00401008h\",\"unsigned\":4198408}", "Direct JMP fallthrough boundary should leave displayed EIP at target instruction pseudo-address");
+
+    copy_source_run_json(empty_entry_copy, sizeof(empty_entry_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "helper PROC\n"
+        "    mov eax, 1\n"
+        "helper ENDP\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(empty_entry_copy, "\"ok\":true", "Phase 68B empty selected entry should complete");
+    failures += expect_json_contains(empty_entry_copy, "\"executedInstructionCount\":0", "Phase 68B empty selected entry should execute zero instructions");
+    failures += expect_json_contains(empty_entry_copy, "\"currentInstructionIndex\":null", "Phase 68B empty selected entry should not expose current instruction index");
+    failures += expect_json_contains(empty_entry_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B empty selected entry should not expose attempted next instruction");
+    failures += expect_json_contains(empty_entry_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B empty selected entry should display base pseudo-EIP");
+
+    copy_source_run_json(no_executable_copy, sizeof(no_executable_copy), masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(no_executable_copy, "\"ok\":true", "Phase 68B no-executable program should complete");
+    failures += expect_json_contains(no_executable_copy, "\"instructionCount\":0", "Phase 68B no-executable program should report zero lowered instructions");
+    failures += expect_json_contains(no_executable_copy, "\"executedInstructionCount\":0", "Phase 68B no-executable program should execute zero instructions");
+    failures += expect_json_contains(no_executable_copy, "\"currentInstructionIndex\":null", "Phase 68B no-executable program should not expose current instruction index");
+    failures += expect_json_contains(no_executable_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B no-executable program should not expose attempted next instruction");
+    failures += expect_json_contains(no_executable_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B no-executable program should display base pseudo-EIP");
+    failures += expect_json_not_contains(no_executable_copy, "runtime-error", "Phase 68B no-executable program should not emit a runtime error");
+
+    copy_source_run_json(conditional_taken_copy, sizeof(conditional_taken_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    cmp eax, 1\n"
+        "    je target\n"
+        "    mov ebx, 1\n"
+        "target:\n"
+        "    mov ecx, 2\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(conditional_taken_copy, "\"ok\":true", "Phase 68B conditional taken fixture should run");
+    failures += expect_json_contains(conditional_taken_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 68B taken JE should skip the fallthrough body");
+    failures += expect_json_contains(conditional_taken_copy, "\"EIP\":{\"hex\":\"00401010h\",\"unsigned\":4198416}", "Phase 68B taken JE should leave EIP at target pseudo-address after boundary completion");
+
+    copy_source_run_json(conditional_not_taken_copy, sizeof(conditional_not_taken_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    cmp eax, 2\n"
+        "    je target\n"
+        "    mov ebx, 3\n"
+        "    jmp done\n"
+        "target:\n"
+        "    mov ebx, 99\n"
+        "done:\n"
+        "    mov ecx, 4\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(conditional_not_taken_copy, "\"ok\":true", "Phase 68B conditional not-taken fixture should run");
+    failures += expect_json_contains(conditional_not_taken_copy, "\"EBX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "Phase 68B not-taken JE should execute the fallthrough instruction");
+    failures += expect_json_contains(conditional_not_taken_copy, "\"ECX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "Phase 68B not-taken fixture should complete at the shared done label");
+    failures += expect_json_contains(conditional_not_taken_copy, "\"EIP\":{\"hex\":\"00401018h\",\"unsigned\":4198424}", "Phase 68B not-taken fixture should leave EIP at the final completed instruction pseudo-address");
+
+    copy_source_run_json(runtime_error_copy, sizeof(runtime_error_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 10\n"
+        "    mov ebx, 0\n"
+        "    div ebx\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(runtime_error_copy, "\"ok\":false", "Phase 68B runtime-error fixture should fail");
+    failures += expect_json_contains(runtime_error_copy, "divide-by-zero", "Phase 68B runtime-error fixture should report divide-by-zero");
+    failures += expect_json_contains(runtime_error_copy, "\"EIP\":{\"hex\":\"00401008h\",\"unsigned\":4198408}", "Phase 68B runtime error should leave EIP at the failing instruction pseudo-address");
+
+    copy_source_run_json(watchdog_copy, sizeof(watchdog_copy), masm32_sim_wasm_run_source_json_with_instruction_limit(
+        ".code\n"
+        "main PROC\n"
+        "start:\n"
+        "    inc eax\n"
+        "    jmp start\n"
+        "main ENDP\n"
+        "END main\n",
+        3U
+    ));
+    failures += expect_json_contains(watchdog_copy, "\"ok\":false", "Phase 68B watchdog fixture should fail");
+    failures += expect_json_contains(watchdog_copy, "instruction-limit-exceeded", "Phase 68B watchdog fixture should report instruction-limit-exceeded");
+    failures += expect_json_contains(watchdog_copy, "\"attemptedNextInstructionIndex\":1", "Phase 68B watchdog should identify the blocked next instruction index");
+    failures += expect_json_contains(watchdog_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "Phase 68B watchdog stop should leave EIP at the instruction where execution stopped");
+
+    copy_source_run_json(invalid_copy, sizeof(invalid_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, eip\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(invalid_copy, "\"ok\":false", "Phase 68B EIP source operand should fail parsing");
+    failures += expect_json_contains(invalid_copy, "\"code\":\"invalid-eip-operand\"", "Phase 68B EIP operand should use structured diagnostic code");
+    failures += expect_json_contains(invalid_copy, "displayed VM control state", "Phase 68B rendered diagnostic should explain EIP control state");
+    failures += expect_json_contains(invalid_copy, "\"line\":3", "Phase 68B EIP diagnostic should preserve line");
+    failures += expect_json_contains(invalid_copy, "\"column\":14", "Phase 68B EIP diagnostic should preserve column");
+    failures += expect_json_contains(invalid_copy, "\"spanLength\":3", "Phase 68B EIP diagnostic should preserve span length");
+
+    copy_source_run_json(esp_copy, sizeof(esp_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov esp, 1\n"
+        "    add esp, 4\n"
+        "    sub esp, 4\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(esp_copy, "\"ok\":true", "Phase 68B should preserve explicit supported ESP writes");
+    failures += expect_json_contains(esp_copy, "\"ESP\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Phase 68B explicit ESP writes should remain visible in final registers");
 
     return failures;
 }
@@ -9742,7 +9910,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":68", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"A\"", "Phase 68A helper-before-entry source should report suffix metadata");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"B\"", "Phase 68B helper-before-entry source should report suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":1", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
@@ -10416,7 +10584,7 @@ static int test_phase57f_seeded_startup_is_deterministic(void) {
     }
     failures += expect_json_contains(first_copy, "\"ok\":true", "Seeded startup should execute successfully");
     failures += expect_json_not_contains(first_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup should expose a nonzero EAX for this fixture seed");
-    failures += expect_json_contains(first_copy, "\"EIP\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Seeded startup should leave EIP zero");
+    failures += expect_json_contains(first_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Seeded startup should display base pseudo-EIP");
 
     return failures;
 }
@@ -10797,7 +10965,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current Phase 68A runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"B\"", ".CONST ? fixture should report the current Phase 68B runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -11489,7 +11657,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current Phase 68A runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"B\"", ".code read should report the current Phase 68B runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -11672,7 +11840,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current Phase 68A runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"B\"", "segment diagnostics should report the current Phase 68B runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -12069,7 +12237,7 @@ static int test_phase61_jmp_executes_after_prior_instruction(void) {
     int failures = 0;
 
     copy_source_run_json(json_copy, sizeof(json_copy), json);
-    failures += expect_json_contains(json_copy, "\"phase\":68", "JMP regression response should report current Phase 68A numeric phase metadata base");
+    failures += expect_json_contains(json_copy, "\"phase\":68", "JMP regression response should report current Phase 68 numeric phase metadata base");
     failures += expect_json_contains(json_copy, "\"ok\":true", "valid direct JMP should execute successfully");
     failures += expect_json_contains(json_copy, "\"status\":\"ok\"", "valid direct JMP should report OK status");
     failures += expect_json_contains(json_copy, "\"instructionCount\":3", "JMP program should count committed MOV, JMP, and target MOV");
@@ -12270,7 +12438,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":68", "Phase 67A should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 68A - Stack Runtime Initialization and ESP Startup Contract\"", "Phase 68A should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions\"", "Phase 68B should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -12874,7 +13042,8 @@ int main(void) {
     failures += test_phase65_signed_relational_undefined_flag_use_policy();
     failures += test_phase66_unsigned_relational_jumps_source_run_programs();
     failures += test_phase66_unsigned_relational_jump_error_paths();
-    failures += test_phase67a_source_run_phase_metadata();
+    failures += test_phase68b_source_run_phase_metadata();
+    failures += test_phase68b_eip_pseudo_display_and_rejections();
     failures += test_phase67a_entry_procedure_runtime_boundary_source_run();
     failures += test_phase68a_source_run_observes_fixed_layout_esp_startup();
     failures += test_phase68a_seeded_startup_preserves_stack_pointer_contract();
@@ -12934,6 +13103,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, and stack-startup behavior passed.");
+    puts("Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, stack-startup, and pseudo-EIP behavior passed.");
     return 0;
 }

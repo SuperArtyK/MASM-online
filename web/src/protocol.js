@@ -19,10 +19,10 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 68;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "A";
+export const IMPLEMENTED_PHASE_SUFFIX = "B";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 68A - Stack Runtime Initialization and ESP Startup Contract";
+export const IMPLEMENTED_PHASE_NAME = "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions";
 
 /**
  * Creates the initial worker readiness response.

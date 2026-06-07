@@ -1,10 +1,10 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
 Runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 
@@ -42,7 +42,7 @@ Implemented procedure-entry and future-call target metadata:
 
 This behavior is not CALL/RET support. A non-entry procedure executes only when reached by an explicitly supported control-transfer instruction, and the classifier does not make `CALL`, `RET`, stack mutation, argument handling, frames, or calling conventions executable.
 
-Still future or unsupported unless a later accepted milestone updates this document:
+Future simulator features not implemented in the current runtime/source-run behavior phase:
 
 - `loop`;
 - indirect jumps;
@@ -53,8 +53,20 @@ Still future or unsupported unless a later accepted milestone updates this docum
 - `call`;
 - `ret`;
 - source-level `push` and `pop`;
-- stack/procedure execution;
-- active-time watchdog behavior.
+- stack/procedure execution beyond selected-entry startup, selected-entry fallthrough completion, procedure-entry metadata, target classification metadata, and `ESP` startup initialization;
+- active-time or wall-clock watchdog behavior.
+
+Permanent non-goals remain outside the simulator unless the canonical full specification and implementation guide are deliberately revised. Do not treat these non-goals as ordinary deferred roadmap items:
+
+- full MASM macro expansion and full MASM macro compatibility;
+- Windows API execution or modeling;
+- PE loading;
+- object-file linking;
+- import-library behavior;
+- host filesystem include loading;
+- native x86 execution;
+- full x86 emulation;
+- Windows process, DLL, handle, or kernel behavior.
 
 Historical milestone detail belongs in [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md), not in this opening status block.
 
@@ -171,9 +183,11 @@ MASM segment/group names such as `_TEXT`, `_DATA`, `_BSS`, `CONST`, `STACK`, `DG
 
 ### Startup and data diagnostics
 
-Default successful browser/source-run execution keeps deterministic zero-startup behavior: registers, modeled flags, and visible bytes of uninitialized storage start at zero while uninitialized-origin metadata is preserved. The `startup-state-notice` remains non-fatal and is emitted through Simulator Messages by default.
+Default successful browser/source-run execution remains deterministic. `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, modeled flags, and visible bytes of uninitialized storage start at zero while uninitialized-origin metadata is preserved. `ESP` is the exception to the ordinary zero-start register wording: its initial value is initialized from the active stack region's documented empty-stack address. `ESP` remains source-writable through supported explicit register instructions. Displayed `EIP` is also an exception to ordinary register-startup wording: it is derived VM pseudo-code-address control state, beginning at `00401000h` for lowered executable instruction index 0 and advancing by 4 per lowered executable VM instruction. The `startup-state-notice` remains non-fatal and is emitted through Simulator Messages by default.
 
-Source-run/test-facing settings can opt into deterministic seeded startup for general-purpose registers, modeled flags, and visible bytes of uninitialized-origin storage. Initialized `.data` and initialized `.CONST` bytes are not randomized. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only, and its declaration diagnostic is controlled separately from read-time `uninitialized-read` diagnostics.
+Source-run/test-facing settings can opt into deterministic seeded startup for the ordinary startup register set: `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and modeled flags. Source-run/test-facing settings can also seed visible bytes of uninitialized-origin storage where that seeded-startup mode is enabled. `ESP` remains source-writable through supported explicit register instructions, but its initial value continues to come from the active stack region's documented empty-stack address rather than from the ordinary zero-start or seeded-startup register path. `EIP` remains derived from VM control flow rather than the zero-start or seeded-startup register path. Initialized `.data` and initialized `.CONST` bytes are not randomized. Accepted `.CONST ?` and `.CONST DUP(?)` storage remains read-only, and its declaration diagnostic is controlled separately from read-time `uninitialized-read` diagnostics.
+
+Source code cannot read, write, address through, use as an instruction operand, or define `EIP`. Attempts such as `mov eip, 1`, `mov eax, eip`, `add eip, 4`, `cmp eip, eax`, `xchg eip, eax`, `lea eip, [eax]`, `nop eip`, `mov eax, [eip]`, `mov eax, [eax + eip]`, `mov [eip], eax`, `EIP DWORD 1`, `EIP = 4`, `EIP:`, or `EIP PROC` produce `invalid-eip-operand`. The diagnostic explains that `EIP` is displayed VM control state, not a source-writable general-purpose register.
 
 ### Sections and procedure shape
 
@@ -293,7 +307,7 @@ Implemented initializer forms:
 - Comma-separated initializers.
 - Flat and nested `DUP`, such as `10 DUP(0)`, `COUNT DUP(0)`, and `ROWS DUP(COLS DUP(0))`.
 - `?`, represented deterministically as zero-filled storage while retaining uninitialized metadata.
-- Milestone 29 constant expressions where a numeric initializer is valid, including in nested `DUP` counts and initializer values.
+- Phase 29 constant expressions where a numeric initializer is valid, including in nested `DUP` counts and initializer values.
 
 ### Operators and memory operands
 
@@ -506,7 +520,7 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 
 ## Diagnostic recovery behavior
 
-Milestone 17 and later can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
+Phase 17 and later behavior can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
 Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
 
@@ -527,7 +541,7 @@ Additional data types tracked for later compatibility work:
 
 Expression parser expansion tracked for later compatibility work:
 
-- Full MASM expression compatibility beyond the implemented Milestone 29 constant-expression operators.
+- Full MASM expression compatibility beyond the implemented Phase 29 constant-expression operators.
 - Runtime logical and relational expressions.
 - Binary and octal literals.
 - `.RADIX`.
@@ -535,4 +549,8 @@ Expression parser expansion tracked for later compatibility work:
 
 ## Still deferred
 
-Deferred systems include `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, source-level `push`, source-level `pop`, `call`, `ret`, stack frames, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, macro expansion, Windows API modeling, and full MASM expression compatibility. Equality conditional jumps `je`, `jz`, `jne`, and `jnz`, signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`, and unsigned relational conditional jumps `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` are already implemented for direct executable code-label and procedure-entry targets. `ESP` startup initialization from the active stack region is implemented, but it does not make stack instructions or CALL/RET executable.
+Deferred simulator features include `loop`, indirect jumps, register-target jumps, memory-target jumps, immediate-target jumps, branch-distance/type overrides, source-level `push`, source-level `pop`, `call`, `ret`, stack frames, Irvine32 routines beyond the virtual `exit` terminator, debugger stepping, breakpoints, scaled-index addressing, carry rotates, selected macro-compatibility conveniences explicitly assigned to later accepted milestones, and fuller MASM expression compatibility beyond the currently implemented subset.
+
+Non-goals remain outside the simulator unless the canonical full specification and implementation guide are deliberately revised. Non-goals include full MASM macro expansion and full MASM macro compatibility, Windows API execution or modeling, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, Windows process behavior, DLL loading, handles, and kernel behavior.
+
+Equality conditional jumps `je`, `jz`, `jne`, and `jnz`; signed relational conditional jumps `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, and `jnl`; and unsigned relational conditional jumps `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` are already implemented for direct executable code-label and procedure-entry targets. `ESP` startup initialization from the active stack region is implemented, and `ESP` remains source-writable through supported explicit register instructions. That does not make source-level stack instructions, CALL, RET, stack frames, arguments, or Irvine32 routine calls executable. Displayed `EIP` is already derived pseudo-code-address control-state display and is not a source-writable operand or user-definable symbol.

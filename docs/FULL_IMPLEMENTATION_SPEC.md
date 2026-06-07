@@ -96,8 +96,12 @@ Phase 61D remains...
 Use compact feature-category wording instead:
 
 ```text
-Current branch support includes direct JMP, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps. Loop-family instructions, indirect branches, stack/procedure transfer, and active-time watchdog behavior remain future work.
+Current branch support includes direct JMP, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps. Runtime loop protection currently uses the implemented instruction-count watchdog. Loop-family instructions, indirect/register/memory/immediate branch targets, branch distance/type overrides, source-level stack instructions, CALL execution, RET execution, procedure frames, Irvine32 callable routine dispatch, debugger/editor branch behavior, and active-time or wall-clock watchdog behavior remain future or separate-phase work.
 ```
+
+The example above is intentionally behavior-specific rather than milestone-ledger-specific. When later phases promote any listed future item to implemented behavior, update the active current-status wording in place. Do not keep stale examples that describe already-implemented behavior as future work.
+
+Do not use broad phrases such as "control flow is unsupported" after any control-flow subset has been implemented. State the exact implemented subset and the exact remaining future subset.
 
 The current-status summary should answer:
 
@@ -1019,7 +1023,9 @@ A future expanded `OPTION NOKEYWORD` phase must explicitly define all of the fol
 
 Unsupported or deferred directives should produce explicit diagnostics rather than generic syntax errors.
 
-Recognized unsupported or deferred directives include:
+This section lists recognized constructs that are unsupported or deferred in the current simulator boundary. Do not keep a construct in this list after its owning implementation phase has accepted and tested it. If only some forms of a construct are supported, distinguish implemented forms from unsupported forms directly.
+
+Recognized unsupported or deferred directives and directive families include:
 
 - `.STARTUP`
 - `.EXIT`
@@ -1031,7 +1037,7 @@ Recognized unsupported or deferred directives include:
 - `EVEN`
 - `LABEL`
 - `ORG`
-- `EQU`, `=`, and `TEXTEQU` until the equate/expression phases
+- text-substitution equate forms such as `TEXTEQU` and `name EQU <text>`
 - `STRUCT`
 - `UNION`
 - `RECORD`
@@ -1045,7 +1051,7 @@ Recognized unsupported or deferred directives include:
 - `EXTRN`
 - `PUBLIC`
 - `COMM`
-- `COMMENT`, until block-comment skipping is implemented
+- `COMMENT`, until the COMMENT block-skipping phase implements it
 - `ECHO`, until listing/build-output behavior is defined
 - `MACRO`
 - `ENDM`
@@ -1054,7 +1060,7 @@ Recognized unsupported or deferred directives include:
 - `FOR`
 - `FORC`
 - `GOTO`
-- `OPTION NOKEYWORD`, including forms such as `OPTION NOKEYWORD:<LOOP>`, until a future keyword-control phase explicitly implements reserved-word disabling behavior.
+- `OPTION NOKEYWORD`, including forms such as `OPTION NOKEYWORD:<LOOP>`, until a future keyword-control phase explicitly implements reserved-word disabling behavior
 - `OPTION DOTNAME` and `OPTION NODOTNAME`
 - unsupported `OPTION LANGUAGE` forms
 - conditional assembly directives such as `IF`, `IF2`, `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ELSEIF`, and `ENDIF`
@@ -1063,10 +1069,11 @@ Recognized unsupported or deferred directives include:
 - advanced processor/vector directives such as `.387`, `.MMX`, `.XMM`, and `.K3D`
 - safety/object-format directives such as `.SAFESEH`, `.FPO`, `PUSHCONTEXT`, and `POPCONTEXT`
 
+Numeric `name = expression` and numeric `name EQU expression` are implemented by the numeric-equate and constant-expression phases. They must not be reported through the generic unsupported-directive path. Unsupported text-substitution forms such as `TEXTEQU` and `name EQU <text>` must remain explicitly rejected until a text-equate or macro-compatibility phase defines exact accepted behavior.
 
 `OPTION NOKEYWORD` is broader than ordinary option parsing because it can change whether a reserved word is recognized as a keyword or accepted as a user-defined symbol. Until a future phase explicitly implements that behavior, the simulator must continue to reject reserved-word user-symbol declarations by default.
 
-Unsupported directive diagnostics should include the directive name, source line, column, byte offset, span length, and a short explanation.
+Unsupported directive diagnostics should include the directive name, source line, column, byte offset, span length, severity, and a short explanation.
 
 #### 8.1.5 Explicit Directive Non-Goals
 
@@ -1936,11 +1943,17 @@ Displayed aliases for source-writable register families:
 
 `ESP` and `SP` are legal explicit source operands wherever the implemented instruction accepts their width and operand role. The simulator must not reject `mov esp, 1`, `mov sp, 0`, or similar explicit stack-pointer writes merely because the resulting stack pointer is outside the active stack region. Later implicit stack accesses through CALL, RET, PUSH, POP, frame setup, frame teardown, or Irvine32 routines must validate the effective stack read/write through the central checked-memory path.
 
-`EIP` is not a source-writable general-purpose register. It is a displayed control-state row representing a VM pseudo-code address derived from the internal instruction pointer, not a native x86 code address and not an ordinary integer register. Source instructions must not accept `EIP` or `IP` as register operands, memory-address bases, memory-address indexes, arithmetic destinations, MOV destinations, LEA destinations, NOP register operands, or user-defined symbols. `EIP` and `IP` must remain reserved simulator/MASM words for declaration diagnostics. If internal CPU storage keeps an `eip` field, that field is owned by VM instruction sequencing and control-transfer helpers, not by generic source-register writes.
+`EIP` is not a source-writable general-purpose register. It is a displayed control-state row representing a VM pseudo-code address derived from the internal instruction pointer, not a native x86 code address and not an ordinary integer register. Source instructions must not accept `EIP` as a register operand, memory-address base, memory-address index, arithmetic destination, MOV destination, LEA destination, NOP register operand, or user-defined symbol. If `IP` is recognized by the parser or reserved-word table, `IP` must follow the same non-source-writable control-state rule. If `IP` is not recognized, it must remain invalid and must not become a new supported source operand or alias. Existing supported declaration, symbol, label, equate, operand, memory-address, expression, and register-write paths must not allow user code to shadow or control `EIP`; however, corrective EIP work must not implement new declaration syntax solely to add more rejection points. If internal CPU storage keeps an `eip` field, that field is owned by VM instruction sequencing and control-transfer helpers, not by generic source-register writes.
 
 `EFLAGS` is also a displayed control-state row. The implemented source language manipulates modeled flag bits through instruction semantics and named flag helpers, not by treating `EFLAGS` as an ordinary writable general-purpose register.
 
-The implementation guide owns the corrective Phase 68B milestone that brings source-operand validation and final-state display into this model. That phase must not turn the simulator into a native x86 emulator: displayed `EIP` values are pseudo-code control tokens, not byte-accurate instruction addresses, instruction lengths, code-section offsets, PE RVAs, linker addresses, or host addresses.
+Phase 68B implements this corrective model across source-operand validation, final-state display, source-run JSON, protocol output, rendered Simulator Messages, and supported-syntax documentation. A repository at or after Phase 68B must not treat `EIP` as source-writable register state, and Phase 69 or any later procedure, CALL, RET, debugger, or Irvine32 routine work must consume the accepted pseudo-EIP control-token contract rather than raw VM instruction indexes, source line numbers, native addresses, or source-written `EIP` values.
+
+Phase 68B must remove source-level `EIP` operand acceptance anywhere the current parser, semantic validator, expression model, memory-operand model, or register model would otherwise treat `EIP` as an ordinary source operand or source-writable register. If `IP` is recognized by the parser or reserved-word table, it must follow the same non-source-writable control-state rule. If `IP` is not recognized, it must remain invalid and must not become a new supported source operand merely because Phase 68B is correcting `EIP`.
+
+Phase 68B must not implement new declaration syntax merely to reject `EIP` in forms the simulator does not otherwise support. If a currently supported declaration, symbol, label, equate, operand, memory-base, memory-index, expression, or register-write path would accept `EIP` as a user-controlled value, Phase 68B must reject that path with a structured diagnostic that explains that `EIP` is derived VM control state. Phase 68B must not report `EIP` as a generic unknown token when the parser already recognizes it as the displayed instruction-pointer control row.
+
+Displayed `EIP` values are pseudo-code control tokens derived from VM control flow. They are not byte-accurate instruction addresses, native x86 instruction pointers, instruction lengths, code-section offsets, PE RVAs, linker addresses, imported-symbol addresses, or host addresses.
 
 ### 9.1A EIP and ESP Modeling Policy
 
@@ -2519,13 +2532,13 @@ Actual sizes are configurable through project settings and local safety limits.
 
 ### 11.2 Permissions
 
-Recommended permissions:
+Recommended internal region permissions:
 
 ```text
 .code
-  read: yes
+  read: internal metadata/model use only
   write: no
-  execute: yes
+  execute: yes, through the VM instruction stream only
 
 .data
   read: yes
@@ -2543,7 +2556,11 @@ Recommended permissions:
   execute: no
 ```
 
-Writes to `.code` should fail unless a future advanced option enables self-modifying code.
+The `.code` row describes the simulator's internal execution region and source/IR metadata model. It must not be interpreted as source-level permission for user programs to read instruction bytes, write instruction bytes, treat `.code` as a PE `.text` image, treat pseudo-`EIP` values as memory addresses, or access native x86 opcodes.
+
+In the current v1 MASM32 Educational Mode policy, source-level memory reads or writes whose final byte range is wholly inside `.code` must fail through the checked memory/diagnostic path defined later in Section 20A.6. A source-level memory access that crosses region boundaries and overlaps `.code`, `.CONST`, or any other protected region must fail through the existing protected-region or cross-region diagnostic policy. The simulator executes lowered VM instructions and source metadata; it does not expose `.code` as user-addressable data memory.
+
+Writes to `.code` must fail unless a deliberate later post-v1 feature explicitly introduces a separate self-modifying-code mode with its own safety policy, diagnostics, tests, and non-goal review.
 
 Execution from `.data`, heap, or stack should fail by default.
 
@@ -3025,6 +3042,12 @@ This rule applies to:
 - debugger actions that read or write simulated memory;
 - future procedure, call-frame, or runtime-library features that touch simulated memory.
 
+For implicit stack accesses, "where applicable" must be interpreted against the stack metadata that has actually been defined by the accepted milestones. Mandatory checked-memory safety applies immediately to every implicit stack access. Optional data-section declared-object validation applies to stack accesses only if a milestone explicitly defines how stack addresses map to declared stack objects, stack-frame slots, locals, arguments, saved registers, return-token slots, or a documented synthetic stack object.
+
+A future phase must not satisfy optional validation by silently treating the stack as if it were part of `.data`, `.DATA?`, or `.CONST`. Likewise, a future phase must not reject a valid stack access solely because the access is outside every data-section declared object unless that same phase or an earlier accepted phase has defined an applicable stack-object validation rule and tests.
+
+When a phase does define stack-object or stack-frame validation, that phase must also define diagnostic codes, severity, source line, source column, byte offset, span length, JSON fields, rendered Simulator Messages wording, no-partial-mutation behavior, and precedence against invalid-address, invalid-range, permission, `.CONST`, section-capacity, section-image, declared-object, and uninitialized-read diagnostics.
+
 This rule does not make optional policies mandatory in default mode. Default behavior remains whatever the canonical implementation guide specifies for the relevant policy. The rule only requires that every memory-capable feature route through the same validation architecture so selected warning and strict modes behave consistently.
 
 Strict policy failures must preserve the simulator's no-partial-mutation guarantee:
@@ -3474,21 +3497,33 @@ CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, ADDR, Irvine32 routine 
 
 The required staging is:
 
-1. **Entry procedure boundary correction.** `END entryName` selects the source-run entry procedure, execution starts inside that selected procedure, and ordinary fallthrough at that selected procedure's `ENDP` terminates successfully. Helper procedures before or after the entry procedure must not execute by linear source-order fallthrough.
+1. **Entry procedure boundary correction.** `END entryName` selects the source-run entry procedure, execution starts inside that selected procedure, and ordinary fallthrough at that selected procedure's `ENDP` terminates successfully. Helper procedures before or after the selected entry procedure must not execute merely because they appear earlier or later in source order.
 
-2. **Procedure target metadata.** User procedure entries, ordinary code labels, data symbols, equates, reserved words, recognized Irvine32 registry entries, and unknown symbols are classified separately. This metadata is used by later CALL and INVOKE phases but does not itself execute CALL or INVOKE.
+2. **Procedure target metadata.** User procedure entries, ordinary executable code labels, data symbols, numeric equates, reserved words, recognized Irvine32 registry entries, external/API/linker non-goal names, malformed target expressions, and unknown symbols are classified separately. This metadata supports later CALL and INVOKE phases but does not itself execute CALL, RET, INVOKE, stack mutation, root return, Irvine32 routine dispatch, or procedure-frame behavior.
 
-3. **Stack startup contract.** The runtime stack region is initialized, `ESP` has a documented startup value derived from the active stack layout, and later stack-writing features can rely on that value.
+3. **Stack startup contract.** The runtime stack region is initialized, and `ESP` has a documented startup value derived from the active memory-layout mode. This stage initializes empty-stack state only. It does not implement source-level `PUSH`, source-level `POP`, CALL, RET, stack-overflow diagnostics, stack-underflow diagnostics, stack-frame metadata, PROC USES, LOCAL, or Irvine32 stack behavior.
 
-4. **Direct CALL mechanics.** Direct near CALL to user procedure entries may push a simulator return token through checked stack memory and transfer control to the target procedure.
+4. **EIP pseudo-code-address correction.** Displayed `EIP` is derived from the VM instruction pointer using the documented pseudo-code-address model. Source code must not read, write, or address through `EIP` as an ordinary source operand. This correction must be complete before executable CALL or RET stores, reads, displays, or validates return tokens.
 
-5. **RET mechanics.** RET may pop a simulator return token through checked stack memory, validate it, and return to the instruction after CALL.
+5. **Direct CALL mechanics.** Direct near CALL to user procedure entries may push a simulator pseudo-EIP return token through checked stack memory and transfer control to the target procedure entry. CALL must use simulator pseudo-EIP return tokens, not native addresses, PE RVAs, linker addresses, source line numbers, source byte offsets, raw VM instruction indexes, or source-written `EIP` values.
 
-6. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL/RET make those paths meaningful.
+6. **RET mechanics.** RET may pop a simulator pseudo-EIP return token through checked stack memory, validate that the token maps to an executable lowered VM instruction boundary, and return to the instruction after CALL. RET must not jump to arbitrary data-memory addresses, arbitrary integers, source byte offsets, source line numbers, raw VM instruction indexes, or source-written `EIP` values.
 
-7. **Expanded procedure and stack features.** Source-level PUSH/POP, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 dispatch, and call-depth diagnostics are implemented only in their owning phases.
+7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
+
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects are implemented only in their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
+
+Procedure and stack phases must not weaken the project-wide memory-access invariant. Any feature that performs an implicit stack read or write must compute the final effective address and final byte range before mutation and route the access through the central checked VM memory helpers. This includes CALL return-token writes, RET return-token reads, future source-level PUSH and POP, frame setup, frame teardown, PROC USES saves/restores, LOCAL allocation, RET imm16 cleanup, and Irvine32 routine stack effects.
+
+Mandatory Level 1 VM memory safety always applies to implicit stack accesses. Address arithmetic overflow detection, byte-range containment, region permission checks, `.CONST` write protection, invalid-region diagnostics, invalid-range diagnostics, permission diagnostics, and no-partial-mutation behavior remain mandatory.
+
+Optional educational validation policies apply to implicit stack accesses only when the relevant policy has an applicable stack model. Data-section declared-object validation must not be accidentally reused as stack-frame validation. Before a phase explicitly defines stack-section object metadata, stack-frame metadata, local-variable metadata, argument metadata, saved-register metadata, return-token-slot metadata, or synthetic stack-object metadata, declared-object validation must not reject an otherwise valid CALL, RET, PUSH, POP, frame, or Irvine32 stack access merely because that stack address is outside every `.data`, `.DATA?`, or `.CONST` declared object.
+
+Once a later phase defines stack-object, stack-frame, local, argument, saved-register, return-token, or synthetic stack metadata, that later phase may add warning-mode or strict-mode validation for stack accesses. That validation must be defined as stack validation, with its own applicability rules and tests. It must not silently reuse data-section object rules without a documented mapping from stack addresses to stack objects.
+
+This rule does not disable mandatory stack-region containment, checked-address validation, permission checks, `.CONST` protection, no-partial-mutation behavior, or future stack-frame validation. It only prevents data-object validation from being treated as stack-object validation before the guide defines a stack-object model.
 
 Explicit source writes to `ESP` and `SP` are legal register writes in MASM32 Educational Mode when the current instruction accepts a 32-bit or 16-bit register destination. The simulator must not reject or immediately warn on `mov esp, 1` merely because the value is outside the active stack region. That value becomes the stack pointer for the simulator's later implicit stack operations. When a later CALL, RET, PUSH, POP, frame, or Irvine32 routine uses `ESP`, the resulting memory read or write must go through the central checked-memory path. Optional suspicious-stack-pointer warnings, stack summaries, or invalid-ESP UI annotations must be owned by explicit diagnostic/UI phases and must not be smuggled into Phase 68A, Phase 68B, Phase 69, or Phase 70.
 
@@ -3813,6 +3848,8 @@ Debug and utility routines:
 DumpRegs:
   Writes to Program Console, not Simulator Messages.
   Must include EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, EIP, EFLAGS, and modeled flags.
+  The EIP value printed by DumpRegs must be the displayed pseudo-EIP/control-state value defined by the control-state display contract and the Phase 68B EIP display rules.
+  DumpRegs must not print a native x86 instruction address, PE/RVA/linker address, host address, raw VM instruction index, source byte offset, or source-writable register value as EIP.
 
 DumpMem:
   Must document required input registers before implementation.
@@ -5645,8 +5682,13 @@ A realistic unsupported program should produce a concise set of structured diagn
 - WinAPI calls such as `ExitProcess`;
 - MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
 - high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
-- `call` and `ret` before procedure execution is implemented;
-- `cmp` and conditional jumps before control flow is implemented.
+- executable `CALL` behavior until Phase 69 implements direct CALL to user procedures;
+- executable `RET` behavior until Phase 70 implements return-token validation and RET execution;
+- loop-family instructions, indirect/register/memory/immediate branch targets, and branch distance/type overrides until their owning phases are implemented.
+
+Already-implemented branch forms must not be described as unsupported in current source-of-truth text. Direct `jmp label`, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps are current implemented behavior and should follow their implemented diagnostics and execution rules.
+
+Current `CALL` metadata/classification behavior must not be removed or described as unsupported merely because executable CALL transfer remains future-owned by Phase 69.
 
 The simulator should avoid flooding the user with repeated character-level diagnostics when a more meaningful unsupported-feature diagnostic is possible.
 
@@ -5656,18 +5698,22 @@ Phase 57T - Playground Program Diagnostic-Recovery Smoke Fixtures verifies this 
 
 ## 21. Error, Warning, and Diagnostic Model
 
-All errors should be structured internally.
+All errors, warnings, and notices should be structured internally. Source-tied diagnostics must preserve source attribution strongly enough for native tests, source-run JSON tests, worker/protocol tests, and rendered Simulator Messages tests to verify the same diagnostic path.
 
-Example:
+Example source-tied diagnostic shape:
 
 ```json
 {
   "kind": "runtime-error",
+  "severity": "error",
   "code": "invalid-memory-read",
   "message": "Invalid memory read at 0x0050FFFF.",
   "file": "main.asm",
   "line": 18,
-  "instruction": "mov eax, [ebx]",
+  "column": 13,
+  "byteOffset": 142,
+  "spanLength": 5,
+  "sourceText": "mov eax, [ebx]",
   "address": "0x0050FFFF",
   "registers": {
     "eax": "0x00000000",
@@ -5677,16 +5723,22 @@ Example:
 }
 ```
 
-Categories:
+Field names may evolve only through an explicit guide/spec update, but source-tied diagnostics must preserve equivalent severity and source-span information. At minimum, source-tied diagnostics need a diagnostic code, severity, line, column, byte offset, span length, and rendered Simulator Messages coverage when the diagnostic is UI-visible.
+
+Diagnostic categories include:
 
 - `assembly-error`
-- `link-load-error`
+- `source-load-error`
 - `runtime-error`
 - `resource-limit-error`
 - `user-stopped`
 - `unsupported-feature`
 - `simulator-warning`
 - `internal-simulator-error`
+
+`source-load-error` is for browser/project source-loading failures only. It must not be used for PE loading, object linking, import-library loading, host-file loading, Windows loader behavior, or any other linker/loader behavior outside the simulator boundary.
+
+If older code, tests, or reports still mention `link-load-error`, treat that spelling as historical or transitional terminology. Do not introduce linker, loader, PE, object-file, import-library, WinAPI, or host-filesystem behavior to justify the old name.
 
 Unsupported features should be explicit:
 
@@ -5720,7 +5772,9 @@ The implementation guide assigns diagnostic recovery for known unsupported const
 - Never execute a program if any assembly diagnostic was produced.
 - Stop immediately on fatal capacity, lexer state, or internal parser errors.
 
-Recoverable unsupported constructs include common textbook/compiler forms such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `.DATA?`, `.CONST`, `EQU`, `TEXTEQU`, `PROTO`, `LOCAL`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`.
+Recoverable unsupported constructs include common textbook/compiler forms only while those forms are still unimplemented or deliberately outside the simulator boundary in the current repository state. The example list for current recovery planning includes constructs such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `TEXTEQU`, `PROTO`, `LOCAL`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`, subject to the current supported-syntax reference and the implementation guide.
+
+Do not keep a construct in this unsupported-recovery list after its owning phase has implemented and tested it. Already-implemented constructs such as `.DATA?`, `.CONST`, numeric `name = expression`, and numeric `name EQU expression` must follow their current implemented behavior and diagnostics, not the generic unsupported-feature recovery path.
 
 
 ### 21.0 Diagnostic Precision and Precedence Requirements
@@ -6184,7 +6238,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase order, but the current intended sequence separates these concepts: stack-region initialization and documented `ESP` startup behavior; a corrective EIP pseudo-code-address/control-state phase before executable CALL/RET; CALL/procedure target classification; direct CALL return-token mechanics using pseudo-EIP tokens; plain RET return-token validation using pseudo-EIP tokens; root procedure termination semantics; call-depth diagnostics; source-level `PUSH`/`POP` before later source fixtures depend on them; LEAVE and RET imm16; then `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`. If the guide uses a corrective non-renumbering phase such as `68B`, preserve later phase identifiers and document the dependency rather than renumbering the roadmap.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the Phase 68A/68B source-of-truth revision, the current sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, or `68B`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
@@ -6254,7 +6308,13 @@ User-facing documentation must be generated from, or mechanically checked agains
 
 This section is a high-level product roadmap only. It does not override the canonical post-30 implementation sequence in the implementation guide or the integration status in Section 29.
 
-The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to concrete phases. Features below remain either late roadmap, optional post-v1 work, or explicit non-goals unless a later specification revision promotes them.
+The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to concrete phases. The themes below are roadmap categories, not a current-support table. Some items in this list may already be implemented, some may be assigned to later v1 phases, some may be optional post-v1 work, and some may remain explicit non-goals. Current support must be determined from the canonical implementation guide, `SUPPORTED_SYNTAX.md`, the latest repository state, the latest accepted milestone report, and current tests.
+
+Roadmap ordering note for stack/procedure work:
+
+The implementation guide owns exact phase order. As of the Phase 68A/68B source-of-truth revision, the current stack/procedure sequence is: Phase 67A entry-procedure runtime boundary correction; Phase 68 call-target classification and procedure-entry metadata; Phase 68A stack runtime initialization and ESP startup contract; Phase 68B EIP pseudo-code-address display and source-operand restrictions; Phase 69 direct CALL to user procedures; Phase 70 RET execution and return-token validation; followed by later root-return, call-depth, source-level stack, frame, INVOKE, ADDR, and Irvine32 routine phases.
+
+This roadmap section must not be read as permission to reorder, combine, or renumber those guide phases. Corrective non-renumbering phases such as `67A`, `68A`, and `68B` are deliberate. Later phases should depend on them by name rather than silently rewriting the history of completed phases.
 
 Concrete v1 roadmap themes:
 
@@ -6289,7 +6349,7 @@ Optional or post-v1 roadmap:
 - Data breakpoints/watchpoints.
 - Raw memory hex editor.
 - Multi-file project editor.
-- Virtual filesystem.
+- Simulator-owned virtual filesystem for explicitly specified educational file-routine behavior, if a future spec/guide revision approves it. This must not grant simulated programs direct browser filesystem access, host filesystem access, Windows file API behavior, PE loader behavior, or import-library behavior.
 - Download/upload project archives.
 - Backend snippet sharing with short URLs.
 - Optional UASM/JWasm investigation.

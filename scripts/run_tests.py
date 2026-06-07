@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 68A - Stack Runtime Initialization and ESP Startup Contract")
+    assert_text_contains("README.md", "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -553,8 +553,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 68")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
-    assert_text_contains("web/src/protocol.js", "Phase 68A - Stack Runtime Initialization and ESP Startup Contract")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"B\"")
+    assert_text_contains("web/src/protocol.js", "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -622,7 +622,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, and stack-startup behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, stack-startup, and pseudo-EIP behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1404,13 +1404,13 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase68a_current_status_and_harness_documented() -> None:
-    """Verify Phase 68A current status and stack-startup coverage."""
+def assert_phase68b_current_status_and_harness_documented() -> None:
+    """Verify Phase 68B current status and pseudo-EIP coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract"""
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"""
     runtime_status = """Runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract"""
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1421,25 +1421,27 @@ Phase 68A - Stack Runtime Initialization and ESP Startup Contract"""
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     )
 
     assert_all_text_contains(
         "README.md",
         [
-            "The current runtime initializes `ESP` from the active stack region when a program is loaded.",
+            "The current runtime displays `EIP` as derived VM pseudo-code-address control state.",
+            "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`",
             "Next recommended implementation work:",
-            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
-            "Phase 69 remains the next procedure-execution phase after Phase 68B.",
+            "Phase 69 - Direct CALL to User Procedures",
+            "Phase 69 is the next procedure-execution phase after Phase 68B.",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "`ESP` startup initialized from the active stack region empty-stack address",
-            "Phase 68A - Stack Runtime Initialization and ESP Startup Contract",
+            "displayed `EIP` derived from VM pseudo-code-address control state",
+            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/MILESTONE_HISTORY.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
@@ -1487,6 +1489,8 @@ Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
             "reserved-word-symbol",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
+            "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`.",
+            "invalid-eip-operand",
         ],
     )
     assert_all_text_not_contains(
@@ -1503,11 +1507,11 @@ Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 68A - Stack Runtime Initialization and ESP Startup Contract",
+            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
             "Current runtime/source-run MASM behavior phase:",
             "Next development milestone:",
-            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
-            "Phase 68B is a corrective, non-renumbering milestone.",
+            "Phase 69 - Direct CALL to User Procedures",
+            "Phase 68B is complete.",
             "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1534,7 +1538,7 @@ Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 68A:",
+            "Current status at Phase 68B:",
             "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Phase 68 adds parser metadata and a classifier for future direct CALL/INVOKE target resolution without making CALL executable.",
             "Phase 68 adds parser-owned metadata for future `CALL` and `INVOKE` target resolution.",
@@ -1546,20 +1550,20 @@ Phase 68A - Stack Runtime Initialization and ESP Startup Contract""",
             "They do not replace or override the canonical specification and implementation guide.",
             "Next planned milestone:",
             "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
-            "Phase 69 remains Direct CALL to User Procedures and depends on Phase 68B.",
+            "Phase 69 may consume the Phase 68A `ESP` startup contract and the accepted Phase 68B pseudo-EIP contract.",
         ],
     )
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 68A:",
+            "Milestone 68B:",
             ".stack 4096",
-            "ESP starts at the active stack region top",
-            "main PROC",
-            "normal fallthrough completes here",
-            "mov ebx, value",
-            "normal fallthrough completes here",
+            "displayed <code>EIP</code> is derived VM pseudo-code-address control state",
+            "source code cannot read, write, address through, use as an instruction operand, or define <code>EIP</code>",
+            "Explicit ESP writes remain legal",
+            "mov esp, 1",
+            "EIP displays this lowered instruction's pseudo-address",
             "final-registers",
             "Program Console",
         ],
@@ -1890,7 +1894,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase68a_current_status_and_harness_documented()
+    assert_phase68b_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

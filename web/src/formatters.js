@@ -11,6 +11,7 @@
 /** @typedef {{hex: string, unsigned: number}} RegisterValue */
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {Record<string, boolean>} RegisterWriteMap */
+/** @typedef {Record<string, string>} RegisterRoleMap */
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number, sourceLine?: number, sourceText?: string}} MemoryChange */
 
@@ -80,6 +81,9 @@ const ALIGNED_SIGNED_COLUMN_WIDTH = 11;
 
 /** Compact marker appended to canonical parent rows for untouched register families. */
 const REGISTER_UNCHANGED_MARKER = "[unchanged]";
+
+/** Compact marker appended to the displayed EIP pseudo-control-state row. */
+const REGISTER_DERIVED_CONTROL_STATE_MARKER = "[derived control state]";
 
 /** Extra spacing before the unchanged marker so wide signed values stay readable. */
 const REGISTER_UNCHANGED_MARKER_SPACING = "     ";
@@ -484,6 +488,25 @@ function shouldShowRegisterUnchangedMarker(row, registerWrites) {
 }
 
 /**
+ * Returns the role marker for one canonical register row when protocol metadata
+ * classifies that row as displayed VM control state rather than source-writable
+ * register state.
+ *
+ * @param {{name: string, source: string, indentLevel?: number}} row Register row descriptor.
+ * @param {RegisterRoleMap | undefined} registerRoles Register-role metadata.
+ * @returns {string | null} Marker text, or null when no role marker applies.
+ */
+function registerRoleMarker(row, registerRoles) {
+  if (!registerRoles || row.name !== row.source || (row.indentLevel || 0) !== 0) {
+    return null;
+  }
+
+  return registerRoles[row.source] === "derived-control-state"
+    ? REGISTER_DERIVED_CONTROL_STATE_MARKER
+    : null;
+}
+
+/**
  * Formats a register name with composition indentation for alias rows.
  *
  * @param {string} name Register display name.
@@ -499,9 +522,10 @@ function formatRegisterDisplayName(name, indentLevel = 0) {
  *
  * @param {RegisterMap | undefined} registers Register map.
  * @param {RegisterWriteMap | undefined} registerWrites Register-family write metadata.
+ * @param {RegisterRoleMap | undefined} registerRoles Register display-role metadata.
  * @returns {string} Human-readable register table.
  */
-export function formatRegisters(registers, registerWrites) {
+export function formatRegisters(registers, registerWrites, registerRoles) {
   if (!registers) {
     return "No register state available.";
   }
@@ -539,7 +563,12 @@ export function formatRegisters(registers, registerWrites) {
       }
       previousGroup = row.group;
 
-      lines.push(shouldShowRegisterUnchangedMarker(row, registerWrites) ? `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}` : line);
+      const roleMarker = registerRoleMarker(row, registerRoles);
+      if (roleMarker) {
+        lines.push(`${line}${REGISTER_UNCHANGED_MARKER_SPACING}${roleMarker}`);
+      } else {
+        lines.push(shouldShowRegisterUnchangedMarker(row, registerWrites) ? `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}` : line);
+      }
     });
 
   return lines.join("\n");

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 67 arithmetic, branch, and watchdog harness coverage.
+ * @brief Unit tests for the VM executor through Phase 68B pseudo-EIP display, branch, and watchdog behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -3776,6 +3776,51 @@ static int test_phase61_direct_jmp_runtime_transfer(void) {
     return failures;
 }
 
+
+/// Verifies Phase 68B pseudo-EIP helper mapping and VM synchronization.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase68b_pseudo_eip_helpers_and_sync(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t pseudo_eip = 0U;
+    uint32_t displayed_eip = 0U;
+    size_t instruction_index = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_JMP, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "jmp done", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov ebx, 2", 2U}
+    };
+
+    failures += !vm_exec_instruction_index_to_pseudo_eip(0U, &pseudo_eip) ? record_failure("pseudo-EIP index 0 should map") : 0;
+    failures += expect_u32(pseudo_eip, VM_EXEC_PSEUDO_EIP_BASE, "pseudo-EIP index 0 should equal base");
+    failures += !vm_exec_instruction_index_to_pseudo_eip(1U, &pseudo_eip) ? record_failure("pseudo-EIP index 1 should map") : 0;
+    failures += expect_u32(pseudo_eip, VM_EXEC_PSEUDO_EIP_BASE + VM_EXEC_PSEUDO_EIP_STRIDE, "pseudo-EIP index 1 should advance by stride");
+    failures += vm_exec_instruction_index_to_pseudo_eip(((size_t)(UINT32_MAX - VM_EXEC_PSEUDO_EIP_BASE) / VM_EXEC_PSEUDO_EIP_STRIDE) + 1U, &pseudo_eip) ? record_failure("pseudo-EIP overflow should fail") : 0;
+
+    failures += !vm_exec_pseudo_eip_to_instruction_index(VM_EXEC_PSEUDO_EIP_BASE, 3U, &instruction_index) ? record_failure("base pseudo-EIP should reverse-map") : 0;
+    failures += expect_size(instruction_index, 0U, "base pseudo-EIP should reverse-map to instruction 0");
+    failures += !vm_exec_pseudo_eip_to_instruction_index(VM_EXEC_PSEUDO_EIP_BASE + 8U, 3U, &instruction_index) ? record_failure("third pseudo-EIP should reverse-map") : 0;
+    failures += expect_size(instruction_index, 2U, "third pseudo-EIP should reverse-map to instruction 2");
+    failures += vm_exec_pseudo_eip_to_instruction_index(VM_EXEC_PSEUDO_EIP_BASE - 1U, 3U, &instruction_index) ? record_failure("below-base pseudo-EIP should not reverse-map") : 0;
+    failures += vm_exec_pseudo_eip_to_instruction_index(VM_EXEC_PSEUDO_EIP_BASE + 2U, 3U, &instruction_index) ? record_failure("unaligned pseudo-EIP should not reverse-map") : 0;
+    failures += vm_exec_pseudo_eip_to_instruction_index(VM_EXEC_PSEUDO_EIP_BASE + 12U, 3U, &instruction_index) ? record_failure("out-of-range pseudo-EIP should not reverse-map") : 0;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for pseudo-EIP sync test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "pseudo-EIP sync program should load");
+    failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_EIP, &displayed_eip) ? record_failure("displayed EIP read after load should succeed") : 0;
+    failures += expect_u32(displayed_eip, VM_EXEC_PSEUDO_EIP_BASE, "loaded program should display first instruction pseudo-EIP");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first instruction should execute for pseudo-EIP sync");
+    failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_EIP, &displayed_eip) ? record_failure("displayed EIP read after fallthrough should succeed") : 0;
+    failures += expect_u32(displayed_eip, VM_EXEC_PSEUDO_EIP_BASE + VM_EXEC_PSEUDO_EIP_STRIDE, "fallthrough should sync displayed EIP to next instruction");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "branch instruction should execute for pseudo-EIP sync");
+    failures += !vm_cpu_read_register(&vm.cpu, VM_REGISTER_EIP, &displayed_eip) ? record_failure("displayed EIP read after branch should succeed") : 0;
+    failures += expect_u32(displayed_eip, VM_EXEC_PSEUDO_EIP_BASE + (2U * VM_EXEC_PSEUDO_EIP_STRIDE), "branch transfer should sync displayed EIP to target instruction");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 64 equality conditional jumps branch and preserve state.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4607,6 +4652,7 @@ int main(void) {
     failures += test_phase56_div_semantics_and_errors();
     failures += test_phase57_idiv_semantics_and_errors();
     failures += test_phase61_direct_jmp_runtime_transfer();
+    failures += test_phase68b_pseudo_eip_helpers_and_sync();
     failures += test_phase64_equality_conditional_jump_runtime();
     failures += test_phase64_equality_conditional_jump_aliases();
     failures += test_phase64_equality_conditional_jump_preserves_zf_validity();

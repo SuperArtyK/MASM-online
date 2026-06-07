@@ -13,7 +13,7 @@
  * direct JMP runtime execution, unsigned MUL, one-operand signed
  * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, Phase 67A selected END-entry
  * procedure startup and fallthrough boundaries, Phase 68 procedure-entry and
- * future-call target classification metadata, Phase 68A ESP stack startup, and recovered
+ * future-call target classification metadata, Phase 68A ESP stack startup, Phase 68B displayed EIP pseudo-code-address control state, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -79,11 +79,11 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 68U
 
-/// Suffix for the current Phase 68A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
+/// Suffix for the current Phase 68B runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "B"
 
-/// Full name of the current Phase 68A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 68A - Stack Runtime Initialization and ESP Startup Contract"
+/// Full name of the current Phase 68B runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -95,16 +95,16 @@
 #define MASM32_SIM_WASM_STARTUP_STATE_NOTICE_CODE "startup-state-notice"
 
 /// User-facing startup-state notice text for deterministic zero startup mode.
-#define MASM32_SIM_WASM_STARTUP_STATE_ZERO_NOTICE_MESSAGE "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+#define MASM32_SIM_WASM_STARTUP_STATE_ZERO_NOTICE_MESSAGE "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// User-facing startup-state notice text for Phase 57F seeded register/flag startup mode.
-#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_REGISTER_NOTICE_MESSAGE "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, and modeled flags from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
+#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_REGISTER_NOTICE_MESSAGE "The simulator starts modeled flags and ordinary registers from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
 /// User-facing startup-state notice text for Phase 57G seeded uninitialized-storage visible bytes.
-#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_UNINITIALIZED_NOTICE_MESSAGE "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, initializes ESP to the documented empty-stack address from the active stack region, and initializes visible bytes for uninitialized storage from the configured deterministic seed while preserving uninitialized-origin metadata for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
+#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_UNINITIALIZED_NOTICE_MESSAGE "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register, and visible bytes for uninitialized storage are initialized from the configured deterministic seed while uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
 
 /// User-facing startup-state notice text when both seeded startup axes are enabled.
-#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_REGISTER_AND_UNINITIALIZED_NOTICE_MESSAGE "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
+#define MASM32_SIM_WASM_STARTUP_STATE_SEEDED_REGISTER_AND_UNINITIALIZED_NOTICE_MESSAGE "The simulator starts modeled flags, ordinary registers, and visible bytes for uninitialized storage from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values."
 
 /// Maximum .data/.DATA? bytes laid out by the source-run API.
 #define MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES VM_MEMORY_DEFAULT_DATA_SIZE
@@ -1070,6 +1070,19 @@ static bool masm32_sim_json_append_register_write_metadata(Masm32SimJsonWriter *
     }
 
     return masm32_sim_json_append(writer, "}");
+}
+
+
+/// Appends register display-role metadata used by final-register rendering.
+///
+/// @param writer Writer to mutate.
+/// @return true when the metadata object fit without overflowing the buffer.
+static bool masm32_sim_json_append_register_role_metadata(Masm32SimJsonWriter *writer) {
+    if (writer == NULL) {
+        return false;
+    }
+
+    return masm32_sim_json_append(writer, "\"registerRoles\":{\"EIP\":\"derived-control-state\",\"ESP\":\"stack-pointer\"}");
 }
 
 
@@ -5670,6 +5683,8 @@ static const char *masm32_sim_wasm_build_run_json(
         (void)masm32_sim_json_append(&writer, ",");
         (void)masm32_sim_json_append_register_write_metadata(&writer, &vm->cpu);
         (void)masm32_sim_json_append(&writer, ",");
+        (void)masm32_sim_json_append_register_role_metadata(&writer);
+        (void)masm32_sim_json_append(&writer, ",");
     }
 
     (void)masm32_sim_json_append_memory_changes(&writer, storage);
@@ -6668,16 +6683,27 @@ static const char *masm32_sim_wasm_run_source_json_internal(
         } else {
             vm.instruction_pointer = parser_result.selected_entry_start_instruction_index;
             if (parser_result.selected_entry_start_instruction_index == parser_result.selected_entry_end_instruction_index) {
+                (void)vm_cpu_set_display_eip(&vm.cpu, VM_EXEC_PSEUDO_EIP_BASE);
                 vm.halted = true;
+            } else if (!vm_sync_display_eip(&vm)) {
+                exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
             }
         }
     }
     if (exec_status == VM_EXEC_STATUS_OK && startup_register_flag_mode == MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM) {
         vm_cpu_init_seeded_registers_and_flags(&vm.cpu, startup_state_seed);
         exec_status = vm_initialize_stack_pointer(&vm);
+        if (exec_status == VM_EXEC_STATUS_OK && !vm_sync_display_eip(&vm)) {
+            exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
     }
 
     while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
+        if (!vm_sync_display_eip(&vm)) {
+            exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
+            break;
+        }
+
         exec_status = masm32_sim_wasm_validate_instruction_limit_before_step(
             &g_masm32_sim_wasm_run_storage,
             &vm,
@@ -6742,6 +6768,10 @@ static const char *masm32_sim_wasm_run_source_json_internal(
                     vm.instruction_pointer,
                     &vm.cpu
                 )) {
+                uint32_t completed_pseudo_eip = VM_EXEC_PSEUDO_EIP_BASE;
+                if (vm_exec_instruction_index_to_pseudo_eip(instruction_pointer_before_step, &completed_pseudo_eip)) {
+                    (void)vm_cpu_set_display_eip(&vm.cpu, completed_pseudo_eip);
+                }
                 vm.halted = true;
             }
         }

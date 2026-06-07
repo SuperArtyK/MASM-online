@@ -178,7 +178,8 @@ static int test_canonical_register_reads_and_writes(void) {
     failures += !vm_cpu_write_register(&cpu, VM_REGISTER_EDI, 0x66666666U) ? record_failure("write EDI should succeed") : 0;
     failures += !vm_cpu_write_register(&cpu, VM_REGISTER_EBP, 0x77777777U) ? record_failure("write EBP should succeed") : 0;
     failures += !vm_cpu_write_register(&cpu, VM_REGISTER_ESP, 0x88888888U) ? record_failure("write ESP should succeed") : 0;
-    failures += !vm_cpu_write_register(&cpu, VM_REGISTER_EIP, 0x99999999U) ? record_failure("write EIP should succeed") : 0;
+    failures += vm_cpu_write_register(&cpu, VM_REGISTER_EIP, 0x99999999U) ? record_failure("source-level write EIP should fail") : 0;
+    failures += !vm_cpu_set_display_eip(&cpu, 0x99999999U) ? record_failure("display EIP setter should succeed") : 0;
     failures += !vm_cpu_write_register(&cpu, VM_REGISTER_EFLAGS, 0xAAAAAAAAU) ? record_failure("write EFLAGS should succeed") : 0;
 
     failures += expect_register_value(&cpu, VM_REGISTER_EAX, 0x11111111U, "EAX canonical read");
@@ -191,6 +192,19 @@ static int test_canonical_register_reads_and_writes(void) {
     failures += expect_register_value(&cpu, VM_REGISTER_ESP, 0x88888888U, "ESP canonical read");
     failures += expect_register_value(&cpu, VM_REGISTER_EIP, 0x99999999U, "EIP canonical read");
     failures += expect_register_value(&cpu, VM_REGISTER_EFLAGS, 0xAAAAAAAAU, "EFLAGS canonical read");
+
+    return failures;
+}
+
+/// Verifies the Phase 68B source-operand role split for displayed EIP.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_source_operand_register_roles(void) {
+    int failures = 0;
+
+    failures += !vm_cpu_register_is_source_operand_allowed(VM_REGISTER_EAX) ? record_failure("EAX should be source-operand allowed") : 0;
+    failures += !vm_cpu_register_is_source_operand_allowed(VM_REGISTER_ESP) ? record_failure("ESP should remain source-operand allowed") : 0;
+    failures += vm_cpu_register_is_source_operand_allowed(VM_REGISTER_EIP) ? record_failure("EIP should not be source-operand allowed") : 0;
 
     return failures;
 }
@@ -444,7 +458,7 @@ static int test_seeded_register_flag_startup_is_deterministic(void) {
         failures += expect_flag_validity(&first, (VmFlag)flag_index, 1, NULL, NULL, "seeded startup should mark modeled flags valid");
     }
 
-    failures += expect_register_value(&first, VM_REGISTER_EIP, 0U, "seeded startup should leave EIP zero");
+    failures += expect_register_value(&first, VM_REGISTER_EIP, 0U, "raw CPU seeded helper should leave display EIP at reset zero until VM synchronization");
 
     if ((first.eflags & ~0x000008C1U) != 0U) {
         failures += record_failure("seeded startup should not set unmodeled EFLAGS bits");
@@ -588,6 +602,7 @@ int main(void) {
 
     failures += test_initialization_zeroes_registers();
     failures += test_canonical_register_reads_and_writes();
+    failures += test_source_operand_register_roles();
     failures += test_general_purpose_alias_reads();
     failures += test_index_and_pointer_alias_reads();
     failures += test_alias_writes_preserve_bits();

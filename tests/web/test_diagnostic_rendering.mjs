@@ -52,16 +52,16 @@ function resolveProducerPath() {
 const PRODUCER_PATH = resolveProducerPath();
 
 /** Exact zero-startup notice text. */
-const STARTUP_STATE_NOTICE_TEXT = "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const STARTUP_STATE_NOTICE_TEXT = "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
 /** Exact Phase 57F seeded startup notice text. */
-const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, and modeled flags from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
+const SEEDED_STARTUP_STATE_NOTICE_TEXT = "The simulator starts modeled flags and ordinary registers from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes remain zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values.";
 
 /** Exact Phase 57G seeded uninitialized-storage startup notice text. */
-const SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts EAX, EBX, ECX, EDX, ESI, EDI, EBP, EIP, and modeled flags at 0, initializes ESP to the documented empty-stack address from the active stack region, and initializes visible bytes for uninitialized storage from the configured deterministic seed while preserving uninitialized-origin metadata for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
+const SEEDED_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register, and visible bytes for uninitialized storage are initialized from the configured deterministic seed while uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
 
 /** Exact notice text when both seeded startup axes are enabled. */
-const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator started EAX, EBX, ECX, EDX, ESI, EDI, EBP, modeled flags, and visible bytes for uninitialized storage from the configured deterministic seed, and initializes ESP to the documented empty-stack address from the active stack region. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
+const SEEDED_REGISTER_AND_UNINITIALIZED_STORAGE_NOTICE_TEXT = "The simulator starts modeled flags, ordinary registers, and visible bytes for uninitialized storage from the configured deterministic seed, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized-origin metadata is preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register, flag, or storage startup values.";
 
 /** Exact rendered zero-startup notice line. */
 const STARTUP_STATE_NOTICE_RENDERED = `[simulator-notice] startup-state-notice: ${STARTUP_STATE_NOTICE_TEXT}`;
@@ -1617,7 +1617,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 68A runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 68B runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2275,8 +2275,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2303,7 +2303,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "B");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2330,7 +2330,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "B");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2355,7 +2355,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "B");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2379,7 +2379,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "B");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2405,7 +2405,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "B");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2476,7 +2476,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2521,7 +2521,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2694,8 +2694,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2722,8 +2722,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2750,8 +2750,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2777,8 +2777,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -5040,8 +5040,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5101,8 +5101,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5160,8 +5160,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5197,8 +5197,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000000h");
@@ -5225,8 +5225,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.executedInstructionCount, 0);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
@@ -5258,8 +5258,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 68A - Stack Runtime Initialization and ESP Startup Contract");
+  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");

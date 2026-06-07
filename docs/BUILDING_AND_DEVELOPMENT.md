@@ -12,17 +12,15 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
-
-Current runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
-
-Next development milestone:
 Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
-Phase 68B is a corrective, non-renumbering milestone. It must be completed before Phase 69 because Phase 69 CALL return tokens should be pseudo-EIP values, not raw VM instruction indexes and not source-written EIP register contents.
+Current runtime/source-run MASM behavior phase:
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
-During Phase 68B development, do not implement CALL, RET, PUSH, POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, or stack-pointer warning diagnostics.
+Next development milestone:
+Phase 69 - Direct CALL to User Procedures
+
+Phase 68B is complete. Phase 69 can now consume pseudo-EIP return tokens and the Phase 68A `ESP` startup contract, but it must still not implement RET, PUSH, POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, or stack-pointer warning diagnostics unless its own phase explicitly says otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 

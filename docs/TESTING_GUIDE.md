@@ -1076,7 +1076,7 @@ For stack/procedure diagnostics, tests must prove:
 
 ## Current-status documentation clutter checks
 
-Static or manual documentation checks should protect current-status surfaces from becoming milestone-history dumps.
+Static or manual documentation checks should protect current-status surfaces from becoming milestone-history dumps. They should also protect active source-of-truth text from stale status regressions. When a target phase touches the relevant docs, its milestone report must state whether each applicable check was automated, manually reviewed, or intentionally deferred.
 
 The checks should apply to active current-status/current-scope sections in:
 
@@ -1102,6 +1102,15 @@ Recommended checks:
 6. `docs/SUPPORTED_SYNTAX.md` may contain detailed syntax sections, but its opening status block must remain concise and must not become a milestone ledger.
 7. Detailed historical text removed from README must be preserved in `docs/MILESTONE_HISTORY.md` or milestone reports when it has historical value.
 8. If automated static checks are deferred, the milestone report must list the manual checks performed and preserve static-check implementation as future documentation-maintenance work.
+9. Active unsupported/deferred directive lists must not contain bare `EQU` or `=` without distinguishing implemented numeric equates from unsupported text-substitution equates.
+10. Active unsupported-feature or recovery-policy text must not describe implemented `.DATA?`, `.CONST`, numeric equates, `cmp`, direct `jmp`, equality conditional jumps, signed relational conditional jumps, or unsigned relational conditional jumps as unsupported or future behavior.
+11. Active current-status text must preserve the distinction between current CALL target classification/procedure-entry metadata and future executable CALL transfer.
+12. Active current-status text must preserve the distinction between the implemented instruction-count watchdog and future active-time or wall-clock watchdog behavior.
+13. Active diagnostic examples should include severity and source-span fields when they are examples of source-tied diagnostics. If an example intentionally omits those fields, it must be labeled as abbreviated.
+14. Active diagnostic category names and wording must not imply PE loading, object linking, import-library linking, Windows loader behavior, host include-file loading, or host filesystem access as simulator behavior.
+15. Active roadmap sections must state that roadmap themes are not a current-support table and that current support comes from the canonical guide, supported-syntax document, latest repository state, latest accepted milestone report, and current tests.
+16. Optional or future virtual-filesystem wording must state that it would be simulator-owned educational behavior only and must not imply direct browser filesystem access, host filesystem access, Windows file API behavior, PE loading, or import-library behavior.
+17. Active Irvine32 routine-contract text that mentions `EIP`, including future `DumpRegs` behavior, must state that `EIP` is the displayed pseudo-EIP/control-state value, not a native address, PE/RVA/linker address, raw VM instruction index, source byte offset, or source-writable register value.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

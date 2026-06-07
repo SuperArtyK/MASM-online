@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 68A: Stack Runtime Initialization and ESP Startup Contract.
+  Milestone 68B: EIP Pseudo-Code Address Display and Source-Operand Restrictions.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,16 +18,16 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 68A: <code>ESP</code> starts at the active stack region's empty-stack address while <code>CALL</code>, <code>RET</code>, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
+        <p class="muted">Milestone 68B: displayed <code>EIP</code> is derived VM pseudo-code-address control state beginning at <code>00401000h</code>; source code cannot read, write, address through, use as an instruction operand, or define <code>EIP</code>. Explicit supported <code>ESP</code> writes remain legal while <code>CALL</code>, <code>RET</code>, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.stack 4096
 .data
 value DWORD 7
 .code
 main PROC
-    mov eax, esp      ; ESP starts at the active stack region top
-    mov ebx, value
-main ENDP             ; normal fallthrough completes here
+    mov esp, 1        ; Explicit ESP writes remain legal
+    mov eax, value    ; EIP displays this lowered instruction's pseudo-address
+main ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

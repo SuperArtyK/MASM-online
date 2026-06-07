@@ -340,6 +340,10 @@ static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *s
 
 static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *name_token, VmCodeLabelDeclarationKind declaration_kind);
 
+static bool vm_parser_token_is_eip_control_state(const VmLexerToken *token);
+
+static bool vm_parser_reject_eip_control_state_operand(VmParserState *state, const VmLexerToken *token);
+
 static bool vm_parser_reject_reserved_symbol_declaration(
     VmParserState *state,
     const VmLexerToken *name_token,
@@ -5066,7 +5070,15 @@ static bool vm_parser_build_register_memory_operand(
     uint32_t static_address = 0U;
     uint8_t width_bits = explicit_width_bits;
 
-    if (state == NULL || base_token == NULL || out_operand == NULL || !vm_parser_token_is_register_indirect_base(base_token)) {
+    if (state == NULL || base_token == NULL || out_operand == NULL) {
+        return false;
+    }
+
+    if (vm_parser_reject_eip_control_state_operand(state, base_token)) {
+        return false;
+    }
+
+    if (!vm_parser_token_is_register_indirect_base(base_token)) {
         return false;
     }
 
@@ -5157,6 +5169,9 @@ static bool vm_parser_parse_register_displacement_suffix(VmParserState *state, i
 
         vm_parser_advance(state);
         number_token = vm_parser_current_token(state);
+        if (vm_parser_reject_eip_control_state_operand(state, number_token)) {
+            return false;
+        }
         if (number_token == NULL || number_token->kind != VM_LEXER_TOKEN_NUMBER || number_token->number_is_negative) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, number_token != NULL ? number_token : operator_token, "Expected a non-negative numeric displacement after + or -.");
             return false;
@@ -5201,6 +5216,9 @@ static bool vm_parser_parse_bracketed_register_memory_operand(
     base_token = vm_parser_current_token(state);
     if (base_token == NULL || base_token->kind != VM_LEXER_TOKEN_REGISTER) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, base_token != NULL ? base_token : left_token, "Expected a register memory base after '['.");
+        return false;
+    }
+    if (vm_parser_reject_eip_control_state_operand(state, base_token)) {
         return false;
     }
     if (!vm_parser_token_is_register_indirect_base(base_token)) {
@@ -5765,6 +5783,10 @@ static bool vm_parser_parse_nop_encoding_operand(VmParserState *state, const VmL
         return false;
     }
 
+    if (vm_parser_reject_eip_control_state_operand(state, operand_token)) {
+        return false;
+    }
+
     if (vm_parser_token_is_nop_register_encoding_operand(operand_token)) {
         vm_parser_advance(state);
         return true;
@@ -6230,6 +6252,10 @@ static bool vm_parser_parse_destination_operand(VmParserState *state, VmIrOperan
         return false;
     }
 
+    if (vm_parser_reject_eip_control_state_operand(state, token)) {
+        return false;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_REGISTER &&
         vm_parser_data_symbol_lookup_status(state, token) != VM_SYMBOL_LOOKUP_NOT_FOUND) {
         if (!vm_parser_parse_symbol_memory_operand(state, token, out_operand)) {
@@ -6453,6 +6479,10 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "SIZEOF")) {
         return vm_parser_parse_sizeof_source_operand(state, out_operand);
+    }
+
+    if (vm_parser_reject_eip_control_state_operand(state, token)) {
+        return false;
     }
 
     if (token->kind == VM_LEXER_TOKEN_CHARACTER) {
@@ -7651,6 +7681,37 @@ static VmParserReservedWordClassification vm_parser_classify_reserved_word(const
     return result;
 }
 
+/// Returns whether a token names the Phase 68B displayed EIP control state.
+///
+/// @param token Token to inspect.
+/// @return true when @p token is the lexer-recognized EIP spelling.
+static bool vm_parser_token_is_eip_control_state(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_REGISTER && token->register_id == VM_REGISTER_EIP;
+}
+
+/// Rejects an attempt to use EIP as ordinary source-level state.
+///
+/// Phase 68B keeps EIP visible as derived VM control state, but source code may
+/// not read it, write it, address through it, or define a user symbol that
+/// shadows it.
+///
+/// @param state Parser state whose diagnostic buffer should receive the error.
+/// @param token Source token naming EIP.
+/// @return true when an EIP diagnostic was emitted.
+static bool vm_parser_reject_eip_control_state_operand(VmParserState *state, const VmLexerToken *token) {
+    if (!vm_parser_token_is_eip_control_state(token)) {
+        return false;
+    }
+
+    (void)vm_parser_add_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_INVALID_EIP_OPERAND,
+        token,
+        "EIP is displayed VM control state, not a source-writable general-purpose register. Source code cannot read, write, address through, or define EIP."
+    );
+    return true;
+}
+
 /// Emits a reserved-word declaration diagnostic when a symbol name is reserved.
 ///
 /// @param state Parser state to mutate.
@@ -7663,6 +7724,10 @@ static bool vm_parser_reject_reserved_symbol_declaration(
     const char *symbol_kind
 ) {
     VmParserReservedWordClassification classification = vm_parser_classify_reserved_word(name_token);
+
+    if (vm_parser_reject_eip_control_state_operand(state, name_token)) {
+        return true;
+    }
 
     if (!classification.is_reserved) {
         return false;
@@ -8836,7 +8901,15 @@ static bool vm_parser_parse_label_prefix(VmParserState *state) {
     const VmLexerToken *name_token = vm_parser_current_token(state);
     const VmLexerToken *colon_token = vm_parser_peek_token(state, 1U);
 
-    if (name_token == NULL || colon_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER || colon_token->kind != VM_LEXER_TOKEN_COLON) {
+    if (name_token == NULL || colon_token == NULL || colon_token->kind != VM_LEXER_TOKEN_COLON) {
+        return false;
+    }
+    if (vm_parser_reject_eip_control_state_operand(state, name_token)) {
+        vm_parser_advance(state);
+        vm_parser_advance(state);
+        return true;
+    }
+    if (name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
         return false;
     }
 
@@ -9394,7 +9467,8 @@ static bool vm_parser_parse_equate_line_if_recognized(VmParserState *state) {
     VmParserConstantExpression expression;
     VmParserEquate *equate = NULL;
 
-    if (state == NULL || name_token == NULL || operator_token == NULL || name_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+    if (state == NULL || name_token == NULL || operator_token == NULL ||
+        (name_token->kind != VM_LEXER_TOKEN_IDENTIFIER && !vm_parser_token_is_eip_control_state(name_token))) {
         return false;
     }
 
@@ -10437,6 +10511,8 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "compatibility-metadata-only";
         case VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED:
             return "compatibility-limited";
+        case VM_PARSER_DIAGNOSTIC_INVALID_EIP_OPERAND:
+            return "invalid-eip-operand";
         case VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL:
             return "duplicate-label";
         case VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL:

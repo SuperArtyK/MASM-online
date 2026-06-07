@@ -171,6 +171,19 @@ test("formats unchanged markers on canonical parent rows only", () => {
 });
 
 
+test("formats Phase 68B displayed EIP as derived control state", () => {
+  const formatted = formatRegisters({
+    EIP: { hex: "00401000h", unsigned: 4198400 }
+  }, {
+    EIP: false
+  }, {
+    EIP: "derived-control-state"
+  });
+
+  assert.match(findRegisterLine(formatted, "EIP"), /\[derived control state\]$/);
+  assert.doesNotMatch(findRegisterLine(formatted, "EIP"), /\[unchanged\]/);
+});
+
 
 test("aligns EFLAGS and adds readable marker spacing for wide values", () => {
   const formatted = formatRegisters({

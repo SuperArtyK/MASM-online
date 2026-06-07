@@ -12,7 +12,9 @@
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step. Phase 68A initializes ESP from the active stack region
  * at startup; source-level stack instructions, procedure frames, CALL/RET stack
- * mutation, and non-exit Irvine32 routines remain later milestones.
+ * mutation, and non-exit Irvine32 routines remain later milestones. Phase 68B
+ * displays EIP as VM control-state pseudo-code address metadata instead of a
+ * source-writable or delta-tracked register.
  */
 
 #include "vm_exec.h"
@@ -20,8 +22,11 @@
 #include <limits.h>
 #include <string.h>
 
-/// Canonical registers captured for register deltas.
-static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_MAX_REGISTER_CHANGES] = {
+/// Number of source-visible canonical registers captured for register deltas.
+#define VM_EXEC_CANONICAL_DELTA_REGISTER_COUNT 8U
+
+/// Canonical source-visible registers captured for register deltas.
+static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_CANONICAL_DELTA_REGISTER_COUNT] = {
     VM_REGISTER_EAX,
     VM_REGISTER_EBX,
     VM_REGISTER_ECX,
@@ -29,8 +34,7 @@ static const VmRegister VM_EXEC_CANONICAL_DELTA_REGISTERS[VM_EXEC_MAX_REGISTER_C
     VM_REGISTER_ESI,
     VM_REGISTER_EDI,
     VM_REGISTER_EBP,
-    VM_REGISTER_ESP,
-    VM_REGISTER_EIP
+    VM_REGISTER_ESP
 };
 
 /// Named flags captured for flag deltas.
@@ -2132,7 +2136,7 @@ static void vm_exec_capture_register_changes(VmExecDelta *delta, const VmCpu *be
         return;
     }
 
-    for (index = 0U; index < (size_t)VM_EXEC_MAX_REGISTER_CHANGES; index += 1U) {
+    for (index = 0U; index < (size_t)VM_EXEC_CANONICAL_DELTA_REGISTER_COUNT; index += 1U) {
         VmRegister reg = VM_EXEC_CANONICAL_DELTA_REGISTERS[index];
         uint32_t old_value = 0U;
         uint32_t new_value = 0U;
@@ -3111,6 +3115,62 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
     }
 }
 
+bool vm_exec_instruction_index_to_pseudo_eip(size_t instruction_index, uint32_t *out_pseudo_eip) {
+    uint64_t offset = 0U;
+    uint64_t pseudo = 0U;
+
+    if (out_pseudo_eip == NULL) {
+        return false;
+    }
+
+    offset = (uint64_t)instruction_index * (uint64_t)VM_EXEC_PSEUDO_EIP_STRIDE;
+    pseudo = (uint64_t)VM_EXEC_PSEUDO_EIP_BASE + offset;
+    if (pseudo > (uint64_t)UINT32_MAX) {
+        return false;
+    }
+
+    *out_pseudo_eip = (uint32_t)pseudo;
+    return true;
+}
+
+bool vm_exec_pseudo_eip_to_instruction_index(uint32_t pseudo_eip, size_t instruction_count, size_t *out_instruction_index) {
+    uint32_t delta = 0U;
+    size_t index = 0U;
+
+    if (out_instruction_index == NULL || pseudo_eip < VM_EXEC_PSEUDO_EIP_BASE) {
+        return false;
+    }
+
+    delta = pseudo_eip - VM_EXEC_PSEUDO_EIP_BASE;
+    if ((delta % VM_EXEC_PSEUDO_EIP_STRIDE) != 0U) {
+        return false;
+    }
+
+    index = (size_t)(delta / VM_EXEC_PSEUDO_EIP_STRIDE);
+    if (index >= instruction_count) {
+        return false;
+    }
+
+    *out_instruction_index = index;
+    return true;
+}
+
+bool vm_sync_display_eip(Vm *vm) {
+    uint32_t pseudo_eip = VM_EXEC_PSEUDO_EIP_BASE;
+
+    if (vm == NULL) {
+        return false;
+    }
+
+    if (vm->program != NULL && vm->instruction_pointer < vm->program_count) {
+        if (!vm_exec_instruction_index_to_pseudo_eip(vm->instruction_pointer, &pseudo_eip)) {
+            return false;
+        }
+    }
+
+    return vm_cpu_set_display_eip(&vm->cpu, pseudo_eip);
+}
+
 VmExecStatus vm_initialize_stack_pointer(Vm *vm) {
     const VmMemoryRegion *stack_region = NULL;
     uint64_t stack_limit = 0U;
@@ -3158,6 +3218,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
         }
     }
 
+    (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
@@ -3190,6 +3251,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
         }
     }
 
+    (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
@@ -3231,6 +3293,7 @@ VmExecStatus vm_load_program(Vm *vm, const VmIrInstruction *program, size_t prog
     vm->instruction_pointer = 0U;
     vm->instruction_count = 0U;
     vm->halted = false;
+    (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
 
@@ -3442,6 +3505,10 @@ VmExecStatus vm_step(Vm *vm) {
 
     vm_exec_clear_delta(&vm->last_delta);
     vm_memory_clear_changes(&vm->memory);
+    if (!vm_sync_display_eip(vm)) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
 
     if (vm->halted || vm->instruction_pointer >= vm->program_count) {
         vm->halted = true;
@@ -3474,6 +3541,9 @@ VmExecStatus vm_step(Vm *vm) {
     vm->instruction_count += 1U;
     if (vm->instruction_pointer >= vm->program_count) {
         vm->halted = true;
+    } else if (!vm_sync_display_eip(vm)) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, instruction);
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
     vm_exec_capture_delta(vm, instruction, &before_cpu);

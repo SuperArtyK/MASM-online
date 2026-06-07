@@ -13,27 +13,29 @@ Source-of-truth rule:
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 - Curated audit and handoff reports are stored under [`history/`](history/), and standalone milestone reports are stored under [`history/reports/`](history/reports/). These archived files are historical evidence, not current behavior authority.
 
-Current status at Phase 68A:
+Current status at Phase 68B:
 
 Repository/archive milestone:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
-
-Runtime/source-run MASM behavior phase:
-Phase 68A - Stack Runtime Initialization and ESP Startup Contract
-
-Phase 68A initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
-
-Phase 68A preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement executable CALL, RET, stack mutation instructions, procedure frames, Irvine32 routine dispatch, source-level PUSH/POP, or root procedure termination.
-
-Next planned milestone:
 Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
-Phase 68B is a corrective, non-renumbering milestone inserted before Phase 69. It converts EIP from source-writable register-like behavior into derived VM pseudo-code-address display, rejects EIP as a source operand, preserves direct ESP writes, and defines pseudo-code addresses for future CALL/RET return tokens. Phase 69 remains Direct CALL to User Procedures and depends on Phase 68B.
+Runtime/source-run MASM behavior phase:
+Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+
+Phase 68B displays `EIP` as derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
+
+Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, and direct supported writes to `ESP` remain legal. The empty-stack convention remains the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
+
+Phase 68B preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement executable CALL, RET, stack mutation instructions, procedure frames, Irvine32 routine dispatch, source-level PUSH/POP, or root procedure termination.
+
+Next planned milestone:
+Phase 69 - Direct CALL to User Procedures
+
+Phase 69 may consume the Phase 68A `ESP` startup contract and the accepted Phase 68B pseudo-EIP contract. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 
 ## Concise milestone ledger
 
-- Phase 68A initializes `ESP` from the active stack region's empty-stack address without making stack instructions, CALL, or RET executable.
+- Phase 68B displays `EIP` as derived pseudo-code-address control state, rejects source-level `EIP` operands and definitions, and preserves direct supported `ESP` writes.
 - Phase 68 adds parser metadata and a classifier for future direct CALL/INVOKE target resolution without making CALL executable.
 - Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
 - Phase 67 adds validation harness coverage for existing arithmetic, branch, and instruction-count watchdog behavior without changing runtime/source-run MASM behavior.
@@ -125,20 +127,20 @@ Non-goals preserved:
 ## Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
 Status:
-Planned next milestone after Phase 68A.
+Completed after Phase 68A.
 
-Phase 68B is a corrective, non-renumbering milestone. It must not change Phase 69 or later phase numbers.
+Phase 68B is a corrective, non-renumbering milestone. It does not change Phase 69 or later phase numbers.
 
-Planned behavior:
+Implemented behavior:
 
 - displayed `EIP` becomes a derived VM pseudo-code address rather than a source-writable general-purpose register;
 - pseudo-EIP uses `VM_CODE_BASE + lowered_instruction_index * VM_CODE_STRIDE`, initially `00401000h + index * 4`;
 - pseudo-EIP values are control-flow tokens, not VM data-memory addresses, not PE RVAs, not linker addresses, and not native x86 instruction byte offsets;
-- `EIP` and `IP` are rejected as ordinary source operands and memory-address bases/indexes;
+- `EIP` is rejected as an ordinary source operand, NOP encoding operand, and memory-address base/index; `IP` remains unsupported unless the parser already recognizes it;
 - direct `ESP` writes such as `mov esp, 1` remain legal when the instruction form is otherwise supported;
 - invalid `ESP` values are diagnosed only when a later implicit stack operation performs a checked stack memory access;
-- Phase 69 direct CALL will use pseudo-EIP return tokens after Phase 68B is complete;
-- Phase 70 RET will validate pseudo-EIP return tokens after Phase 69 is complete.
+- Phase 69 direct CALL can use pseudo-EIP return tokens from the accepted Phase 68B contract;
+- Phase 70 RET can later validate pseudo-EIP return tokens after Phase 69 is complete.
 
 Non-goals preserved:
 
@@ -412,6 +414,8 @@ Phase 57G does not randomize initialized `.data` or `.CONST` bytes, does not acc
 Phase 57F adds a source-run/test-facing `startup_register_flag_mode` setting with `zero` and `seeded-random` modes plus a `startup_state_seed` value. The default mode preserves deterministic zero startup for registers and modeled flags. The seeded mode initializes EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, and the modeled CF/ZF/SF/OF flags from a deterministic seed while leaving EIP and unmodeled EFLAGS bits at zero.
 
 Phase 57F does not randomize memory, does not change `.DATA?`, `?`, or `DUP(?)` visible bytes, does not change uninitialized-origin metadata, does not add browser UI controls, and does not change MASM parser or instruction semantics.
+
+Corrective current-status note after Phase 68A: the Phase 57F historical entry describes the behavior as implemented at that time. Phase 68A later changed `ESP` startup so that the initial `ESP` value comes from the active stack region's documented empty-stack address. Current documentation and future phases must treat seeded register/flag startup as applying to the ordinary startup register set, currently `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, `EDI`, `EBP`, and modeled flags. `ESP` remains source-writable through supported explicit register instructions, but its initial value remains stack-derived and is not supplied by the ordinary zero-start or seeded-startup register path. This note does not rewrite Phase 57F history; it records the later Phase 68A contract that supersedes the old `ESP` startup wording.
 
 ## Phase 57E - Startup State Notice and Zero-Default Documentation
 

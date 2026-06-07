@@ -61,10 +61,11 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
   const messages = Array.isArray(payload.simulatorMessages) ? payload.simulatorMessages : [];
   const registers = payload.registers && typeof payload.registers === "object" ? payload.registers : undefined;
   const registerWrites = payload.registerWrites && typeof payload.registerWrites === "object" ? payload.registerWrites : undefined;
+  const registerRoles = payload.registerRoles && typeof payload.registerRoles === "object" ? payload.registerRoles : undefined;
   const changes = Array.isArray(payload.memoryChanges) ? payload.memoryChanges : [];
 
   setPanelText(simulatorMessages, formatSimulatorMessages(messages));
-  setPanelText(finalRegisters, formatRegisters(registers, registerWrites));
+  setPanelText(finalRegisters, formatRegisters(registers, registerWrites, registerRoles));
   setPanelText(memoryChanges, formatMemoryChanges(changes));
 }
 

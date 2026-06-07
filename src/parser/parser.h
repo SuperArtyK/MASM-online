@@ -234,6 +234,8 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_COMPATIBILITY_LIMITED,
     /// A code label declaration duplicates an existing code label or procedure-entry label.
     VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL,
+    /// A source operand or declaration attempted to use EIP as ordinary source state.
+    VM_PARSER_DIAGNOSTIC_INVALID_EIP_OPERAND,
     /// A user-defined symbol declaration used a simulator-recognized MASM reserved word.
     VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL,
     /// A code label declaration conflicts with another user-defined symbol category.

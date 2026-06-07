@@ -162,6 +162,27 @@ void vm_cpu_init(VmCpu *cpu);
 /// @param seed Deterministic startup-state seed.
 void vm_cpu_init_seeded_registers_and_flags(VmCpu *cpu, uint32_t seed);
 
+/// Returns whether a register can be read or written by source-level operands.
+///
+/// `EIP` is displayed VM control state after Phase 68B, not a source-writable
+/// general-purpose register. Internal VM sequencing uses explicit display-EIP
+/// helpers instead of the ordinary source-register write path.
+///
+/// @param reg Register or alias identifier.
+/// @return true when source instructions may use @p reg as an ordinary register operand.
+bool vm_cpu_register_is_source_operand_allowed(VmRegister reg);
+
+/// Sets the displayed pseudo-EIP control-state value.
+///
+/// This helper is reserved for VM instruction sequencing and related control
+/// state synchronization. It deliberately does not mark the EIP family as a
+/// source-level register write.
+///
+/// @param cpu CPU state to mutate.
+/// @param pseudo_eip Derived pseudo-code-address value to display.
+/// @return true when the display value was stored; false for a NULL CPU pointer.
+bool vm_cpu_set_display_eip(VmCpu *cpu, uint32_t pseudo_eip);
+
 /// Reads a canonical register or alias value from CPU state.
 ///
 /// Alias reads return only the visible alias bits. For example, reading AL

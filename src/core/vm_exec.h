@@ -39,6 +39,12 @@
 /// Maximum checked memory accesses retained in one step delta.
 #define VM_EXEC_MAX_MEMORY_ACCESSES 4U
 
+/// Canonical Phase 68B pseudo-code-address base for displayed EIP.
+#define VM_EXEC_PSEUDO_EIP_BASE 0x00401000U
+
+/// Canonical Phase 68B pseudo-code-address stride between lowered instructions.
+#define VM_EXEC_PSEUDO_EIP_STRIDE 4U
+
 /// Maximum modeled flags that can be consumed by one flag-consuming instruction.
 #define VM_EXEC_MAX_CONSUMED_FLAGS VM_FLAG_COUNT
 
@@ -219,6 +225,39 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config);
 /// @param layout_policy Optional memory layout policy.
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_policy);
+
+/// Maps a lowered VM instruction index to its displayed pseudo-EIP value.
+///
+/// The returned value is a deterministic control-flow token, not a VM memory
+/// address, native instruction pointer, PE RVA, or encoded instruction byte
+/// offset.
+///
+/// @param instruction_index Zero-based lowered executable VM instruction index.
+/// @param out_pseudo_eip Receives the pseudo-code-address display value.
+/// @return true when the index can be represented without 32-bit overflow.
+bool vm_exec_instruction_index_to_pseudo_eip(size_t instruction_index, uint32_t *out_pseudo_eip);
+
+/// Maps a valid displayed pseudo-EIP value back to a loaded instruction index.
+///
+/// This Phase 68B reverse mapping is reserved for later procedure-return
+/// validation. It accepts only values aligned to the canonical pseudo-code
+/// stride and inside the supplied executable instruction count.
+///
+/// @param pseudo_eip Displayed pseudo-code-address control token.
+/// @param instruction_count Number of lowered executable VM instructions.
+/// @param out_instruction_index Receives the zero-based instruction index.
+/// @return true when @p pseudo_eip names an aligned loaded instruction.
+bool vm_exec_pseudo_eip_to_instruction_index(uint32_t pseudo_eip, size_t instruction_count, size_t *out_instruction_index);
+
+/// Synchronizes displayed EIP with the VM's current instruction pointer.
+///
+/// If the VM has no loaded executable instruction at the current pointer, the
+/// display value is reset to @ref VM_EXEC_PSEUDO_EIP_BASE. The helper does not
+/// mark EIP as a source-level register write.
+///
+/// @param vm VM instance to synchronize.
+/// @return true when the display value was synchronized.
+bool vm_sync_display_eip(Vm *vm);
 
 /// Initializes ESP to the active stack region's documented empty-stack value.
 ///

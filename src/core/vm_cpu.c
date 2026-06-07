@@ -443,6 +443,20 @@ void vm_cpu_init_seeded_registers_and_flags(VmCpu *cpu, uint32_t seed) {
     vm_cpu_clear_register_write_tracking(cpu);
 }
 
+bool vm_cpu_register_is_source_operand_allowed(VmRegister reg) {
+    return reg != VM_REGISTER_EIP && reg != VM_REGISTER_EFLAGS &&
+           vm_cpu_register_width_bits(reg) != 0U;
+}
+
+bool vm_cpu_set_display_eip(VmCpu *cpu, uint32_t pseudo_eip) {
+    if (cpu == NULL) {
+        return false;
+    }
+
+    cpu->eip = pseudo_eip;
+    return true;
+}
+
 bool vm_cpu_read_register(const VmCpu *cpu, VmRegister reg, uint32_t *out_value) {
     const VmCpuRegisterMetadata *metadata = NULL;
     uint32_t storage_value = 0U;
@@ -481,6 +495,10 @@ bool vm_cpu_write_register(VmCpu *cpu, VmRegister reg, uint32_t value) {
     }
 
     if (!vm_cpu_get_register_metadata(reg, &metadata)) {
+        return false;
+    }
+
+    if (metadata->storage == VM_CPU_STORAGE_EIP) {
         return false;
     }
 
