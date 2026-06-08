@@ -4,11 +4,13 @@
  *
  * This implementation consumes the lexer token stream, lays out small .data,
  * .DATA?, and .CONST images with symbols, records code-label metadata,
- * lowers Phase 60 direct JMP branch-target metadata, and emits only the minimal
- * IR supported by the current executor. Conditional control-flow transfer is
- * implemented for direct labels and procedure-entry labels; source-level stack
- * instructions, stack frames, scaled-index addressing, Irvine32 routine bodies,
- * and full MASM expression parsing remain later milestones. The parser records
+ * lowers Phase 60 direct JMP branch-target metadata and Phase 69 direct
+ * user-procedure CALL metadata, and emits only the minimal IR supported by the
+ * current executor. Conditional control-flow transfer is implemented for direct
+ * labels and procedure-entry labels; direct CALL is implemented only for user
+ * procedure entries. Source-level stack instructions, RET, stack frames,
+ * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
+ * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -35,6 +37,9 @@
 
 /// Maximum direct branch fixups retained during one parse operation.
 #define VM_PARSER_BRANCH_FIXUP_CAPACITY 128U
+
+/// Maximum direct CALL fixups retained during one parse operation.
+#define VM_PARSER_CALL_FIXUP_CAPACITY 128U
 
 
 /// Formats an unsigned integer with comma group separators for diagnostics.
@@ -149,6 +154,16 @@ typedef struct VmParserBranchFixup {
     VmParserUserSymbolCasePolicy case_policy;
 } VmParserBranchFixup;
 
+/// Describes one lowered direct CALL target that must be resolved after procedures are known.
+typedef struct VmParserCallFixup {
+    /// Emitted direct CALL instruction index to patch with the resolved procedure entry.
+    size_t instruction_index;
+    /// Copied source token naming the CALL target operand.
+    VmLexerToken target_token;
+    /// User-symbol CASEMAP policy active at the target reference.
+    VmParserUserSymbolCasePolicy case_policy;
+} VmParserCallFixup;
+
 /// Owns mutable parser state for one parse operation.
 typedef struct VmParserState {
     /// Caller-provided parse configuration.
@@ -195,6 +210,10 @@ typedef struct VmParserState {
     VmParserBranchFixup branch_fixups[VM_PARSER_BRANCH_FIXUP_CAPACITY];
     /// Number of valid entries in @ref branch_fixups.
     size_t branch_fixup_count;
+    /// Direct CALL target references awaiting final procedure-entry resolution.
+    VmParserCallFixup call_fixups[VM_PARSER_CALL_FIXUP_CAPACITY];
+    /// Number of valid entries in @ref call_fixups.
+    size_t call_fixup_count;
     /// Whether a required diagnostic could not be recorded.
     bool diagnostic_overflowed;
 } VmParserState;
@@ -2379,7 +2398,10 @@ static bool vm_parser_add_diagnostic_with_severity(
         diagnostic->lexeme = token->lexeme;
         diagnostic->lexeme_length = token->lexeme_length;
     }
-    diagnostic->message = message;
+    if (message != NULL) {
+        (void)snprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), "%s", message);
+        diagnostic->message = diagnostic->message_storage;
+    }
     state->result->diagnostic_count += 1U;
     return true;
 }
@@ -4414,6 +4436,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
     }
     if (vm_parser_token_equals(token, "jna")) {
         *out_opcode = VM_IR_OPCODE_JNA;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "call")) {
+        *out_opcode = VM_IR_OPCODE_CALL;
         return true;
     }
     if (vm_parser_token_equals(token, "mul")) {
@@ -7976,6 +8002,142 @@ static bool vm_parser_parse_direct_branch_instruction(VmParserState *state, VmIr
     return vm_parser_add_branch_fixup(state, instruction_index, target_token);
 }
 
+
+/// Records one Phase 69 direct-CALL target fixup.
+///
+/// The target may be declared later in source, so final procedure-entry
+/// classification and IR target patching happen after all code labels and
+/// procedure ranges have been seen.
+///
+/// @param state Parser state to mutate.
+/// @param instruction_index Emitted CALL instruction index.
+/// @param target_token Source token naming the CALL target.
+/// @return true when the fixup was stored.
+static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_index, const VmLexerToken *target_token) {
+    VmParserCallFixup *fixup = NULL;
+
+    if (state == NULL || target_token == NULL) {
+        return false;
+    }
+    if (state->call_fixup_count >= (size_t)VM_PARSER_CALL_FIXUP_CAPACITY) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INSTRUCTION_CAPACITY_EXCEEDED, target_token, "Direct CALL target fixup capacity exceeded.");
+        return false;
+    }
+
+    fixup = &state->call_fixups[state->call_fixup_count];
+    fixup->instruction_index = instruction_index;
+    fixup->target_token = *target_token;
+    fixup->case_policy = state->user_symbol_case_policy;
+    state->call_fixup_count += 1U;
+    return true;
+}
+
+/// Rejects a malformed or unsupported direct-CALL operand form.
+///
+/// @param state Parser state to mutate.
+/// @param token CALL operand token that owns the diagnostic span.
+/// @param message Stable diagnostic text.
+/// @return false so callers can use this helper in failure returns.
+static bool vm_parser_reject_call_form(VmParserState *state, const VmLexerToken *token, const char *message) {
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, token, message);
+    return false;
+}
+
+/// Parses and lowers one Phase 69 direct user-procedure CALL instruction.
+///
+/// This accepts only an identifier-shaped target operand. The target is patched
+/// later after all procedure metadata is available; non-identifier, register,
+/// memory, OFFSET, distance/type override, far, and expression forms are rejected
+/// immediately with target-token diagnostics.
+///
+/// @param state Parser state to mutate.
+/// @param mnemonic_token CALL mnemonic token used for emitted source metadata.
+/// @return true when the instruction was parsed and a fixup was retained.
+static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const VmLexerToken *mnemonic_token) {
+    const VmLexerToken *target_token = vm_parser_current_token(state);
+    size_t instruction_index = 0U;
+    VmIrOperand target_operand = vm_ir_operand_branch_target(0U);
+
+    if (state == NULL || state->result == NULL || mnemonic_token == NULL) {
+        return false;
+    }
+
+    if (target_token == NULL || vm_parser_is_line_end_token(target_token)) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND,
+            target_token != NULL ? target_token : mnemonic_token,
+            "CALL requires a direct user procedure target operand."
+        );
+        return false;
+    }
+
+    if (vm_parser_token_is_branch_distance_override(target_token)) {
+        return vm_parser_reject_call_form(
+            state,
+            target_token,
+            "CALL distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred. Phase 69 accepts only a plain user procedure name."
+        );
+    }
+
+    if (vm_parser_current_token_starts_ptr_width(state) || vm_parser_current_token_is_malformed_ptr_prefix(state) ||
+        target_token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        return vm_parser_reject_call_form(
+            state,
+            target_token,
+            "CALL memory targets are not supported. Indirect CALL behavior is deferred; Phase 69 accepts only a plain user procedure name."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_REGISTER) {
+        return vm_parser_reject_call_form(
+            state,
+            target_token,
+            "CALL register targets are not supported. Indirect CALL behavior is deferred; Phase 69 accepts only a plain user procedure name."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_NUMBER || target_token->kind == VM_LEXER_TOKEN_PLUS ||
+        target_token->kind == VM_LEXER_TOKEN_MINUS || target_token->kind == VM_LEXER_TOKEN_CHARACTER ||
+        target_token->kind == VM_LEXER_TOKEN_LEFT_PAREN) {
+        return vm_parser_reject_call_form(
+            state,
+            target_token,
+            "CALL expression and immediate targets are not supported. Phase 69 accepts only a plain user procedure name."
+        );
+    }
+
+    if (target_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a directive name. Phase 69 accepts only a user procedure entry.");
+        return false;
+    }
+
+    if (target_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, target_token, "CALL requires a direct user procedure target operand.");
+        return false;
+    }
+
+    if (vm_parser_token_equals(target_token, "OFFSET")) {
+        return vm_parser_reject_call_form(
+            state,
+            target_token,
+            "CALL OFFSET targets are not supported. Phase 69 accepts only a plain user procedure name."
+        );
+    }
+
+    vm_parser_advance(state);
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    instruction_index = state->result->instruction_count;
+    if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_CALL, target_operand, vm_ir_operand_none(), mnemonic_token)) {
+        return false;
+    }
+
+    return vm_parser_add_call_fixup(state, instruction_index, target_token);
+}
+
 /// Parses one IMUL instruction, including Phase 54 and Phase 55 forms.
 ///
 /// One-operand IMUL keeps the implicit-accumulator behavior implemented in
@@ -8235,10 +8397,10 @@ static bool vm_parser_token_is_exit_terminator(const VmLexerToken *token) {
 
 /// Emits an unsupported-routine diagnostic for a virtual Irvine32 symbol when possible.
 ///
-/// The registry is active only after `INCLUDE Irvine32.inc`. Phase 68 future
-/// CALL/INVOKE target queries use the documented classifier helpers; this
-/// routine remains limited to bare mnemonic-like executable forms currently
-/// recognized by the parser and does not make CALL executable.
+/// The registry is active only after `INCLUDE Irvine32.inc`. Direct CALL
+/// target queries use the documented classifier helpers; this routine remains
+/// limited to bare mnemonic-like executable forms currently recognized by the
+/// parser and does not dispatch Irvine32 routine calls.
 ///
 /// @param state Parser state to mutate.
 /// @param mnemonic_token Candidate executable mnemonic token.
@@ -8286,10 +8448,6 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             }
             opcode = VM_IR_OPCODE_EXIT;
         } else {
-            if (vm_parser_token_equals(mnemonic_token, "call")) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, mnemonic_token, "CALL is not supported yet.");
-                return false;
-            }
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
                 return false;
             }
@@ -8377,6 +8535,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         );
         return false;
     }
+    if (opcode == VM_IR_OPCODE_CALL) {
+        return vm_parser_parse_direct_call_instruction(state, mnemonic_token);
+    }
+
     if (opcode == VM_IR_OPCODE_IMUL) {
         return vm_parser_parse_imul_instruction(state, mnemonic_token);
     }
@@ -8672,6 +8834,164 @@ static bool vm_parser_resolve_branch_fixups(VmParserState *state) {
 
     for (index = 0U; index < state->branch_fixup_count; index += 1U) {
         if (!vm_parser_resolve_one_branch_fixup(state, &state->branch_fixups[index])) {
+            ok = false;
+        }
+    }
+
+    return ok;
+}
+
+
+/// Builds a Phase 68 call-target classifier context for one CALL reference.
+///
+/// @param state Parser state containing metadata tables.
+/// @param case_policy Reference-time CASEMAP policy for the CALL target.
+/// @param out_context Receives the classifier context.
+/// @return true when @p out_context was populated.
+static bool vm_parser_build_call_target_context(
+    const VmParserState *state,
+    VmParserUserSymbolCasePolicy case_policy,
+    VmParserCallTargetContext *out_context
+) {
+    if (state == NULL || state->config == NULL || state->result == NULL || out_context == NULL) {
+        return false;
+    }
+
+    memset(out_context, 0, sizeof(*out_context));
+    out_context->symbols = state->config->symbols;
+    out_context->symbol_count = state->result->symbol_count;
+    out_context->code_labels = state->config->code_labels;
+    out_context->code_label_count = state->result->code_label_count;
+    out_context->procedure_ranges = state->config->procedure_ranges;
+    out_context->procedure_range_count = state->result->procedure_range_count;
+    out_context->numeric_equates = state->config->numeric_equates;
+    out_context->numeric_equate_count = state->result->numeric_equate_count;
+    out_context->case_policy = vm_parser_symbol_case_policy(case_policy);
+    return true;
+}
+
+/// Emits the Phase 69 diagnostic for a rejected identifier-shaped CALL target.
+///
+/// @param state Parser state to mutate.
+/// @param target_token Source token naming the rejected target.
+/// @param classification Target classification produced by the Phase 68 helper.
+/// @return false so callers can use this helper in failure returns.
+static bool vm_parser_reject_classified_call_target(
+    VmParserState *state,
+    const VmLexerToken *target_token,
+    const VmParserCallTargetClassification *classification
+) {
+    VmParserCallTargetClass target_class = classification != NULL ? classification->target_class : VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL;
+
+    switch (target_class) {
+        case VM_PARSER_CALL_TARGET_CODE_LABEL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_DATA_SYMBOL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a data symbol. Phase 69 direct CALL accepts only user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_NUMERIC_EQUATE:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a numeric equate. Phase 69 direct CALL accepts only user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL, target_token, "CALL target names Windows/API, external, linker, import-library, or host-environment behavior outside MASM32 Educational Mode.");
+            return false;
+        case VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED:
+        case VM_PARSER_CALL_TARGET_IRVINE32_PLANNED:
+        case VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, target_token, "Recognized Irvine32 routine or virtual terminator, but CALL dispatch for Irvine32 routine names is deferred to a later Irvine32 routine-dispatch phase.");
+            return false;
+        case VM_PARSER_CALL_TARGET_RESERVED_WORD:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a reserved MASM or simulator word. Phase 69 direct CALL accepts only user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION:
+        case VM_PARSER_CALL_TARGET_LOCAL_SYMBOL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, target_token, "CALL target form is not supported. Phase 69 direct CALL accepts only a plain user procedure name.");
+            return false;
+        case VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL:
+        default:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, target_token, "CALL target is not a known user procedure entry.");
+            return false;
+    }
+}
+
+/// Resolves one retained direct CALL fixup to a procedure-entry instruction index.
+///
+/// @param state Parser state to mutate.
+/// @param fixup CALL fixup to classify and apply.
+/// @return true when the fixup was accepted and the emitted instruction patched.
+static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParserCallFixup *fixup) {
+    VmIrInstruction *instruction = NULL;
+    VmParserCallTargetContext context;
+    VmParserCallTargetClassification classification;
+    const VmProcedureRange *range = NULL;
+    const VmCodeLabel *label = NULL;
+    const VmLexerToken *target_token = fixup != NULL ? &fixup->target_token : NULL;
+    size_t target_instruction_index = 0U;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || fixup == NULL || target_token == NULL) {
+        return false;
+    }
+
+    if (fixup->instruction_index >= state->result->instruction_count || state->config->instructions == NULL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL target metadata is invalid.");
+        return false;
+    }
+
+    instruction = &state->config->instructions[fixup->instruction_index];
+    if (instruction->opcode != VM_IR_OPCODE_CALL) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL fixup references a non-CALL instruction.");
+        return false;
+    }
+
+    if (!vm_parser_build_call_target_context(state, fixup->case_policy, &context)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL classifier metadata is unavailable.");
+        return false;
+    }
+
+    classification = vm_parser_classify_call_target_token(&context, target_token);
+    if (classification.target_class != VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY || !classification.has_metadata_index) {
+        return vm_parser_reject_classified_call_target(state, target_token, &classification);
+    }
+
+    if (context.procedure_ranges != NULL && classification.metadata_index < context.procedure_range_count) {
+        range = &context.procedure_ranges[classification.metadata_index];
+        if (!range->has_executable_instruction || range->start_instruction_index >= state->result->instruction_count) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target procedure has no executable instruction target in the currently lowered program.");
+            return false;
+        }
+        target_instruction_index = range->start_instruction_index;
+    } else if (context.code_labels != NULL && classification.metadata_index < context.code_label_count) {
+        label = &context.code_labels[classification.metadata_index];
+        if (label->declaration_kind != VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY || !label->has_target_instruction_index ||
+            label->target_kind == VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET || label->target_instruction_index >= state->result->instruction_count) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target procedure has no executable instruction target in the currently lowered program.");
+            return false;
+        }
+        target_instruction_index = label->target_instruction_index;
+    } else {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL procedure metadata is invalid.");
+        return false;
+    }
+
+    instruction->destination = vm_ir_operand_branch_target((uint32_t)target_instruction_index);
+    return true;
+}
+
+/// Resolves every retained direct CALL fixup.
+///
+/// @param state Parser state to mutate.
+/// @return true when all fixups resolved successfully.
+static bool vm_parser_resolve_call_fixups(VmParserState *state) {
+    size_t index = 0U;
+    bool ok = true;
+
+    if (state == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < state->call_fixup_count; index += 1U) {
+        if (!vm_parser_resolve_one_call_fixup(state, &state->call_fixups[index])) {
             ok = false;
         }
     }
@@ -9913,6 +10233,7 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     if (state.saw_end) {
         (void)vm_parser_expect_no_tokens_after_end(&state);
         (void)vm_parser_resolve_branch_fixups(&state);
+        (void)vm_parser_resolve_call_fixups(&state);
     }
 
     out_result->status = vm_parser_finalize_status(&state);
@@ -10521,6 +10842,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "label-symbol-conflict";
         case VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME:
             return "invalid-procedure-name";
+        case VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET:
+            return "invalid-call-target";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM:
+            return "unsupported-call-form";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL:
+            return "unsupported-external-call";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET:
             return "unsupported-call-target";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:

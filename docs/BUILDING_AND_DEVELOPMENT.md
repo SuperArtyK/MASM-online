@@ -12,15 +12,15 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
 
 Current runtime/source-run MASM behavior phase:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
-
-Next development milestone:
 Phase 69 - Direct CALL to User Procedures
 
-Phase 68B is complete. Phase 69 can now consume pseudo-EIP return tokens and the Phase 68A `ESP` startup contract, but it must still not implement RET, PUSH, POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, or stack-pointer warning diagnostics unless its own phase explicitly says otherwise.
+Next runtime implementation milestone:
+Phase 70 - RET Execution and Return Address Validation
+
+Phase 69A is documentation/static-check cleanup only. It does not change parser behavior, VM behavior, source-run behavior, browser protocol, diagnostic codes, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -231,7 +231,7 @@ In hosted assistant/container environments, the aggregate command or full source
 
 When the aggregate or full source-run group times out, run the smallest available focused groups or fixture families that cover the changed area. Report the exact groups run.
 
-For procedure-entry and future CALL/RET work, focused verification should include:
+For procedure-entry, CALL, and future RET work, focused verification should include:
 
 - structure/static checks;
 - native executor tests when CALL/RET or stack tokens are involved;

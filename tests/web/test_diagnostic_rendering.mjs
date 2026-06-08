@@ -1617,7 +1617,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 68B runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 69 runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2194,7 +2194,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2237,7 +2237,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2274,9 +2274,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2302,8 +2302,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2329,8 +2329,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2354,8 +2354,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2378,8 +2378,8 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2404,8 +2404,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2444,7 +2444,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2475,8 +2475,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2520,8 +2520,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2547,7 +2547,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2571,7 +2571,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2595,7 +2595,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2644,7 +2644,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2668,7 +2668,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2693,9 +2693,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2721,9 +2721,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2749,9 +2749,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2776,9 +2776,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2829,7 +2829,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2853,7 +2853,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3070,7 +3070,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 68);
+    assert.equal(json.phase, 69);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3083,7 +3083,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 68);
+  assert.equal(duplicateResult.json.phase, 69);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3585,7 +3585,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3606,7 +3606,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5039,9 +5039,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5100,9 +5100,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5159,9 +5159,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5196,9 +5196,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000000h");
@@ -5224,9 +5224,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.executedInstructionCount, 0);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
@@ -5257,9 +5257,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
-  assert.equal(json.phaseSuffix, "B");
-  assert.equal(json.phaseName, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6237,7 +6237,63 @@ test("Phase 57T renders realistic playground diagnostics exactly", () => {
 [unsupported-feature] unsupported-high-level-if line 29, column 5, byte offset 638, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
 [unsupported-feature] unsupported-high-level-else line 31, column 5, byte offset 691, span length 5: .ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.
 [unsupported-feature] unsupported-high-level-endif line 33, column 5, byte offset 736, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.
-[assembly-error] unsupported-instruction line 36, column 5, byte offset 769, span length 4: CALL is not supported yet.`);
+[assembly-error] unsupported-instruction line 41, column 5, byte offset 826, span length 4: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.`);
+});
+
+
+test("Phase 69 renders direct CALL invalid target diagnostic exactly", () => {
+  const name = "phase69-call-invalid-label-target";
+  const source = `.code
+main PROC
+LabelOnly:
+    call LabelOnly
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-call-target",
+      message: "CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.",
+      line: 4,
+      column: 10,
+      byteOffset: 36,
+      spanLength: 9
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 4, column 10, byte offset 36, span length 9: CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.");
+});
+
+test("Phase 69 renders direct CALL checked stack write failure exactly", () => {
+  const name = "phase69-call-invalid-stack-write";
+  const source = `.code
+main PROC
+    mov esp, 0
+    call Helper
+    mov eax, 1
+main ENDP
+Helper PROC
+    mov ebx, 2
+Helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 69);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.registers.ESP.hex, "00000000h");
+  assert.equal(json.registers.EAX.hex, "00000000h");
+  assert.equal(json.registers.EBX.hex, "00000000h");
+  assert.deepEqual(json.memoryChanges, []);
+  assert.equal(json.simulatorMessages[0].kind, "runtime-error");
+  assert.equal(json.simulatorMessages[0].code, "invalid-address");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-address line 4, column 5, byte offset 35, span length 11: Invalid memory write at FFFFFFFCh for 4 bytes. The address is outside the simulator's configured memory regions.");
 });
 
 test("Phase 68 renders duplicate procedure diagnostic exactly", () => {
@@ -6881,7 +6937,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 68);
+  assert.equal(json.phase, 69);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

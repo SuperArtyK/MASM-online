@@ -183,6 +183,25 @@ Group ownership:
 - `protocol`: worker/protocol schema tests separated from general web tests.
 - `static`: runner help, group-name documentation, timeout-policy, failure-reporting, fixture-inventory consistency checks, and selected current-status or stale-wording guards.
 
+Output-only corrective phases still require tests across the surfaces they affect.
+
+For a phase that changes rendered Simulator Messages ordering, run and update:
+
+- structured source-run tests that verify diagnostic/status object order;
+- structured source-run tests that verify diagnostic/status object counts;
+- rendered web tests that verify exact Simulator Messages text and blank-line placement;
+- protocol tests if the phase changes or explicitly preserves protocol ordering;
+- static documentation checks when active docs describe the ordering.
+
+For a phase that changes final register display formatting, run and update:
+
+- web formatter tests for exact rendered register output;
+- tests that prove display-only divider rows are not source-run JSON objects;
+- protocol tests if the protocol field order or schema is deliberately changed;
+- source-run tests only if structured register payloads are deliberately changed.
+
+Display-only grouping must not be tested by changing VM semantics, parser behavior, diagnostic codes, source-run success/failure status, Program Console output, or memory/register values.
+
 Output controls:
 
 ```sh

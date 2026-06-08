@@ -5,25 +5,14 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
 
 Runtime/source-run MASM behavior phase:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
-
-The current runtime displays `EIP` as derived VM pseudo-code-address control state. The displayed value starts at `00401000h` for lowered executable instruction index 0 and advances by 4 per lowered executable VM instruction. Labels, blank lines, comments, procedure markers, and non-executable directives do not receive pseudo-EIP addresses. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such attempts produce `invalid-eip-operand`.
-
-The runtime initializes `ESP` from the active stack region when a program is loaded. The empty-stack convention is the first address past the high end of the selected stack region; direct supported writes to `ESP` remain legal, and future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
-
-The runtime continues to honor `END entryName` as the source-run entry procedure. Execution starts inside the selected procedure, helper procedures before the selected entry do not run automatically, and ordinary fallthrough at the selected entry procedure boundary completes successfully without falling into later procedures.
-
-Procedure entries remain callable-target metadata distinct from ordinary code labels for future `CALL` and `INVOKE` phases. The classifier distinguishes user procedure entries, ordinary executable labels, data symbols, numeric equates, central-registry Irvine32 names, external/API non-goals, reserved words, unknown names, and malformed target expressions without making `CALL` executable.
-
-The current runtime also supports the implemented MASM32 Educational Mode subset through unsigned relational conditional jumps, plus earlier arithmetic, data, memory, diagnostics, layout, and Irvine32 virtual `exit` behavior.
-
-Next recommended implementation work:
 Phase 69 - Direct CALL to User Procedures
 
-Phase 69 is the next procedure-execution phase after Phase 68B. Phase 69 may consume the Phase 68A `ESP` startup contract and the Phase 68B pseudo-EIP contract for direct user-procedure `CALL`. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
+Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
+
+`RET`, Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, and `ADDR` remain deferred.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -45,8 +34,9 @@ At a high level, the current subset includes:
 - selected-entry source-run startup from `END entryName`;
 - `ESP` startup initialized from the active stack region empty-stack address;
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
+- direct user-procedure `call ProcedureName` with checked pseudo-EIP return-token stack writes;
 - successful completion at the selected entry procedure's `ENDP` boundary;
-- procedure-entry and future-call target classification metadata for parser/tests;
+- procedure-entry and call-target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -56,14 +46,19 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- indirect/register/memory/immediate branch targets;
-- branch distance/type overrides;
 - source-level `push` and `pop`;
-- `call`, `ret`, `leave`, `ret imm16`, stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
-- Irvine32 callable routines beyond already implemented virtual terminator behavior;
+- plain `ret`, `leave`, and `ret imm16`;
+- root procedure termination through `ret`;
+- non-entry procedure fallthrough diagnostics after CALL/RET are available;
+- stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
+- selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;
 - selected macro-compatibility conveniences explicitly assigned to later accepted milestones.
+
+Rejected simulator-owned CALL target forms remain rejected unless a later accepted phase explicitly changes that simulator-owned form. These include register, memory, indirect, immediate, `OFFSET`, ordinary-label, data-symbol, equate, unknown, malformed, and recognized-but-not-yet-executable Irvine32 routine targets.
+
+External/API calls are different. They are non-goal target categories, not ordinary deferred CALL forms. `call ExitProcess`, PE/import/library targets, host callbacks, native procedures, and other external/API targets remain outside the simulator unless the canonical full specification and implementation guide deliberately revise the project boundary.
 
 Permanent non-goals remain outside the simulator unless the canonical full specification and implementation guide are deliberately revised:
 

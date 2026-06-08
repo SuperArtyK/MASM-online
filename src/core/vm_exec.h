@@ -12,8 +12,9 @@
  * instruction-count watchdog over this executor. Unsigned relational conditional
  * jumps are supported for direct labels. Phase 68A initializes ESP from the
  * active stack region at program startup; source-level stack instructions,
- * procedure frames, CALL/RET stack mutation, and non-exit Irvine32 routines
- * remain later milestones.
+ * procedure frames, RET stack mutation, and non-exit Irvine32 routines remain
+ * later milestones; Phase 69 direct user-procedure CALL performs its internal
+ * checked return-token stack write.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -72,6 +73,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED,
     /// A lowered direct branch target was malformed or outside the loaded program.
     VM_EXEC_STATUS_INVALID_BRANCH_TARGET,
+    /// A lowered direct CALL target was malformed or outside the loaded program.
+    VM_EXEC_STATUS_INVALID_CALL_TARGET,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
 } VmExecStatus;

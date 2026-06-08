@@ -15,7 +15,7 @@
  * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
  * virtual Irvine32 registry metadata, and Phase 68 call-target classification
- * metadata for future procedure-call milestones.
+ * metadata used by Phase 69 direct user-procedure CALL lowering.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -242,7 +242,13 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
     /// A procedure declaration used malformed procedure-name syntax.
     VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME,
-    /// A future CALL/INVOKE classifier query identified an unsupported target.
+    /// A direct CALL target resolved to a known symbol that is not a user procedure entry.
+    VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET,
+    /// A direct CALL operand used a register, memory, far, OFFSET, or expression form reserved for a later phase.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM,
+    /// A direct CALL target names Windows/API, external, linker, import-library, or host-environment behavior.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL,
+    /// A CALL/INVOKE classifier query identified an unsupported target.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET,
     /// The caller-provided code-label table was full.
     VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
@@ -339,7 +345,7 @@ typedef struct VmNumericEquate {
     size_t source_span_length;
 } VmNumericEquate;
 
-/// Identifies one Phase 68 future CALL/INVOKE target classification.
+/// Identifies one Phase 68/69 CALL/INVOKE target classification.
 typedef enum VmParserCallTargetClass {
     /// Target syntax is absent or uses a non-identifier expression form.
     VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION = 0,
@@ -419,13 +425,13 @@ const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind);
 /// @return Static target-class name, or NULL for invalid values.
 const char *vm_parser_call_target_class_name(VmParserCallTargetClass target_class);
 
-/// Classifies an identifier-shaped future CALL/INVOKE target by parser metadata.
+/// Classifies an identifier-shaped CALL/INVOKE target by parser metadata.
 ///
-/// The helper performs no lowering or execution. It is intended for future CALL
-/// and INVOKE parser phases to distinguish user procedures, ordinary labels,
-/// data symbols, numeric equates, Irvine32 registry names, external non-goals,
-/// reserved words, malformed operands, and unknown symbols before execution
-/// support exists.
+/// The helper performs no lowering or execution. Direct CALL and future INVOKE
+/// parser phases use it to distinguish user procedures, ordinary labels, data
+/// symbols, numeric equates, Irvine32 registry names, external non-goals,
+/// reserved words, malformed operands, and unknown symbols before committing
+/// instruction-specific behavior.
 ///
 /// @param context Metadata tables and reference-time CASEMAP policy.
 /// @param target Source target bytes to classify as an identifier.
@@ -437,7 +443,7 @@ VmParserCallTargetClassification vm_parser_classify_call_target_name(
     size_t target_length
 );
 
-/// Classifies a lexer token as a future CALL/INVOKE target.
+/// Classifies a lexer token as a CALL/INVOKE target.
 ///
 /// Non-identifier tokens classify as malformed target expressions. Identifier
 /// tokens are classified using the same metadata and reserved-word policy as
@@ -625,7 +631,8 @@ typedef struct VmParserResult {
 /// operands, register-indirect memory operands, or signed/unsigned PTR width
 /// overrides on supported memory operands. Direct JMP and implemented conditional-jump operands may target
 /// executable code labels or procedure-entry labels and are lowered to runtime
-/// branch metadata. MASM32 header directives accepted in
+/// branch metadata. Phase 69 direct CALL may target only user procedure entries
+/// and is lowered to checked stack-write/transfer metadata. MASM32 header directives accepted in
 /// Milestone 26 are parsed as no-ops or metadata and never load host files or
 /// change source-level stack instruction behavior or procedure frames. `.DATA?`
 /// storage is deterministic zero-filled with metadata; `.CONST` storage is

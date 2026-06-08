@@ -13,30 +13,37 @@ Source-of-truth rule:
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 - Curated audit and handoff reports are stored under [`history/`](history/), and standalone milestone reports are stored under [`history/reports/`](history/reports/). These archived files are historical evidence, not current behavior authority.
 
-Current status at Phase 68B:
+Current status at Phase 69A:
 
 Repository/archive milestone:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
 
 Runtime/source-run MASM behavior phase:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
-
-Phase 68B displays `EIP` as derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
-
-Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, and direct supported writes to `ESP` remain legal. The empty-stack convention remains the first address past the high end of the selected stack region; future 32-bit push-like operations must compute `ESP - 4` before writing through checked stack memory.
-
-Phase 68B preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement executable CALL, RET, stack mutation instructions, procedure frames, Irvine32 routine dispatch, source-level PUSH/POP, or root procedure termination.
-
-Next planned milestone:
 Phase 69 - Direct CALL to User Procedures
 
-Phase 69 may consume the Phase 68A `ESP` startup contract and the accepted Phase 68B pseudo-EIP contract. It must still not implement RET, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
+Phase 69A is documentation/static-check cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while clarifying current-status wording, CALL/RET boundaries, rejected CALL forms, non-goals, memory-validation wording, and source-of-truth authority. Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token for the lowered instruction after the call to the simulated stack at `ESP - 4`, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
+
+Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
+
+Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, direct supported writes to `ESP` remain legal, and direct user-procedure `CALL` uses the active `ESP` value for its checked return-token stack write.
+
+Phase 69 preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement RET, root procedure termination, source-level PUSH/POP, procedure frames, Irvine32 routine dispatch, `INVOKE`, `PROTO`, `LOCAL`, `USES`, or `ADDR`.
+
+Next runtime implementation milestone:
+Phase 70 - RET Execution and Return Address Validation
+
+Current source-of-truth roadmap note:
+The implementation guide now inserts Phase 69B - Register Display Grouping and Startup Diagnostic Ordering before Phase 70 as an output/message-ordering corrective phase. Phase 69B is not a MASM syntax or VM execution-semantics phase. It must not be treated as implementing `RET` or any other future runtime feature.
+
+Phase 70 may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It must still not implement source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 
 ## Concise milestone ledger
 
+- Phase 69A is documentation/static-check cleanup only. It makes the current source-of-truth spec/guide revision clearer without changing runtime/source-run MASM behavior beyond Phase 69.
+- Phase 69 implements direct user-procedure `CALL` to user `PROC` entries with checked pseudo-EIP return-token stack writes and target transfer while preserving RET and Irvine32 routine calls as future work.
 - Phase 68B displays `EIP` as derived pseudo-code-address control state, rejects source-level `EIP` operands and definitions, and preserves direct supported `ESP` writes.
-- Phase 68 adds parser metadata and a classifier for future direct CALL/INVOKE target resolution without making CALL executable.
+- Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.
 - Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
 - Phase 67 adds validation harness coverage for existing arithmetic, branch, and instruction-count watchdog behavior without changing runtime/source-run MASM behavior.
 - Phase 66 implements executable unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, and `jna` direct label branches. These consume the required unsigned-comparison flags through the undefined-flag-use policy, preserve registers/memory/modeled flags/Program Console output/memory-change rows, and respect `instructionLimit`.
@@ -124,6 +131,45 @@ Non-goals preserved:
 
 
 
+## Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+
+Repository/archive milestone:
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+
+Runtime/source-run MASM behavior phase:
+Phase 69 - Direct CALL to User Procedures
+
+Phase 69A updates active documentation and static documentation checks only. It removes README next-phase recommendation wording, separates future simulator work from permanent external/API non-goals, documents rejected CALL target forms as rejected rather than promised future work, clarifies the Phase 69 transitional CALL boundary, defines the executable-successor rule for Phase 70 RET planning, clarifies that uninitialized-read warnings are orthogonal to region-only address/range validation, and clarifies that `SUPPORTED_SYNTAX.md` is a tested current-reference document rather than an independent canonical override.
+
+Phase 69A does not change parser behavior, VM behavior, source-run behavior, browser protocol, diagnostic codes, Wasm API behavior, or supported MASM syntax.
+
+## Phase 69 - Direct CALL to User Procedures
+
+Repository/archive milestone:
+Phase 69 - Direct CALL to User Procedures
+
+Runtime/source-run MASM behavior phase:
+Phase 69 - Direct CALL to User Procedures
+
+Phase 69 implements the first executable procedure-call behavior: direct near `call ProcedureName` to user procedure entries declared with `ProcedureName PROC`.
+
+Implemented behavior:
+
+- parser/lowering accepts direct user-procedure CALL targets only when the target resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy at the call site;
+- ordinary labels, data symbols, numeric equates, unknown identifiers, external/API names, recognized Irvine32 routine names, register targets, memory targets, `OFFSET` targets, and malformed target expressions produce structured diagnostics rather than executable CALL behavior;
+- runtime CALL computes the return token from the Phase 68B pseudo-EIP of the lowered instruction immediately after the call;
+- runtime CALL computes the stack destination as `ESP - 4`, validates and writes the 32-bit return token through checked VM memory helpers, updates `ESP`, records the memory/register changes, and transfers to the target procedure entry;
+- failed CALL stack writes use the central memory diagnostic path and stop before committing the transfer, `ESP` update, memory write, Program Console output, or completion message;
+- CALL preserves modeled flags and flag-validity metadata;
+- valid stack writes are not rejected solely because optional declared-object teaching validation is enabled and stack memory is not a declared data object.
+
+Non-goals preserved:
+
+- no RET, root RET, LEAVE, RET imm16, source-level PUSH/POP, or procedure-frame behavior;
+- no Irvine32 routine dispatch for `call WriteString`, `call ReadInt`, `call ExitProcess`, or similar names;
+- no PROC USES, LOCAL, PROTO, INVOKE, ADDR, argument handling, call-depth diagnostics, call traces, stack-pointer warning diagnostics, code memory, native x86 instruction encoding, PE loading, or linker/RVA modeling.
+
+
 ## Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions
 
 Status:
@@ -159,7 +205,7 @@ Phase 68 - Call Target Classification and Procedure Entry Metadata
 Runtime/source-run MASM behavior phase:
 Phase 68 - Call Target Classification and Procedure Entry Metadata
 
-Phase 68 adds parser-owned metadata for future `CALL` and `INVOKE` target resolution. It records procedure entries as procedure-entry targets distinct from ordinary code labels and exposes a documented classifier for parser/tests and later execution phases.
+Phase 68 adds parser-owned metadata for user procedure target classification. It records procedure entries as procedure-entry targets distinct from ordinary code labels and exposes a documented classifier that Phase 69 now uses for direct user-procedure `CALL`; later `INVOKE` work may reuse that foundation.
 
 Implemented behavior:
 

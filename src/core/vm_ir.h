@@ -134,6 +134,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_JBE,
     /// Alias for JBE; jump when unsigned not-above holds: CF is set or ZF is set.
     VM_IR_OPCODE_JNA,
+    /// Direct near CALL to a user procedure entry.
+    VM_IR_OPCODE_CALL,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

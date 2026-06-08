@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions")
+    assert_text_contains("README.md", "Phase 69 - Direct CALL to User Procedures")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -552,9 +552,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 68")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"B\"")
-    assert_text_contains("web/src/protocol.js", "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 69")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
+    assert_text_contains("web/src/protocol.js", "Phase 69 - Direct CALL to User Procedures")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -685,7 +685,7 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/diagnostic_json_producer.c", "masm32_sim_wasm_run_source_json")
     assert_text_contains("README.md", "docs/FULL_IMPLEMENTATION_SPEC.md")
     assert_text_contains("README.md", "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md")
-    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "The default memory validation mode is region-only")
+    assert_text_contains("docs/SUPPORTED_SYNTAX.md", "The default address/range memory validation mode is region-only")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "casemap-policy-changed")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "ambiguous-symbol")
     assert_text_contains("src/parser/parser.h", "VM_PARSER_DIAGNOSTIC_CASEMAP_POLICY_CHANGED")
@@ -1404,13 +1404,13 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase68b_current_status_and_harness_documented() -> None:
-    """Verify Phase 68B current status and pseudo-EIP coverage."""
+def assert_phase69_current_status_and_harness_documented() -> None:
+    """Verify Phase 69 current status and direct CALL coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"""
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL"""
     runtime_status = """Runtime/source-run MASM behavior phase:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"""
+Phase 69 - Direct CALL to User Procedures"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1421,27 +1421,27 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"""
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current runtime/source-run MASM behavior phase:
-Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
+Phase 69 - Direct CALL to User Procedures""",
     )
 
     assert_all_text_contains(
         "README.md",
         [
-            "The current runtime displays `EIP` as derived VM pseudo-code-address control state.",
-            "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`",
-            "Next recommended implementation work:",
-            "Phase 69 - Direct CALL to User Procedures",
-            "Phase 69 is the next procedure-execution phase after Phase 68B.",
+            "Phase 69 implements direct near `call ProcedureName`",
+            "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
+            "Failed internal stack writes use the central checked-memory diagnostic path",
+            "displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "`ESP` startup initialized from the active stack region empty-stack address",
             "displayed `EIP` derived from VM pseudo-code-address control state",
-            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
+            "direct user-procedure `call ProcedureName` with checked pseudo-EIP return-token stack writes",
+            "Phase 69 - Direct CALL to User Procedures",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/MILESTONE_HISTORY.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
@@ -1463,6 +1463,8 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
             "Files changed",
             "Tests added",
             "Commands used to test",
+            "Next recommended implementation work",
+            "unsupported `call` forms including Irvine32 routine calls, external/API calls",
         ],
     )
 
@@ -1470,19 +1472,34 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
         "docs/SUPPORTED_SYNTAX.md",
         [
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
+            "direct near user-procedure `call ProcedureName`",
+            "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
+            "The executable successor after `CALL` means the next lowered VM instruction",
+            "synthetic terminal pseudo-EIP",
+            "root-return sentinel",
+            "instruction-after-the-procedure placeholder",
+            "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
+            "they are not future work merely because they are currently rejected",
+            "Rejected simulator-owned CALL target forms remain rejected unless a later accepted phase explicitly changes that simulator-owned form",
+            "External/API calls are not simulator-owned deferred CALL forms",
+            "Phase 69 direct user-procedure `CALL` demonstrates target transfer and checked pseudo-EIP return-token stack write only",
+            "External/API calls and WinAPI behavior are non-goals, not deferred direct-CALL target forms",
+            "Uninitialized-read warning policy is orthogonal to region-only address/range validation",
+            "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "`END entryName` selects the source-run entry procedure.",
             "If the selected entry procedure has no executable instruction, source-run completes successfully without executing another procedure.",
-            "Helper procedures before the selected entry procedure do not run automatically.",
-            "Helper procedures after the selected entry procedure do not run by ordinary fallthrough.",
-            "Existing explicit supported control flow, such as direct `jmp label`, may still transfer to ordinary code labels or procedure-entry labels.",
-            "This behavior is not CALL/RET support.",
-            "Implemented procedure-entry and future-call target metadata:",
-            "A parser classifier can distinguish user procedure entries",
-            "Recognized Irvine32 routine and terminator names are classified through the central virtual Irvine32 registry",
+            "Helper procedures before the selected entry procedure do not run automatically",
+            "falling off the selected entry procedure at `ENDP` completes successfully",
+            "Implemented direct branch and conditional branch families may target executable code labels or procedure-entry labels according to their instruction-specific rules.",
+            "Direct user-procedure `CALL` targets user `PROC` entries only.",
+            "Calls to Irvine32 routines, source-level stack instructions, and procedure frames remain deferred according to the future-feature sections in this document.",
+            "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
+            "Plain `RET`, root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions",
+            "selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them",
             "direct `jmp label`",
-            "equality conditional jumps: `je`, `jz`, `jne`, `jnz`",
-            "signed relational conditional jumps: `jl`, `jnge`, `jle`, `jng`, `jg`, `jnle`, `jge`, `jnl`",
-            "unsigned relational conditional jumps: `ja`, `jnbe`, `jae`, `jnb`, `jb`, `jnae`, `jbe`, `jna`",
+            "equality conditional jumps",
+            "signed relational conditional jumps",
+            "unsigned relational conditional jumps",
             "`ja label` / `jnbe label`",
             "No unsigned relational conditional jump consumes `SF` or `OF`",
             "### Reserved words and user-defined symbols",
@@ -1500,6 +1517,9 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
             "Do not rely on helper procedure placement before or after `main` until Phase 67A",
             "corrected `END entryName` source-run entry behavior",
             "source-run execution may begin at the first lowered instruction",
+            "Irvine32 routine calls, unsupported CALL target forms, source-level stack instructions",
+            "unsupported CALL target forms remain deferred",
+            "Windows/API execution remain deferred or outside scope",
         ],
     )
 
@@ -1507,11 +1527,11 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
+            "Phase 69A - Documentation and Static-Check Cleanup After Direct CALL",
             "Current runtime/source-run MASM behavior phase:",
-            "Next development milestone:",
-            "Phase 69 - Direct CALL to User Procedures",
-            "Phase 68B is complete.",
+            "Next runtime implementation milestone:",
+            "Phase 70 - RET Execution and Return Address Validation",
+            "Phase 69A is documentation/static-check cleanup only.",
             "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1538,32 +1558,66 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 68B:",
+            "Current status at Phase 69A:",
+            "Phase 69A is documentation/static-check cleanup only.",
             "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
-            "Phase 68 adds parser metadata and a classifier for future direct CALL/INVOKE target resolution without making CALL executable.",
-            "Phase 68 adds parser-owned metadata for future `CALL` and `INVOKE` target resolution.",
+            "Phase 69 implements direct user-procedure `CALL` to user `PROC` entries",
+            "Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.",
+            "Phase 68 adds parser-owned metadata for user procedure target classification.",
+            "## Phase 69 - Direct CALL to User Procedures",
+            "## Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
             "## Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Phase 67 adds validation harness coverage",
             "Concise milestone ledger",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
-            "Next planned milestone:",
-            "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
-            "Phase 69 may consume the Phase 68A `ESP` startup contract and the accepted Phase 68B pseudo-EIP contract.",
+            "Next runtime implementation milestone:",
+            "Phase 70 - RET Execution and Return Address Validation",
+            "Phase 70 may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`.",
+        ],
+    )
+
+    assert_all_text_contains(
+        "docs/FULL_IMPLEMENTATION_SPEC.md",
+        [
+            "current `docs/SUPPORTED_SYNTAX.md` as a tested current-reference document",
+            "`docs/SUPPORTED_SYNTAX.md` is not an independent override",
+            "External/API calls are not a future CALL target category",
+            "External/API CALL targets are different. They are permanent project-boundary non-goal forms",
+            "Final register display must group register and control-state rows into stable high-level educational groups",
+            "The divider row contains exactly eight hyphen characters",
+            "If runtime execution begins, rendered Simulator Messages must use the stable group order below",
+            "The executable successor after `CALL` means the next lowered VM instruction",
+        ],
+    )
+    assert_all_text_contains(
+        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        [
+            "Phase identifier note",
+            "## 73A. Phase 69A - Documentation and Static-Check Cleanup After Direct CALL",
+            "Phase 69A is an optional documentation/static-check corrective phase",
+            "## 73B. Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
+            "Phase 69B is an output-cleanup and message-ordering corrective phase",
+            "The divider row contains exactly eight hyphen characters",
+            "When runtime execution begins and `startup-state-notice` is enabled",
+            "Phase 70 only guarantees return to a pseudo-EIP value that maps to an executable lowered VM instruction",
+            "INCLUDE Irvine32.inc",
+            "This fixture deliberately includes `INCLUDE Irvine32.inc`",
+            "Phase 69 permitted limited source-run test scaffolding",
         ],
     )
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 68B:",
+            "Repository status: Phase 69A documentation/static-check cleanup after direct <code>CALL</code>.",
+            "Runtime behavior remains Phase 69:",
             ".stack 4096",
-            "displayed <code>EIP</code> is derived VM pseudo-code-address control state",
-            "source code cannot read, write, address through, use as an instruction operand, or define <code>EIP</code>",
-            "Explicit ESP writes remain legal",
-            "mov esp, 1",
-            "EIP displays this lowered instruction's pseudo-address",
+            "direct user-procedure <code>CALL</code> is executable",
+            "RET</code>, Irvine32 routine calls",
+            "call Helper",
+            "Writes pseudo-EIP return token at ESP - 4",
             "final-registers",
             "Program Console",
         ],
@@ -1572,6 +1626,7 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     assert_all_text_contains(
         "tests/core/test_wasm_source_run.c",
         [
+            "test_phase69_direct_call_source_run_behavior",
             "test_phase68a_source_run_observes_fixed_layout_esp_startup",
             "test_phase68a_seeded_startup_preserves_stack_pointer_contract",
             "test_phase68a_automatic_layout_esp_uses_selected_stack_metadata",
@@ -1587,6 +1642,8 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     assert_all_text_contains(
         "tests/core/test_parser.c",
         [
+            "test_phase69_direct_call_to_user_procedure_parses_to_ir",
+            "test_phase69_direct_call_target_rejections",
             "test_phase67a_procedure_range_metadata",
             "Phase 67A should record selected END entry procedure",
             "test_phase68_call_target_classifier_metadata",
@@ -1597,6 +1654,9 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     assert_all_text_contains(
         "tests/core/test_vm_exec.c",
         [
+            "test_phase69_direct_call_stack_write_and_transfer",
+            "test_phase69_direct_call_stack_write_failure_rolls_back",
+            "test_phase69_invalid_call_metadata",
             "test_phase67_arithmetic_fault_no_partial_mutation_harness",
             "test_phase67_conditional_branch_invalid_metadata_harness",
         ],
@@ -1604,6 +1664,8 @@ Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions""",
     assert_all_text_contains(
         "tests/web/test_diagnostic_rendering.mjs",
         [
+            "Phase 69 renders direct CALL invalid target diagnostic exactly",
+            "Phase 69 renders direct CALL checked stack write failure exactly",
             "renders Phase 67 branch-target classifier diagnostic exactly",
             "renders Phase 67 division runtime diagnostic exactly",
             "renders Phase 67 branch-loop instruction-limit diagnostic exactly",
@@ -1894,7 +1956,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase68b_current_status_and_harness_documented()
+    assert_phase69_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

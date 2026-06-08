@@ -3,7 +3,8 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 68B: EIP Pseudo-Code Address Display and Source-Operand Restrictions.
+  Repository status: Phase 69A documentation/static-check cleanup after Direct CALL.
+  Runtime behavior: Phase 69 direct CALL to user procedures.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,16 +19,20 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 68B: displayed <code>EIP</code> is derived VM pseudo-code-address control state beginning at <code>00401000h</code>; source code cannot read, write, address through, use as an instruction operand, or define <code>EIP</code>. Explicit supported <code>ESP</code> writes remain legal while <code>CALL</code>, <code>RET</code>, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
+        <p class="muted">Repository status: Phase 69A documentation/static-check cleanup after direct <code>CALL</code>. Runtime behavior remains Phase 69: direct user-procedure <code>CALL</code> is executable for user <code>PROC</code> targets. <code>RET</code>, Irvine32 routine calls, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.stack 4096
 .data
 value DWORD 7
 .code
 main PROC
-    mov esp, 1        ; Explicit ESP writes remain legal
-    mov eax, value    ; EIP displays this lowered instruction's pseudo-address
+    call Helper       ; Writes pseudo-EIP return token at ESP - 4
+    mov eax, value    ; Not reached until RET exists in a later phase
 main ENDP
+
+Helper PROC
+    mov ebx, value
+Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

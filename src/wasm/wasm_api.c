@@ -13,7 +13,7 @@
  * direct JMP runtime execution, unsigned MUL, one-operand signed
  * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, Phase 67A selected END-entry
  * procedure startup and fallthrough boundaries, Phase 68 procedure-entry and
- * future-call target classification metadata, Phase 68A ESP stack startup, Phase 68B displayed EIP pseudo-code-address control state, and recovered
+ * direct user-procedure CALL execution metadata, Phase 68A ESP stack startup, Phase 68B displayed EIP pseudo-code-address control state, and recovered
  * unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -77,13 +77,13 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 68U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 69U
 
-/// Suffix for the current Phase 68B runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "B"
+/// Suffix for the current Phase 69 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 68B runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
+/// Full name of the current Phase 69 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 69 - Direct CALL to User Procedures"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -2133,6 +2133,9 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses(
     }
 
     for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        if (delta->instruction.opcode == VM_IR_OPCODE_CALL) {
+            continue;
+        }
         if (!masm32_sim_wasm_validate_object_access(storage, &delta->instruction, &delta->memory_accesses[index], validation_mode, layout_policy)) {
             return VM_EXEC_STATUS_MEMORY_ERROR;
         }
@@ -2517,6 +2520,11 @@ static size_t masm32_sim_wasm_collect_planned_object_accesses(
                 masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
             }
             break;
+        case VM_IR_OPCODE_CALL: {
+            VmIrOperand stack_write = vm_ir_operand_memory_register(VM_REGISTER_ESP, -4, 0U, 32U);
+            masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &stack_write, VM_EXEC_MEMORY_ACCESS_WRITE, 32U);
+            break;
+        }
         default:
             break;
     }
@@ -2603,6 +2611,9 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses_before_step(
         uint32_t size_bytes = 0U;
         VmExecMemoryAccess access;
 
+        if (instruction->opcode == VM_IR_OPCODE_CALL) {
+            continue;
+        }
         if (accesses[index].width_bits == 0U || (accesses[index].width_bits % 8U) != 0U ||
             !masm32_sim_wasm_resolve_memory_operand_address(vm, &accesses[index].operand, &address)) {
             continue;
@@ -5296,7 +5307,8 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
                     (diagnostic->memory_status == VM_MEMORY_STATUS_UNSUPPORTED_CODE_MEMORY_ACCESS ||
                      (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING && diagnostic->memory_diagnostic.has_code_overlap))) ||
                    status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
-                   status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
+                   status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_INVALID_CALL_TARGET ||
+                   status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
             masm32_sim_wasm_copy_instruction_source_span(
                 &diagnostic->instruction,
                 g_masm32_sim_wasm_run_storage.source_text,
@@ -5328,6 +5340,9 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     } else if (status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET) {
         message_code = "invalid-branch-target";
         message_text = "Direct JMP target metadata is invalid for the loaded program. Execution stopped before applying the jump.";
+    } else if (status == VM_EXEC_STATUS_INVALID_CALL_TARGET) {
+        message_code = "invalid-call-target";
+        message_text = "Direct CALL target metadata is invalid for the loaded program. Execution stopped before applying the call.";
     } else if (status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
         message_code = "branch-runtime-deferred";
         message_text = "A branch form was accepted for metadata, but runtime branch execution for that form is deferred to a later branch phase. Execution stopped before applying the branch.";

@@ -16,13 +16,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 68;
+export const IMPLEMENTED_PHASE = 69;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "B";
+export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions";
+export const IMPLEMENTED_PHASE_NAME = "Phase 69 - Direct CALL to User Procedures";
 
 /**
  * Creates the initial worker readiness response.

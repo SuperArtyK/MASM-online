@@ -1,12 +1,12 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 68B EIP pseudo-control-state restrictions.
+ * @brief Unit and integration tests for the parser through Phase 69 direct user-procedure CALL.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
- * metadata, Phase 68B EIP source-operand restrictions, unsupported syntax,
+ * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL, unsupported syntax,
  * INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
@@ -853,6 +853,194 @@ static int test_phase68_call_target_classifier_casemap_policy(void) {
 
     classification = vm_parser_classify_call_target_name(&context, "writestring", strlen("writestring"));
     failures += expect_call_target_class(classification.target_class, VM_PARSER_CALL_TARGET_IRVINE32_PLANNED, "CASEMAP:NONE should not make Irvine32 names case-sensitive");
+
+    return failures;
+}
+
+
+/// Verifies Phase 69 lowers direct user-procedure CALL targets into executable IR.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase69_direct_call_to_user_procedure_parses_to_ir(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "    call Helper\n"
+        "    mov ebx, 2\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    mov ecx, 3\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 69 direct CALL fixture should parse");
+    failures += expect_size(result.instruction_count, 4U, "Phase 69 direct CALL fixture should lower four executable instructions");
+    failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_CALL, "direct CALL should lower to the CALL IR opcode");
+    failures += expect_u32((uint32_t)buffers.instructions[1].destination.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "direct CALL should use branch-target metadata for the procedure entry");
+    failures += expect_u32(buffers.instructions[1].destination.immediate, 3U, "direct CALL should target the first executable Helper instruction");
+    failures += expect_size(result.diagnostic_count, 0U, "accepted direct CALL should not emit diagnostics");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call helper\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    mov ebx, 2\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "default CASEMAP should resolve folded direct CALL procedure names");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_CALL, "folded direct CALL should lower to CALL");
+    failures += expect_u32(buffers.instructions[0].destination.immediate, 2U, "folded direct CALL should target Helper's executable entry");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "OPTION CASEMAP:NONE\n"
+        "main PROC\n"
+        "    call helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    mov eax, 1\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should not fold direct CALL user procedure names");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "CASEMAP:NONE mismatched CALL target should be unknown");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "CASEMAP:NONE CALL diagnostic should point to target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "CASEMAP:NONE CALL diagnostic should point to target column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "CASEMAP:NONE CALL diagnostic should span target token");
+
+    return failures;
+}
+
+/// Verifies Phase 69 rejects non-procedure direct CALL targets without enabling future forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase69_direct_call_target_rejections(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "LabelOnly:\n"
+        "    call LabelOnly\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL ordinary code label should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL ordinary label should use invalid-call-target");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "ordinary-label CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "ordinary-label CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 9U, "ordinary-label CALL diagnostic should span target token");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    call value\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL data symbol should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL data symbol should use invalid-call-target");
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT = 4\n"
+        ".code\n"
+        "main PROC\n"
+        "    call COUNT\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL numeric equate should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL numeric equate should use invalid-call-target");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL register target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL register target should use unsupported-call-form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call [eax]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL memory target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL memory target should use unsupported-call-form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call OFFSET Helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    mov eax, 1\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL OFFSET target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL OFFSET target should use unsupported-call-form");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    call WriteString\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL Irvine32 target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, "CALL Irvine32 target should remain deferred");
+
+    failures += expect_parser_status(parse_for_test(
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    call ExitProcess\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL external target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL, "CALL external target should use unsupported-external-call");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call Missing\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL unknown target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "CALL unknown identifier should use unknown-symbol");
 
     return failures;
 }
@@ -6756,6 +6944,8 @@ int main(void) {
     failures += test_phase67a_procedure_range_capacity_diagnostic();
     failures += test_phase68_call_target_classifier_metadata();
     failures += test_phase68_call_target_classifier_casemap_policy();
+    failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
+    failures += test_phase69_direct_call_target_rejections();
     failures += test_phase68_procedure_name_diagnostics();
     failures += test_phase68b_eip_control_state_diagnostics();
     failures += test_phase58_label_casemap_policy();

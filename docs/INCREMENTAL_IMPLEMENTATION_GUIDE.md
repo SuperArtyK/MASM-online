@@ -2,6 +2,8 @@
 
 > **Canonical source-of-truth note:** This file is paired with `FULL_IMPLEMENTATION_SPEC.md`. Together they are the current reviewed source-of-truth revision. This guide preserves completed Phases 0-30, then defines the canonical post-30 roadmap, phase numbering, implementation tasks, required tests, and acceptance criteria. The paired specification owns product boundaries, stable behavior, stable cross-cutting rules, and current/future/non-goal distinctions.
 
+> **Phase identifier note:** Some Markdown headings contain both a document ordinal and a canonical phase label, for example `## 73. Phase 69 - Direct CALL to User Procedures`. The `Phase 69` label is the canonical implementation phase identifier. The leading document ordinal is navigation-only and must not be cited as the implementation phase number. Preserve existing phase identifiers, including non-renumbering corrective phases such as `67A`, `68A`, `68B`, and any later `69A`-style insertions, unless the user explicitly requests a roadmap renumbering.
+
 
 ## 1. Purpose
 
@@ -19922,6 +19924,14 @@ Source-level `push` and `pop` instructions are not required for this phase. CALL
 
 RET is not required for this phase. Successful source-run programs that require returning from the called procedure are owned by Phase 70 - RET Execution and Return Address Validation.
 
+### Transitional behavior note
+
+Phase 69 proves only direct user-procedure `CALL` target transfer and checked pseudo-EIP return-token stack write. It does not define final procedure return or final non-entry procedure termination semantics.
+
+Before Phase 70 implements `RET`, a Phase 69 source-run fixture may reach an existing procedure boundary after executing a called helper. If that fixture completes under the current selected-entry or boundary behavior, that completion is transitional test scaffolding only. It must not be treated as root `RET`, non-entry procedure success, calling-convention behavior, stack-frame behavior, Irvine32 routine dispatch, or final helper-procedure fallthrough semantics.
+
+Phase 70 owns plain `RET` execution and return-address validation. Phase 71 owns root procedure termination and non-entry procedure fallthrough diagnostics. Phase 69 must not add temporary `RET`, root-return sentinels, synthetic terminal return targets, or non-entry fallthrough diagnostics.
+
 ### Accepted syntax
 
 ```asm
@@ -20106,6 +20116,522 @@ A normal source-run program that requires RET to complete is not required to com
 ---
 
 
+## 73A. Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+
+### Goal
+
+Clean up current-status documentation and static documentation checks after Phase 69, before implementing Phase 70 `RET`.
+
+Phase 69A is an optional documentation/static-check corrective phase. It does not define a new runtime MASM behavior milestone. If Phase 69A is completed, repository status may say that documentation cleanup through Phase 69A is complete, but the latest completed runtime/source-run MASM behavior phase remains Phase 69 - Direct CALL to User Procedures. The next runtime implementation phase remains Phase 70 - RET Execution and Return Address Validation.
+
+### Scope
+
+This phase may update:
+
+- `README.md`;
+- `docs/SUPPORTED_SYNTAX.md`;
+- `docs/FULL_IMPLEMENTATION_SPEC.md`;
+- `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`;
+- `docs/BUILDING_AND_DEVELOPMENT.md` current-status text;
+- `docs/MILESTONE_HISTORY.md` current-status and ledger text;
+- static documentation checks in `scripts/run_tests.py` or equivalent documentation-hygiene tests.
+
+This phase must not update core C parser, VM, executor, memory, Irvine32 runtime, Wasm API, browser protocol, browser runtime, source-run implementation, diagnostic JSON shape, diagnostic codes, or supported MASM syntax except where a static documentation test must be adjusted to match the documentation correction.
+
+### Required documentation corrections
+
+1. Remove next-phase recommendation prose from README current-status text.
+
+   README may name the current repository/archive milestone and the current runtime/source-run behavior phase. README must not say "Next recommended implementation work is..." or otherwise duplicate the roadmap. The implementation guide, milestone history, and handoff reports own next-phase planning.
+
+2. Keep external/API calls out of future/deferred simulator-feature lists.
+
+   External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, and Windows process/DLL/handle/kernel behavior are non-goals. They must not be listed as ordinary future/deferred simulator features. External/API calls are not a future CALL target category.
+
+3. Keep rejected CALL target forms separate from future simulator features and permanent non-goals.
+
+   Documentation must distinguish simulator-owned rejected CALL target forms from external/API non-goal target forms. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes that simulator-owned form. These include register, memory, indirect, immediate, `OFFSET`, ordinary-label, data-symbol, equate, unknown, malformed, and recognized-but-not-yet-executable Irvine32 routine targets. External/API calls are different. They are non-goal target categories, not ordinary deferred CALL forms. `call ExitProcess`, PE/import/library targets, host callbacks, native procedures, and other external/API targets must remain non-executable unless the canonical full specification and implementation guide deliberately revise the project boundary. Do not list rejected target forms as future work merely because they are currently rejected.
+
+4. Clarify the Phase 69 transitional CALL boundary.
+
+   Phase 69 direct user-procedure `CALL` demonstrates target transfer and checked pseudo-EIP return-token stack write. It does not implement `RET`, root `RET`, source-level stack instructions, stack frames, calling conventions, Irvine32 routine dispatch, or final non-entry procedure fallthrough behavior.
+
+5. Clarify the executable-successor rule before Phase 70.
+
+   Ordinary Phase 70 `RET` behavior returns only to a pseudo-EIP that maps to an executable lowered VM instruction after `CALL`. The executable successor after `CALL` means the next lowered VM instruction that is actually executable in the selected procedure's execution path. It does not mean the next source line, source byte offset, ordinary label, data declaration, `ENDP`, first instruction in another procedure, source boundary, or synthetic boundary marker.
+
+6. Clarify the terminal-CALL edge before Phase 70.
+
+   A `CALL` whose successor is not an executable lowered VM instruction must not cause the implementation to invent a synthetic terminal pseudo-EIP, `ENDP` return target, source-boundary token, root-return sentinel, or native-address-like value. Invalid or non-executable return tokens must use the Phase 70 invalid-return-address path until a later phase explicitly defines a different boundary/root-termination rule.
+
+7. Clarify memory validation wording.
+
+   Default address/range validation is region-only and mandatory `.CONST` write protection remains central. Optional section-capacity, section-image, and declared-object validation policies are separate educational modes. Default uninitialized-read warnings are an orthogonal teaching diagnostic based on uninitialized-origin metadata, not part of region/object bounds validation.
+
+8. Clarify source-of-truth authority.
+
+   `SUPPORTED_SYNTAX.md` is a tested current-reference document derived from the canonical spec/guide and verified repository behavior. It is not an independent override of the spec/guide.
+
+### Explicit non-goals
+
+Phase 69A must not implement:
+
+- `RET`;
+- root procedure termination through `RET`;
+- non-entry procedure fallthrough diagnostics;
+- source-level `PUSH` or `POP`;
+- stack-frame behavior;
+- `LEAVE`;
+- `RET imm16`;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- Irvine32 callable routine dispatch;
+- external/API calls;
+- PE loading;
+- object-file linking;
+- import-library behavior;
+- host filesystem include loading;
+- native x86 execution;
+- full x86 emulation;
+- Windows API execution or modeling;
+- Windows process, DLL, handle, or kernel behavior.
+
+### Static documentation checks
+
+Prefer semantic/static substring checks over exact paragraph matching. Static checks should protect durable rules without forcing future documentation edits to preserve one exact paragraph.
+
+Required static checks:
+
+- README identifies `Phase 69A - Documentation and Static-Check Cleanup After Direct CALL` as the repository/archive milestone when this phase is complete.
+- README identifies `Phase 69 - Direct CALL to User Procedures` as the runtime/source-run MASM behavior phase.
+- README current status mentions direct near `call ProcedureName` to a user `PROC` entry.
+- README does not contain `Next recommended implementation work`.
+- README does not describe external/API calls as future/deferred simulator work.
+- README permanent non-goals include Windows API execution/modeling, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, and Windows process/DLL/handle/kernel behavior.
+- `SUPPORTED_SYNTAX.md` documents direct user-procedure `CALL` as implemented.
+- `SUPPORTED_SYNTAX.md` documents `RET` as not implemented before Phase 70.
+- `SUPPORTED_SYNTAX.md` documents the executable successor after `CALL` as an executable lowered VM instruction, not a source line, `ENDP`, source boundary, or synthetic marker.
+- `SUPPORTED_SYNTAX.md` documents transitional Phase 69 CALL boundary behavior and does not present helper-procedure fallthrough as final semantics.
+- `SUPPORTED_SYNTAX.md` separates deferred simulator features from permanent non-goals.
+- `SUPPORTED_SYNTAX.md` states that external/API calls are non-goals, not future CALL targets.
+- `SUPPORTED_SYNTAX.md` states that rejected CALL forms remain rejected unless a later accepted phase explicitly changes them.
+- `SUPPORTED_SYNTAX.md` states that uninitialized-read warnings are orthogonal to region-only address/range validation.
+- `FULL_IMPLEMENTATION_SPEC.md` describes `SUPPORTED_SYNTAX.md` as a tested current-reference document, not an independent canonical override.
+- The implementation guide contains the phase-identifier note.
+
+### Focused test commands
+
+```text
+python3 scripts/run_tests.py --static
+python3 scripts/run_tests.py --all --quiet
+```
+
+If the aggregate command times out in a hosted environment, run and report focused groups separately. If `emcc` is unavailable, report the Wasm rebuild check as skipped rather than failed.
+
+### Acceptance criteria
+
+- Documentation changes are minimal, targeted, and consistent with Phase 69 behavior.
+- Repository documentation may identify documentation cleanup through Phase 69A as complete, but it must still identify Phase 69 as the latest completed runtime/source-run MASM behavior phase.
+- The next runtime implementation phase remains Phase 70 - RET Execution and Return Address Validation.
+- No source-run behavior, VM behavior, parser behavior, diagnostic code, browser protocol, browser runtime, or Wasm API changes are introduced.
+- Static documentation checks pass.
+- Aggregate tests pass where the environment permits them.
+- Any skipped Emscripten/Wasm rebuild check is reported.
+
+
+## 73B. Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+### Goal
+
+Improve user-visible output readability and deterministic Simulator Messages ordering before Phase 70 implements plain near `RET`.
+
+Phase 69B has two independent cleanup goals:
+
+1. Add stable high-level visual grouping to final register display.
+2. Ensure `startup-state-notice` is the first Simulator Message whenever runtime execution begins and the startup notice policy emits the notice, including runs that also have nonfatal parser/static/compatibility diagnostics.
+
+Phase 69B is an output-cleanup and message-ordering corrective phase. It does not define a new MASM syntax feature and does not advance procedure, stack, CALL, or RET execution semantics.
+
+### Placement and roadmap effect
+
+Phase 69B is a non-renumbering corrective phase inserted after:
+
+```text
+Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+```
+
+and before:
+
+```text
+Phase 70 - RET Execution and Return Address Validation
+```
+
+Phase 69B does not renumber Phase 70 or any later phase.
+
+Phase 69B is recommended before Phase 70 to keep output behavior stable before `RET` adds more runtime outcomes, but Phase 69B must not be treated as a semantic prerequisite for implementing near `RET`. Its purpose is output clarity, message-order determinism, and documentation hygiene.
+
+After Phase 69B is complete:
+
+- repository/archive status may say that output cleanup through Phase 69B is complete;
+- the latest completed MASM syntax and VM execution-semantics phase remains Phase 69 - Direct CALL to User Procedures;
+- the latest output/message-ordering cleanup phase may say Phase 69B - Register Display Grouping and Startup Diagnostic Ordering;
+- the next runtime implementation phase remains Phase 70 - RET Execution and Return Address Validation.
+
+Future assistants must not treat Phase 69B as implementing `RET`, source-level `PUSH`/`POP`, stack frames, root procedure termination, Irvine32 callable routine dispatch, WinAPI behavior, PE/linking behavior, host callbacks, executable code memory, or new MASM syntax.
+
+### Scope
+
+Phase 69B changes only:
+
+1. final register display rendering;
+2. rendered Simulator Messages ordering;
+3. source-run diagnostic/status serialization order where needed to support the required rendered ordering;
+4. tests and active documentation that describe those output behaviors;
+5. static documentation checks, if needed, to prevent stale status or ordering wording.
+
+Phase 69B must not change:
+
+- C core parser behavior;
+- C VM instruction behavior;
+- accepted MASM syntax;
+- rejected MASM syntax;
+- source-run success/failure status;
+- diagnostic codes;
+- diagnostic severity;
+- diagnostic source line, column, byte offset, or span length;
+- Program Console output;
+- register values;
+- memory values;
+- memory-change rows;
+- VM CPU storage layout;
+- Wasm protocol field names;
+- source-run JSON schema;
+- startup register values;
+- stack layout;
+- CALL return-token semantics;
+- EIP pseudo-code-address semantics;
+- modeled flag semantics.
+
+### Register display grouping
+
+Final register display must group rows into these stable high-level educational groups:
+
+1. General registers
+   - `EAX`, `AX`, `AH`, `AL`
+   - `EBX`, `BX`, `BH`, `BL`
+   - `ECX`, `CX`, `CH`, `CL`
+   - `EDX`, `DX`, `DH`, `DL`
+
+2. Index registers
+   - `ESI`, `SI`
+   - `EDI`, `DI`
+
+3. Stack/frame registers
+   - `EBP`, `BP`
+   - `ESP`, `SP`
+
+4. Control and modeled flag state
+   - `EIP`
+   - `EFLAGS`
+   - modeled flag child rows under `EFLAGS`
+
+Parent register families inside the same high-level group remain adjacent. For example, `EAX`, `EBX`, `ECX`, and `EDX` belong to the same general-register group, so the high-level divider must not appear between the `EAX` family and the `EBX` family.
+
+The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use the Phase 69B high-level divider except between the four high-level groups listed above.
+
+The fourth group must not imply that `EIP` is source-writable x86 register state. `EIP` remains simulator control state displayed as a pseudo-code address derived from the VM instruction pointer.
+
+The fourth group must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state. Implemented instructions and flag helpers may update modeled flags; user source code must not treat `EFLAGS` as a normal destination register unless a later accepted phase explicitly changes that rule.
+
+The visual separator between high-level register groups must be an explicit rendered divider row.
+
+The divider row must be:
+
+```text
+--------
+```
+
+The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+
+The divider row must appear:
+
+- once between the general-register group and the index-register group;
+- once between the index-register group and the stack/frame-register group;
+- once between the stack/frame-register group and the control/modeled-flag-state group.
+
+The divider row must not appear:
+
+- before the first general-register row;
+- after the final modeled-flag row;
+- between aliases of the same parent register;
+- between parent register families inside the same high-level group;
+- in source-run JSON;
+- in Program Console output;
+- as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
+
+Register grouping is display-only. It must not introduce structured source-run JSON separator records. It must not add diagnostics. It must not add Program Console text. It must not change the order or names of register fields in the structured protocol unless a future protocol-owning phase explicitly changes that contract.
+
+### Startup-state notice ordering
+
+Phase 64B established rendered Simulator Messages groups for `startup-state-notice`, runtime diagnostics, and `execution-complete`.
+
+Phase 69B tightens that rule for runs that collect nonfatal pre-execution diagnostics but still begin execution.
+
+When runtime execution begins and `startup-state-notice` is enabled, `startup-state-notice` must be the first Simulator Message serialized/rendered for that run.
+
+Nonfatal diagnostics collected before execution begins must be held or reordered until the run outcome is known.
+
+If pre-execution errors prevent execution from beginning:
+
+- render diagnostics in the existing pre-execution order;
+- do not emit `startup-state-notice`;
+- do not emit `execution-complete`;
+- do not create a runtime diagnostic group merely because diagnostics were rendered.
+
+Existing pre-execution order means the order produced by the current lexing, parsing, unsupported-feature recovery, static validation, settings validation, layout validation, and diagnostic collection pipeline. Phase 69B must not sort pre-execution diagnostics by severity, code, line number, source location, message text, or diagnostic category unless another accepted phase explicitly changes diagnostic ordering.
+
+If execution begins:
+
+- emit `startup-state-notice` first when the policy emits it;
+- after `startup-state-notice`, emit nonfatal pre-execution diagnostics, compatibility notices, accepted-construct teaching notices, runtime warnings, runtime notices, runtime errors, and final execution status in the documented rendered group order;
+- if `startup-state-notice` is disabled, do not emit the notice, but preserve stable relative ordering for all other emitted diagnostics;
+- keep `execution-complete` last and emit it only on successful execution.
+
+This phase changes ordering only. It must not suppress diagnostics, invent diagnostics, change diagnostic codes, change diagnostic severity, change diagnostic source metadata, change parser behavior, change VM behavior, change Program Console output, change final machine state, or change success/failure status.
+
+### Required rendered group order after Phase 69B
+
+When execution does not begin:
+
+```text
+pre-execution diagnostics in existing order
+```
+
+Required behavior:
+
+- no `startup-state-notice`;
+- no `execution-complete`;
+- no runtime diagnostic group;
+- no final execution-status group;
+- no group separator merely because diagnostics were rendered.
+
+When execution begins and `startup-state-notice` is enabled:
+
+```text
+startup-state-notice
+
+nonfatal pre-execution diagnostics, if any
+
+runtime diagnostics, if any
+
+execution-complete, only on success
+```
+
+Required behavior:
+
+- `startup-state-notice` appears first;
+- exactly one blank rendered line appears between adjacent non-empty Simulator Messages groups;
+- no blank line appears between messages inside the same group;
+- no leading blank line appears;
+- no trailing blank line appears;
+- blank rendered separators do not appear in source-run JSON as diagnostics or status objects.
+
+When execution begins and `startup-state-notice` is disabled:
+
+```text
+nonfatal pre-execution diagnostics, if any
+
+runtime diagnostics, if any
+
+execution-complete, only on success
+```
+
+Required behavior:
+
+- no `startup-state-notice`;
+- the remaining groups retain their relative order;
+- exactly one blank rendered line appears between adjacent non-empty groups;
+- no leading or trailing blank line appears.
+
+### Implementation guidance
+
+The preferred implementation is to build or order source-run diagnostic/status arrays so that `startup-state-notice` precedes nonfatal diagnostics whenever execution begins. The renderer should then apply group separators from message kinds.
+
+Do not add fake diagnostics to represent blank lines.
+
+Do not add fake diagnostics to represent register divider rows.
+
+Do not add a new diagnostic code for grouping.
+
+Do not move `startup-state-notice` to Program Console.
+
+Do not make `startup-state-notice` source-attached.
+
+Do not route Program Console output through Simulator Messages.
+
+Do not emit `startup-state-notice` for source that fails before execution begins.
+
+If source-run JSON diagnostic/status ordering changes, update structured C source-run tests and rendered web tests together.
+
+If existing source-run metadata contains a field that is explicitly documented as the latest MASM syntax or VM execution-semantics phase, that field must remain Phase 69 after Phase 69B. Do not use that field to claim that Phase 69B implemented `RET`, source-level stack instructions, new procedure termination behavior, new CALL target forms, Irvine32 callable routine dispatch, or new MASM syntax.
+
+If the repository already has a separate repository/archive status field or output-cleanup status field, that separate status may identify Phase 69B after the phase is accepted. Do not add a new protocol field solely for Phase 69B unless the implementing phase explicitly updates the protocol contract and tests.
+
+### Required tests
+
+Add or update web formatter tests for final register display:
+
+1. Register rows render in the required high-level group order:
+   - general registers;
+   - index registers;
+   - stack/frame registers;
+   - control and modeled flag state.
+
+2. The exact divider row appears between adjacent high-level groups:
+
+```text
+--------
+```
+
+3. The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+
+4. No leading divider appears before the general-register group.
+
+5. No trailing divider appears after the control/modeled-flag group.
+
+6. No divider appears between aliases inside the same parent register family.
+
+7. No divider appears between parent register families inside the same high-level group.
+
+8. `EIP` appears in the control and modeled flag state group.
+
+9. `EFLAGS` and modeled flag child rows appear in the control and modeled flag state group.
+
+10. Existing unchanged-value markers, changed-value markers, invalid/derived-state markers, and modeled-flag validity markers still render correctly after grouping.
+
+Add or update structured source-run tests and rendered Simulator Messages tests for startup diagnostic ordering:
+
+1. Successful run with startup notice enabled and no diagnostics:
+   - `startup-state-notice` appears first;
+   - `execution-complete` appears last;
+   - exactly one blank rendered line separates the two groups.
+
+2. Successful run with startup notice enabled and a nonfatal CASEMAP warning:
+   - `startup-state-notice` appears first;
+   - the CASEMAP warning appears after the startup group;
+   - `execution-complete` appears last;
+   - blank separators appear only between adjacent non-empty groups.
+
+3. Successful run with startup notice enabled and a compatibility notice:
+   - `startup-state-notice` appears first;
+   - the compatibility notice appears after the startup group;
+   - `execution-complete` appears last.
+
+4. Successful run with startup notice enabled and a runtime warning:
+   - `startup-state-notice` appears first;
+   - the runtime warning appears after the startup group;
+   - `execution-complete` appears after the runtime diagnostic group;
+   - the runtime warning and any other runtime diagnostics remain inside the runtime diagnostic group.
+
+5. Runtime error after execution begins with an earlier nonfatal pre-execution warning:
+   - `startup-state-notice` appears first;
+   - the nonfatal pre-execution warning appears after the startup group;
+   - the runtime error appears after the nonfatal pre-execution group;
+   - `execution-complete` does not appear.
+
+6. Pre-execution failure with warning plus error:
+   - `startup-state-notice` does not appear;
+   - `execution-complete` does not appear;
+   - diagnostics remain in existing pre-execution order;
+   - no blank group separator implies that execution began.
+
+7. Invalid source-run setting:
+   - `startup-state-notice` does not appear;
+   - `execution-complete` does not appear;
+   - the setting diagnostic remains renderable without startup grouping.
+
+8. Startup notice disabled:
+   - `startup-state-notice` does not appear;
+   - nonfatal pre-execution diagnostics, runtime diagnostics, and final execution status retain the required relative order;
+   - blank separators appear only between adjacent non-empty groups.
+
+9. Program Console separation:
+   - Program Console receives no startup notice text;
+   - Program Console receives no blank separator text;
+   - Program Console receives no register divider text unless a simulated program routine explicitly prints it in a future Program Console routine;
+   - Program Console output remains controlled only by simulated program I/O.
+
+Structured source-run tests must assert message object order, diagnostic/status kinds, and diagnostic counts. They must prove that no fake diagnostic, warning, notice, status message, or protocol object is created solely to represent a rendered blank line or register divider.
+
+Rendered web tests must assert exact text output, including:
+
+- the `--------` register divider rows;
+- absence of leading or trailing register divider rows;
+- required blank lines between adjacent non-empty Simulator Messages groups;
+- absence of extra blank lines inside one Simulator Messages group;
+- absence of `startup-state-notice` on pre-execution failure paths.
+
+### Documentation updates required in Phase 69B
+
+Update active documentation and UI wording that describes final register output or Simulator Messages ordering.
+
+Required documentation updates:
+
+- `FULL_IMPLEMENTATION_SPEC.md` must define the high-level register display groups and the tightened startup diagnostic ordering rule.
+- `SUPPORTED_SYNTAX.md` may mention Phase 69B as an output/status cleanup if its current-status section is updated, but it must not describe Phase 69B as adding MASM syntax.
+- `README.md` may identify repository/archive cleanup through Phase 69B if the phase is completed, but it must continue to identify Phase 69 as the latest MASM syntax and VM execution-semantics phase.
+- Browser status text may mention output cleanup through Phase 69B, but must not say `RET` is implemented.
+- Source-run metadata must not advance any field documented as the latest MASM syntax or VM execution-semantics phase beyond Phase 69 merely because Phase 69B is completed.
+- Static documentation checks may be updated to protect the new output-ordering wording.
+
+### Non-goals
+
+Phase 69B must not implement any of the following:
+
+- plain `RET`;
+- root `RET` success;
+- `RET imm16`;
+- `LEAVE`;
+- source-level `PUSH`;
+- source-level `POP`;
+- stack frames;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- Irvine32 callable routine dispatch beyond already implemented virtual `exit` terminator behavior;
+- WinAPI behavior;
+- PE loading;
+- object-file linking;
+- import-library behavior;
+- host callbacks;
+- host filesystem include loading;
+- native x86 execution;
+- full x86 emulation;
+- Windows process, DLL, handle, or kernel behavior.
+
+### Acceptance criteria
+
+Phase 69B is accepted only when:
+
+- final register display grouping is visually stable and covered by exact web formatter tests;
+- the divider row is exactly `--------`;
+- `startup-state-notice` is first whenever execution begins and the notice is enabled;
+- pre-execution failure output remains in existing diagnostic order and does not emit `startup-state-notice`;
+- `execution-complete` remains last and appears only on successful execution;
+- Program Console and Simulator Messages remain separate;
+- source-run JSON does not contain fake diagnostics or blank-separator records;
+- source-run JSON does not contain register-divider records;
+- no parser behavior, VM behavior, accepted MASM syntax, rejected MASM syntax, register value, memory value, or source-run success/failure status changes except where explicitly described by this phase;
+- repository/archive status, MASM syntax/VM execution-semantics status, and output/message-ordering status are kept distinct where active docs mention them;
+- all existing implemented milestone tests pass;
+- no Phase 70 `RET` behavior or other future runtime feature is implemented.
+
+
 ## 74. Phase 70 - RET Execution and Return Address Validation
 
 ### Goal
@@ -20146,6 +20672,23 @@ Phase 70 depends on Phase 68B pseudo-EIP behavior and Phase 69 CALL return-token
 
 RET must not treat pseudo-EIP values as readable instruction bytes or data-memory addresses.
 
+### Phase 70 return-target boundary rule
+
+Phase 70 only guarantees return to a pseudo-EIP value that maps to an executable lowered VM instruction. The ordinary successful path is:
+
+```asm
+call Helper
+; executable lowered instruction after CALL
+```
+
+where `CALL` writes the pseudo-EIP for the executable lowered instruction after the call, and `RET` later validates and returns to that pseudo-EIP.
+
+The executable successor after `CALL` means the next lowered VM instruction that is actually executable in the selected procedure's execution path. It does not mean the next source line, source byte offset, ordinary label, data declaration, `ENDP`, first instruction in another procedure, source boundary, or synthetic boundary marker.
+
+A `CALL` whose source successor does not lower to an executable VM instruction is outside the ordinary Phase 70 success path. Phase 70 must not invent a synthetic terminal pseudo-EIP, `ENDP` return target, source-boundary token, root-return sentinel, native-address-like value, or "instruction after the procedure" placeholder. If `RET` reads a value that does not map to an executable lowered VM instruction, it must use the documented `invalid-return-address` path.
+
+Root return and successful terminal procedure return are owned by Phase 71 - Root Procedure Termination Semantics, not Phase 70.
+
 ### Runtime errors
 
 - Existing central checked-memory diagnostic when reading the 32-bit return token from `[ESP]` fails. This includes the empty-stack case where `ESP` still equals the active stack region's exclusive high limit from the Phase 68A startup contract. Phase 70 must not introduce a new `stack-underflow` or `return-with-empty-call-stack` diagnostic unless this phase is explicitly broadened to define that code, severity, JSON fields, source span, rendered Simulator Messages wording, precedence, and no-partial-mutation behavior.
@@ -20180,6 +20723,7 @@ Parser tests:
 ### Source-run acceptance program
 
 ```asm
+INCLUDE Irvine32.inc
 .code
 main PROC
     mov eax, 1
@@ -20205,9 +20749,13 @@ execution-complete
 
 This source-run program is owned by Phase 70. It must complete with CALL writing a pseudo-EIP return token and RET returning to that displayed pseudo-EIP.
 
-Reason: Phase 69 implements direct CALL mechanics, Phase 70 implements RET back to the instruction after CALL, and the already existing `exit` terminator can end the entry procedure after control returns to `main`.
+Reason: Phase 69 implements direct CALL mechanics, Phase 70 implements `RET` back to the instruction after `CALL`, and the already existing virtual Irvine32 `exit` terminator can end the entry procedure after control returns to `main`.
 
-This test must not require Phase 71 root procedure termination behavior because it does not depend on entry-procedure fallthrough or root `ret`. It terminates through `exit`.
+This fixture deliberately includes `INCLUDE Irvine32.inc` because `exit` is accepted only when the virtual Irvine32 namespace is active. Phase 70 must not broaden bare `exit` behavior merely to make this acceptance fixture pass.
+
+This test must not require Phase 71 root procedure termination behavior because it does not depend on entry-procedure fallthrough after `RET` or root `RET`. It terminates through the already implemented virtual Irvine32 `exit` terminator.
+
+Phase 70 tests must use a `CALL` with a real executable lowered instruction after the call for successful CALL/RET return. Phase 70 must not add success expectations for a terminal `CALL` whose successor is not an executable lowered instruction. Where the existing runtime can exercise a non-executable or malformed return token, tests must verify the documented `invalid-return-address` path. If the exact terminal-CALL edge cannot be isolated before Phase 71, record that limitation and keep terminal-CALL success explicitly unsupported.
 
 Phase 70 must still not implement:
 
@@ -20228,6 +20776,43 @@ Rendered Simulator Messages tests:
 - The selected existing central checked-memory diagnostic for a failed `[ESP]` return-token read renders as a runtime error with source span on the executed RET instruction.
 - Failed RET does not emit `execution-complete`.
 - Phase 70 tests must not assert root RET success; root RET success belongs to Phase 71.
+
+### Current-status and static-documentation updates
+
+Because Phase 70 advances MASM syntax and VM execution semantics beyond Phase 69, the implementation must update active current-status surfaces and static checks in the same milestone.
+
+Required updates:
+
+- README repository/archive status must identify Phase 70 when Phase 70 is accepted.
+- README latest MASM syntax and VM execution-semantics status must identify Phase 70 when Phase 70 is accepted.
+- `docs/SUPPORTED_SYNTAX.md` must move plain near `ret` from future/deferred syntax to implemented syntax.
+- `docs/SUPPORTED_SYNTAX.md` must keep `ret imm16`, `retf`, root `RET` success, non-entry procedure fallthrough diagnostics, source-level `PUSH`, source-level `POP`, stack frames, and Irvine32 callable routine dispatch in their correct future or non-goal categories.
+- Browser-visible status text must no longer say plain near `RET` is deferred after Phase 70 is accepted.
+- Source-run JSON phase metadata and source-run metadata tests must advance any MASM syntax or VM execution-semantics phase field to Phase 70.
+- Static documentation checks in `scripts/run_tests.py` must be updated from the previous accepted status pair to the Phase 70 status pair. If Phase 69B was accepted before Phase 70, the previous pair is repository/archive status Phase 69B plus MASM syntax and VM execution-semantics status Phase 69. If Phase 69B was not adopted, the previous pair is repository/archive status Phase 69A plus MASM syntax and VM execution-semantics status Phase 69.
+- Existing Phase 69A documentation/static-check protections for external/API non-goals, terminal-CALL return-target boundaries, and rejected CALL target wording must remain protected.
+- Existing Phase 69B output-ordering and register-grouping protections, if Phase 69B is completed before Phase 70, must remain protected.
+
+Do not describe Phase 70 as implementing:
+
+- root `RET` success;
+- `RET imm16`;
+- `retf`;
+- source-level `PUSH` or `POP`;
+- stack frames;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- Irvine32 callable routine dispatch beyond already implemented virtual `exit` terminator behavior;
+- external/API calls;
+- WinAPI behavior;
+- PE loading;
+- object-file linking;
+- import-library behavior;
+- host callbacks;
+- native x86 execution.
 
 ---
 
@@ -20253,6 +20838,16 @@ Required behavior in this phase:
 5. Only one terminal status may be emitted.
 6. Terminal-state diagnostics must preserve source location where available and must not create successful memory-change rows.
 7. No new CALL target forms, stack-frame behavior, INVOKE behavior, Irvine32 routine dispatch, source-level PUSH/POP, LOCAL, USES, or RET imm16 behavior is introduced here.
+
+### Phase 71 retirement of Phase 69 transitional helper-boundary behavior
+
+Phase 69 permitted limited source-run test scaffolding where execution of a called helper could reach an existing helper procedure boundary before `RET` was implemented. That behavior was transitional only. It was not final non-entry procedure fallthrough semantics and was not a MASM-compatible procedure-return model.
+
+Phase 71 must retire that transitional assumption.
+
+After Phase 71, reachable execution that falls through the boundary of a non-entry procedure without `RET` must produce the documented non-entry fallthrough runtime diagnostic. Tests and documentation must no longer describe helper-procedure boundary completion after `CALL` as acceptable final behavior.
+
+This change must be limited to terminal-state semantics. Phase 71 must not add new CALL target forms, source-level stack instructions, stack frames, Irvine32 routine dispatch, `INVOKE` behavior, `PROTO` behavior, `ADDR` behavior, `LOCAL` behavior, `USES` behavior, or `RET imm16`.
 
 ### Runtime diagnostics
 

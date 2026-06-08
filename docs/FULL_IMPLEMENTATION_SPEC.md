@@ -25,14 +25,32 @@ If the current repository, latest milestone report, and guide disagree about whe
 
 ### 1.1 Current-status Surface Hygiene
 
-The project has two related but distinct status values:
+The project has related but distinct status values. Active documentation must use the precise status value that matches the surface being described.
 
-- **Repository/archive milestone**: the latest accepted project state, including runtime work, parser work, UI work, diagnostics work, documentation work, test-runner work, verification-ergonomics work, or repository maintenance.
-- **Runtime/source-run MASM behavior phase**: the latest implemented MASM/source execution behavior that is reported through source-run JSON, worker protocol results, browser runtime-status text, supported-syntax current-status text, Wasm/source-run status fields, or tests that assert runtime behavior metadata.
+Use these meanings:
 
-These two values are usually the same for runtime behavior phases. They may differ after maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-copy, or repository-cleanup phases.
+1. **Repository/archive milestone**
+   The latest accepted project state represented by the repository archive or checkout. This may include runtime work, parser work, UI work, diagnostics work, documentation work, static checks, test-runner work, verification ergonomics, output formatting, message ordering, or repository maintenance.
 
-Current-status surfaces must not collapse these two values into vague phrases such as:
+2. **Latest MASM syntax and VM execution-semantics phase**
+   The latest accepted phase that changes accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features.
+
+3. **Latest output/message-ordering cleanup phase**
+   The latest accepted phase that changes rendered output, UI formatting, diagnostic/message ordering, documentation wording, or static checks without changing accepted MASM syntax or VM execution semantics.
+
+These values are usually the same for behavior-implementing phases. They may differ after maintenance, documentation, display-only, output-ordering, test-runner-only, verification-ergonomics, diagnostic-copy, or repository-cleanup phases.
+
+A documentation, static-check, UI-formatting, or output-ordering corrective phase may advance the repository/archive milestone label without advancing the latest MASM syntax or VM execution-semantics phase.
+
+A corrective phase must not be described as implementing runtime MASM behavior unless that phase explicitly owns such behavior.
+
+For example, a repository may state that output cleanup through a corrective phase is complete while still stating that the latest MASM syntax and VM execution-semantics phase is the last behavior-implementing phase.
+
+Future assistants must not infer that a documentation, static-check, UI-formatting, or output-ordering phase implemented runtime MASM syntax, parser behavior, VM instruction behavior, procedure semantics, diagnostics, Program Console behavior, Simulator Messages behavior, source-run protocol behavior, or Wasm API behavior unless the phase explicitly says so.
+
+When a later behavior-implementing phase is accepted, current-status surfaces and static checks introduced by earlier corrective phases must be updated in the same milestone. Do not leave user-facing status text frozen at a previous corrective phase after MASM syntax or VM execution semantics have advanced.
+
+Current-status surfaces must not collapse these values into vague phrases such as:
 
 ```text
 current milestone
@@ -96,7 +114,7 @@ Phase 61D remains...
 Use compact feature-category wording instead:
 
 ```text
-Current branch support includes direct JMP, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps. Runtime loop protection currently uses the implemented instruction-count watchdog. Loop-family instructions, indirect/register/memory/immediate branch targets, branch distance/type overrides, source-level stack instructions, CALL execution, RET execution, procedure frames, Irvine32 callable routine dispatch, debugger/editor branch behavior, and active-time or wall-clock watchdog behavior remain future or separate-phase work.
+Current control-flow support includes direct JMP, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, and direct near CALL to user procedure entries. Runtime loop protection currently uses the implemented instruction-count watchdog. Loop-family instructions, indirect/register/memory/immediate branch targets, branch distance/type overrides, RET execution, source-level stack instructions, procedure frames, Irvine32 callable routine dispatch, debugger/editor branch behavior, and active-time or wall-clock watchdog behavior remain future or separate-phase work. External/API calls, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, and Windows process/DLL/handle/kernel behavior remain non-goals rather than future CALL target categories.
 ```
 
 The example above is intentionally behavior-specific rather than milestone-ledger-specific. When later phases promote any listed future item to implemented behavior, update the active current-status wording in place. Do not keep stale examples that describe already-implemented behavior as future work.
@@ -230,10 +248,14 @@ The current source-of-truth order remains:
 
 1. current canonical `docs/FULL_IMPLEMENTATION_SPEC.md`;
 2. current canonical `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`;
-3. current `docs/SUPPORTED_SYNTAX.md` for implemented accepted/rejected syntax and current diagnostic behavior;
+3. current `docs/SUPPORTED_SYNTAX.md` as a tested current-reference document for accepted syntax, rejected syntax, implemented diagnostics, and current user-visible behavior;
 4. latest accepted repository archive or current repository checkout;
 5. latest accepted milestone report;
 6. older milestone reports, audit reports, and handoff reports only as historical evidence.
+
+`docs/SUPPORTED_SYNTAX.md` is not an independent override of the canonical specification or implementation guide. It must reflect behavior defined by the current spec, the current guide, the accepted repository state, and the active tests. If `SUPPORTED_SYNTAX.md` conflicts with the canonical spec/guide or with verified current behavior, treat the conflict as a documentation defect to correct rather than as authority to change implementation behavior.
+
+Historical reports remain useful evidence for assumptions, risks, test history, and provenance. They do not silently update current behavior, current phase scope, source-run metadata, or future roadmap order. When a historical report identifies a risk or assumption, that risk or assumption becomes current authority only after it is incorporated into the canonical spec, the canonical guide, or verified current tests.
 
 Curated audit and handoff reports are useful for:
 
@@ -592,9 +614,9 @@ These directives affect source structure, symbol layout, procedure boundaries, a
 
 The simulator must not execute instructions that appear before the selected entry procedure merely because they are physically earlier in the file. It also must not fall through from the selected entry procedure into a later procedure merely because that later procedure is physically adjacent in the lowered IR stream.
 
-Before CALL and RET behavior is implemented, multiple procedures may still be accepted as structural declarations. Accepting multiple procedure declarations does not mean those procedures execute automatically. A non-entry procedure executes only when reached by an explicitly supported control-transfer feature.
+Multiple procedures may be accepted as structural declarations without implying automatic execution. Accepting multiple procedure declarations does not mean those procedures execute automatically. A non-entry procedure executes only when reached by an explicitly supported control-transfer feature, such as direct user-procedure CALL after Phase 69.
 
-`PROC` starts with limited structural and entry-boundary behavior. Later procedure phases add richer metadata, `CALL`, `RET`, root-return behavior, `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, stack-frame behavior, and calling-convention metadata.
+`PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, stack-frame behavior, and calling-convention metadata.
 
 This distinction is mandatory:
 
@@ -612,7 +634,7 @@ The simulator must distinguish these concepts:
 - **procedure declaration**: a `name PROC` / `name ENDP` source range;
 - **entry procedure**: the accepted procedure selected by `END entryName`;
 - **ordinary code label**: a `label:` target inside executable code;
-- **future call target metadata**: procedure-entry information used later by CALL and INVOKE phases;
+- **call target metadata**: procedure-entry information used by direct user-procedure CALL and later INVOKE phases;
 - **Irvine32 registry entry**: a recognized virtual routine or terminator name, not a user procedure.
 
 The corrective entry-boundary phase owns only the runtime startup and selected-entry boundary behavior. The richer call-target classifier remains owned by Phase 68 - Call Target Classification and Procedure Entry Metadata.
@@ -627,8 +649,9 @@ After the corrective entry-boundary phase is accepted, source-run startup must f
 6. Falling off the selected entry procedure at its `ENDP` boundary completes successfully exactly once.
 7. The already implemented Irvine32-style `exit` terminator, where available, continues to terminate successfully from inside the selected entry procedure.
 8. A non-entry procedure must not execute by source-order fallthrough from the entry procedure.
-9. A non-entry procedure must not be treated as a completed program merely because it reaches its own `ENDP`.
-10. Later CALL/RET phases may define additional legal ways to enter and leave non-entry procedures.
+9. Final non-entry procedure fallthrough semantics are owned by the later root/procedure-termination phase. Once that phase is implemented, a non-entry procedure must not be treated as a completed program merely because it reaches its own `ENDP`; it must either return through a valid implemented procedure-return mechanism or report the owning phase's documented non-entry fallthrough diagnostic.
+10. Before the later root/procedure-termination phase is implemented, any successful completion observed after Phase 69 direct user-procedure `CALL` reaches an existing helper procedure boundary is transitional runtime scaffolding only. It must not be described as final helper-procedure fallthrough semantics, root `RET`, non-entry procedure success, stack-frame behavior, calling-convention behavior, Irvine32 routine dispatch, or any MASM-compatible procedure-return model.
+11. Later CALL/RET phases may define additional legal ways to enter and leave non-entry procedures, but each such rule must be owned by an accepted implementation-guide phase with diagnostics and tests.
 
 This contract protects users from accidental execution of helper procedures before or after `main` and gives later CALL/RET phases a stable procedure-range model.
 
@@ -676,7 +699,7 @@ ECX remains 00000000h / 0
 execution-complete
 ```
 
-This entry-boundary contract does not implement `CALL`, `RET`, stack mutation, procedure frames, source-level `PUSH` or `POP`, Irvine32 routine dispatch, `USES`, `LOCAL`, `PROTO`, `INVOKE`, or `ADDR`.
+This entry-boundary contract by itself does not implement direct user-procedure `CALL`, `RET`, stack mutation, procedure frames, source-level `PUSH` or `POP`, Irvine32 routine dispatch, `USES`, `LOCAL`, `PROTO`, `INVOKE`, or `ADDR`. Current direct user-procedure `CALL` behavior is defined separately by the Phase 69 control-transfer contract; the other listed procedure and stack features remain future-owned.
 
 #### 8.1.2 Additional Data Sections
 
@@ -1595,7 +1618,11 @@ A target being executable is not sufficient to make it a valid direct CALL targe
 
 For direct near user-procedure calls, accepted user targets are procedure-entry labels declared with `name PROC`, after the active user-symbol CASEMAP policy resolves the target name.
 
-Rejected direct user-procedure CALL targets include:
+Rejected direct user-procedure CALL targets are divided into two categories: simulator-owned rejected forms and permanent non-goal forms. Future phases must preserve this distinction.
+
+Simulator-owned rejected CALL target forms are rejected in the current subset, but a later accepted implementation-guide phase may deliberately change one of these forms if that phase defines the syntax, semantics, diagnostics, rendered Simulator Messages wording, JSON/protocol behavior, and tests.
+
+Simulator-owned rejected CALL target forms include:
 
 - ordinary non-procedure code labels, unless a later phase explicitly adds a simulator-defined non-procedure CALL form;
 - data symbols;
@@ -1606,10 +1633,30 @@ Rejected direct user-procedure CALL targets include:
 - memory operands;
 - immediate or numeric addresses;
 - `OFFSET` expressions;
-- far calls, segmented calls, or native-address calls;
-- external, Windows API, object-file, linker, import-library, or host-filesystem symbols.
+- recognized Irvine32 routine names whose owning virtual-routine dispatch phase has not implemented executable behavior.
+
+External/API CALL targets are different. They are permanent project-boundary non-goal forms, not ordinary deferred CALL forms. The simulator must reject external/API target categories unless the canonical full specification and implementation guide deliberately revise the project boundary.
+
+External/API non-goal forms include:
+
+- `call ExitProcess` or any other Windows API call;
+- PE import thunks;
+- object-file or linker symbols;
+- import-library symbols;
+- host callbacks;
+- native procedures;
+- host-filesystem include or library targets;
+- far calls, segmented calls, or native-address calls when they imply native x86, PE, Windows, or linker behavior.
 
 Recognized Irvine32 routine and terminator names are not user procedure symbols. Before the owning Irvine32 routine-dispatch phase implements a specific routine, a source form such as `call WriteString` must be classified as a recognized-but-deferred or recognized-but-unsupported Irvine32 routine call, not as a user-procedure call.
+
+A future phase may implement selected Irvine32 routine dispatch, but that work must remain separate from direct user-procedure `CALL`. Direct user-procedure `CALL` must not execute, alias, shadow, or special-case Irvine32 routine names as host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, or native procedures.
+
+Recognized Irvine32 routine names must be classified through the centralized Irvine32 registry when they are not resolved as valid user procedure symbols under the current user-symbol policy. Do not add ad hoc name-shadowing, aliasing, host-callback, external-import, or WinAPI-dispatch behavior. Any future rule for conflicts between user symbols and Irvine32 registry names must be specified and tested by its owning phase.
+
+If an Irvine32 routine is recognized but not executable in the current subset, diagnostics must identify it as a known but unsupported or deferred Irvine32 routine according to the centralized Irvine32 registry policy. The simulator must not silently reinterpret the target as an external import, WinAPI call, PE import thunk, linker symbol, host callback, or user procedure unless an owning phase explicitly defines that behavior.
+
+External/API calls are not a future CALL target category. They are permanent non-goals under the current project boundary. They must not be introduced as part of Irvine32 routine support, direct user-procedure `CALL`, `PROTO`, `INVOKE`, `ADDR`, import handling, macro compatibility, error recovery, symbol lookup fallback, unknown-symbol recovery, or recognized-routine dispatch.
 
 After a later phase implements an Irvine32 routine call, the central virtual Irvine32 registry must classify that routine as implemented, and CALL dispatch may route that target to the simulator-defined Irvine32 intrinsic path. This still does not make the name a user-defined procedure symbol.
 
@@ -1940,6 +1987,65 @@ Displayed aliases for source-writable register families:
 - `EDI`, `DI`
 - `EBP`, `BP`
 - `ESP`, `SP`
+
+Final register display must group register and control-state rows into stable high-level educational groups. This is a display contract only. It must not change VM CPU storage, parser register recognition, source operand legality, Wasm JSON field names, source-run protocol fields, register values, alias derivation, EIP pseudo-code-address semantics, ESP stack-pointer semantics, or modeled flag semantics.
+
+The required high-level display groups are:
+
+1. General registers
+   - `EAX`, `AX`, `AH`, `AL`
+   - `EBX`, `BX`, `BH`, `BL`
+   - `ECX`, `CX`, `CH`, `CL`
+   - `EDX`, `DX`, `DH`, `DL`
+
+2. Index registers
+   - `ESI`, `SI`
+   - `EDI`, `DI`
+
+3. Stack/frame registers
+   - `EBP`, `BP`
+   - `ESP`, `SP`
+
+4. Control and modeled flag state
+   - `EIP`
+   - `EFLAGS`
+   - modeled flag child rows under `EFLAGS`
+
+Parent register families inside the same high-level group remain adjacent. For example, `EAX`, `EBX`, `ECX`, and `EDX` belong to the same general-register group, so the high-level divider must not appear between the `EAX` family and the `EBX` family.
+
+The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use the Phase 69B high-level divider except between the four high-level groups listed above.
+
+The fourth group must not imply that `EIP` is a real source-writable x86 register in this simulator. `EIP` remains displayed VM pseudo-code-address control state derived from the internal instruction pointer.
+
+The fourth group also must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state that is modified only through implemented instruction semantics and flag helpers.
+
+The visual separator between high-level register groups must be an explicit rendered divider row.
+
+The divider row must be:
+
+```text
+--------
+```
+
+The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+
+The divider row must appear:
+
+- once between the general-register group and the index-register group;
+- once between the index-register group and the stack/frame-register group;
+- once between the stack/frame-register group and the control/modeled-flag-state group.
+
+The divider row must not appear:
+
+- before the first general-register row;
+- after the final modeled-flag row;
+- between aliases of the same parent register;
+- between parent register families inside the same high-level group;
+- in source-run JSON;
+- in Program Console output;
+- as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
+
+The rendered formatter tests must assert the exact divider text and placement.
 
 `ESP` and `SP` are legal explicit source operands wherever the implemented instruction accepts their width and operand role. The simulator must not reject `mov esp, 1`, `mov sp, 0`, or similar explicit stack-pointer writes merely because the resulting stack pointer is outside the active stack region. Later implicit stack accesses through CALL, RET, PUSH, POP, frame setup, frame teardown, or Irvine32 routines must validate the effective stack read/write through the central checked-memory path.
 
@@ -3527,15 +3633,21 @@ This rule does not disable mandatory stack-region containment, checked-address v
 
 Explicit source writes to `ESP` and `SP` are legal register writes in MASM32 Educational Mode when the current instruction accepts a 32-bit or 16-bit register destination. The simulator must not reject or immediately warn on `mov esp, 1` merely because the value is outside the active stack region. That value becomes the stack pointer for the simulator's later implicit stack operations. When a later CALL, RET, PUSH, POP, frame, or Irvine32 routine uses `ESP`, the resulting memory read or write must go through the central checked-memory path. Optional suspicious-stack-pointer warnings, stack summaries, or invalid-ESP UI annotations must be owned by explicit diagnostic/UI phases and must not be smuggled into Phase 68A, Phase 68B, Phase 69, or Phase 70.
 
-CALL and RET must use pseudo-EIP control-flow tokens once Phase 68B pseudo-EIP is implemented.
+CALL and RET must use pseudo-EIP control-flow tokens once Phase 68B pseudo-EIP behavior is implemented.
 
-A direct user-procedure CALL must store the pseudo-EIP value of the next executable lowered VM instruction as the return token. The return token must be written through the central checked memory write helper using the current `ESP` value and the documented downward-growing stack convention. CALL must not push a raw VM instruction array index into stack memory once pseudo-EIP exists.
+A direct user-procedure `CALL` stores a 32-bit pseudo-EIP return token through the central checked-memory write helper. The write uses the current `ESP` value, the documented downward-growing stack convention, and the final checked byte range for `ESP - 4` through `ESP - 1`. `CALL` must not write a raw VM instruction array index, source byte offset, source line number, source column number, data-memory address, source-written `EIP` value, or native instruction address as the return token.
 
-A RET must read a 32-bit return token from `[ESP]` through the central checked memory read helper. If the read succeeds, RET must validate that the token maps to a known pseudo-EIP value for an executable lowered VM instruction boundary. RET must not jump to arbitrary data-memory addresses, arbitrary integers, source byte offsets, source line numbers, raw VM instruction indexes, or source-written `EIP` values.
+For ordinary successful `CALL`/`RET` flow, the return token is the pseudo-EIP value for the executable lowered VM instruction immediately after the `CALL`.
 
-For Phase 70, a return token is valid if it maps to an executable pseudo-EIP in the lowered VM instruction stream. A later call-depth or active-call-frame validation phase may restrict this further if that phase explicitly defines the metadata, diagnostics, and tests. Phase 70 must not require active-call-frame proof unless that requirement is deliberately added to the guide.
+The executable successor after `CALL` means the next lowered VM instruction that is actually executable in the selected procedure's execution path. It does not mean the next source line, the next source byte offset, the next ordinary label, the next data declaration, the next `ENDP`, the first instruction in a different procedure, a source boundary, or any synthetic boundary marker.
 
-This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, or full x86 code-segment emulation.
+A `CALL` whose successor is not an executable lowered VM instruction has no ordinary executable return target under this rule. Such a case must not cause an implementation to invent a synthetic terminal pseudo-EIP, `ENDP` return target, source-boundary token, root-return sentinel, or native-address-like value unless a later phase explicitly defines that behavior, diagnostics, and tests. Until such a phase exists, a later `RET` that reads a non-executable, unknown, sentinel, or otherwise invalid return token must use the active invalid-return-address path defined by the owning `RET` phase.
+
+A `RET` reads a 32-bit return token from `[ESP]` through the central checked-memory read helper. If the read succeeds, `RET` must validate that the token maps to a known pseudo-EIP value for an executable lowered VM instruction boundary. `RET` must not jump to arbitrary data-memory addresses, arbitrary integers, source byte offsets, source line numbers, raw VM instruction indexes, source-written `EIP` values, root-return sentinels before root termination is defined, or native instruction addresses.
+
+For Phase 70, a return token is valid only if it maps to an executable pseudo-EIP in the lowered VM instruction stream. Phase 70 does not require active-call-frame proof unless the guide deliberately expands the phase to define active-call-frame metadata, diagnostics, mutation order, and tests. A later call-depth or active-call-frame validation phase may restrict this rule further if that phase explicitly defines the new metadata, diagnostics, and tests.
+
+This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
 
 Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, frame setup, frame teardown, PROC USES, LOCAL, RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.
 
@@ -3605,6 +3717,8 @@ Known Irvine32 symbols should be classified as:
 Unsupported or deferred known Irvine32 routines must produce a diagnostic owned by the centralized virtual Irvine32 registry or by the specific Irvine32 dispatch phase that introduces the routine. The diagnostic must not be a generic `unknown-symbol` diagnostic. A future CALL, INVOKE, PROTO, or runtime-dispatch phase must not add a duplicate Irvine32 diagnostic code merely because the routine name appears as a CALL target. A new CALL-specific Irvine32 diagnostic is allowed only if the full spec and implementation guide first define the exact code, severity, source-span behavior, JSON fields, rendered Simulator Messages wording, and precedence against the existing registry-owned Irvine32 diagnostics.
 
 Recognized Irvine32 routine names are not user procedure names. Direct user-procedure CALL resolution must not claim, shadow, or execute virtual Irvine32 routine names unless an owning Irvine32 dispatch phase explicitly defines that behavior.
+
+External/API calls are not a future CALL target category. They are non-goals. Direct `CALL`, Irvine32 routine support, `PROTO`, `INVOKE`, `ADDR`, import handling, macro compatibility, and error recovery must not introduce host callbacks, external imports, WinAPI calls, PE import thunks, linker symbols, native procedures, host filesystem behavior, or Windows process behavior. Any future rule for conflicts between user symbols and Irvine32 registry names must be specified and tested by its owning phase rather than added through ad hoc shadowing or aliasing.
 
 CALL target classification must preserve this boundary:
 
@@ -3850,6 +3964,8 @@ DumpRegs:
   Must include EAX, EBX, ECX, EDX, ESI, EDI, EBP, ESP, EIP, EFLAGS, and modeled flags.
   The EIP value printed by DumpRegs must be the displayed pseudo-EIP/control-state value defined by the control-state display contract and the Phase 68B EIP display rules.
   DumpRegs must not print a native x86 instruction address, PE/RVA/linker address, host address, raw VM instruction index, source byte offset, or source-writable register value as EIP.
+  When DumpRegs is implemented, its Program Console register formatting must follow the same high-level educational group order used by final register display unless the DumpRegs-owning implementation-guide phase explicitly defines a different tested Program Console layout.
+  DumpRegs grouping is Program Console formatting only. It must not create Simulator Messages diagnostics, source-run JSON diagnostics, VM state changes, register-value changes, or protocol-schema changes.
 
 DumpMem:
   Must document required input registers before implementation.
@@ -4725,15 +4841,39 @@ A rendered blank separator in Simulator Messages is a formatting separator only.
 
 Rendered Simulator Messages use logical message groups. A rendered blank separator is controlled by adjacent non-empty groups, not by any single diagnostic-policy toggle.
 
-The stable rendered group order is:
+There are two top-level execution cases.
+
+Case 1: execution does not begin.
+
+If lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase prevents runtime execution from starting, rendered Simulator Messages must preserve the existing pre-execution diagnostic order.
+
+Existing pre-execution order means the order produced by the current lexing, parsing, unsupported-feature recovery, static validation, settings validation, layout validation, and diagnostic collection pipeline. A message-ordering phase must not sort pre-execution diagnostics by severity, code, line number, source location, message text, or diagnostic category unless another accepted phase explicitly changes diagnostic ordering.
+
+When execution does not begin:
+
+- no `startup-state-notice` is emitted;
+- no startup notice group exists;
+- no runtime diagnostic group exists merely because diagnostics were rendered;
+- no final execution-status group exists;
+- no `execution-complete` is emitted;
+- no blank group separator is added merely to imply runtime execution.
+
+Case 2: execution begins.
+
+If runtime execution begins, rendered Simulator Messages must use the stable group order below. If `startup-state-notice` is enabled and emitted, it must be the first rendered Simulator Message for that run, even when nonfatal parser, assembly, compatibility, static-validation, or teaching diagnostics were collected before execution began.
+
+The stable rendered group order for runs where execution begins is:
 
 1. **Startup notice group**  
    Contains `startup-state-notice` when runtime execution is about to begin and the active `startup-state-notice` policy emits the notice.
 
-2. **Runtime diagnostic group**  
-   Contains runtime warnings, runtime notices, and runtime errors emitted during execution. Examples include `uninitialized-read`, `undefined-flag-use`, runtime memory diagnostics, instruction-limit diagnostics after execution begins, and other runtime diagnostics emitted after runtime execution starts.
+2. **Nonfatal pre-execution diagnostic group**  
+   Contains nonfatal diagnostics collected before execution that did not prevent runtime execution from beginning. Examples include assembly warnings, compatibility notices, accepted-construct teaching notices, and nonfatal static diagnostics.
 
-3. **Final execution-status group**  
+3. **Runtime diagnostic group**  
+   Contains runtime warnings, runtime notices, runtime errors, strict-policy stops, instruction-limit diagnostics after execution begins, and other diagnostics emitted during execution. Examples include `uninitialized-read`, `undefined-flag-use`, runtime memory diagnostics, and runtime instruction-limit diagnostics.
+
+4. **Final execution-status group**  
    Contains `execution-complete` only when execution completes successfully.
 
 The renderer must place exactly one blank rendered line between adjacent non-empty groups.
@@ -4746,7 +4886,7 @@ The renderer must not create multiple blank lines between the same two adjacent 
 
 Multiple messages inside the same group must remain adjacent according to the existing rendered-message line format unless a later phase explicitly defines subgroup formatting. For example, two runtime warnings belong to the same runtime diagnostic group and must not automatically receive a group-separator blank line between them.
 
-A blank rendered separator is formatting only. It is not a diagnostic. It must not be represented as a source-run JSON diagnostic object, warning, notice, runtime error, assembly error, setting error, execution-status message, Program Console text, memory-change row, or any other structured runtime result item.
+A blank rendered separator is formatting only. It is not a diagnostic. It must not be represented as a source-run JSON diagnostic object, warning, notice, runtime error, assembly error, setting error, execution-status message, Program Console text, memory-change row, register row, protocol field, or any other structured runtime result item.
 
 #### Startup-state notice timing and grouping
 
@@ -4756,23 +4896,35 @@ The notice must be emitted only when runtime execution is actually about to begi
 
 The notice must not be emitted during lexing, parsing, unsupported-feature recovery, static option validation, data declaration validation, layout validation, setting validation, or any other pre-execution phase that prevents runtime execution from starting.
 
-If assembly diagnostics, invalid source-run settings, static validation errors, or other pre-execution diagnostics prevent execution from beginning, the rendered Simulator Messages output must not include `startup-state-notice` for that failed run.
+If assembly diagnostics, invalid source-run settings, static validation errors, layout errors, resource-limit errors, unsupported-feature diagnostics, or other pre-execution diagnostics prevent execution from beginning, rendered Simulator Messages output must not include `startup-state-notice` for that failed run.
 
-If runtime execution begins and the active `startup-state-notice` policy emits the notice, the notice must appear in the startup notice group before runtime warnings, runtime notices, runtime errors, and final execution-status messages.
+If runtime execution begins and the active `startup-state-notice` policy emits the notice, the notice must appear in the startup notice group before:
+
+- nonfatal parser diagnostics;
+- nonfatal assembly diagnostics;
+- compatibility notices;
+- accepted-construct teaching notices;
+- nonfatal static diagnostics;
+- runtime warnings;
+- runtime notices;
+- runtime errors;
+- final execution-status messages.
 
 The notice must not be delayed until the end of execution.
 
-The `startup-state-notice` policy controls only whether the startup notice group exists. It must not control whether the final execution-status group is separated from a preceding runtime diagnostic group.
+The `startup-state-notice` policy controls only whether the startup notice group exists. It must not control whether a nonfatal pre-execution diagnostic group, runtime diagnostic group, or final execution-status group is separated from adjacent non-empty groups.
+
+If `startup-state-notice` is disabled, the startup notice group is absent. All other non-empty groups retain their relative order, and the renderer still inserts exactly one blank line between adjacent non-empty groups.
 
 #### Final execution-status grouping
 
 `execution-complete` belongs to the final execution-status group.
 
-When execution succeeds and at least one runtime warning or runtime notice was rendered before `execution-complete`, the renderer must place exactly one blank line between the runtime diagnostic group and the final execution-status group.
+When execution succeeds and at least one nonfatal pre-execution diagnostic, runtime warning, or runtime notice was rendered before `execution-complete`, the renderer must place exactly one blank line between adjacent non-empty groups before the final execution-status group.
 
-This runtime-diagnostic-to-final-status separator is required even when `startup-state-notice` is disabled.
+This separator before final status is required even when `startup-state-notice` is disabled.
 
-When execution succeeds with no startup notice and no runtime diagnostics, `execution-complete` is the only non-empty group and must be rendered without a leading blank line.
+When execution succeeds with no startup notice, no nonfatal pre-execution diagnostics, and no runtime diagnostics, `execution-complete` is the only non-empty group and must be rendered without a leading blank line.
 
 When execution fails before runtime begins, `execution-complete` must not be rendered.
 
@@ -4782,7 +4934,7 @@ If runtime warnings or runtime notices are emitted before a later fatal runtime 
 
 #### Pre-execution diagnostics
 
-Pre-execution diagnostics are rendered according to the existing diagnostic renderer order. Work that changes startup notice grouping must not introduce a startup notice group, runtime diagnostic group, final execution-status group, or group-separator blank line around pre-execution-only diagnostics.
+Pre-execution diagnostics are rendered according to the existing diagnostic renderer order when execution does not begin. Work that changes startup notice grouping must not introduce a startup notice group, runtime diagnostic group, final execution-status group, or group-separator blank line around pre-execution-only diagnostics.
 
 Pre-execution diagnostics include, but are not limited to:
 
@@ -4802,6 +4954,16 @@ Successful default execution with startup notice and no runtime warnings:
 
 ```text
 [simulator-notice] startup-state-notice: ...
+
+[info] execution-complete: Execution completed successfully.
+```
+
+Successful execution with startup notice and one nonfatal pre-execution compatibility warning:
+
+```text
+[simulator-notice] startup-state-notice: ...
+
+[assembly-warning] casemap-policy-changed line 2: ...
 
 [info] execution-complete: Execution completed successfully.
 ```
@@ -5682,13 +5844,13 @@ A realistic unsupported program should produce a concise set of structured diagn
 - WinAPI calls such as `ExitProcess`;
 - MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
 - high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
-- executable `CALL` behavior until Phase 69 implements direct CALL to user procedures;
+- unsupported `CALL` forms beyond direct user-procedure CALL, such as Irvine32 routine calls, external/API calls, ordinary-label targets, register targets, memory targets, and indirect calls;
 - executable `RET` behavior until Phase 70 implements return-token validation and RET execution;
 - loop-family instructions, indirect/register/memory/immediate branch targets, and branch distance/type overrides until their owning phases are implemented.
 
 Already-implemented branch forms must not be described as unsupported in current source-of-truth text. Direct `jmp label`, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps are current implemented behavior and should follow their implemented diagnostics and execution rules.
 
-Current `CALL` metadata/classification behavior must not be removed or described as unsupported merely because executable CALL transfer remains future-owned by Phase 69.
+Current direct user-procedure `CALL` behavior must not be removed or described as unsupported merely because `RET`, Irvine32 routine dispatch, and other CALL forms remain future-owned.
 
 The simulator should avoid flooding the user with repeated character-level diagnostics when a more meaningful unsupported-feature diagnostic is possible.
 
@@ -6238,7 +6400,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the Phase 68A/68B source-of-truth revision, the current sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, or `68B`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the current source-of-truth revision after Phase 69A, the sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. Phase 69A is documentation/static-check cleanup only and does not advance the MASM syntax or VM execution-semantics phase beyond Phase 69. Phase 69B is output/message-ordering cleanup only and must not implement `RET` or other future runtime semantics. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, or `69B`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
@@ -6312,7 +6474,7 @@ The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to 
 
 Roadmap ordering note for stack/procedure work:
 
-The implementation guide owns exact phase order. As of the Phase 68A/68B source-of-truth revision, the current stack/procedure sequence is: Phase 67A entry-procedure runtime boundary correction; Phase 68 call-target classification and procedure-entry metadata; Phase 68A stack runtime initialization and ESP startup contract; Phase 68B EIP pseudo-code-address display and source-operand restrictions; Phase 69 direct CALL to user procedures; Phase 70 RET execution and return-token validation; followed by later root-return, call-depth, source-level stack, frame, INVOKE, ADDR, and Irvine32 routine phases.
+The implementation guide owns exact phase order. As of the Phase 69 source-of-truth revision, the current stack/procedure sequence is: Phase 67A entry-procedure runtime boundary correction; Phase 68 call-target classification and procedure-entry metadata; Phase 68A stack runtime initialization and ESP startup contract; Phase 68B EIP pseudo-code-address display and source-operand restrictions; Phase 69 direct CALL to user procedures; Phase 70 RET execution and return-address validation; followed by later root-return, call-depth, source-level stack, frame, INVOKE, ADDR, and Irvine32 routine phases.
 
 This roadmap section must not be read as permission to reorder, combine, or renumber those guide phases. Corrective non-renumbering phases such as `67A`, `68A`, and `68B` are deliberate. Later phases should depend on them by name rather than silently rewriting the history of completed phases.
 

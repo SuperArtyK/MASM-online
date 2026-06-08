@@ -1,10 +1,10 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 68B pseudo-EIP display, branch, and watchdog behavior.
+ * @brief Unit tests for the VM executor through Phase 69 direct CALL behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
- * JMP and conditional-branch runtime transfer, arithmetic fault rollback, and
+ * JMP, conditional-branch, and Phase 69 direct CALL runtime transfer, arithmetic fault rollback, and
  * last-step delta capture. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
@@ -4154,6 +4154,135 @@ static int test_phase66_unsigned_relational_flag_consumption_sets(void) {
     return failures;
 }
 
+
+/// Verifies Phase 69 direct CALL writes a pseudo-EIP return token and transfers control.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase69_direct_call_stack_write_and_transfer(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t stored_return = 0U;
+    uint32_t pseudo_target = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecRegisterChange *esp_change = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 3U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x11U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov eax, 11h", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x22U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "mov ebx, 22h", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_ECX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x33U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ecx, 33h", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for direct CALL test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "direct CALL program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CALL flag setup should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "direct CALL should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after CALL should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "direct CALL should decrement ESP by four after a successful stack write");
+    failures += (vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, &stored_return, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("CALL return token read should succeed"));
+    failures += expect_u32(stored_return, 0x00401004U, "direct CALL should write pseudo-EIP for the instruction after CALL");
+    failures += expect_size(vm.instruction_pointer, 3U, "direct CALL should transfer to procedure-entry instruction index");
+    failures += expect_u32(vm_exec_instruction_index_to_pseudo_eip(vm.instruction_pointer, &pseudo_target) ? 1U : 0U, 1U, "target pseudo-EIP conversion should succeed");
+    failures += expect_u32(pseudo_target, 0x0040100CU, "direct CALL target pseudo-EIP should use Phase 68B display mapping");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "direct CALL should preserve modeled flag values");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("direct CALL should produce a last-step delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_CALL, "direct CALL delta should record CALL opcode");
+        failures += expect_size(delta->memory_change_count, 3U, "direct CALL should record changed return-token bytes");
+        failures += expect_size(delta->memory_access_count, 1U, "direct CALL should record one checked stack write access");
+        failures += expect_size(delta->flag_change_count, 0U, "direct CALL should not report flag changes");
+        esp_change = find_register_change(delta, VM_REGISTER_ESP);
+        if (esp_change == NULL) {
+            failures += record_failure("direct CALL should report ESP register change");
+        } else {
+            failures += expect_u32(esp_change->old_value, VM_MEMORY_DEFAULT_STACK_TOP, "direct CALL ESP old value should be stack top");
+            failures += expect_u32(esp_change->new_value, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "direct CALL ESP new value should be stack top minus four");
+        }
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 69 CALL rollback when the implicit stack write fails.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase69_direct_call_stack_write_failure_rolls_back(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "mov eax, 1", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for failed CALL stack write test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "failed CALL stack-write program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0U) ? 0 : record_failure("ESP setup for invalid CALL stack write should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("flag setup for failed CALL should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "CALL with ESP zero should fail through checked memory helper");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after failed CALL should succeed"));
+    failures += expect_u32(esp, 0U, "failed CALL stack write should leave externally visible ESP unchanged");
+    failures += expect_size(vm.instruction_pointer, 0U, "failed CALL stack write should not transfer instruction pointer");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "failed CALL stack write should preserve flags");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL) {
+        failures += record_failure("failed CALL should expose a last-step delta object");
+    } else {
+        failures += expect_size(delta->memory_change_count, 0U, "failed CALL should not record memory changes");
+        failures += expect_size(delta->memory_access_count, 1U, "failed CALL should record the attempted checked memory write");
+        failures += expect_size(delta->register_change_count, 0U, "failed CALL should not record ESP mutation");
+        failures += expect_size(delta->flag_change_count, 0U, "failed CALL should not record flag changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("failed CALL should populate a runtime diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_MEMORY_ERROR, "failed CALL diagnostic should report memory-error");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "failed CALL diagnostic should point at CALL instruction index");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 69 reports malformed runtime CALL target metadata distinctly.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase69_invalid_call_metadata(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction invalid_target[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 9U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call MissingMetadata", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid CALL metadata test");
+    failures += expect_status(vm_load_program(&vm, invalid_target, sizeof(invalid_target) / sizeof(invalid_target[0])), VM_EXEC_STATUS_OK, "invalid CALL metadata program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_CALL_TARGET, "invalid CALL target should produce invalid-call-target status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after invalid CALL target should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "invalid CALL metadata should not mutate ESP");
+    failures += expect_size(vm.instruction_pointer, 0U, "invalid CALL metadata should not advance instruction pointer");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("invalid CALL metadata should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_INVALID_CALL_TARGET, "invalid CALL metadata diagnostic should name invalid-call-target");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_CALL_TARGET), "invalid-call-target") == 0 ? 1U : 0U, 1U, "executor status helper should name invalid-call-target");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4662,6 +4791,9 @@ int main(void) {
     failures += test_phase66_unsigned_relational_conditional_jump_runtime();
     failures += test_phase66_unsigned_relational_conditional_jump_aliases();
     failures += test_phase66_unsigned_relational_flag_consumption_sets();
+    failures += test_phase69_direct_call_stack_write_and_transfer();
+    failures += test_phase69_direct_call_stack_write_failure_rolls_back();
+    failures += test_phase69_invalid_call_metadata();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();

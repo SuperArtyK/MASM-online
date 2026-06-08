@@ -30,9 +30,9 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 68);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "B");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions");
+  assert.equal(IMPLEMENTED_PHASE, 69);
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 69 - Direct CALL to User Procedures");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -42,9 +42,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 68,
-      phaseSuffix: "B",
-      phaseName: "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
+      phase: 69,
+      phaseSuffix: "",
+      phaseName: "Phase 69 - Direct CALL to User Procedures"
     }
   });
 });
@@ -60,9 +60,9 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 68,
-      phaseSuffix: "B",
-      phaseName: "Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions"
+      phase: 69,
+      phaseSuffix: "",
+      phaseName: "Phase 69 - Direct CALL to User Procedures"
     }
   });
 });
@@ -326,7 +326,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 69 - Direct CALL to User Procedures. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
 });
