@@ -27,38 +27,50 @@ const EFLAGS_SF_BIT = 7;
 /** Zero-based EFLAGS bit index for the currently modeled overflow flag. */
 const EFLAGS_OF_BIT = 11;
 
+/** Display-only spacer row inserted between Phase 69B adjacent parent-register families. */
+const REGISTER_PARENT_FAMILY_SPACER = "       |";
+
+/** Display-only divider row inserted between Phase 69B high-level final-register groups. */
+const REGISTER_HIGH_LEVEL_GROUP_DIVIDER = "-------------------------------------------------------------------";
+
+/** Register rows after which Phase 69B may insert a parent-family spacer. */
+const REGISTER_PARENT_FAMILY_SPACER_AFTER_ROWS = new Set(["AL", "BL", "CL", "SI", "BP", "EIP"]);
+
+/** Register rows after which Phase 69B may insert a high-level group divider. */
+const REGISTER_HIGH_LEVEL_GROUP_DIVIDER_AFTER_ROWS = new Set(["DL", "DI", "SP"]);
+
 /** Canonical MASM32 register display groups and aliases for the final-state panel. */
 const REGISTER_DISPLAY_ROWS = [
-  { name: "EAX", source: "EAX", widthBits: 32, group: "EAX", indentLevel: 0 },
-  { name: "AX", source: "EAX", widthBits: 16, group: "EAX", indentLevel: 1 },
-  { name: "AH", source: "EAX", widthBits: 8, shiftBits: 8, group: "EAX", indentLevel: 2, hexPlacement: "high-byte" },
-  { name: "AL", source: "EAX", widthBits: 8, group: "EAX", indentLevel: 2 },
-  { name: "EBX", source: "EBX", widthBits: 32, group: "EBX", indentLevel: 0 },
-  { name: "BX", source: "EBX", widthBits: 16, group: "EBX", indentLevel: 1 },
-  { name: "BH", source: "EBX", widthBits: 8, shiftBits: 8, group: "EBX", indentLevel: 2, hexPlacement: "high-byte" },
-  { name: "BL", source: "EBX", widthBits: 8, group: "EBX", indentLevel: 2 },
-  { name: "ECX", source: "ECX", widthBits: 32, group: "ECX", indentLevel: 0 },
-  { name: "CX", source: "ECX", widthBits: 16, group: "ECX", indentLevel: 1 },
-  { name: "CH", source: "ECX", widthBits: 8, shiftBits: 8, group: "ECX", indentLevel: 2, hexPlacement: "high-byte" },
-  { name: "CL", source: "ECX", widthBits: 8, group: "ECX", indentLevel: 2 },
-  { name: "EDX", source: "EDX", widthBits: 32, group: "EDX", indentLevel: 0 },
-  { name: "DX", source: "EDX", widthBits: 16, group: "EDX", indentLevel: 1 },
-  { name: "DH", source: "EDX", widthBits: 8, shiftBits: 8, group: "EDX", indentLevel: 2, hexPlacement: "high-byte" },
-  { name: "DL", source: "EDX", widthBits: 8, group: "EDX", indentLevel: 2 },
-  { name: "ESI", source: "ESI", widthBits: 32, group: "ESI", indentLevel: 0 },
-  { name: "SI", source: "ESI", widthBits: 16, group: "ESI", indentLevel: 1 },
-  { name: "EDI", source: "EDI", widthBits: 32, group: "EDI", indentLevel: 0 },
-  { name: "DI", source: "EDI", widthBits: 16, group: "EDI", indentLevel: 1 },
-  { name: "EBP", source: "EBP", widthBits: 32, group: "EBP", indentLevel: 0 },
-  { name: "BP", source: "EBP", widthBits: 16, group: "EBP", indentLevel: 1 },
-  { name: "ESP", source: "ESP", widthBits: 32, group: "ESP", indentLevel: 0 },
-  { name: "SP", source: "ESP", widthBits: 16, group: "ESP", indentLevel: 1 },
-  { name: "EIP", source: "EIP", widthBits: 32, group: "EIP", indentLevel: 0 },
-  { name: "EFLAGS", source: "EFLAGS", widthBits: 32, group: "EFLAGS", indentLevel: 0, signedDisplay: false },
-  { name: "CF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_CF_BIT },
-  { name: "ZF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_ZF_BIT },
-  { name: "SF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_SF_BIT },
-  { name: "OF", source: "EFLAGS", group: "EFLAGS", indentLevel: 1, flagBit: EFLAGS_OF_BIT }
+  { name: "EAX", source: "EAX", widthBits: 32, group: "EAX", displayGroup: "general", indentLevel: 0 },
+  { name: "AX", source: "EAX", widthBits: 16, group: "EAX", displayGroup: "general", indentLevel: 1 },
+  { name: "AH", source: "EAX", widthBits: 8, shiftBits: 8, group: "EAX", displayGroup: "general", indentLevel: 2, hexPlacement: "high-byte" },
+  { name: "AL", source: "EAX", widthBits: 8, group: "EAX", displayGroup: "general", indentLevel: 2 },
+  { name: "EBX", source: "EBX", widthBits: 32, group: "EBX", displayGroup: "general", indentLevel: 0 },
+  { name: "BX", source: "EBX", widthBits: 16, group: "EBX", displayGroup: "general", indentLevel: 1 },
+  { name: "BH", source: "EBX", widthBits: 8, shiftBits: 8, group: "EBX", displayGroup: "general", indentLevel: 2, hexPlacement: "high-byte" },
+  { name: "BL", source: "EBX", widthBits: 8, group: "EBX", displayGroup: "general", indentLevel: 2 },
+  { name: "ECX", source: "ECX", widthBits: 32, group: "ECX", displayGroup: "general", indentLevel: 0 },
+  { name: "CX", source: "ECX", widthBits: 16, group: "ECX", displayGroup: "general", indentLevel: 1 },
+  { name: "CH", source: "ECX", widthBits: 8, shiftBits: 8, group: "ECX", displayGroup: "general", indentLevel: 2, hexPlacement: "high-byte" },
+  { name: "CL", source: "ECX", widthBits: 8, group: "ECX", displayGroup: "general", indentLevel: 2 },
+  { name: "EDX", source: "EDX", widthBits: 32, group: "EDX", displayGroup: "general", indentLevel: 0 },
+  { name: "DX", source: "EDX", widthBits: 16, group: "EDX", displayGroup: "general", indentLevel: 1 },
+  { name: "DH", source: "EDX", widthBits: 8, shiftBits: 8, group: "EDX", displayGroup: "general", indentLevel: 2, hexPlacement: "high-byte" },
+  { name: "DL", source: "EDX", widthBits: 8, group: "EDX", displayGroup: "general", indentLevel: 2 },
+  { name: "ESI", source: "ESI", widthBits: 32, group: "ESI", displayGroup: "index", indentLevel: 0 },
+  { name: "SI", source: "ESI", widthBits: 16, group: "ESI", displayGroup: "index", indentLevel: 1 },
+  { name: "EDI", source: "EDI", widthBits: 32, group: "EDI", displayGroup: "index", indentLevel: 0 },
+  { name: "DI", source: "EDI", widthBits: 16, group: "EDI", displayGroup: "index", indentLevel: 1 },
+  { name: "EBP", source: "EBP", widthBits: 32, group: "EBP", displayGroup: "stack", indentLevel: 0 },
+  { name: "BP", source: "EBP", widthBits: 16, group: "EBP", displayGroup: "stack", indentLevel: 1 },
+  { name: "ESP", source: "ESP", widthBits: 32, group: "ESP", displayGroup: "stack", indentLevel: 0 },
+  { name: "SP", source: "ESP", widthBits: 16, group: "ESP", displayGroup: "stack", indentLevel: 1 },
+  { name: "EIP", source: "EIP", widthBits: 32, group: "EIP", displayGroup: "control", indentLevel: 0 },
+  { name: "EFLAGS", source: "EFLAGS", widthBits: 32, group: "EFLAGS", displayGroup: "control", indentLevel: 0, signedDisplay: false },
+  { name: "CF", source: "EFLAGS", group: "EFLAGS", displayGroup: "control", indentLevel: 1, flagBit: EFLAGS_CF_BIT },
+  { name: "ZF", source: "EFLAGS", group: "EFLAGS", displayGroup: "control", indentLevel: 1, flagBit: EFLAGS_ZF_BIT },
+  { name: "SF", source: "EFLAGS", group: "EFLAGS", displayGroup: "control", indentLevel: 1, flagBit: EFLAGS_SF_BIT },
+  { name: "OF", source: "EFLAGS", group: "EFLAGS", displayGroup: "control", indentLevel: 1, flagBit: EFLAGS_OF_BIT }
 ];
 
 /** Number of leading spaces added for one register composition level. */
@@ -116,10 +128,10 @@ const RUNTIME_DIAGNOSTIC_CODES = new Set([
   "unsupported-code-memory-access"
 ]);
 
-/** Logical rendered Simulator Messages group names introduced by Phase 64B. */
+/** Logical rendered Simulator Messages group names finalized by Phase 69B. */
 const SIMULATOR_MESSAGE_GROUPS = {
-  OTHER: "other",
   STARTUP: "startup",
+  PRE_EXECUTION: "pre-execution",
   RUNTIME: "runtime",
   FINAL: "final"
 };
@@ -417,16 +429,16 @@ export function formatRegisterLine(name, value, widthBits, signedDisplay = true,
 /**
  * Returns the logical rendered group for one Simulator Message.
  *
- * Phase 64B groups only the existing startup notice, runtime diagnostics, and
- * final execution-complete status. Other diagnostics and compatibility notices
- * keep their ordinary adjacency and are not converted into group separators.
+ * Phase 69B keeps startup notices first when execution begins, then groups
+ * nonfatal pre-execution diagnostics, runtime diagnostics, and final success
+ * status without representing blank separator lines in source-run JSON.
  *
  * @param {SimulatorMessage | undefined} message Message to classify.
  * @returns {string} One value from SIMULATOR_MESSAGE_GROUPS.
  */
 function simulatorMessageRenderedGroup(message) {
   if (!message) {
-    return SIMULATOR_MESSAGE_GROUPS.OTHER;
+    return SIMULATOR_MESSAGE_GROUPS.PRE_EXECUTION;
   }
 
   if (message.code === "startup-state-notice") {
@@ -441,31 +453,22 @@ function simulatorMessageRenderedGroup(message) {
     return SIMULATOR_MESSAGE_GROUPS.RUNTIME;
   }
 
-  return SIMULATOR_MESSAGE_GROUPS.OTHER;
+  return SIMULATOR_MESSAGE_GROUPS.PRE_EXECUTION;
 }
 
 /**
- * Returns whether Phase 64B requires a blank separator between adjacent messages.
+ * Returns whether Phase 69B requires a blank separator between adjacent messages.
  *
  * Separators are rendering-only group boundaries. They are never represented as
- * source-run JSON diagnostics and are not inserted around pre-execution-only
- * diagnostics or compatibility notices.
+ * source-run JSON diagnostics and are not inserted around adjacent messages that
+ * belong to the same rendered group.
  *
  * @param {string} previousGroup Logical group for the preceding message.
  * @param {string} currentGroup Logical group for the current message.
  * @returns {boolean} true when a blank rendered line should be inserted.
  */
 function shouldSeparateSimulatorMessageGroups(previousGroup, currentGroup) {
-  if (previousGroup === currentGroup) {
-    return false;
-  }
-
-  if (previousGroup === SIMULATOR_MESSAGE_GROUPS.STARTUP &&
-      (currentGroup === SIMULATOR_MESSAGE_GROUPS.RUNTIME || currentGroup === SIMULATOR_MESSAGE_GROUPS.FINAL)) {
-    return true;
-  }
-
-  return previousGroup === SIMULATOR_MESSAGE_GROUPS.RUNTIME && currentGroup === SIMULATOR_MESSAGE_GROUPS.FINAL;
+  return previousGroup !== currentGroup;
 }
 
 /**
@@ -525,51 +528,96 @@ function formatRegisterDisplayName(name, indentLevel = 0) {
  * @param {RegisterRoleMap | undefined} registerRoles Register display-role metadata.
  * @returns {string} Human-readable register table.
  */
+/**
+ * Returns a rendered final-register row, or null when the row is unavailable.
+ *
+ * @param {object} row Register display-row descriptor.
+ * @param {RegisterMap} registers Register map returned by the worker.
+ * @param {RegisterWriteMap | undefined} registerWrites Register-family write metadata.
+ * @param {RegisterRoleMap | undefined} registerRoles Register display-role metadata.
+ * @returns {{row: object, line: string} | null} Rendered row data, or null when unavailable.
+ */
+function renderRegisterDisplayRow(row, registers, registerWrites, registerRoles) {
+  if (!Object.prototype.hasOwnProperty.call(registers, row.source)) {
+    return null;
+  }
+
+  const sourceValue = registers[row.source];
+  const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
+  let line = null;
+
+  if (Number.isInteger(row.flagBit)) {
+    const flagValue = deriveModeledFlagBitValue(sourceValue, row.flagBit);
+    if (flagValue === null) {
+      return null;
+    }
+    line = formatModeledFlagLine(displayName, flagValue);
+  } else {
+    const value = row.name === row.source
+      ? sourceValue
+      : deriveRegisterAliasValue(sourceValue, row.widthBits, row.shiftBits || 0);
+    if (value === null) {
+      return null;
+    }
+    line = formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement);
+  }
+
+  const roleMarker = registerRoleMarker(row, registerRoles);
+  if (roleMarker) {
+    line = `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${roleMarker}`;
+  } else if (shouldShowRegisterUnchangedMarker(row, registerWrites)) {
+    line = `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}`;
+  }
+
+  return { row, line };
+}
+
+/**
+ * Returns the Phase 69B display-only separator after one rendered register row.
+ *
+ * @param {object} row Current register display-row descriptor.
+ * @param {object | undefined} nextRow Next rendered register display-row descriptor.
+ * @returns {string | null} Separator row text, or null when none is required.
+ */
+function registerSeparatorAfterRow(row, nextRow) {
+  if (!nextRow) {
+    return null;
+  }
+
+  if (REGISTER_HIGH_LEVEL_GROUP_DIVIDER_AFTER_ROWS.has(row.name) && row.displayGroup !== nextRow.displayGroup) {
+    return REGISTER_HIGH_LEVEL_GROUP_DIVIDER;
+  }
+
+  if (
+    REGISTER_PARENT_FAMILY_SPACER_AFTER_ROWS.has(row.name)
+    && row.displayGroup === nextRow.displayGroup
+    && row.group !== nextRow.group
+  ) {
+    return REGISTER_PARENT_FAMILY_SPACER;
+  }
+
+  return null;
+}
+
 export function formatRegisters(registers, registerWrites, registerRoles) {
   if (!registers) {
     return "No register state available.";
   }
 
+  const renderedRows = REGISTER_DISPLAY_ROWS
+    .map((row) => renderRegisterDisplayRow(row, registers, registerWrites, registerRoles))
+    .filter((row) => row !== null);
   const lines = [];
-  let previousGroup = null;
 
-  REGISTER_DISPLAY_ROWS.forEach((row) => {
-      if (!Object.prototype.hasOwnProperty.call(registers, row.source)) {
-        return;
-      }
+  renderedRows.forEach((renderedRow, index) => {
+    lines.push(renderedRow.line);
 
-      const sourceValue = registers[row.source];
-      const displayName = formatRegisterDisplayName(row.name, row.indentLevel || 0);
-      let line = null;
-
-      if (Number.isInteger(row.flagBit)) {
-        const flagValue = deriveModeledFlagBitValue(sourceValue, row.flagBit);
-        if (flagValue === null) {
-          return;
-        }
-        line = formatModeledFlagLine(displayName, flagValue);
-      } else {
-        const value = row.name === row.source
-          ? sourceValue
-          : deriveRegisterAliasValue(sourceValue, row.widthBits, row.shiftBits || 0);
-        if (value === null) {
-          return;
-        }
-        line = formatRegisterLine(displayName, value, row.widthBits, row.signedDisplay !== false, row.hexPlacement);
-      }
-
-      if (previousGroup !== null && previousGroup !== row.group) {
-        lines.push("");
-      }
-      previousGroup = row.group;
-
-      const roleMarker = registerRoleMarker(row, registerRoles);
-      if (roleMarker) {
-        lines.push(`${line}${REGISTER_UNCHANGED_MARKER_SPACING}${roleMarker}`);
-      } else {
-        lines.push(shouldShowRegisterUnchangedMarker(row, registerWrites) ? `${line}${REGISTER_UNCHANGED_MARKER_SPACING}${REGISTER_UNCHANGED_MARKER}` : line);
-      }
-    });
+    const nextRow = renderedRows[index + 1]?.row;
+    const separator = registerSeparatorAfterRow(renderedRow.row, nextRow);
+    if (separator) {
+      lines.push(separator);
+    }
+  });
 
   return lines.join("\n");
 }

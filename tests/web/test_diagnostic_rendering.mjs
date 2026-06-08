@@ -4614,7 +4614,7 @@ END main
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n\n[simulator-warning] uninitialized-read line 5, column 14, byte offset 50, span length 5: Memory read range 00600000h..00600003h reads 4 bytes from limit + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("renders Phase 57J CONST declaration error policy exactly", () => {
@@ -4756,7 +4756,7 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] const-uninitialized-storage line 2, column 1, byte offset 7, span length 5: .CONST declaration `limit` reserves uninitialized read-only storage. The simulator accepts it for compatibility, gives bytes deterministic values, and preserves uninitialized-origin metadata. Do not rely on the reserved value.\n\n[runtime-error] permission-denied line 6: Memory write at 00600000h for 4 bytes is not permitted in .const.");
 });
 
 test("renders ROR undefined modeled flag warning exactly", () => {
@@ -6531,7 +6531,36 @@ test("renders CASEMAP policy warning followed by successful execution exactly", 
       message: "Execution completed successfully."
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-warning] casemap-policy-changed line 2, column 16, byte offset 35, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n[info] execution-complete: Execution completed successfully.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-warning] casemap-policy-changed line 2, column 16, byte offset 35, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 69B startup before CASEMAP warning on successful execution", () => {
+  const name = "phase69bStartupBeforeCasemapPolicyChanged";
+  const source = fixtureSource("casemapPolicyChanged");
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assertMessageEquals(json.simulatorMessages[1], {
+    kind: "assembly-warning",
+    code: "casemap-policy-changed",
+    message: "OPTION CASEMAP changed the active user-symbol case policy.",
+    line: 2,
+    column: 16,
+    byteOffset: 35,
+    spanLength: 3
+  });
+  assertMessageEquals(json.simulatorMessages[2], {
+    kind: "info",
+    code: "execution-complete",
+    message: "Execution completed successfully."
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[assembly-warning] casemap-policy-changed line 2, column 16, byte offset 35, span length 3: OPTION CASEMAP changed the active user-symbol case policy.\n\n[info] execution-complete: Execution completed successfully.`);
 });
 
 test("renders CASEMAP ambiguous symbol diagnostic exactly", () => {
@@ -6716,6 +6745,48 @@ END main
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+    "",
+    "[info] execution-complete: Execution completed successfully."
+  ].join("\n"));
+});
+
+test("renders Phase 69B startup before compatibility notices on successful execution", () => {
+  const source = `.686
+.model flat, stdcall
+.stack 4096
+INCLUDE Macros.inc
+TITLE Notice Sample
+PAGE 60, 132
+.code
+main PROC
+    mov eax, 42
+main ENDP
+END main
+`;
+  const name = "phase69b-startup-before-compatibility-notices";
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_STARTUP_STATE_NOTICE: "warn"
+  });
+  assertRunStatus(json, true, "ok");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assert.equal(json.simulatorMessages[1].code, "compatibility-no-op");
+  assert.equal(json.simulatorMessages[2].code, "compatibility-limited");
+  assert.equal(json.simulatorMessages[3].code, "compatibility-metadata-only");
+  assert.equal(json.simulatorMessages[json.simulatorMessages.length - 1].code, "execution-complete");
+  assertRenderedEquals(name, source, rawJson, rendered, [
+    STARTUP_STATE_NOTICE_RENDERED,
+    "",
+    "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
+    "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
+    "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
+    "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+    "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
+    "",
     "[info] execution-complete: Execution completed successfully."
   ].join("\n"));
 });

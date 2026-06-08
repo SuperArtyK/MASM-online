@@ -13,15 +13,21 @@ Source-of-truth rule:
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 - Curated audit and handoff reports are stored under [`history/`](history/), and standalone milestone reports are stored under [`history/reports/`](history/reports/). These archived files are historical evidence, not current behavior authority.
 
-Current status at Phase 69A:
+Current status at Phase 69B:
 
 Repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
 
-Phase 69A is documentation/static-check cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while clarifying current-status wording, CALL/RET boundaries, rejected CALL forms, non-goals, memory-validation wording, and source-of-truth authority. Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token for the lowered instruction after the call to the simulated stack at `ESP - 4`, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
+Latest output/message-ordering cleanup phase:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Next repository/archive corrective milestone:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
+Phase 69B is output/message-ordering cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token for the lowered instruction after the call to the simulated stack at `ESP - 4`, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
 
 Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
 
@@ -33,9 +39,9 @@ Next runtime implementation milestone:
 Phase 70 - RET Execution and Return Address Validation
 
 Current source-of-truth roadmap note:
-The implementation guide now inserts Phase 69B - Register Display Grouping and Startup Diagnostic Ordering before Phase 70 as an output/message-ordering corrective phase. Phase 69B is not a MASM syntax or VM execution-semantics phase. It must not be treated as implementing `RET` or any other future runtime feature.
+The implementation guide now inserts Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition after Phase 69B and before Phase 70. Phase 69C is artifact/test-infrastructure cleanup only. It is not a MASM syntax or VM execution-semantics phase and must not be treated as implementing `RET` or any other future runtime feature.
 
-Phase 70 may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It must still not implement source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
+Phase 70 remains the next runtime implementation phase and may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It must still not implement source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 
 ## Concise milestone ledger
@@ -129,6 +135,21 @@ Non-goals preserved:
 - no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
 - no new stack sizing UI, URL state, layout sizing behavior, heap sizing behavior, or randomized layout behavior.
 
+
+## Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Repository/archive milestone:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Runtime/source-run MASM behavior phase:
+Phase 69 - Direct CALL to User Procedures
+
+Latest output/message-ordering cleanup phase:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Phase 69B updates display/message ordering only. Final register display now separates general registers, index registers, stack/frame registers, and control/modeled flag state with exact `-------------------------------------------------------------------` major divider rows, and separates adjacent parent register families inside those groups with exact `       |` spacer rows. Simulator Messages now serialize and render `startup-state-notice` first whenever execution begins and startup notices are enabled, followed by nonfatal pre-execution diagnostics, runtime diagnostics, and final `execution-complete` on success.
+
+Phase 69B does not change parser behavior, VM instruction semantics, supported MASM syntax, diagnostic codes, Program Console output, memory-change rows, source-run protocol field names, or the runtime/source-run MASM behavior phase. `RET`, source-level `PUSH`/`POP`, procedure frames, Irvine32 routine dispatch, and unsupported CALL target forms remain future-owned or out-of-scope as documented by the canonical specification and guide.
 
 
 ## Phase 69A - Documentation and Static-Check Cleanup After Direct CALL

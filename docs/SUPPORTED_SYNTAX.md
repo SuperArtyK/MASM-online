@@ -1,10 +1,21 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
+
+Latest output/message-ordering cleanup phase:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Phase 69B changes display/message ordering only. It does not change supported MASM syntax, parser behavior, VM instruction semantics, source-run protocol fields, or the runtime/source-run MASM behavior phase.
+
+Repository/archive status may include corrective documentation, output-ordering, artifact-compatibility, or test-infrastructure phases beyond the latest runtime/source-run MASM behavior phase.
+
+Supported syntax and VM execution behavior are determined by the latest completed runtime/source-run MASM behavior phase, not by maintenance-only repository/archive phase labels.
+
+A corrective phase must not be described here as adding accepted syntax, executable instructions, diagnostics for MASM source behavior, or VM semantics unless that phase explicitly implements and tests those runtime/source-run behavior changes.
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 
@@ -67,11 +78,11 @@ Rendered memory-change rows now show the source line that produced each successf
 
 ### Final register EFLAGS child display
 
-Phase 64C - Expanded EFLAGS Flag Display remains implemented. Final register display now keeps the canonical `EFLAGS` parent row and displays subordinate `CF`, `ZF`, `SF`, and `OF` child rows with `0` or `1` modeled bit values. Phase 64C displays modeled flag bit values only. Flag-validity annotations remain future display work, and unmodeled x86 flags such as `PF`, `AF`, `DF`, `IF`, and `TF` are not displayed. This is display formatting only and does not change flag semantics or supported MASM syntax.
+Phase 69B final-register display uses stable high-level educational groups. General registers (`EAX`, `EBX`, `ECX`, `EDX` and their 16-bit/8-bit aliases), index registers (`ESI`, `EDI` and their 16-bit aliases), stack/frame registers (`EBP`, `ESP` and their 16-bit aliases), and control/modeled flag state (`EIP`, `EFLAGS`, `CF`, `ZF`, `SF`, `OF`) are separated by display-only major divider rows. Each major divider row is exactly `-------------------------------------------------------------------`: 67 hyphen characters with no leading or trailing spaces. Inside a high-level group, adjacent parent register families are separated by the display-only parent-family spacer row `       |`: seven spaces followed by one vertical bar and no trailing spaces. Parent-family spacer rows appear only after `AL`, `BL`, `CL`, `SI`, `BP`, and `EIP`; major divider rows appear only after `DL`, `DI`, and `SP`. No separator appears before the first row, after the final modeled flag row, or between aliases of the same parent register family. The Phase 64C `EFLAGS` parent row and subordinate `CF`, `ZF`, `SF`, and `OF` child rows remain implemented. Flag-validity annotations remain future display work, and unmodeled x86 flags such as `PF`, `AF`, `DF`, `IF`, and `TF` are not displayed. This is display formatting only and does not change flag semantics or supported MASM syntax.
 
 ### Simulator Messages grouping
 
-Rendered Simulator Messages now use Phase 64B logical groups for source-less startup notice text, runtime diagnostics, and final `execution-complete` status. The renderer inserts exactly one blank line between adjacent non-empty startup, runtime-diagnostic, and final-status groups. Those blank lines are formatter-only and are not source-run JSON diagnostics, Program Console text, memory-change rows, or new status records.
+Rendered Simulator Messages now use Phase 69B logical ordering. When execution begins and `startup-state-notice` is enabled, the startup notice is serialized and rendered first. Nonfatal pre-execution diagnostics, including compatibility notices and accepted-construct warnings, follow the startup notice. Runtime diagnostics follow nonfatal pre-execution diagnostics. Final `execution-complete` status appears last on success only. When execution does not begin, existing pre-execution diagnostic order is preserved and no startup notice, runtime group, final status group, or `execution-complete` message is emitted. The renderer inserts exactly one blank line between adjacent non-empty rendered groups. Those blank lines are formatter-only and are not source-run JSON diagnostics, Program Console text, memory-change rows, register-separator records, protocol fields, or new status records.
 
 ### Reserved words and user-defined symbols
 

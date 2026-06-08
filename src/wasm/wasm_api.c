@@ -813,9 +813,9 @@ static bool masm32_sim_json_append_message(
 
 /// Appends the source-less startup-state notice to Simulator Messages.
 ///
-/// The notice is emitted before runtime diagnostics for Phase 64B rendered
-/// grouping. It remains an ordinary structured message; blank group separators
-/// are added only by the browser/Node formatter.
+/// The notice is emitted first for Phase 69B runs that begin execution and opt
+/// into startup-state notices. It remains an ordinary structured message; blank
+/// group separators are added only by the browser/Node formatter.
 ///
 /// @param writer Writer to mutate.
 /// @param inout_has_message Whether a prior message has already been appended.
@@ -5028,54 +5028,34 @@ static bool masm32_sim_json_append_parser_messages(
     return true;
 }
 
-
-/// Appends parser diagnostics with a selected code to the simulatorMessages array.
+/// Appends nonfatal parser diagnostics after any prior Simulator Messages.
+///
+/// Phase 69B uses this helper after the startup-state notice for runs that
+/// begin execution, so compatibility notices and accepted-construct teaching
+/// diagnostics remain source-run objects but no longer precede startup state.
 ///
 /// @param writer Writer to mutate.
 /// @param diagnostics Parser diagnostic array.
 /// @param diagnostic_count Number of parser diagnostics available.
-/// @param code Parser diagnostic code to append.
 /// @param has_message Whether earlier messages are already present; updated on append.
-/// @return true when selected diagnostics fit without overflowing the buffer.
-static bool masm32_sim_json_append_parser_messages_for_code(
+/// @return true when diagnostics fit without overflowing the buffer.
+static bool masm32_sim_json_append_nonfatal_parser_messages(
     Masm32SimJsonWriter *writer,
     const VmParserDiagnostic *diagnostics,
     size_t diagnostic_count,
-    VmParserDiagnosticCode code,
     bool *has_message
 ) {
-    size_t index = 0U;
+    if (writer == NULL || has_message == NULL || diagnostics == NULL || diagnostic_count == 0U) {
+        return true;
+    }
 
-    if (writer == NULL || diagnostics == NULL || has_message == NULL) {
+    if (*has_message && !masm32_sim_json_append(writer, ",")) {
         return false;
     }
-
-    for (index = 0U; index < diagnostic_count; index += 1U) {
-        const VmParserDiagnostic *diagnostic = &diagnostics[index];
-        const char *code_name = vm_parser_diagnostic_code_name(diagnostic->code);
-
-        if (diagnostic->code != code) {
-            continue;
-        }
-        if (*has_message && !masm32_sim_json_append(writer, ",")) {
-            return false;
-        }
-        if (!masm32_sim_json_append_message_with_span(
-                writer,
-                masm32_sim_wasm_parser_diagnostic_kind(diagnostic),
-                code_name != NULL ? code_name : "parser-diagnostic",
-                diagnostic->message != NULL ? diagnostic->message : "Parser diagnostic.",
-                diagnostic->location.line,
-                diagnostic->location.column,
-                diagnostic->location.offset,
-                diagnostic->lexeme_length,
-                diagnostic->location.line > 0U
-            )) {
-            return false;
-        }
-        *has_message = true;
+    if (!masm32_sim_json_append_parser_messages(writer, diagnostics, diagnostic_count)) {
+        return false;
     }
-
+    *has_message = true;
     return true;
 }
 
@@ -5711,10 +5691,6 @@ static const char *masm32_sim_wasm_build_run_json(
     (void)masm32_sim_json_append(&writer, "\"simulatorMessages\":[");
     if (outcome == MASM32_SIM_WASM_RUN_OUTCOME_OK) {
         bool has_message = false;
-        if (parser_result != NULL && parser_diagnostics != NULL && parser_result->diagnostic_count > 0U) {
-            (void)masm32_sim_json_append_parser_messages(&writer, parser_diagnostics, parser_result->diagnostic_count);
-            has_message = true;
-        }
         if (emit_startup_state_notice) {
             (void)masm32_sim_json_append_startup_state_notice(
                 &writer,
@@ -5723,6 +5699,12 @@ static const char *masm32_sim_wasm_build_run_json(
                 uninitialized_storage_visible_byte_mode
             );
         }
+        (void)masm32_sim_json_append_nonfatal_parser_messages(
+            &writer,
+            parser_diagnostics,
+            parser_result != NULL ? parser_result->diagnostic_count : 0U,
+            &has_message
+        );
         (void)masm32_sim_json_append_section_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_object_warnings(&writer, storage, &has_message);
         (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
@@ -5751,16 +5733,15 @@ static const char *masm32_sim_wasm_build_run_json(
                 uninitialized_storage_visible_byte_mode
             );
         }
-        if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
-            (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
-        }
-        (void)masm32_sim_json_append_parser_messages_for_code(
+        (void)masm32_sim_json_append_nonfatal_parser_messages(
             &writer,
             parser_diagnostics,
             parser_result != NULL ? parser_result->diagnostic_count : 0U,
-            VM_PARSER_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE,
             &has_message
         );
+        if (exec_status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || exec_status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW) {
+            (void)masm32_sim_json_append_uninitialized_read_warnings(&writer, storage, &has_message);
+        }
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }

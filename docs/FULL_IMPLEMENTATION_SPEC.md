@@ -2011,31 +2011,48 @@ The required high-level display groups are:
    - `EFLAGS`
    - modeled flag child rows under `EFLAGS`
 
-Parent register families inside the same high-level group remain adjacent. For example, `EAX`, `EBX`, `ECX`, and `EDX` belong to the same general-register group, so the high-level divider must not appear between the `EAX` family and the `EBX` family.
+Final register display uses two display-only separator row types: parent-family spacer rows inside a high-level group and major divider rows between high-level groups. These rows are part of rendered final-register text only. They must not become source-run JSON objects, diagnostics, status messages, Program Console text, register values, memory values, protocol fields, or VM state items.
 
-The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use the Phase 69B high-level divider except between the four high-level groups listed above.
-
-The fourth group must not imply that `EIP` is a real source-writable x86 register in this simulator. `EIP` remains displayed VM pseudo-code-address control state derived from the internal instruction pointer.
-
-The fourth group also must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state that is modified only through implemented instruction semantics and flag helpers.
-
-The visual separator between high-level register groups must be an explicit rendered divider row.
-
-The divider row must be:
+The parent-family spacer row must be the exact literal line:
 
 ```text
---------
+       |
 ```
 
-The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+The parent-family spacer row contains seven spaces followed by one vertical bar character and no trailing spaces. It represents an empty value row aligned to the register-name column and value separator. It must appear only between adjacent parent register families that belong to the same high-level group:
 
-The divider row must appear:
+- after `AL`, before `EBX`;
+- after `BL`, before `ECX`;
+- after `CL`, before `EDX`;
+- after `SI`, before `EDI`;
+- after `BP`, before `ESP`;
+- after `EIP`, before `EFLAGS`.
 
-- once between the general-register group and the index-register group;
-- once between the index-register group and the stack/frame-register group;
-- once between the stack/frame-register group and the control/modeled-flag-state group.
+The parent-family spacer row must not appear:
 
-The divider row must not appear:
+- before `EAX`;
+- between aliases of the same parent register family;
+- after `DL`, `DI`, or `SP`, because a major divider row follows those high-level groups instead;
+- after the final modeled-flag row;
+- in source-run JSON;
+- in Program Console output;
+- as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
+
+The visual separator between high-level register groups must be the exact rendered major divider row:
+
+```text
+-------------------------------------------------------------------
+```
+
+The major divider row contains exactly 67 hyphen characters and no leading or trailing spaces. The width is a fixed Phase 69B display contract chosen to span the current known-width final-register row through the longest marker text. It is not computed from the marker displayed on a specific row.
+
+The major divider row must appear:
+
+- once after `DL`, between the general-register group and the index-register group;
+- once after `DI`, between the index-register group and the stack/frame-register group;
+- once after `SP`, between the stack/frame-register group and the control/modeled-flag-state group.
+
+The major divider row must not appear:
 
 - before the first general-register row;
 - after the final modeled-flag row;
@@ -2045,7 +2062,13 @@ The divider row must not appear:
 - in Program Console output;
 - as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
 
-The rendered formatter tests must assert the exact divider text and placement.
+The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use either Phase 69B separator type outside the exact placements listed above.
+
+The fourth group must not imply that `EIP` is a real source-writable x86 register in this simulator. `EIP` remains displayed VM pseudo-code-address control state derived from the internal instruction pointer.
+
+The fourth group also must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state that is modified only through implemented instruction semantics and flag helpers.
+
+The rendered formatter tests must assert the exact separator text and placement for both separator row types.
 
 `ESP` and `SP` are legal explicit source operands wherever the implemented instruction accepts their width and operand role. The simulator must not reject `mov esp, 1`, `mov sp, 0`, or similar explicit stack-pointer writes merely because the resulting stack pointer is outside the active stack region. Later implicit stack accesses through CALL, RET, PUSH, POP, frame setup, frame teardown, or Irvine32 routines must validate the effective stack read/write through the central checked-memory path.
 
@@ -6400,7 +6423,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the current source-of-truth revision after Phase 69A, the sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. Phase 69A is documentation/static-check cleanup only and does not advance the MASM syntax or VM execution-semantics phase beyond Phase 69. Phase 69B is output/message-ordering cleanup only and must not implement `RET` or other future runtime semantics. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, or `69B`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the current source-of-truth revision after Phase 69B, the sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. Phase 69A is documentation/static-check cleanup only and does not advance the MASM syntax or VM execution-semantics phase beyond Phase 69. Phase 69B is output/message-ordering cleanup only and must not implement `RET` or other future runtime semantics. Phase 69C is artifact/test-infrastructure cleanup only and must not implement `RET` or other future runtime semantics. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, `69B`, or `69C`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
@@ -6466,6 +6489,29 @@ Environment-dependent suites may be skipped only with an explicit reason in the 
 
 User-facing documentation must be generated from, or mechanically checked against, the implemented feature/test manifest. Examples referencing unsupported future features are permitted only in the known-unsupported/non-goal corpus.
 
+
+### 27.3 Source-run Output-Contract and Wasm Artifact Compatibility
+
+Native source-run tests exercise the C source-run path, but they do not prove that committed or served browser WebAssembly artifacts were rebuilt from the same C sources. This matters when a corrective phase changes C/Wasm-facing source-run output behavior but intentionally does not advance the runtime/source-run MASM behavior phase metadata.
+
+Runtime/source-run MASM behavior phase metadata must describe implemented MASM syntax and VM execution semantics. It must not be advanced solely to make stale-artifact detection easier after an output-only, documentation-only, formatting-only, ordering-only, serialization-only, or test-infrastructure-only corrective phase.
+
+When a phase changes any C/Wasm-facing output contract without advancing runtime/source-run behavior metadata, the project must use one of the following artifact compatibility protections:
+
+1. rebuild `web/dist` with Emscripten and record the command and result in the milestone report;
+2. add or update a separate output-contract, artifact-build, source-run-format, or Wasm-compatibility identifier that changes when source-run JSON ordering, diagnostic serialization, status serialization, final-state serialization, protocol-relevant formatting, or Wasm-facing output behavior changes;
+3. if Emscripten is unavailable in the implementation environment, explicitly report browser/Wasm rebuild validation as skipped and state that the served `web/dist` artifacts may require a manual rebuild before release or distribution.
+
+A stale-artifact warning based only on runtime/source-run MASM behavior phase metadata is not sufficient to detect output-only C/Wasm changes when the runtime behavior phase intentionally remains unchanged.
+
+Milestone reports for output-only C/Wasm changes must distinguish:
+
+- native C source-run path verified;
+- Node/web formatter or protocol tests verified;
+- browser/Wasm artifacts rebuilt and smoke-tested;
+- browser/Wasm artifacts not rebuilt because `emcc` was unavailable;
+- served `web/dist` artifact compatibility verified by a separate output-contract identifier, if one exists.
+
 ## 28. Future Roadmap
 
 This section is a high-level product roadmap only. It does not override the canonical post-30 implementation sequence in the implementation guide or the integration status in Section 29.
@@ -6474,9 +6520,9 @@ The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to 
 
 Roadmap ordering note for stack/procedure work:
 
-The implementation guide owns exact phase order. As of the Phase 69 source-of-truth revision, the current stack/procedure sequence is: Phase 67A entry-procedure runtime boundary correction; Phase 68 call-target classification and procedure-entry metadata; Phase 68A stack runtime initialization and ESP startup contract; Phase 68B EIP pseudo-code-address display and source-operand restrictions; Phase 69 direct CALL to user procedures; Phase 70 RET execution and return-address validation; followed by later root-return, call-depth, source-level stack, frame, INVOKE, ADDR, and Irvine32 routine phases.
+The implementation guide owns exact phase order. As of the current source-of-truth revision after Phase 69B, the current stack/procedure and corrective-infrastructure sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then later phases for Phase 71 root procedure termination, Phase 72 call-depth and active-frame diagnostics, Phase 72A source-level `PUSH` and `POP`, Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 75 `PROC USES`, Phase 76 `LOCAL`, Phase 77 `PROTO`, Phase 78 `INVOKE`, Phase 79 `ADDR`, and Phase 80 Irvine32 callable routine dispatch.
 
-This roadmap section must not be read as permission to reorder, combine, or renumber those guide phases. Corrective non-renumbering phases such as `67A`, `68A`, and `68B` are deliberate. Later phases should depend on them by name rather than silently rewriting the history of completed phases.
+This roadmap section must not be read as permission to reorder, combine, or renumber those guide phases. Corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, `69B`, `69C`, and any later explicitly inserted corrective phases are deliberate. Later phases should depend on them by name rather than silently rewriting the history of completed phases. If a later audit finds a stale phase reference in this roadmap section, correct the active wording in place or add a non-renumbering corrective phase; do not renumber the existing roadmap unless a user explicitly requests roadmap renumbering.
 
 Concrete v1 roadmap themes:
 

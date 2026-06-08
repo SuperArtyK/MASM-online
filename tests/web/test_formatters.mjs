@@ -81,7 +81,7 @@ test("formats a single register row with the legacy fallback when width is unkno
   assert.equal(formatRegisterLine("EAX", { hex: "0000002Ah", unsigned: 42 }), "EAX    | 0000002Ah / 42");
 });
 
-test("formats canonical registers and aliases in stable order", () => {
+test("formats Phase 69B register groups and aliases in stable order", () => {
   assert.equal(formatRegisters({
     EBX: { hex: "00000003h", unsigned: 3 },
     EAX: { hex: "0000002Ah", unsigned: 42 },
@@ -91,12 +91,11 @@ test("formats canonical registers and aliases in stable order", () => {
     "  AX   |     002Ah / u: 42         / s:  42        ",
     "    AH |     00h   / u: 0          / s:  0         ",
     "    AL |       2Ah / u: 42         / s:  42        ",
-    "",
+    "       |",
     "EBX    | 00000003h / u: 3          / s:  3         ",
     "  BX   |     0003h / u: 3          / s:  3         ",
     "    BH |     00h   / u: 0          / s:  0         ",
     "    BL |       03h / u: 3          / s:  3         ",
-    "",
     "EFLAGS | 00000040h / 64                            ",
     "  CF   | 0",
     "  ZF   | 1",
@@ -242,7 +241,7 @@ test("does not synthesize modeled flag rows when EFLAGS is unavailable", () => {
   assert.doesNotMatch(formatted, /^  (CF|ZF|SF|OF)\s+\|/m);
 });
 
-test("separates independent register groups with blank lines", () => {
+test("keeps general-register parent families in one Phase 69B group", () => {
   assert.equal(formatRegisters({
     EAX: { hex: "00000001h", unsigned: 1 },
     ECX: { hex: "00000002h", unsigned: 2 },
@@ -252,12 +251,12 @@ test("separates independent register groups with blank lines", () => {
     "  AX   |     0001h / u: 1          / s:  1         ",
     "    AH |     00h   / u: 0          / s:  0         ",
     "    AL |       01h / u: 1          / s:  1         ",
-    "",
+    "       |",
     "ECX    | 00000002h / u: 2          / s:  2         ",
     "  CX   |     0002h / u: 2          / s:  2         ",
     "    CH |     00h   / u: 0          / s:  0         ",
     "    CL |       02h / u: 2          / s:  2         ",
-    "",
+    "       |",
     "EDX    | 00000003h / u: 3          / s:  3         ",
     "  DX   |     0003h / u: 3          / s:  3         ",
     "    DH |     00h   / u: 0          / s:  0         ",
@@ -296,22 +295,63 @@ test("aligns high-byte aliases under the high byte of 16-bit aliases", () => {
     "  AX   |     1234h / u: 4660       / s:  4660      ",
     "    AH |     12h   / u: 18         / s:  18        ",
     "    AL |       34h / u: 52         / s:  52        ",
-    "",
+    "       |",
     "EBX    | 00005678h / u: 22136      / s:  22136     ",
     "  BX   |     5678h / u: 22136      / s:  22136     ",
     "    BH |     56h   / u: 86         / s:  86        ",
     "    BL |       78h / u: 120        / s:  120       ",
-    "",
+    "       |",
     "ECX    | 00009ABCh / u: 39612      / s:  39612     ",
     "  CX   |     9ABCh / u: 39612      / s: -25924     ",
     "    CH |     9Ah   / u: 154        / s: -102       ",
     "    CL |       BCh / u: 188        / s: -68        ",
-    "",
+    "       |",
     "EDX    | 0000DEF0h / u: 57072      / s:  57072     ",
     "  DX   |     DEF0h / u: 57072      / s: -8464      ",
     "    DH |     DEh   / u: 222        / s: -34        ",
     "    DL |       F0h / u: 240        / s: -16        "
   ].join("\n"));
+});
+
+
+
+test("inserts exact Phase 69B visual separators at canonical register boundaries", () => {
+  const formatted = formatRegisters({
+    EAX: { hex: "00000000h", unsigned: 0 },
+    EBX: { hex: "00000000h", unsigned: 0 },
+    ECX: { hex: "00000000h", unsigned: 0 },
+    EDX: { hex: "00000000h", unsigned: 0 },
+    ESI: { hex: "00000000h", unsigned: 0 },
+    EDI: { hex: "00000000h", unsigned: 0 },
+    EBP: { hex: "00000000h", unsigned: 0 },
+    ESP: { hex: "00000000h", unsigned: 0 },
+    EIP: { hex: "00401000h", unsigned: 4198400 },
+    EFLAGS: { hex: "00000000h", unsigned: 0 }
+  });
+  const lines = formatted.split("\n");
+  const parentSpacerIndexes = lines
+    .map((line, index) => line === "       |" ? index : -1)
+    .filter((index) => index >= 0);
+  const majorDividerIndexes = lines
+    .map((line, index) => line === "-------------------------------------------------------------------" ? index : -1)
+    .filter((index) => index >= 0);
+
+  assert.deepEqual(parentSpacerIndexes, [4, 9, 14, 22, 28, 33]);
+  assert.deepEqual(majorDividerIndexes, [19, 25, 31]);
+  assert.equal(majorDividerIndexes.length, 3);
+  assert.notEqual(lines[0], "       |");
+  assert.notEqual(lines[0], "-------------------------------------------------------------------");
+  assert.notEqual(lines[lines.length - 1], "       |");
+  assert.notEqual(lines[lines.length - 1], "-------------------------------------------------------------------");
+  assert.equal(lines[3].startsWith("    AL"), true);
+  assert.equal(lines[5].startsWith("EBX"), true);
+  assert.equal(lines[18].startsWith("    DL"), true);
+  assert.equal(lines[20].startsWith("ESI"), true);
+  assert.equal(lines[24].startsWith("  DI"), true);
+  assert.equal(lines[26].startsWith("EBP"), true);
+  assert.equal(lines[30].startsWith("  SP"), true);
+  assert.equal(lines[32].startsWith("EIP"), true);
+  assert.equal(lines[34].startsWith("EFLAGS"), true);
 });
 
 test("formats missing registers as unavailable", () => {
@@ -364,7 +404,7 @@ test("formats Phase 57F startup setting errors through Simulator Messages", () =
   ]), "[ui-error] invalid-startup-setting: Invalid startup setting 'startupStateSeed'. Accepted values: unsigned 32-bit integer.");
 });
 
-test("formats Phase 64B startup notice and completion as separate rendered groups", () => {
+test("formats Phase 69B startup notice and completion as separate rendered groups", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "simulator-notice",
@@ -379,7 +419,7 @@ test("formats Phase 64B startup notice and completion as separate rendered group
   ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
-test("formats Phase 64B startup, runtime warning, and completion groups", () => {
+test("formats Phase 69B startup, runtime warning, and completion groups", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "simulator-notice",
@@ -399,7 +439,7 @@ test("formats Phase 64B startup, runtime warning, and completion groups", () => 
   ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[simulator-warning] uninitialized-read: Runtime warning.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
-test("formats Phase 64B runtime warning and completion with startup notice suppressed", () => {
+test("formats Phase 69B runtime warning and completion with startup notice suppressed", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "simulator-warning",
@@ -414,7 +454,7 @@ test("formats Phase 64B runtime warning and completion with startup notice suppr
   ]), "[simulator-warning] uninitialized-read: Runtime warning.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
-test("formats Phase 64B multiple runtime diagnostics without internal separators", () => {
+test("formats Phase 69B multiple runtime diagnostics without internal separators", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "simulator-notice",
@@ -434,7 +474,7 @@ test("formats Phase 64B multiple runtime diagnostics without internal separators
   ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[simulator-warning] uninitialized-read: Runtime warning.\n[runtime-error] invalid-address: Runtime error.");
 });
 
-test("formats Phase 64B pre-execution diagnostics without group separators", () => {
+test("formats Phase 69B pre-execution diagnostics without group separators", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "ui-error",
@@ -451,7 +491,7 @@ test("formats Phase 64B pre-execution diagnostics without group separators", () 
   ]), "[ui-error] invalid-startup-setting: Invalid startup setting.\n[assembly-error] ambiguous-memory-width line 3, column 9: Memory operand width is ambiguous.");
 });
 
-test("formats Phase 64B compatibility notices without final-status grouping", () => {
+test("formats Phase 69B compatibility notices as a pre-execution group before final status", () => {
   assert.equal(formatSimulatorMessages([
     {
       kind: "simulator-notice",
@@ -465,7 +505,32 @@ test("formats Phase 64B compatibility notices without final-status grouping", ()
       code: "execution-complete",
       message: "Execution completed successfully."
     }
-  ]), "[simulator-notice] compatibility-no-op line 1, column 1: .386 is accepted.\n[info] execution-complete: Execution completed successfully.");
+  ]), "[simulator-notice] compatibility-no-op line 1, column 1: .386 is accepted.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("formats Phase 69B startup, pre-execution, runtime, and final groups", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: "Startup notice."
+    },
+    {
+      kind: "assembly-warning",
+      code: "casemap-policy-changed",
+      message: "Pre-execution warning."
+    },
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Runtime warning."
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]), "[simulator-notice] startup-state-notice: Startup notice.\n\n[assembly-warning] casemap-policy-changed: Pre-execution warning.\n\n[simulator-warning] uninitialized-read: Runtime warning.\n\n[info] execution-complete: Execution completed successfully.");
 });
 
 test("formats empty simulator messages", () => {

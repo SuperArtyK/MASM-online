@@ -1326,6 +1326,10 @@ def assert_timeout_policy_documented() -> None:
             "aggregate timed out in assistant/container environment, focused groups passed",
             "An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed",
             "group skipped because dependency unavailable, such as emcc",
+            "Preferred future subgroup families",
+            "Runtime/source-run MASM behavior phase:",
+            "Browser/Wasm rebuild status:",
+            "Whether aggregate success was claimed:",
         ],
     )
 
@@ -1404,11 +1408,11 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase69_current_status_and_harness_documented() -> None:
-    """Verify Phase 69 current status and direct CALL coverage."""
+def assert_phase69b_current_status_and_harness_documented() -> None:
+    """Verify Phase 69B current status and direct CALL coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL"""
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering"""
     runtime_status = """Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures"""
     for path in [
@@ -1421,7 +1425,7 @@ Phase 69 - Direct CALL to User Procedures"""
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL""",
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
@@ -1442,6 +1446,7 @@ Phase 69 - Direct CALL to User Procedures""",
             "displayed `EIP` derived from VM pseudo-code-address control state",
             "direct user-procedure `call ProcedureName` with checked pseudo-EIP return-token stack writes",
             "Phase 69 - Direct CALL to User Procedures",
+            "Phase 69B improves final-register display grouping and Simulator Messages ordering only.",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/MILESTONE_HISTORY.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
@@ -1508,6 +1513,13 @@ Phase 69 - Direct CALL to User Procedures""",
             "`OPTION NOKEYWORD` remains unsupported",
             "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`.",
             "invalid-eip-operand",
+            "Phase 69B final-register display uses stable high-level educational groups.",
+            "Each major divider row is exactly `-------------------------------------------------------------------`",
+            "parent-family spacer row `       |`",
+            "Rendered Simulator Messages now use Phase 69B logical ordering.",
+            "startup-state-notice` is enabled, the startup notice is serialized and rendered first",
+            "Repository/archive status may include corrective documentation, output-ordering, artifact-compatibility, or test-infrastructure phases",
+            "Supported syntax and VM execution behavior are determined by the latest completed runtime/source-run MASM behavior phase",
         ],
     )
     assert_all_text_not_contains(
@@ -1527,11 +1539,13 @@ Phase 69 - Direct CALL to User Procedures""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 69A - Documentation and Static-Check Cleanup After Direct CALL",
+            "Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
             "Current runtime/source-run MASM behavior phase:",
+            "Next repository/archive corrective milestone:",
+            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
             "Next runtime implementation milestone:",
             "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 69A is documentation/static-check cleanup only.",
+            "Phase 69B is output/message-ordering cleanup only.",
             "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1541,6 +1555,8 @@ Phase 69 - Direct CALL to User Procedures""",
             "python3 scripts/run_tests.py --diagnostics",
             "missing `emcc`",
             "Browser/Wasm smoke guidance",
+            "Output-contract changes and browser/Wasm artifact status",
+            "Browser/Wasm artifact compatibility verified through the documented output-contract identifier.",
         ],
     )
     assert_all_text_not_contains(
@@ -1558,8 +1574,8 @@ Phase 69 - Direct CALL to User Procedures""",
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 69A:",
-            "Phase 69A is documentation/static-check cleanup only.",
+            "Current status at Phase 69B:",
+            "Phase 69B is output/message-ordering cleanup only.",
             "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Phase 69 implements direct user-procedure `CALL` to user `PROC` entries",
             "Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.",
@@ -1572,9 +1588,14 @@ Phase 69 - Direct CALL to User Procedures""",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
+            "Next repository/archive corrective milestone:",
+            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
             "Next runtime implementation milestone:",
             "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 70 may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`.",
+            "Phase 70 remains the next runtime implementation phase",
+            "## Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
+            "Final register display now separates general registers, index registers, stack/frame registers, and control/modeled flag state",
+            "startup-state-notice` first whenever execution begins",
         ],
     )
 
@@ -1586,9 +1607,18 @@ Phase 69 - Direct CALL to User Procedures""",
             "External/API calls are not a future CALL target category",
             "External/API CALL targets are different. They are permanent project-boundary non-goal forms",
             "Final register display must group register and control-state rows into stable high-level educational groups",
-            "The divider row contains exactly eight hyphen characters",
+            "Final register display uses two display-only separator row types",
+            "The major divider row contains exactly 67 hyphen characters",
             "If runtime execution begins, rendered Simulator Messages must use the stable group order below",
             "The executable successor after `CALL` means the next lowered VM instruction",
+            "Source-run Output-Contract and Wasm Artifact Compatibility",
+            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
+        ],
+    )
+    assert_all_text_not_contains(
+        "docs/FULL_IMPLEMENTATION_SPEC.md",
+        [
+            "As of the Phase 69 source-of-truth revision",
         ],
     )
     assert_all_text_contains(
@@ -1599,9 +1629,15 @@ Phase 69 - Direct CALL to User Procedures""",
             "Phase 69A is an optional documentation/static-check corrective phase",
             "## 73B. Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
             "Phase 69B is an output-cleanup and message-ordering corrective phase",
-            "The divider row contains exactly eight hyphen characters",
+            "## 73C. Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
+            "Phase 69C is a non-runtime corrective phase",
+            "Phase 69C must choose and document one of these two strategies",
+            "Final register display uses two display-only separator row types",
+            "The major divider row contains exactly 67 hyphen characters",
             "When runtime execution begins and `startup-state-notice` is enabled",
             "Phase 70 only guarantees return to a pseudo-EIP value that maps to an executable lowered VM instruction",
+            "The implicit return-token access is a simulated DWORD memory read from `[ESP]`",
+            "Planned-read and diagnostic-precedence tests",
             "INCLUDE Irvine32.inc",
             "This fixture deliberately includes `INCLUDE Irvine32.inc`",
             "Phase 69 permitted limited source-run test scaffolding",
@@ -1611,8 +1647,9 @@ Phase 69 - Direct CALL to User Procedures""",
     assert_all_text_contains(
         "web/index.html",
         [
-            "Repository status: Phase 69A documentation/static-check cleanup after direct <code>CALL</code>.",
+            "Repository status: Phase 69B register-display and startup-message ordering cleanup after direct <code>CALL</code>.",
             "Runtime behavior remains Phase 69:",
+            "Final Registers now use parent-family spacer rows, major high-level divider rows, and startup notices render first when execution begins.",
             ".stack 4096",
             "direct user-procedure <code>CALL</code> is executable",
             "RET</code>, Irvine32 routine calls",
@@ -1956,7 +1993,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase69_current_status_and_harness_documented()
+    assert_phase69b_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

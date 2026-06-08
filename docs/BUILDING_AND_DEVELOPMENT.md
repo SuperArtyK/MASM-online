@@ -12,15 +12,21 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
 Current runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
 
+Latest output/message-ordering cleanup phase:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Next repository/archive corrective milestone:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
 Next runtime implementation milestone:
 Phase 70 - RET Execution and Return Address Validation
 
-Phase 69A is documentation/static-check cleanup only. It does not change parser behavior, VM behavior, source-run behavior, browser protocol, diagnostic codes, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
+Phase 69B is output/message-ordering cleanup only. It does not change parser behavior, VM instruction semantics, supported MASM syntax, browser protocol fields, diagnostic codes, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -277,6 +283,38 @@ END main
 ```
 
 For current accepted syntax, rejected forms, and runtime behavior details, use [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). Browser/Wasm smoke checks should confirm that rebuilt artifacts run a small accepted program and that Program Console and Simulator Messages remain separated; they should not duplicate milestone-history prose in this build guide.
+
+
+### Output-contract changes and browser/Wasm artifact status
+
+Some corrective phases may change C/Wasm-facing source-run output behavior without changing accepted MASM syntax or VM execution semantics. Examples include diagnostic/status serialization order, source-run JSON ordering, final-state serialization details, or browser protocol metadata that depends on Wasm output.
+
+When a phase changes C/Wasm-facing output behavior:
+
+- native source-run tests verify the C source-run path;
+- Node/web/protocol tests verify browser-side formatting and protocol expectations;
+- neither of those proves that committed or served `web/dist` artifacts were rebuilt from the current C sources.
+
+For those phases, the milestone report must explicitly state one of the following:
+
+```text
+Browser/Wasm artifacts rebuilt and smoke-tested with emcc.
+```
+
+or:
+
+```text
+Browser/Wasm artifact rebuild skipped because emcc was unavailable.
+Served web/dist artifacts may require a manual rebuild before release/distribution.
+```
+
+or:
+
+```text
+Browser/Wasm artifact compatibility verified through the documented output-contract identifier.
+```
+
+Do not advance runtime/source-run MASM behavior phase metadata solely to detect output-only artifact staleness. Runtime/source-run behavior metadata describes implemented MASM syntax and VM semantics, not whether `web/dist` was rebuilt after a formatting, ordering, serialization, documentation, or test-infrastructure cleanup.
 
 ## Missing `emcc` troubleshooting
 

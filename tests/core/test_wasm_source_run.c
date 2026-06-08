@@ -12573,19 +12573,24 @@ static int test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation(v
     return failures;
 }
 
-/// Verifies Phase 64B source-run message ordering contract for rendered groups.
+/// Verifies Phase 69B source-run message ordering contract for rendered groups.
 ///
 /// The blank separator itself is a formatter-only concern tested by Node. These
 /// structured checks prove the source-run JSON still emits ordinary messages,
-/// keeps the startup notice before runtime diagnostics when execution begins,
-/// and does not add synthetic separator diagnostics.
+/// keeps the startup notice first when execution begins, emits nonfatal
+/// pre-execution diagnostics before runtime diagnostics, and does not add
+/// synthetic separator diagnostics.
 ///
 /// @return Number of failures.
-static int test_phase64b_source_run_message_ordering_contract(void) {
+static int test_phase69b_source_run_message_ordering_contract(void) {
     int failures = 0;
     char success_json[TEST_JSON_COPY_CAPACITY];
     char warning_json[TEST_JSON_COPY_CAPACITY];
     char warning_notice_off_json[TEST_JSON_COPY_CAPACITY];
+    char casemap_success_json[TEST_JSON_COPY_CAPACITY];
+    char compatibility_json[TEST_JSON_COPY_CAPACITY];
+    char compatibility_notice_off_json[TEST_JSON_COPY_CAPACITY];
+    char casemap_runtime_error_json[TEST_JSON_COPY_CAPACITY];
     char runtime_error_json[TEST_JSON_COPY_CAPACITY];
     char warning_then_error_json[TEST_JSON_COPY_CAPACITY];
     char multi_warning_json[TEST_JSON_COPY_CAPACITY];
@@ -12628,6 +12633,65 @@ static int test_phase64b_source_run_message_ordering_contract(void) {
             "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
+        )
+    );
+    copy_source_run_json(
+        casemap_success_json,
+        sizeof(casemap_success_json),
+        masm32_sim_wasm_run_source_json(
+            "OPTION CASEMAP:NONE\n"
+            "OPTION CASEMAP:ALL\n"
+            ".data\n"
+            "buf DWORD 1\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, bUF\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        compatibility_json,
+        sizeof(compatibility_json),
+        masm32_sim_wasm_run_source_json(
+            ".686\n"
+            ".stack 4096\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, 1\n"
+            "main ENDP\n"
+            "END main\n"
+        )
+    );
+    copy_source_run_json(
+        compatibility_notice_off_json,
+        sizeof(compatibility_notice_off_json),
+        masm32_sim_wasm_run_source_json_with_ui_settings(
+            ".686\n"
+            ".stack 4096\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, 1\n"
+            "main ENDP\n"
+            "END main\n",
+            MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_COMPATIBILITY_NOTICES_OFF
+        )
+    );
+    copy_source_run_json(
+        casemap_runtime_error_json,
+        sizeof(casemap_runtime_error_json),
+        masm32_sim_wasm_run_source_json(
+            "OPTION CASEMAP:NONE\n"
+            "OPTION CASEMAP:ALL\n"
+            ".code\n"
+            "main PROC\n"
+            "    mov eax, 0\n"
+            "    mov ebx, DWORD PTR [eax]\n"
+            "main ENDP\n"
+            "END main\n"
         )
     );
     copy_source_run_json(
@@ -12694,43 +12758,67 @@ static int test_phase64b_source_run_message_ordering_contract(void) {
         )
     );
 
-    failures += expect_json_contains(success_json, "\"ok\":true", "Phase 64B success fixture should execute");
-    failures += expect_json_contains_once(success_json, "startup-state-notice", "Phase 64B success fixture should contain one startup notice");
-    failures += expect_json_contains_once(success_json, "execution-complete", "Phase 64B success fixture should contain one completion message");
-    failures += expect_json_fragment_order(success_json, "startup-state-notice", "execution-complete", "Phase 64B startup notice should precede completion");
-    failures += expect_json_not_contains(success_json, "blank-line", "Phase 64B JSON should not contain formatter separator records");
+    failures += expect_json_contains(success_json, "\"ok\":true", "Phase 69B success fixture should execute");
+    failures += expect_json_contains_once(success_json, "startup-state-notice", "Phase 69B success fixture should contain one startup notice");
+    failures += expect_json_contains_once(success_json, "execution-complete", "Phase 69B success fixture should contain one completion message");
+    failures += expect_json_fragment_order(success_json, "startup-state-notice", "execution-complete", "Phase 69B startup notice should precede completion");
+    failures += expect_json_not_contains(success_json, "blank-line", "Phase 69B JSON should not contain formatter separator records");
+    failures += expect_json_not_contains(success_json, "-------------------------------------------------------------------", "Phase 69B JSON should not contain major register divider records");
+    failures += expect_json_not_contains(success_json, "       |", "Phase 69B JSON should not contain parent-family spacer records");
 
-    failures += expect_json_contains(warning_json, "\"ok\":true", "Phase 64B warning fixture should execute");
-    failures += expect_json_fragment_order(warning_json, "startup-state-notice", "uninitialized-read", "Phase 64B startup notice should precede runtime warning");
-    failures += expect_json_fragment_order(warning_json, "uninitialized-read", "execution-complete", "Phase 64B runtime warning should precede completion");
-    failures += expect_json_contains_once(warning_json, "uninitialized-read", "Phase 64B single-warning fixture should emit one runtime warning");
-    failures += expect_json_not_contains(warning_json, "blank-line", "Phase 64B warning JSON should not contain formatter separator records");
+    failures += expect_json_contains(warning_json, "\"ok\":true", "Phase 69B warning fixture should execute");
+    failures += expect_json_fragment_order(warning_json, "startup-state-notice", "uninitialized-read", "Phase 69B startup notice should precede runtime warning");
+    failures += expect_json_fragment_order(warning_json, "uninitialized-read", "execution-complete", "Phase 69B runtime warning should precede completion");
+    failures += expect_json_contains_once(warning_json, "uninitialized-read", "Phase 69B single-warning fixture should emit one runtime warning");
+    failures += expect_json_not_contains(warning_json, "blank-line", "Phase 69B warning JSON should not contain formatter separator records");
 
-    failures += expect_json_contains(warning_notice_off_json, "\"ok\":true", "Phase 64B startup-off warning fixture should execute");
-    failures += expect_json_not_contains(warning_notice_off_json, "startup-state-notice", "Phase 64B startup-off fixture should suppress only startup notice");
-    failures += expect_json_fragment_order(warning_notice_off_json, "uninitialized-read", "execution-complete", "Phase 64B startup-off warning should still precede completion");
+    failures += expect_json_contains(warning_notice_off_json, "\"ok\":true", "Phase 69B startup-off warning fixture should execute");
+    failures += expect_json_not_contains(warning_notice_off_json, "startup-state-notice", "Phase 69B startup-off fixture should suppress only startup notice");
+    failures += expect_json_fragment_order(warning_notice_off_json, "uninitialized-read", "execution-complete", "Phase 69B startup-off warning should still precede completion");
 
-    failures += expect_json_contains(runtime_error_json, "\"ok\":false", "Phase 64B runtime error fixture should fail at runtime");
-    failures += expect_json_fragment_order(runtime_error_json, "startup-state-notice", "runtime-error", "Phase 64B startup notice should precede runtime error");
-    failures += expect_json_not_contains(runtime_error_json, "execution-complete", "Phase 64B runtime error should not complete");
+    failures += expect_json_contains(casemap_success_json, "\"ok\":true", "Phase 69B CASEMAP warning fixture should execute");
+    failures += expect_json_fragment_order(casemap_success_json, "startup-state-notice", "casemap-policy-changed", "Phase 69B startup notice should precede nonfatal CASEMAP warning");
+    failures += expect_json_fragment_order(casemap_success_json, "casemap-policy-changed", "execution-complete", "Phase 69B nonfatal CASEMAP warning should precede completion");
+    failures += expect_json_contains_once(casemap_success_json, "casemap-policy-changed", "Phase 69B CASEMAP success fixture should emit one policy warning");
+    failures += expect_json_not_contains(casemap_success_json, "blank-line", "Phase 69B CASEMAP JSON should not contain formatter separator records");
 
-    failures += expect_json_contains(warning_then_error_json, "\"ok\":false", "Phase 64B warning-then-error fixture should fail at runtime");
-    failures += expect_json_fragment_order(warning_then_error_json, "startup-state-notice", "uninitialized-read", "Phase 64B startup notice should precede warning before fatal error");
-    failures += expect_json_fragment_order(warning_then_error_json, "uninitialized-read", "divide-by-zero", "Phase 64B runtime warning should remain before fatal runtime error");
-    failures += expect_json_not_contains(warning_then_error_json, "execution-complete", "Phase 64B fatal runtime error should not complete");
+    failures += expect_json_contains(compatibility_json, "\"ok\":true", "Phase 69B compatibility-notice fixture should execute");
+    failures += expect_json_fragment_order(compatibility_json, "startup-state-notice", "compatibility-no-op", "Phase 69B startup notice should precede processor compatibility notice");
+    failures += expect_json_fragment_order(compatibility_json, "startup-state-notice", "compatibility-metadata-only", "Phase 69B startup notice should precede .stack compatibility notice");
+    failures += expect_json_fragment_order(compatibility_json, "compatibility-metadata-only", "execution-complete", "Phase 69B compatibility notices should precede completion");
+    failures += expect_json_not_contains(compatibility_json, "blank-line", "Phase 69B compatibility JSON should not contain formatter separator records");
 
-    failures += expect_json_contains(multi_warning_json, "\"ok\":true", "Phase 64B multiple-warning fixture should execute");
-    failures += expect_json_fragment_order(multi_warning_json, "startup-state-notice", "uninitialized-read", "Phase 64B startup notice should precede multiple warnings");
-    failures += count_json_fragment_occurrences(multi_warning_json, "uninitialized-read") == 2U ? 0 : record_failure("Phase 64B multiple-warning fixture should emit two uninitialized-read warnings");
-    failures += expect_json_fragment_order(multi_warning_json, "uninitialized-read", "execution-complete", "Phase 64B multiple-warning fixture should complete after warnings");
+    failures += expect_json_contains(compatibility_notice_off_json, "\"ok\":true", "Phase 69B compatibility-off fixture should execute");
+    failures += expect_json_not_contains(compatibility_notice_off_json, "compatibility-no-op", "Phase 69B compatibility-off fixture should suppress no-op notices");
+    failures += expect_json_not_contains(compatibility_notice_off_json, "compatibility-metadata-only", "Phase 69B compatibility-off fixture should suppress metadata-only notices");
+    failures += expect_json_fragment_order(compatibility_notice_off_json, "startup-state-notice", "execution-complete", "Phase 69B compatibility-off fixture should still emit startup before completion");
 
-    failures += expect_json_contains(parse_error_json, "\"ok\":false", "Phase 64B parse-error fixture should fail before runtime");
-    failures += expect_json_not_contains(parse_error_json, "startup-state-notice", "Phase 64B pre-execution diagnostics should not emit startup notice");
-    failures += expect_json_not_contains(parse_error_json, "execution-complete", "Phase 64B pre-execution diagnostics should not complete");
+    failures += expect_json_contains(casemap_runtime_error_json, "\"ok\":false", "Phase 69B CASEMAP warning plus runtime error fixture should fail at runtime");
+    failures += expect_json_fragment_order(casemap_runtime_error_json, "startup-state-notice", "casemap-policy-changed", "Phase 69B startup notice should precede nonfatal pre-execution warning before runtime error");
+    failures += expect_json_fragment_order(casemap_runtime_error_json, "casemap-policy-changed", "runtime-error", "Phase 69B nonfatal pre-execution warning should precede runtime error");
+    failures += expect_json_not_contains(casemap_runtime_error_json, "execution-complete", "Phase 69B CASEMAP warning plus runtime error should not complete");
 
-    failures += expect_json_contains(invalid_setting_json, "\"ok\":false", "Phase 64B invalid setting fixture should fail before runtime");
-    failures += expect_json_not_contains(invalid_setting_json, "startup-state-notice", "Phase 64B invalid setting should not emit startup notice");
-    failures += expect_json_not_contains(invalid_setting_json, "execution-complete", "Phase 64B invalid setting should not complete");
+    failures += expect_json_contains(runtime_error_json, "\"ok\":false", "Phase 69B runtime error fixture should fail at runtime");
+    failures += expect_json_fragment_order(runtime_error_json, "startup-state-notice", "runtime-error", "Phase 69B startup notice should precede runtime error");
+    failures += expect_json_not_contains(runtime_error_json, "execution-complete", "Phase 69B runtime error should not complete");
+
+    failures += expect_json_contains(warning_then_error_json, "\"ok\":false", "Phase 69B warning-then-error fixture should fail at runtime");
+    failures += expect_json_fragment_order(warning_then_error_json, "startup-state-notice", "uninitialized-read", "Phase 69B startup notice should precede warning before fatal error");
+    failures += expect_json_fragment_order(warning_then_error_json, "uninitialized-read", "divide-by-zero", "Phase 69B runtime warning should remain before fatal runtime error");
+    failures += expect_json_not_contains(warning_then_error_json, "execution-complete", "Phase 69B fatal runtime error should not complete");
+
+    failures += expect_json_contains(multi_warning_json, "\"ok\":true", "Phase 69B multiple-warning fixture should execute");
+    failures += expect_json_fragment_order(multi_warning_json, "startup-state-notice", "uninitialized-read", "Phase 69B startup notice should precede multiple warnings");
+    failures += count_json_fragment_occurrences(multi_warning_json, "uninitialized-read") == 2U ? 0 : record_failure("Phase 69B multiple-warning fixture should emit two uninitialized-read warnings");
+    failures += expect_json_fragment_order(multi_warning_json, "uninitialized-read", "execution-complete", "Phase 69B multiple-warning fixture should complete after warnings");
+
+    failures += expect_json_contains(parse_error_json, "\"ok\":false", "Phase 69B parse-error fixture should fail before runtime");
+    failures += expect_json_not_contains(parse_error_json, "startup-state-notice", "Phase 69B pre-execution diagnostics should not emit startup notice");
+    failures += expect_json_not_contains(parse_error_json, "execution-complete", "Phase 69B pre-execution diagnostics should not complete");
+
+    failures += expect_json_contains(invalid_setting_json, "\"ok\":false", "Phase 69B invalid setting fixture should fail before runtime");
+    failures += expect_json_not_contains(invalid_setting_json, "startup-state-notice", "Phase 69B invalid setting should not emit startup notice");
+    failures += expect_json_not_contains(invalid_setting_json, "execution-complete", "Phase 69B invalid setting should not complete");
 
     return failures;
 }
@@ -13117,7 +13205,7 @@ int main(void) {
     failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
     failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
     failures += test_phase57e_invalid_startup_state_notice_setting();
-    failures += test_phase64b_source_run_message_ordering_contract();
+    failures += test_phase69b_source_run_message_ordering_contract();
     failures += test_phase64d_memory_change_source_attribution();
     failures += test_phase57h_register_write_metadata_no_register_writes();
     failures += test_phase57h_register_write_metadata_same_value_parent_write();

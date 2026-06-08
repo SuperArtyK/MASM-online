@@ -20263,7 +20263,13 @@ Phase 69B is a non-renumbering corrective phase inserted after:
 Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
 ```
 
-and before:
+and before the next corrective/source-of-truth revision phase:
+
+```text
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+```
+
+Phase 69C then precedes:
 
 ```text
 Phase 70 - RET Execution and Return Address Validation
@@ -20271,7 +20277,7 @@ Phase 70 - RET Execution and Return Address Validation
 
 Phase 69B does not renumber Phase 70 or any later phase.
 
-Phase 69B is recommended before Phase 70 to keep output behavior stable before `RET` adds more runtime outcomes, but Phase 69B must not be treated as a semantic prerequisite for implementing near `RET`. Its purpose is output clarity, message-order determinism, and documentation hygiene.
+Phase 69B is recommended before Phase 70 to keep output behavior stable before `RET` adds more runtime outcomes, but Phase 69B must not be treated as a semantic prerequisite for implementing near `RET`. Its purpose is output clarity, message-order determinism, and documentation hygiene. Phase 69C, if completed before Phase 70, is artifact/test-infrastructure cleanup only and likewise must not be treated as implementing runtime `RET` behavior.
 
 After Phase 69B is complete:
 
@@ -20338,31 +20344,48 @@ Final register display must group rows into these stable high-level educational 
    - `EFLAGS`
    - modeled flag child rows under `EFLAGS`
 
-Parent register families inside the same high-level group remain adjacent. For example, `EAX`, `EBX`, `ECX`, and `EDX` belong to the same general-register group, so the high-level divider must not appear between the `EAX` family and the `EBX` family.
+Final register display uses two display-only separator row types: parent-family spacer rows inside a high-level group and major divider rows between high-level groups. These rows are part of rendered final-register text only. They must not become source-run JSON objects, diagnostics, status messages, Program Console text, register values, memory values, protocol fields, or VM state items.
 
-The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use the Phase 69B high-level divider except between the four high-level groups listed above.
-
-The fourth group must not imply that `EIP` is source-writable x86 register state. `EIP` remains simulator control state displayed as a pseudo-code address derived from the VM instruction pointer.
-
-The fourth group must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state. Implemented instructions and flag helpers may update modeled flags; user source code must not treat `EFLAGS` as a normal destination register unless a later accepted phase explicitly changes that rule.
-
-The visual separator between high-level register groups must be an explicit rendered divider row.
-
-The divider row must be:
+The parent-family spacer row must be the exact literal line:
 
 ```text
---------
+       |
 ```
 
-The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+The parent-family spacer row contains seven spaces followed by one vertical bar character and no trailing spaces. It represents an empty value row aligned to the register-name column and value separator. It must appear only between adjacent parent register families that belong to the same high-level group:
 
-The divider row must appear:
+- after `AL`, before `EBX`;
+- after `BL`, before `ECX`;
+- after `CL`, before `EDX`;
+- after `SI`, before `EDI`;
+- after `BP`, before `ESP`;
+- after `EIP`, before `EFLAGS`.
 
-- once between the general-register group and the index-register group;
-- once between the index-register group and the stack/frame-register group;
-- once between the stack/frame-register group and the control/modeled-flag-state group.
+The parent-family spacer row must not appear:
 
-The divider row must not appear:
+- before `EAX`;
+- between aliases of the same parent register family;
+- after `DL`, `DI`, or `SP`, because a major divider row follows those high-level groups instead;
+- after the final modeled-flag row;
+- in source-run JSON;
+- in Program Console output;
+- as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
+
+The visual separator between high-level register groups must be the exact rendered major divider row:
+
+```text
+-------------------------------------------------------------------
+```
+
+The major divider row contains exactly 67 hyphen characters and no leading or trailing spaces. The width is a fixed Phase 69B display contract chosen to span the current known-width final-register row through the longest marker text. It is not computed from the marker displayed on a specific row.
+
+The major divider row must appear:
+
+- once after `DL`, between the general-register group and the index-register group;
+- once after `DI`, between the index-register group and the stack/frame-register group;
+- once after `SP`, between the stack/frame-register group and the control/modeled-flag-state group.
+
+The major divider row must not appear:
 
 - before the first general-register row;
 - after the final modeled-flag row;
@@ -20371,6 +20394,12 @@ The divider row must not appear:
 - in source-run JSON;
 - in Program Console output;
 - as a diagnostic, notice, warning, status message, register value, memory value, protocol field, or VM state item.
+
+The formatter may still use ordinary indentation, alignment, labels, or existing alias-row formatting inside a parent register family, but it must not use either Phase 69B separator type outside the exact placements listed above.
+
+The fourth group must not imply that `EIP` is source-writable x86 register state. `EIP` remains simulator control state displayed as a pseudo-code address derived from the VM instruction pointer.
+
+The fourth group must not imply that `EFLAGS` is an ordinary source-writable general-purpose register. `EFLAGS` remains displayed modeled flag state. Implemented instructions and flag helpers may update modeled flags; user source code must not treat `EFLAGS` as a normal destination register unless a later accepted phase explicitly changes that rule.
 
 Register grouping is display-only. It must not introduce structured source-run JSON separator records. It must not add diagnostics. It must not add Program Console text. It must not change the order or names of register fields in the structured protocol unless a future protocol-owning phase explicitly changes that contract.
 
@@ -20462,7 +20491,7 @@ The preferred implementation is to build or order source-run diagnostic/status a
 
 Do not add fake diagnostics to represent blank lines.
 
-Do not add fake diagnostics to represent register divider rows.
+Do not add fake diagnostics to represent register separator rows.
 
 Do not add a new diagnostic code for grouping.
 
@@ -20490,27 +20519,41 @@ Add or update web formatter tests for final register display:
    - stack/frame registers;
    - control and modeled flag state.
 
-2. The exact divider row appears between adjacent high-level groups:
+2. The exact parent-family spacer row appears between adjacent parent families inside the same high-level group:
 
 ```text
---------
+       |
 ```
 
-3. The divider row contains exactly eight hyphen characters and no leading or trailing spaces.
+3. The parent-family spacer row contains exactly seven spaces followed by one vertical bar character and no trailing spaces.
 
-4. No leading divider appears before the general-register group.
+4. The parent-family spacer row appears after `AL`, `BL`, `CL`, `SI`, `BP`, and `EIP`, and before `EBX`, `ECX`, `EDX`, `EDI`, `ESP`, and `EFLAGS` respectively.
 
-5. No trailing divider appears after the control/modeled-flag group.
+5. The exact major divider row appears between adjacent high-level groups:
 
-6. No divider appears between aliases inside the same parent register family.
+```text
+-------------------------------------------------------------------
+```
 
-7. No divider appears between parent register families inside the same high-level group.
+6. The major divider row contains exactly 67 hyphen characters and no leading or trailing spaces.
 
-8. `EIP` appears in the control and modeled flag state group.
+7. The major divider row appears after `DL`, after `DI`, and after `SP`.
 
-9. `EFLAGS` and modeled flag child rows appear in the control and modeled flag state group.
+8. No leading separator appears before the general-register group.
 
-10. Existing unchanged-value markers, changed-value markers, invalid/derived-state markers, and modeled-flag validity markers still render correctly after grouping.
+9. No trailing separator appears after the control/modeled-flag group.
+
+10. No separator appears between aliases inside the same parent register family.
+
+11. No parent-family spacer row appears after `DL`, `DI`, or `SP`, because a major divider row follows those high-level groups instead.
+
+12. No major divider row appears between parent register families inside the same high-level group.
+
+13. `EIP` appears in the control and modeled flag state group.
+
+14. `EFLAGS` and modeled flag child rows appear in the control and modeled flag state group.
+
+15. Existing unchanged-value markers, changed-value markers, invalid/derived-state markers, and modeled-flag validity markers still render correctly after grouping.
 
 Add or update structured source-run tests and rendered Simulator Messages tests for startup diagnostic ordering:
 
@@ -20561,15 +20604,16 @@ Add or update structured source-run tests and rendered Simulator Messages tests 
 9. Program Console separation:
    - Program Console receives no startup notice text;
    - Program Console receives no blank separator text;
-   - Program Console receives no register divider text unless a simulated program routine explicitly prints it in a future Program Console routine;
+   - Program Console receives no register separator text unless a simulated program routine explicitly prints it in a future Program Console routine;
    - Program Console output remains controlled only by simulated program I/O.
 
-Structured source-run tests must assert message object order, diagnostic/status kinds, and diagnostic counts. They must prove that no fake diagnostic, warning, notice, status message, or protocol object is created solely to represent a rendered blank line or register divider.
+Structured source-run tests must assert message object order, diagnostic/status kinds, and diagnostic counts. They must prove that no fake diagnostic, warning, notice, status message, or protocol object is created solely to represent a rendered blank line or register separator.
 
 Rendered web tests must assert exact text output, including:
 
-- the `--------` register divider rows;
-- absence of leading or trailing register divider rows;
+- the `       |` parent-family spacer rows;
+- the `-------------------------------------------------------------------` major divider rows;
+- absence of leading or trailing register separator rows;
 - required blank lines between adjacent non-empty Simulator Messages groups;
 - absence of extra blank lines inside one Simulator Messages group;
 - absence of `startup-state-notice` on pre-execution failure paths.
@@ -20619,17 +20663,167 @@ Phase 69B must not implement any of the following:
 Phase 69B is accepted only when:
 
 - final register display grouping is visually stable and covered by exact web formatter tests;
-- the divider row is exactly `--------`;
+- the parent-family spacer row is exactly `       |`;
+- the major divider row is exactly `-------------------------------------------------------------------`;
 - `startup-state-notice` is first whenever execution begins and the notice is enabled;
 - pre-execution failure output remains in existing diagnostic order and does not emit `startup-state-notice`;
 - `execution-complete` remains last and appears only on successful execution;
 - Program Console and Simulator Messages remain separate;
 - source-run JSON does not contain fake diagnostics or blank-separator records;
-- source-run JSON does not contain register-divider records;
+- source-run JSON does not contain register-separator records;
 - no parser behavior, VM behavior, accepted MASM syntax, rejected MASM syntax, register value, memory value, or source-run success/failure status changes except where explicitly described by this phase;
 - repository/archive status, MASM syntax/VM execution-semantics status, and output/message-ordering status are kept distinct where active docs mention them;
 - all existing implemented milestone tests pass;
 - no Phase 70 `RET` behavior or other future runtime feature is implemented.
+
+
+## 73C. Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
+### Goal
+
+Close the artifact-verification blind spot that can occur after output-only C/Wasm-facing corrective phases, and make hosted assistant/container verification less dependent on broad test groups that may time out.
+
+Phase 69C is a non-runtime corrective phase. It is inserted after Phase 69B and before Phase 70.
+
+Phase 69C must not implement MASM syntax, VM instruction semantics, parser behavior, memory behavior, Irvine32 callable routine dispatch, source-level `PUSH`/`POP`, `RET`, root procedure termination, stack frames, or any future runtime behavior.
+
+### Roadmap placement
+
+Phase 69C follows:
+
+```text
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+```
+
+Phase 69C precedes:
+
+```text
+Phase 70 - RET Execution and Return Address Validation
+```
+
+Phase 69C does not renumber Phase 70 or any later phase.
+
+After Phase 69C is complete:
+
+- repository/archive status may say that artifact/test-infrastructure cleanup through Phase 69C is complete;
+- the latest completed runtime/source-run MASM behavior phase remains Phase 69 - Direct CALL to User Procedures;
+- the latest completed output/message-ordering cleanup phase remains Phase 69B unless Phase 69C deliberately adds or updates a separate output-contract identifier;
+- the next runtime implementation phase remains Phase 70 - RET Execution and Return Address Validation.
+
+### Scope
+
+Phase 69C may change only:
+
+1. build-artifact compatibility metadata;
+2. stale-artifact or output-contract mismatch diagnostics in the browser/protocol layer;
+3. test-runner grouping and documentation;
+4. static checks that require milestone reports to distinguish native/source-run verification from browser/Wasm artifact verification;
+5. active documentation that describes those build/test-infrastructure rules.
+
+Phase 69C must not change:
+
+- accepted MASM syntax;
+- rejected MASM syntax;
+- parser diagnostics for MASM source behavior;
+- VM execution semantics;
+- diagnostic codes for MASM source behavior;
+- diagnostic severity for MASM source behavior;
+- source line, column, byte offset, or span length for source diagnostics;
+- Program Console output from source programs;
+- Simulator Messages for source programs, except browser/protocol stale-artifact warnings that are explicitly outside source-program semantics;
+- register values;
+- memory values;
+- memory-change rows;
+- runtime/source-run MASM behavior phase number, suffix, or title.
+
+### Artifact compatibility requirement
+
+Phase 69C must choose and document one of these two strategies:
+
+1. **Output-contract identifier strategy**
+
+   Add a separate output-contract, artifact-build, source-run-format, or Wasm-compatibility identifier that changes when browser-loaded artifacts need to be distinguished because of source-run JSON ordering, diagnostic/status serialization, final-state serialization, protocol-relevant formatting, or Wasm-facing output behavior.
+
+   This identifier must be separate from runtime/source-run MASM behavior phase metadata.
+
+2. **Rebuild-gate strategy**
+
+   Do not add a new identifier, but require milestone reports and release checklists to explicitly record whether `web/dist` was rebuilt and browser/Wasm smoke-tested after every C/Wasm-facing output-contract change.
+
+The output-contract identifier strategy is preferred because it gives the browser/protocol layer a direct way to detect stale artifacts when runtime behavior metadata intentionally remains unchanged.
+
+Runtime/source-run MASM behavior phase metadata must not be advanced solely because Phase 69B or Phase 69C changed output formatting, diagnostic/status ordering, documentation, test infrastructure, or build verification.
+
+### Test-runner decomposition requirement
+
+Phase 69C may split broad test groups into smaller subgroups if hosted assistant/container environments cannot reliably complete `--native`, `--diagnostics`, or `--all`.
+
+Any subgroup split must preserve existing public group flags. Existing commands must remain valid:
+
+```sh
+python3 scripts/run_tests.py --native
+python3 scripts/run_tests.py --diagnostics
+python3 scripts/run_tests.py --source-run
+python3 scripts/run_tests.py --web
+python3 scripts/run_tests.py --protocol
+python3 scripts/run_tests.py --static
+python3 scripts/run_tests.py --all
+```
+
+New subgroup flags must be additive. Documentation, runner help, and milestone reports must use the same names.
+
+Preferred subgroup families are:
+
+```text
+native-parser
+native-exec
+native-memory-layout
+native-diagnostics-policy
+source-run-core
+source-run-diagnostics
+source-run-settings
+diagnostics-json
+diagnostics-rendered-memory
+diagnostics-rendered-directives
+diagnostics-rendered-compatibility
+diagnostics-rendered-runtime
+```
+
+The implementing phase owns the exact flag spelling, but it must not document a subgroup as available until the runner actually supports it.
+
+### Required tests
+
+Static tests:
+
+- runner help lists all broad groups and any implemented subgroups;
+- testing documentation lists all broad groups and any implemented subgroups;
+- broad group flags remain valid;
+- active source-of-truth documentation distinguishes runtime/source-run MASM behavior phase from repository/archive corrective phase;
+- active milestone-report guidance requires explicit browser/Wasm artifact status when C/Wasm-facing output behavior changes;
+- active documentation does not claim browser/Wasm artifact verification when only native/source-run and Node tests were run.
+
+Protocol/web tests, if an output-contract identifier is added:
+
+- browser protocol accepts matching runtime behavior metadata and matching output-contract metadata;
+- browser protocol warns or blocks according to documented policy when output-contract metadata is stale or missing;
+- stale runtime behavior phase and stale output-contract identifier are reported distinctly;
+- matching runtime behavior metadata with stale output-contract metadata is still detected as stale for browser artifact purposes.
+
+Milestone report requirements:
+
+- record whether `emcc` was available;
+- record whether `web/dist` was rebuilt;
+- record whether browser/Wasm smoke was run;
+- record whether native source-run tests passed;
+- record whether Node/web/protocol tests passed;
+- record whether broad groups or subgroups timed out;
+- do not claim served browser artifact verification unless a browser/Wasm test or artifact-compatibility check actually ran.
+
+### Acceptance criteria
+
+A hosted assistant/container audit can verify the repository with smaller focused groups when `--all`, `--native`, or `--diagnostics` exceed the environment time limit, and the project has a documented way to distinguish stale runtime behavior metadata from stale output-contract/browser artifact metadata.
+
+Phase 69C ends with Phase 70 still being the next runtime implementation phase.
 
 
 ## 74. Phase 70 - RET Execution and Return Address Validation
@@ -20658,17 +20852,70 @@ retf
 
 ### Runtime semantics
 
-Phase 70 depends on Phase 68B pseudo-EIP behavior and Phase 69 CALL return-token writes.
+Phase 70 depends on Phase 68B pseudo-EIP behavior and Phase 69 CALL return-token writes. If Phase 69C is present in the active guide, Phase 70 also depends on Phase 69C only for artifact/test-infrastructure clarification; Phase 69C does not provide runtime behavior used by `RET`.
 
-1. Read a 32-bit return token from `[ESP]` through the central checked-memory read helper. If this read fails, stop before mutating `ESP`, instruction pointer, call-depth metadata, flags, memory, Program Console output, memory-change rows, or terminal status.
-2. Validate that the token maps to a valid pseudo-EIP value for an executable lowered VM instruction boundary. A successful checked read is not enough to transfer control.
-3. For Phase 70, a token is valid if it maps to an executable pseudo-EIP in the lowered VM instruction stream. Phase 70 does not need to prove that the token was produced by an active CALL frame unless the phase is deliberately broadened to define active-call-frame metadata, diagnostics, and tests. A later call-depth or active-frame validation phase may make RET stricter.
-4. Reject return tokens that are not known pseudo-EIP values, pseudo-EIP values for non-executable metadata entries, pseudo-EIP values outside the lowered instruction stream, raw VM instruction indexes, data-memory addresses that are not also valid executable pseudo-EIP control tokens, arbitrary integers, or root-return sentinels before Phase 71 defines root procedure termination.
-5. Phase 70 must not treat a root-return sentinel as successful program termination. Root procedure termination is owned by Phase 71 - Root Procedure Termination Semantics.
-6. Increment `ESP` by 4 using the convention documented by Phase 68A.
-7. Set the VM instruction pointer to the mapped return instruction. Displayed `EIP` is then derived from that instruction index through the Phase 68B pseudo-EIP formula.
-8. Decrease call-depth metadata only if call-depth metadata already exists and only after token validation succeeds.
-9. Preserve all modeled flags and flag-validity metadata.
+This phase implements plain near `RET` only. `RET` is a simulator control-transfer instruction that consumes a 32-bit pseudo-EIP return token from the runtime stack. The token is a simulator control value, not executable memory, not a host pointer, not a PE/code address, and not a readable instruction-byte address.
+
+The implicit return-token access is a simulated DWORD memory read from `[ESP]`. It must use the same memory-safety architecture as explicit memory operands:
+
+1. construct a planned-read descriptor for the exact range;
+2. validate the mandatory readable range through central checked-memory read validation;
+3. apply optional educational metadata policies only when the range is valid enough for those policies to inspect;
+4. consume the token value only after all fatal validation paths have succeeded.
+
+The planned-read descriptor uses:
+
+```text
+address = ESP at the start of RET
+size    = 4 bytes
+kind    = implicit RET return-token read
+```
+
+Mandatory checked-memory validation remains the Level 1 authority for invalid address, invalid range, address overflow, invalid region, and invalid permission failures. Optional educational diagnostics must not replace, weaken, suppress, duplicate, or reinterpret those mandatory failures.
+
+Diagnostic precedence:
+
+- If the DWORD range is not readable, emit the mandatory checked-memory diagnostic and stop.
+- Do not emit optional uninitialized-read, object-bounds, or stack-teaching diagnostics for a range that failed mandatory readable-range validation.
+- If the range is readable and has uninitialized-origin metadata, apply the current uninitialized-read policy.
+- If the range is readable and another optional educational planned-read policy applies, apply that policy only after the mandatory readable-range check has succeeded.
+- If an optional policy is strict/fatal, stop before exposing the token value to RET control-flow validation.
+
+Required uninitialized-origin behavior:
+
+- `warn` emits the warning and continues using the deterministic byte values.
+- `off` suppresses only the optional uninitialized-read teaching diagnostic and continues using the deterministic byte values.
+- `strict` stops before the return token is consumed, decoded, validated, or used.
+
+Declared-object validation must not reject a valid stack return-token read merely because the stack address is outside `.data`, `.DATA?`, or `.CONST` declared objects, unless an earlier accepted phase has explicitly defined stack-slot, call-frame, return-token-object, or synthetic stack-object metadata. Phase 70 must not invent stack-frame object-bounds rules.
+
+Runtime steps:
+
+1. Capture `original_esp = ESP` at the start of the `RET` instruction.
+
+2. Construct the planned-read descriptor for DWORD `[original_esp]`.
+
+3. Perform mandatory checked-memory readable-range validation for that descriptor. If it fails, stop with no mutation.
+
+4. Apply optional planned-read metadata policies for that descriptor. If a strict/fatal policy fires, stop with no mutation.
+
+5. Read the 32-bit return token from DWORD `[original_esp]` through the central checked-memory read helper. The implementation may combine steps 3 and 5 internally only if all externally visible diagnostics, precedence, and no-partial-mutation behavior remain identical.
+
+6. Validate that the token maps to a valid pseudo-EIP value for an executable lowered VM instruction boundary. A successful checked memory read is not enough to transfer control.
+
+7. For Phase 70, a token is valid if it maps to an executable pseudo-EIP in the lowered VM instruction stream. Phase 70 does not need to prove that the token was produced by an active CALL frame unless the phase is deliberately broadened to define active-call-frame metadata, diagnostics, mutation order, and tests. A later call-depth or active-frame validation phase may make RET stricter.
+
+8. Reject return tokens that are not known pseudo-EIP values, pseudo-EIP values for non-executable metadata entries, pseudo-EIP values outside the lowered instruction stream, raw VM instruction indexes, data-memory addresses that are not also valid executable pseudo-EIP control tokens, arbitrary integers, or root-return sentinels before Phase 71 defines root procedure termination.
+
+9. Phase 70 must not treat a root-return sentinel as successful program termination. Root procedure termination is owned by Phase 71 - Root Procedure Termination Semantics.
+
+10. On successful planned-read validation, successful checked read, and successful return-token validation, increment `ESP` by 4 using the Phase 68A stack convention.
+
+11. Set the VM instruction pointer to the mapped return instruction. Displayed `EIP` is then derived from that instruction index through the Phase 68B pseudo-EIP formula.
+
+12. Decrease call-depth metadata only if call-depth metadata already exists and only after return-token validation succeeds.
+
+13. Preserve all modeled flags and flag-validity metadata.
 
 RET must not treat pseudo-EIP values as readable instruction bytes or data-memory addresses.
 
@@ -20691,15 +20938,23 @@ Root return and successful terminal procedure return are owned by Phase 71 - Roo
 
 ### Runtime errors
 
-- Existing central checked-memory diagnostic when reading the 32-bit return token from `[ESP]` fails. This includes the empty-stack case where `ESP` still equals the active stack region's exclusive high limit from the Phase 68A startup contract. Phase 70 must not introduce a new `stack-underflow` or `return-with-empty-call-stack` diagnostic unless this phase is explicitly broadened to define that code, severity, JSON fields, source span, rendered Simulator Messages wording, precedence, and no-partial-mutation behavior.
-- `invalid-return-address` when a successfully read token does not map to a valid executable pseudo-EIP return target under the Phase 70 validation rule.
-- Root RET success and user-facing root-return terminal behavior remain owned by Phase 71 - Root Procedure Termination Semantics.
+Phase 70 must use existing central checked-memory diagnostics when the mandatory DWORD return-token read from `[ESP]` fails. This includes the empty-stack case where `ESP` still equals the active stack region's exclusive high limit from the Phase 68A startup contract.
+
+Phase 70 must not introduce a new `stack-underflow`, `return-with-empty-call-stack`, `return-outside-call-frame`, or equivalent diagnostic unless the phase is explicitly broadened to define that diagnostic code, severity, JSON fields, source span, rendered Simulator Messages wording, precedence, interaction with planned-read policy, and no-partial-mutation behavior.
+
+`invalid-return-address` is emitted when a successfully planned and successfully checked DWORD token read does not map to a valid executable pseudo-EIP return target under the Phase 70 validation rule.
+
+Root RET success and user-facing root-return terminal behavior remain owned by Phase 71 - Root Procedure Termination Semantics.
 
 No partial mutation rule:
 
-- If token read or token validation fails, instruction pointer must not change.
-- `ESP` must remain externally unchanged on failed RET. Implementations may pre-validate before incrementing or roll back internally, but tests must observe no `ESP` or instruction-pointer mutation.
-- Failed RET must not mutate call-depth metadata, flags, flag-validity metadata, memory, Program Console output, memory-change rows, or terminal status.
+- If mandatory readable-range validation fails, the token value must not be consumed or validated.
+- If planned-read policy fails fatally, the token value must not be consumed or validated.
+- If the checked-memory read fails, the token value must not be consumed or validated.
+- If token validation fails, control must not branch.
+- On any failed RET path, the instruction pointer must not change.
+- On any failed RET path, `ESP` must remain externally unchanged. Implementations may pre-validate before incrementing or roll back internally, but tests must observe no `ESP` mutation.
+- On any failed RET path, call-depth metadata, modeled flags, flag-validity metadata, memory, Program Console output, memory-change rows, and terminal status must remain unchanged.
 - Failed RET must not emit `execution-complete`.
 
 ### Tests
@@ -20713,6 +20968,18 @@ Executor tests:
 - RET with `ESP` outside stack, including startup `ESP` at the Phase 68A active stack exclusive high limit before any CALL, produces the selected existing central checked-memory diagnostic.
 - Failed RET does not mutate `ESP`, instruction pointer, call-depth metadata, modeled flags, flag-validity metadata, memory, Program Console output, memory-change rows, or terminal status.
 - Failed RET does not emit `execution-complete`.
+
+Planned-read and diagnostic-precedence tests:
+
+- `RET` constructs a planned-read descriptor for DWORD `[ESP]` before the token is consumed.
+- Invalid unreadable `[ESP]` range reports the mandatory checked-memory diagnostic and does not also emit optional uninitialized-read or object-bounds teaching diagnostics for that unreadable range.
+- Readable return-token range with uninitialized-origin metadata emits an uninitialized-read warning in default/warn mode and continues to deterministic token validation.
+- Readable return-token range with uninitialized-origin metadata suppresses only the optional uninitialized-read warning in `off` mode and continues to deterministic token validation.
+- Readable return-token range with uninitialized-origin metadata stops in `strict` mode before token consumption, token validation, `ESP` mutation, instruction-pointer mutation, call-depth mutation, Program Console mutation, memory-change rows, or terminal status mutation.
+- Declared-object validation does not reject a valid stack return-token read solely because the stack address is outside declared data objects, unless a later accepted phase explicitly defines stack object/frame metadata.
+- Failed planned-read policy must not emit `execution-complete`.
+- If a source-run fixture cannot construct a specific return-token metadata state before source-level `PUSH`/`POP` or stack-writing syntax exists, that case may be covered by native executor/internal fixture setup. The milestone report must state which cases were native/internal-only and why.
+- Rendered Simulator Messages tests must cover each user-visible diagnostic path that can be constructed through accepted source syntax at Phase 70.
 
 Parser tests:
 
@@ -20739,13 +21006,32 @@ Helper ENDP
 END main
 ```
 
-Expected:
+Expected final register state:
 
 ```text
 EAX = 0000002Ah / 42
 EBX = 0000002Ah / 42
+```
+
+Expected Simulator Messages:
+
+```text
 execution-complete
 ```
+
+Expected Program Console:
+
+```text
+<empty>
+```
+
+Expected behavior details:
+
+- `CALL` writes exactly one pseudo-EIP return token to the stack through the Phase 69 checked memory path.
+- `RET` reads the DWORD return token from `[ESP]`, applies the Phase 70 planned-read, mandatory checked-read, and token-validation requirements, increments `ESP` by 4 only after successful validation, and transfers control to `mov ebx, eax`.
+- The final success status is emitted once.
+- Rendered final-register display, rendered Simulator Messages, Program Console output, memory-change rows, and source-run JSON status are separate output surfaces and must be asserted separately.
+- This fixture must not require root `RET` success, non-entry procedure fallthrough success, Phase 71 terminal behavior, source-level `PUSH`/`POP`, `RET imm16`, `LEAVE`, stack-frame automation, `PROC USES`, `LOCAL`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch beyond the already implemented virtual `exit` terminator.
 
 This source-run program is owned by Phase 70. It must complete with CALL writing a pseudo-EIP return token and RET returning to that displayed pseudo-EIP.
 
@@ -20789,7 +21075,7 @@ Required updates:
 - `docs/SUPPORTED_SYNTAX.md` must keep `ret imm16`, `retf`, root `RET` success, non-entry procedure fallthrough diagnostics, source-level `PUSH`, source-level `POP`, stack frames, and Irvine32 callable routine dispatch in their correct future or non-goal categories.
 - Browser-visible status text must no longer say plain near `RET` is deferred after Phase 70 is accepted.
 - Source-run JSON phase metadata and source-run metadata tests must advance any MASM syntax or VM execution-semantics phase field to Phase 70.
-- Static documentation checks in `scripts/run_tests.py` must be updated from the previous accepted status pair to the Phase 70 status pair. If Phase 69B was accepted before Phase 70, the previous pair is repository/archive status Phase 69B plus MASM syntax and VM execution-semantics status Phase 69. If Phase 69B was not adopted, the previous pair is repository/archive status Phase 69A plus MASM syntax and VM execution-semantics status Phase 69.
+- Static documentation checks in `scripts/run_tests.py` must be updated from the previous accepted status pair to the Phase 70 status pair. If Phase 69C was accepted before Phase 70, the previous pair is repository/archive status Phase 69C plus MASM syntax and VM execution-semantics status Phase 69. If Phase 69C was not adopted but Phase 69B was accepted before Phase 70, the previous pair is repository/archive status Phase 69B plus MASM syntax and VM execution-semantics status Phase 69. If neither Phase 69B nor Phase 69C was adopted, the previous pair is repository/archive status Phase 69A plus MASM syntax and VM execution-semantics status Phase 69.
 - Existing Phase 69A documentation/static-check protections for external/API non-goals, terminal-CALL return-target boundaries, and rejected CALL target wording must remain protected.
 - Existing Phase 69B output-ordering and register-grouping protections, if Phase 69B is completed before Phase 70, must remain protected.
 
@@ -21073,14 +21359,78 @@ Executable QWORD/SQWORD stack transfers remain unavailable in MASM32 Educational
 
 `pop destination`:
 
-1. Treat the popped width as 4 bytes.
-2. Validate the planned stack read from `[ESP]`.
-3. Read the 32-bit value through central checked VM memory helpers.
-4. Validate the destination write if the destination is memory.
-5. Commit the destination write.
-6. Increment `ESP` by 4.
-7. Record a memory-change row only for a memory destination write, not for reading from the stack.
-8. Preserve modeled flags and flag-validity metadata.
+1. Treat the popped width as exactly 4 bytes.
+
+2. Capture the original stack pointer:
+
+   ```text
+   original_esp = ESP at the start of POP
+   ```
+
+3. Construct and validate the planned stack read for DWORD `[original_esp]`.
+
+4. Read the 32-bit popped value from DWORD `[original_esp]` through central checked VM memory helpers.
+
+5. Compute the post-pop stack pointer value:
+
+   ```text
+   post_pop_esp = original_esp + 4
+   ```
+
+6. Resolve the destination according to the ESP-sensitive POP rules below.
+
+7. If the destination is memory, compute the destination effective address according to the ESP-sensitive POP rules below, then construct and validate the planned destination write.
+
+8. Commit the instruction atomically only after all required read validation, write validation, and destination validation have succeeded.
+
+9. On success:
+   - for a non-ESP register destination, write the popped value to the destination register and set `ESP = post_pop_esp`;
+   - for `pop esp`, set final `ESP = popped value`;
+   - for a memory destination, set final `ESP = post_pop_esp` and write the popped value to the validated destination memory address.
+
+10. Record a memory-change row only for a successful memory destination write, not for reading from the stack.
+
+11. Preserve modeled flags and flag-validity metadata.
+
+12. On any failed POP path, leave externally visible `ESP`, destination register or memory, other memory, modeled flags, flag-validity metadata, Program Console output, memory-change rows, instruction pointer, and terminal status unchanged.
+
+### ESP-sensitive POP forms
+
+Phase 72A accepts `pop esp` and memory destinations that may use `ESP` as an effective-address base, such as:
+
+```asm
+pop DWORD PTR [esp]
+```
+
+Phase 72A uses the following x86-compatible visible timing rule for its accepted 32-bit POP subset. This is an educational simulator rule for visible state only. It does not imply full x86 emulation, instruction encoding, segment behavior, privilege behavior, full stack-instruction coverage, or byte-accurate CPU micro-operations.
+
+Rules:
+
+- The stack read address is always `original_esp`.
+- The popped value is the DWORD read from `[original_esp]`.
+- The post-pop stack pointer value is `original_esp + 4`.
+- For `pop esp`, the final externally visible `ESP` value is the popped DWORD value.
+- For a memory destination whose effective address uses `ESP`, the destination effective address is computed using `post_pop_esp`.
+- For a memory destination that does not use `ESP`, normal effective-address rules apply.
+- Destination validation must use the effective address selected by these rules.
+- The instruction remains externally atomic. Even when the destination effective address is computed using `post_pop_esp`, a failed destination validation or failed destination write must leave externally visible `ESP = original_esp`.
+
+Required examples:
+
+```asm
+; If original ESP points at DWORD 11223344h:
+pop esp
+; final ESP is 11223344h
+
+; If original ESP points at DWORD AABBCCDDh:
+pop DWORD PTR [esp]
+; stack read comes from [original_esp]
+; destination address is [original_esp + 4]
+; final ESP is original_esp + 4
+; memory at [original_esp + 4] receives AABBCCDDh
+```
+
+If implementing these ESP-sensitive forms is considered too risky for Phase 72A, then Phase 72A must explicitly defer them and reject them with documented diagnostics. Phase 72A must not accept `pop esp` or `pop DWORD PTR [esp]` with unspecified stack-pointer timing.
 
 ### No-partial-mutation rule
 
@@ -21133,15 +21483,23 @@ Executor/source-run tests:
 - Memory source push.
 - Memory destination pop.
 - Immediate push using the 32-bit immediate rule.
+- `push esp` uses the source value defined by this phase before the stack write is committed.
+- `pop esp` follows the ESP-sensitive POP rule and leaves final `ESP` equal to the popped DWORD value.
+- `pop DWORD PTR [esp]` follows the ESP-sensitive POP rule and computes its destination address using `original_esp + 4`.
 - Modeled flags and flag-validity metadata are preserved.
 - Stack overflow on PUSH has no partial mutation.
 - Stack underflow on POP has no partial mutation.
 - Failed memory destination POP has no partial mutation, including unchanged `ESP`.
+- Failed ESP-sensitive memory destination POP has no partial mutation, including unchanged `ESP`.
 
 Planned-access tests:
 
-- Memory-source PUSH participates in planned-read diagnostics.
-- Memory-destination POP participates in planned-write diagnostics.
+- Memory-source PUSH participates in planned-read diagnostics before consuming the source memory value.
+- Stack-memory PUSH participates in planned-write diagnostics before decrementing externally visible `ESP` or writing stack memory.
+- Stack-memory POP participates in planned-read diagnostics before consuming the popped value.
+- Memory-destination POP participates in planned-write diagnostics before committing `ESP` or writing the destination.
+- `pop esp` participates in planned-read diagnostics before consuming the popped value.
+- `pop DWORD PTR [esp]` participates in planned-read diagnostics for `[original_esp]` and planned-write diagnostics for the destination computed from `original_esp + 4`.
 - Stack write/read uses central checked memory helpers.
 - Strict planned-read or planned-write failures stop before mutation.
 - Mandatory `.CONST` and `.code` protected-region behavior is preserved where reachable through manipulated stack pointers.

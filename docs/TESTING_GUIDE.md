@@ -196,7 +196,7 @@ For a phase that changes rendered Simulator Messages ordering, run and update:
 For a phase that changes final register display formatting, run and update:
 
 - web formatter tests for exact rendered register output;
-- tests that prove display-only divider rows are not source-run JSON objects;
+- tests that prove display-only register separator rows are not source-run JSON objects;
 - protocol tests if the protocol field order or schema is deliberately changed;
 - source-run tests only if structured register payloads are deliberately changed.
 
@@ -219,9 +219,55 @@ python3 scripts/run_tests.py --quick
 
 A milestone report that uses only `--quick` must say that full verification was not performed. Do not report `All implemented milestone tests passed` from a quick-only run.
 
+Milestone reports must distinguish these fields when applicable:
+
+```text
+Runtime/source-run MASM behavior phase:
+Repository/archive phase:
+Output/message-ordering cleanup phase:
+Artifact/test-infrastructure cleanup phase:
+
+Aggregate tests:
+Focused test groups:
+Subgroup tests:
+Timed-out commands:
+Skipped dependency checks:
+Browser/Wasm rebuild status:
+Browser/Wasm smoke status:
+Served web/dist compatibility status:
+Whether aggregate success was claimed:
+```
+
+Rules:
+
+- Do not report aggregate success if `--all` timed out or was not run.
+- Do not report browser/Wasm artifact verification if `emcc` was unavailable and no artifact-compatibility identifier was checked.
+- Do not treat a maintenance-only repository/archive phase as a runtime/source-run MASM behavior phase.
+- Do not change runtime/source-run behavior metadata merely to align it with a documentation, output-ordering, artifact-compatibility, or test-infrastructure corrective phase.
+
+
 Source-run subgroups such as `--source-run=memory-layout` are not currently implemented because the preserved source-run binary runs independently as a focused group. If `--source-run` later becomes too large for hosted assistant/container verification, the future test-runner decomposition maintenance owner should split it by behavior family, preferably memory/layout, instruction smoke, diagnostic policies, settings, and regressions.
 
 Diagnostic subgroups such as `--diagnostics=memory` are not currently implemented because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
+
+Phase 69C may add smaller runner subgroups for timeout-safe verification. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any subgroup split must preserve the existing broad group flags.
+
+Preferred future subgroup families are:
+
+```text
+native-parser
+native-exec
+native-memory-layout
+native-diagnostics-policy
+source-run-core
+source-run-diagnostics
+source-run-settings
+diagnostics-json
+diagnostics-rendered-memory
+diagnostics-rendered-directives
+diagnostics-rendered-compatibility
+diagnostics-rendered-runtime
+```
 
 Failure output must identify the failing group, failing command, subprocess exit code, stdout/stderr tail, and any available fixture context. Source-run fixture failures include the fixture name through the source-run test binary's assertion context.
 
@@ -238,11 +284,19 @@ For example, a source-run test binary that contains stack-startup fixtures must 
 
 Milestone history belongs in `docs/MILESTONE_HISTORY.md` and `docs/history/reports/`. Test success banners should communicate the current coverage surface of the binary, not preserve every historical milestone name.
 
-### Assistant/container timeout policy
+### Timeout-safe verification policy
 
-If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure.
+If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure. A timeout in a hosted environment is not proof of a simulator regression, but it is also not a passing test result.
 
-The assistant must rerun focused groups individually and report:
+When a broad group times out, milestone reports must state exactly:
+
+- which command timed out;
+- which smaller commands passed;
+- which smaller commands failed;
+- which smaller commands were not run;
+- whether aggregate success was claimed.
+
+The assistant must rerun focused groups individually where practical and report:
 
 - which focused groups were run;
 - which focused groups passed;
@@ -268,6 +322,30 @@ An assistant must not claim that the full aggregate suite passed unless the aggr
 An assistant may report focused verification only by naming the focused groups, subgroups, or fixtures that actually passed.
 
 If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `emcc` is unavailable. This is separate from native, source-run, Node, protocol, static, and rendered diagnostic test failure.
+
+Recommended milestone-report wording for hosted timeout cases:
+
+```text
+Aggregate command:
+- python3 scripts/run_tests.py --all --quiet
+- Result: timed out in this hosted environment
+
+Focused groups passed:
+- python3 scripts/run_tests.py --static --quiet
+- python3 scripts/run_tests.py --structure --quiet
+- python3 scripts/run_tests.py --web --quiet
+- python3 scripts/run_tests.py --protocol --quiet
+- python3 scripts/run_tests.py --source-run --quiet
+
+Focused groups timed out:
+- python3 scripts/run_tests.py --native --quiet
+- python3 scripts/run_tests.py --diagnostics --quiet
+
+Focused groups not run:
+- <none, or list explicitly>
+
+Aggregate success was not claimed.
+```
 
 ### Source-run fixture inventory
 

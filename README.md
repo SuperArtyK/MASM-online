@@ -5,10 +5,15 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 69A - Documentation and Static-Check Cleanup After Direct CALL
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
+
+Latest output/message-ordering cleanup phase:
+Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+
+Phase 69B improves final-register display grouping and Simulator Messages ordering only. It does not change supported MASM syntax, parser behavior, VM instruction semantics, source-run protocol fields, or the runtime/source-run MASM behavior phase.
 
 Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
