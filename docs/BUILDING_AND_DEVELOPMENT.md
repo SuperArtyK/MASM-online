@@ -12,21 +12,24 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
 Current runtime/source-run MASM behavior phase:
-Phase 69 - Direct CALL to User Procedures
+Phase 70 - RET Execution and Return Address Validation
 
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Latest artifact/test-infrastructure cleanup phase:
+Latest source-run output-contract phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
-Next runtime implementation milestone:
-Phase 70 - RET Execution and Return Address Validation
+Latest protocol/artifact compatibility cleanup phase:
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
-Phase 69B is output/message-ordering cleanup only. Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1` and corresponding protocol tests so stale browser/Wasm artifacts can be detected without advancing runtime/source-run behavior metadata. It keeps the existing broad focused runner groups as the supported timeout-safe decomposition and does not add subgroup flags. Neither cleanup phase changes parser behavior, VM instruction semantics, supported MASM syntax, source-level diagnostic codes, Program Console output, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
+Next runtime implementation milestone:
+Phase 71 - Root Procedure Termination Semantics
+
+Phase 69B was output/message-ordering cleanup only. Phase 69C was artifact/test-infrastructure cleanup only; it added the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1` and corresponding protocol tests so stale browser/Wasm artifacts can be detected without treating the output contract as a runtime/source-run behavior phase. Phase 70 is the current runtime/source-run behavior phase and implements plain near RET return-token execution and validation while preserving the Phase 69C output-contract identifier. Phase 70A is protocol/artifact compatibility cleanup only; browser/protocol code now warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata unless a later accepted compatibility phase defines a safe range. The existing broad focused runner groups remain the supported timeout-safe decomposition; Phase 70A does not add subgroup flags. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract, and Phase 70 `RET` consumes those return tokens through a checked internal stack read. Source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -54,7 +57,7 @@ Browser/Wasm artifact verification has separate levels:
 
 4. **Browser/Wasm smoke verification**
 
-   Serving the page and running a smoke program against the browser-loaded Wasm artifact verifies the served browser path. For Phase 69C and later output-contract checks, a successful browser/Wasm smoke should not show `stale-wasm-output-contract` when the loaded artifact reports the expected contract.
+   Serving the page and running a smoke program against the browser-loaded Wasm artifact verifies the served browser path. For Phase 70A and later compatibility checks, a successful browser/Wasm smoke should not show `stale-wasm-artifact` when the loaded artifact reports the exact expected runtime metadata, and should not show `stale-wasm-output-contract` when the loaded artifact reports the expected contract.
 
 If `emcc` is unavailable, report rebuild verification as skipped. Do not infer that checked-in `web/dist` is stale solely from missing `emcc`. Inspect the checked-in artifact or run browser/Wasm smoke if artifact status matters.
 

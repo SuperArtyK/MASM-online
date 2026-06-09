@@ -17,47 +17,59 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
-Current status at Phase 69C:
+Current status at Phase 70A:
 
 Repository/archive milestone:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
 Runtime/source-run MASM behavior phase:
-Phase 69 - Direct CALL to User Procedures
+Phase 70 - RET Execution and Return Address Validation
 
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Latest artifact/test-infrastructure cleanup phase:
+Latest source-run output-contract phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
-Phase 69B is output/message-ordering cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled.
+Latest protocol/artifact compatibility cleanup phase:
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
-Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase.
+Phase 69B was output/message-ordering cleanup only. At its completion it kept Phase 69 as the latest runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 70 has since advanced the runtime/source-run MASM behavior phase.
+
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
 
 Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token to the simulated stack through checked VM memory helpers, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. That stack write is internal VM execution state; current public source-run JSON does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
+
+Phase 70 implements plain near `RET` with no operands. Successful RET reads the DWORD pseudo-EIP return token from `[ESP]` through checked VM memory helpers, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4, preserves modeled flags and flag-validity metadata, and transfers control to the validated target. Invalid readable tokens stop with `invalid-return-address`; unreadable `[ESP]` keeps using the central checked-memory diagnostics. The implicit RET return-token read is internal VM control-flow state and is not exposed as a public source-run `memoryChanges` row.
 
 Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
 
 Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, direct supported writes to `ESP` remain legal, and direct user-procedure `CALL` uses the active `ESP` value for its checked return-token stack write.
 
-Phase 69 preserves Phase 67A selected-entry source-run behavior and Phase 68 call-target metadata. It does not implement RET, root procedure termination, source-level PUSH/POP, procedure frames, Irvine32 routine dispatch, `INVOKE`, `PROTO`, `LOCAL`, `USES`, or `ADDR`.
+Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. It does not implement root procedure termination, non-entry procedure fallthrough diagnostics, source-level PUSH/POP, procedure frames, Irvine32 routine dispatch, `INVOKE`, `PROTO`, `LOCAL`, `USES`, or `ADDR`.
+
+Current protocol/artifact compatibility phase:
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
 Next runtime implementation milestone:
-Phase 70 - RET Execution and Return Address Validation
+Phase 71 - Root Procedure Termination Semantics
 
 Current source-of-truth roadmap note:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition is complete as repository/archive artifact/test-infrastructure cleanup. It added the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C did not add runner subgroup flags because the existing focused broad groups remain the supported timeout-safe decomposition. It is not a MASM syntax or VM execution-semantics phase and must not be treated as implementing `RET` or any other future runtime feature.
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition is complete as repository/archive artifact/test-infrastructure cleanup. It added the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C did not add runner subgroup flags because the existing focused broad groups remain the supported timeout-safe decomposition. It is not a MASM syntax or VM execution-semantics phase.
 
-Phase 70 remains the next runtime implementation phase and may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It must still not implement source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check is complete as protocol/artifact compatibility cleanup. It does not change MASM source syntax, parser behavior, VM execution semantics, CALL behavior, RET behavior, Program Console output, or public `memoryChanges` rows. It makes newer-runtime and older-runtime Wasm metadata mismatches visible by default and leaves forward-compatible runtime acceptance to a later explicitly specified compatibility phase.
+
+Phase 70 - RET Execution and Return Address Validation is complete as runtime/source-run behavior. It consumes the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It still does not implement root `RET` termination, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `RET imm16`, `LEAVE`, non-entry procedure fallthrough diagnostics, or Irvine32 callable routine dispatch.
 
 
 ## Concise milestone ledger
 
+- Phase 70A is the current protocol/artifact compatibility corrective phase. It tightens runtime metadata mismatch checks by default and does not change MASM source behavior.
+- Phase 70 implements plain near `RET` with checked pseudo-EIP return-token reads, return-token validation, ESP pop-on-success, and `invalid-return-address` for readable invalid tokens while preserving root RET, RET imm16, source-level stack instructions, frames, and Irvine32 routine dispatch as future work.
 - Phase 69C is artifact/test-infrastructure cleanup only. It adds separate source-run output-contract metadata and protocol/rendering/static tests for stale browser/Wasm artifact detection while preserving Phase 69 runtime/source-run behavior metadata and existing broad runner groups.
 - Phase 69B is output/message-ordering cleanup only. It adds final-register display grouping and startup-first Simulator Messages ordering without changing runtime/source-run MASM behavior.
 - Phase 69A is documentation/static-check cleanup only. It makes the current source-of-truth spec/guide revision clearer without changing runtime/source-run MASM behavior beyond Phase 69.
-- Phase 69 implements direct user-procedure `CALL` to user `PROC` entries with checked internal pseudo-EIP return-token stack writes and target transfer while preserving RET and Irvine32 routine calls as future work. Current public source-run JSON does not expose the implicit CALL return-token stack write as a visible `memoryChanges` row.
+- Phase 69 implements direct user-procedure `CALL` to user `PROC` entries with checked internal pseudo-EIP return-token stack writes and target transfer in its historical scope while preserving RET and Irvine32 routine calls as future work at that time. Phase 70 has since implemented plain near helper RET. Current public source-run JSON does not expose the implicit CALL return-token stack write as a visible `memoryChanges` row.
 - Phase 68B displays `EIP` as derived pseudo-code-address control state, rejects source-level `EIP` operands and definitions, and preserves direct supported `ESP` writes.
 - Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.
 - Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
@@ -144,6 +156,35 @@ Non-goals preserved:
 - no procedure frames, PROC USES, LOCAL, PROTO, INVOKE, or ADDR behavior;
 - no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
 - no new stack sizing UI, URL state, layout sizing behavior, heap sizing behavior, or randomized layout behavior.
+
+
+## Phase 70 - RET Execution and Return Address Validation
+
+Repository/archive milestone:
+Phase 70 - RET Execution and Return Address Validation
+
+Runtime/source-run MASM behavior phase:
+Phase 70 - RET Execution and Return Address Validation
+
+Phase 70 implements plain near `ret`/`RET` with no operands. The VM reads a DWORD pseudo-EIP return token from `[ESP]` through the same checked memory helpers used by explicit memory reads, validates that the token maps to a loaded executable VM instruction, increments `ESP` by 4 only after validation succeeds, and transfers control to the validated instruction. The successful implicit return-token read is internal control-flow state and remains absent from public source-run `memoryChanges` rows.
+
+Implemented behavior:
+
+- parser/lowering accepts plain `ret` and `RET` as a zero-operand executable instruction;
+- parser/lowering rejects `ret imm16`, register operands, memory operands, and `retf` as future or non-goal forms;
+- executor RET reads `[ESP]` as a checked DWORD and participates in planned-read policy validation;
+- executor RET validates that the read token is an aligned pseudo-EIP for a loaded executable instruction;
+- successful RET increments `ESP` by 4, transfers control, and preserves modeled flags and flag-validity metadata;
+- failed checked reads leave `ESP`, instruction pointer, flags, memory, Program Console output, terminal status, and public memory-change rows unchanged;
+- readable invalid tokens emit `invalid-return-address` and leave `ESP`, instruction pointer, flags, memory, Program Console output, terminal status, and public memory-change rows unchanged.
+
+Non-goals preserved:
+
+- no root RET termination success;
+- no non-entry procedure fallthrough diagnostics;
+- no call-depth or active-call-frame validation;
+- no `RET imm16`, `RETF`, `LEAVE`, source-level `PUSH`/`POP`, procedure frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, or `ADDR`;
+- no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator.
 
 
 ## Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition

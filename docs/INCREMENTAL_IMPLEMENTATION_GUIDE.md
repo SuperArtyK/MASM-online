@@ -20928,6 +20928,16 @@ Required uninitialized-origin behavior:
 
 Declared-object validation must not reject a valid stack return-token read merely because the stack address is outside `.data`, `.DATA?`, or `.CONST` declared objects, unless an earlier accepted phase has explicitly defined stack-slot, call-frame, return-token-object, or synthetic stack-object metadata. Phase 70 must not invent stack-frame object-bounds rules.
 
+### CALL/RET stack-token metadata applicability note
+
+Implicit CALL/RET stack-token accesses are simulator-internal control-flow memory accesses. They must always use the central checked-memory helpers and must participate in planned-read or planned-access policy where the relevant metadata model exists.
+
+Until a later stack-object or stack-frame phase defines source-constructible stack-object metadata, strict declared-object validation must not reject otherwise valid internal CALL/RET stack-token accesses merely because no user-declared stack object exists for the simulator stack slot.
+
+Until a later phase defines stack uninitialized-origin metadata, source-run tests are not required to construct stack uninitialized-origin fixtures from accepted source syntax. Native/internal fixtures may cover metadata behavior when needed, and milestone reports must state when source-level construction is not yet possible.
+
+Do not infer source-level PUSH, POP, stack-frame, LOCAL, USES, argument, saved-register, or return-token-object support merely because CALL and RET internally use checked stack memory.
+
 Runtime steps:
 
 1. Capture `original_esp = ESP` at the start of the `RET` instruction.
@@ -21144,54 +21154,388 @@ Do not describe Phase 70 as implementing:
 ---
 
 
+## 74A. Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+
+### Goal
+
+Correct browser/Wasm runtime metadata compatibility checks so that the UI warns on both older and newer runtime/source-run behavior phase mismatches unless a later accepted compatibility phase explicitly defines safe forward-compatible behavior.
+
+This is a protocol/artifact compatibility corrective phase. It does not change accepted MASM syntax, parser behavior, VM execution semantics, memory layout, source-execution diagnostics, CALL behavior, or RET behavior.
+
+Phase 70A must not renumber Phase 71 or any later phase. After Phase 70A, the next runtime/source-run MASM behavior phase remains Phase 71 - Root Procedure Termination Semantics.
+
+### Required behavior
+
+The browser/protocol layer must treat runtime/source-run behavior phase metadata as an exact compatibility check by default.
+
+A loaded Wasm artifact is mismatched when any of these are true:
+
+- the reported runtime/source-run behavior phase number is older than the UI expected phase number;
+- the reported runtime/source-run behavior phase number is newer than the UI expected phase number;
+- the reported runtime/source-run behavior phase suffix differs from the UI expected suffix;
+- required runtime/source-run phase metadata is missing;
+- the reported source-run output-contract identifier differs from the UI expected output-contract identifier;
+- required output-contract metadata is missing.
+
+A newer numeric runtime phase must not be silently accepted merely because it is newer. Newer runtime behavior may have changed accepted syntax, rejected syntax, diagnostic codes, source locations, terminal-state behavior, message ordering, JSON fields, or output-field meaning in ways that the older UI does not understand.
+
+A later accepted compatibility phase may define forward-compatible newer-runtime acceptance only if it specifies:
+
+- compatible phase ranges;
+- compatible output-contract identifiers;
+- safe UI behavior across those versions;
+- diagnostic rendering behavior;
+- source-run JSON compatibility guarantees;
+- test coverage proving compatibility.
+
+Until such a phase exists, exact match is required.
+
+### Diagnostic behavior
+
+Phase 70A must use the existing stale or mismatched artifact diagnostic channel. It must not invent a MASM source diagnostic for artifact mismatch.
+
+If both runtime/source-run behavior metadata and output-contract metadata are stale or mismatched, both problems must be reported in deterministic order.
+
+The diagnostic wording must make clear that the problem is a UI/Wasm artifact mismatch, not an error in the user's MASM source program.
+
+### Non-goals
+
+Phase 70A must not:
+
+- change the Phase 70 runtime/source-run MASM behavior phase;
+- change the Phase 69C output-contract identifier unless the public source-run output contract actually changes;
+- implement Phase 71 root RET;
+- change CALL or RET execution semantics;
+- add new user-visible MASM diagnostics unrelated to artifact compatibility;
+- alter Program Console output;
+- alter successful source-run `memoryChanges` behavior;
+- alter accepted or rejected MASM syntax.
+
+### Tests
+
+Protocol tests must cover:
+
+- exact matching runtime phase and matching output contract: no stale or mismatch diagnostic;
+- older runtime phase: mismatch diagnostic;
+- newer runtime phase: mismatch diagnostic;
+- missing runtime phase metadata: mismatch diagnostic;
+- stale output-contract identifier: output-contract mismatch diagnostic;
+- missing output-contract metadata: output-contract mismatch diagnostic;
+- stale runtime phase plus stale output contract: both diagnostics appear in deterministic order;
+- matching Phase 70 runtime metadata with the current Phase 69C output-contract identifier remains accepted.
+
+Static documentation tests must verify:
+
+- active documentation does not claim newer runtime artifacts are accepted by default;
+- Phase 70A is described as protocol/artifact compatibility only;
+- the next runtime/source-run MASM behavior phase remains Phase 71;
+- README and `docs/SUPPORTED_SYNTAX.md` remain Phase 70 unless Phase 71 is also implemented.
+
+### Acceptance criteria
+
+Phase 70A is accepted only when:
+
+- newer numeric Wasm runtime phases no longer pass silently by default;
+- older numeric Wasm runtime phases still produce the expected stale or mismatch diagnostic;
+- stale/mismatched output-contract metadata still produces the expected output-contract diagnostic;
+- combined runtime/output-contract mismatch diagnostics are deterministic;
+- existing matching Phase 70 runtime plus Phase 69C output-contract behavior still passes;
+- no MASM source behavior changes are introduced.
+
+---
+
 ## 75. Phase 71 - Root Procedure Termination Semantics
 
 ### Goal
 
-Define and implement root RET and non-entry procedure fallthrough semantics after CALL/RET are available.
+Define and implement selected-entry root RET and non-entry procedure fallthrough semantics after Phase 70 CALL/RET behavior is available.
 
-This phase is about terminal-state semantics. It must not add new call forms, new stack-frame behavior, INVOKE, or Irvine output routines.
+This phase is about terminal-state semantics only.
+
+Phase 71 must not add:
+
+- new CALL target forms;
+- new RET operand forms;
+- RET imm16;
+- RETF;
+- LEAVE;
+- source-level PUSH or POP;
+- stack-frame behavior;
+- LOCAL;
+- USES;
+- PROTO;
+- INVOKE;
+- ADDR;
+- calling-convention behavior;
+- Irvine32 callable routine dispatch;
+- call-depth resource limits;
+- call-trace diagnostics;
+- configurable call-depth settings;
+- debugger/editor branch behavior;
+- PE loader behavior;
+- WinAPI behavior;
+- host callbacks;
+- native x86 behavior.
+
+### Scope
+
+Phase 70 implemented plain near no-operand `ret`/`RET` only as an ordinary helper-return instruction that consumes a DWORD simulator pseudo-EIP return token from `[ESP]`.
+
+In Phase 70, selected-entry root RET at startup is expected to fail through the existing checked-memory path because startup `ESP` equals the active stack region's exclusive high address and no return token exists at `[ESP]`.
+
+Phase 71 deliberately changes that selected-entry root case.
+
+After Phase 71, a plain near no-operand `ret`/`RET` executed by the selected entry procedure when no helper-procedure return is pending must terminate the program successfully in MASM32 Educational Mode.
+
+This models the educational MASM32/Irvine32 expectation that returning from the selected entry procedure is a valid way to finish a small console-style program. It does not model the Windows loader, PE entrypoint, C runtime startup, MASM linker output, import libraries, host call stacks, native x86 return addresses, or WinAPI process teardown.
 
 ### Required behavior
 
-Phase 67A already corrected source-run startup and ordinary successful fallthrough at the selected entry procedure boundary. Phase 71 completes root procedure termination semantics for RET and for non-entry procedure misuse that becomes reachable after CALL/RET exists.
+Phase 71 must implement all of the following behavior:
 
-Required behavior in this phase:
+1. Plain near no-operand `ret` from the selected entry procedure terminates successfully in MASM32 Educational Mode when it is an eligible root RET.
+2. `RET` and `ret` remain equivalent for the already accepted plain near no-operand form.
+3. Entry-procedure fallthrough behavior from Phase 67A remains successful and does not regress.
+4. Ordinary helper RET through a valid Phase 70 pseudo-EIP return token continues execution normally.
+5. A reachable non-entry procedure that falls through its procedure boundary without RET reports `non-root-procedure-fell-through`.
+6. A non-root RET still follows the Phase 70 checked-memory and pseudo-EIP return-token validation path.
+7. `exit`, when implemented by the earlier virtual Irvine terminator phase, continues to terminate successfully. If that earlier phase is not part of the actual sequence, Phase 71 relies on entry-procedure fallthrough and root RET only; it must not implement `exit` here.
+8. Only one terminal status may be emitted for a source run.
+9. Terminal-state diagnostics must preserve source location where available.
+10. Terminal-state diagnostics must not create successful memory-change rows.
+11. Root RET success must not create a successful memory-change row.
 
-1. `ret` from the entry procedure terminates successfully in MASM32 Educational Mode when it represents a root return.
-2. Falling off a non-entry procedure without RET is a runtime error once non-entry procedure execution is reachable through CALL.
-3. Returning to an instruction after CALL continues execution normally.
-4. `exit`, when implemented by the earlier virtual Irvine terminator phase, continues to terminate successfully. If that phase is not part of the actual sequence, this phase relies on entry-procedure fallthrough and root RET only; it must not implement `exit` here.
-5. Only one terminal status may be emitted.
-6. Terminal-state diagnostics must preserve source location where available and must not create successful memory-change rows.
-7. No new CALL target forms, stack-frame behavior, INVOKE behavior, Irvine32 routine dispatch, source-level PUSH/POP, LOCAL, USES, or RET imm16 behavior is introduced here.
+### Root/helper return-state rule
 
-### Phase 71 retirement of Phase 69 transitional helper-boundary behavior
+Phase 71 may introduce only the minimal VM-internal state required to distinguish selected-entry root RET from ordinary helper RET. This state is terminal-semantics state, not Phase 72 call-depth resource accounting.
 
-Phase 69 permitted limited source-run test scaffolding where execution of a called helper could reach an existing helper procedure boundary before `RET` was implemented. That behavior was transitional only. It was not final non-entry procedure fallthrough semantics and was not a MASM-compatible procedure-return model.
+Preferred terminology for this phase is:
+
+```text
+root/helper return state
+```
+
+or:
+
+```text
+active helper-return depth
+```
+
+Avoid using the unqualified term `call depth` in Phase 71 except when explicitly saying that Phase 72 call-depth limits and call traces remain deferred.
+
+Phase 71 state must distinguish:
+
+1. selected-entry root RET with no active helper return pending, which terminates successfully;
+2. ordinary helper RET, which continues to use the Phase 70 pseudo-EIP return-token read and validation path;
+3. non-entry procedure fallthrough, which reports `non-root-procedure-fell-through`;
+4. impossible VM state, which reports `invalid-root-termination-state` as an internal simulator invariant failure.
+
+If an active helper-return-depth counter is used, it must follow these rules:
+
+- initialize to zero at source-run startup;
+- increment only after a user-procedure CALL has fully committed its return-token stack write and target transfer;
+- decrement only after an ordinary helper RET has successfully validated its return token and committed the return transfer;
+- never decrement for selected-entry root RET;
+- never decrement below zero;
+- never be used to implement a resource limit in Phase 71;
+- never emit `call-depth-exceeded` in Phase 71;
+- never expose call-trace metadata in Phase 71.
+
+Phase 71 must not implement Phase 72 behavior. In particular, it must not add call-depth limits, recursion resource diagnostics, call traces, trace truncation warnings, configurable call-depth settings, or rendered call-stack displays.
+
+### Root RET execution rule
+
+When executing accepted plain near no-operand `ret`/`RET`, Phase 71 must check selected-entry root RET eligibility before attempting the Phase 70 DWORD read from `[ESP]`.
+
+A RET is eligible for root terminal behavior only when all of these conditions are true:
+
+1. the current procedure is the selected entry procedure named by `END entryName`;
+2. no active helper return is pending under the Phase 71 root/helper return-state model;
+3. the instruction is the already accepted no-operand near RET form;
+4. the VM has no internal inconsistency between current procedure identity, instruction-pointer state, and root/helper return state.
+
+If all conditions are true, RET terminates the source run successfully without reading `[ESP]`.
+
+This means the Phase 70 startup empty-stack diagnostic for this program is intentionally replaced by successful completion after Phase 71:
+
+```asm
+.code
+main PROC
+    ret
+main ENDP
+END main
+```
+
+Root RET success must not:
+
+- read from `[ESP]`;
+- validate a pseudo-EIP return token;
+- increment or decrement `ESP`;
+- expose a public `memoryChanges` row;
+- expose a fake return address;
+- emit `invalid-address`;
+- emit `invalid-return-address`;
+- emit `non-root-procedure-fell-through`;
+- emit `call-depth-exceeded`;
+- emit duplicate completion messages.
+
+If any root eligibility condition is false, the instruction must follow the existing Phase 70 non-root RET path unless another earlier diagnostic has already stopped execution.
+
+### Non-root RET preservation rule
+
+Phase 71 changes only the selected-entry root RET terminal case.
+
+For every RET that is not an eligible selected-entry root RET, Phase 71 must preserve the Phase 70 helper-return path:
+
+1. construct the implicit planned read for DWORD `[ESP]`;
+2. validate the readable range through central checked-memory helpers;
+3. apply optional planned-read policies only after mandatory readable-range validation succeeds;
+4. read the token only after fatal validation paths have succeeded;
+5. validate that the token maps to an executable lowered VM pseudo-EIP target;
+6. increment `ESP` by 4 only after token validation succeeds;
+7. transfer to the validated target.
+
+Phase 71 must not add active-frame provenance validation to ordinary helper RET. A later accepted phase may make RET stricter by proving that the token came from an active CALL frame, but that later phase must define its own diagnostics, mutation order, JSON fields, rendered messages, source spans, and tests.
+
+This rule prevents Phase 71 from accidentally changing Phase 70 behavior outside the root terminal case.
+
+### Non-entry procedure fallthrough rule
+
+Phase 69 permitted limited source-run test scaffolding where execution of a called helper could reach an existing helper procedure boundary before RET was implemented. That behavior was transitional only. It was not final non-entry procedure fallthrough semantics and was not a MASM-compatible procedure-return model.
 
 Phase 71 must retire that transitional assumption.
 
-After Phase 71, reachable execution that falls through the boundary of a non-entry procedure without `RET` must produce the documented non-entry fallthrough runtime diagnostic. Tests and documentation must no longer describe helper-procedure boundary completion after `CALL` as acceptable final behavior.
+After Phase 71, reachable execution that falls through the boundary of a non-entry procedure without RET must produce this diagnostic:
 
-This change must be limited to terminal-state semantics. Phase 71 must not add new CALL target forms, source-level stack instructions, stack frames, Irvine32 routine dispatch, `INVOKE` behavior, `PROTO` behavior, `ADDR` behavior, `LOCAL` behavior, `USES` behavior, or `RET imm16`.
+```text
+non-root-procedure-fell-through
+```
 
-### Runtime diagnostics
+This diagnostic applies when a procedure other than the selected entry procedure reaches its ENDP/fallthrough boundary as executable control flow without a RET or other accepted terminal/control-transfer mechanism.
 
-- `non-root-procedure-fell-through`: a procedure other than the entry procedure reaches its ENDP/fallthrough boundary without RET.
-- `invalid-root-termination-state`: internal mismatch between call depth/root state and instruction pointer.
+This diagnostic must not be used for:
+
+- successful entry-procedure fallthrough;
+- successful selected-entry root RET;
+- successful ordinary helper RET through a valid return token;
+- virtual Irvine32 `exit`, if that behavior was already implemented by an earlier accepted phase;
+- parse-time procedure structure errors.
+
+### Diagnostic classification
+
+Phase 71 owns this user-source runtime diagnostic:
+
+```text
+non-root-procedure-fell-through
+```
+
+Kind:
+
+```text
+runtime-error
+```
+
+Meaning:
+
+A procedure other than the selected entry procedure reached its procedure boundary as executable control flow without RET after CALL/RET semantics made that path reachable.
+
+Required properties:
+
+- source location must identify the procedure boundary or best available source location for the fallthrough;
+- execution stops;
+- no successful terminal status is emitted;
+- no public `memoryChanges` row is created by the diagnostic;
+- rendered Simulator Messages output includes the diagnostic code.
+
+Phase 71 also owns this internal invariant diagnostic:
+
+```text
+invalid-root-termination-state
+```
+
+Kind:
+
+```text
+internal-simulator-error
+```
+
+Meaning:
+
+The VM detected an impossible or inconsistent combination of current procedure identity, instruction-pointer state, and root/helper return state while evaluating terminal procedure semantics.
+
+Required properties:
+
+- this diagnostic should not be source-constructible in ordinary accepted programs;
+- if emitted, execution stops;
+- no successful terminal status is emitted;
+- no public `memoryChanges` row is created;
+- rendered Simulator Messages output includes the diagnostic code;
+- tests may use native/internal fixtures if the state is not constructible from source syntax.
+
+Phase 71 must not add these diagnostics:
+
+```text
+call-depth-exceeded
+call-trace-truncated
+stack-underflow
+return-with-empty-call-stack
+return-outside-call-frame
+```
+
+`call-depth-exceeded` and call trace diagnostics remain Phase 72-owned. Stack-underflow or active-frame diagnostics may be added only by a later accepted phase that defines their code, severity, JSON fields, source span, rendered wording, precedence, interaction with checked-memory validation, and no-partial-mutation behavior.
+
+### Interaction with Phase 70 checked-memory behavior
+
+Phase 70 required a checked DWORD read from `[ESP]` for ordinary helper RET behavior. Phase 71 must preserve that behavior for every non-root RET.
+
+Phase 71 changes only the selected-entry root terminal case. It must not weaken the central checked-memory invariant for ordinary helper RET. It must not suppress mandatory checked-memory diagnostics for ordinary helper RET cases that still require a return-token read.
+
+Diagnostic precedence after Phase 71:
+
+1. If RET is an eligible selected-entry root RET, terminate successfully without reading `[ESP]`.
+2. Otherwise, use the Phase 70 planned-read, checked-memory, optional policy, checked read, and return-token validation path.
+3. If ordinary helper RET's `[ESP]` range is unreadable, emit the existing mandatory checked-memory diagnostic.
+4. If ordinary helper RET reads a token that does not map to a valid executable pseudo-EIP return target, emit `invalid-return-address`.
+5. If non-entry procedure execution falls through a procedure boundary without RET, emit `non-root-procedure-fell-through`.
+6. If the VM detects an impossible root/helper/procedure state, emit `invalid-root-termination-state`.
+
+### No strict root RET toggle in Phase 71
+
+Phase 71 must implement MASM32 Educational Mode selected-entry root RET success as the default behavior.
+
+Phase 71 must not add a UI setting, source-run request option, backend diagnostic setting, browser toggle, or command-line-style option for rejecting selected-entry root RET. A strict root RET teaching mode is optional future work and must be owned by a separate accepted phase if the project chooses to add it.
+
+This prevents Phase 71 from combining terminal-state semantics with UI/API/settings work.
 
 ### Tests
 
+Native executor tests:
+
+- Selected-entry root RET succeeds without reading `[ESP]`.
+- Selected-entry root RET leaves `ESP` unchanged.
+- Selected-entry root RET emits exactly one successful terminal status.
+- Selected-entry root RET does not create a `memoryChanges` row.
+- Helper CALL followed by helper RET still returns to the instruction after CALL.
+- Helper RET through a valid return token still increments `ESP` by 4.
+- Helper RET with an invalid readable token still emits `invalid-return-address`.
+- Helper RET requiring a token still uses central checked-memory diagnostics for unreadable `[ESP]`.
+- Root RET does not report `call-depth-exceeded`.
+- Root RET does not expose call trace metadata.
+- Non-entry procedure fallthrough reports `non-root-procedure-fell-through`.
+
 Source-run tests:
 
-- Entry procedure root `ret` completes successfully after this phase.
-- Entry procedure fallthrough behavior from Phase 67A remains successful and does not regress.
-- Non-entry procedure fallthrough after CALL reports runtime error.
-- `exit` still completes successfully.
-- No duplicate `execution-complete` messages are emitted.
+- This program completes successfully:
 
-Acceptance program:
+```asm
+.code
+main PROC
+    ret
+main ENDP
+END main
+```
+
+- This program completes successfully and preserves the helper return path:
 
 ```asm
 .code
@@ -21207,17 +21551,231 @@ Helper ENDP
 END main
 ```
 
-Expected:
+Expected result:
 
 ```text
 execution-complete
 EAX = 00000007h / 7
 ```
 
+- This program reports `non-root-procedure-fell-through`:
+
+```asm
+.code
+main PROC
+    call Helper
+    ret
+main ENDP
+
+Helper PROC
+    mov eax, 7
+Helper ENDP
+END main
+```
+
+- Entry-procedure fallthrough behavior from Phase 67A remains successful:
+
+```asm
+.code
+main PROC
+    mov eax, 1
+main ENDP
+END main
+```
+
+- `exit` still completes successfully if virtual Irvine32 `exit` was already implemented by an earlier accepted phase.
+
 Rendered Simulator Messages tests:
 
-- Completion messages render exactly once.
-- Non-root fallthrough renders with code `non-root-procedure-fell-through`.
+- Root RET completion renders exactly once.
+- Non-entry fallthrough renders `non-root-procedure-fell-through`.
+- Internal invariant failure renders `invalid-root-termination-state` if that state is constructible through native/internal tests.
+- Root RET success does not render `invalid-address`.
+- Root RET success does not render `invalid-return-address`.
+- Root RET success does not render stale Phase 70 wording that says root RET is deferred.
+
+Static documentation tests:
+
+- README current status identifies Phase 71 after Phase 71 is accepted.
+- `docs/SUPPORTED_SYNTAX.md` lists selected-entry root RET as implemented after Phase 71 is accepted.
+- `docs/SUPPORTED_SYNTAX.md` still lists RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless a later accepted phase implements them.
+- Browser-visible status text does not describe selected-entry root RET as deferred after Phase 71 is accepted.
+- Phase metadata advances to Phase 71 if the runtime/source-run behavior phase changes.
+- The source-run output-contract identifier changes only if the public output schema, ordering, or rendered message contract changes.
+
+### Acceptance criteria
+
+Phase 71 is accepted only when:
+
+- selected-entry root RET succeeds by default;
+- selected-entry root RET does not read `[ESP]`;
+- selected-entry root RET does not mutate `ESP`;
+- ordinary helper RET behavior from Phase 70 still works;
+- helper RET still uses checked-memory diagnostics when a return-token read is required and fails;
+- invalid readable return tokens still produce `invalid-return-address`;
+- non-entry procedure fallthrough reports `non-root-procedure-fell-through`;
+- entry-procedure fallthrough remains successful;
+- no Phase 72 call-depth resource-limit behavior is implemented;
+- no call trace behavior is implemented;
+- no source-level PUSH/POP behavior is implemented;
+- no stack-frame behavior is implemented;
+- no UI/source-run root RET strictness toggle is implemented;
+- structured diagnostics and rendered Simulator Messages tests cover the new terminal paths;
+- current-status documentation is updated in place rather than appending a milestone-ledger paragraph.
+
+---
+
+## 75A. Phase 71A - Optional Root RET Strictness Mode
+
+### Goal
+
+Add an optional teaching setting that rejects selected-entry root RET, while preserving Phase 71 MASM32 Educational Mode root RET success as the default.
+
+This phase is optional. Do not implement it unless the project owner explicitly accepts the setting.
+
+This phase must not renumber Phase 72 or any later phase.
+
+### Dependency
+
+Phase 71 must already be complete. Phase 71A depends on the Phase 71 root/helper return-state model and default selected-entry root RET success behavior.
+
+### Default behavior
+
+The default remains:
+
+```text
+rootRetMode = "masm32-compatible"
+```
+
+In this mode, selected-entry root RET terminates successfully.
+
+### Strict behavior
+
+This phase may add:
+
+```text
+rootRetMode = "strict-call-frame"
+```
+
+In strict-call-frame mode, selected-entry root RET is rejected as a teaching option because no active helper return token is pending.
+
+Strict-call-frame mode is not the default and must not be described as more MASM32-compatible than the default mode.
+
+### Required setting surface
+
+If implemented, the setting must be available consistently through:
+
+- browser UI settings;
+- source-run request payload normalization;
+- backend diagnostic/settings structure;
+- source-run JSON metadata if the existing settings metadata model reports active settings;
+- tests for default settings and explicit strict settings.
+
+The setting name must be stable and documented. Do not use vague names such as `strict`, `compatibility`, `realMode`, or `retMode`.
+
+Required setting name:
+
+```text
+rootRetMode
+```
+
+Allowed values:
+
+```text
+masm32-compatible
+strict-call-frame
+```
+
+### Diagnostic
+
+Strict-mode root RET rejection must use a specific diagnostic:
+
+```text
+root-ret-disallowed-by-mode
+```
+
+Kind:
+
+```text
+runtime-error
+```
+
+Required behavior:
+
+- source location points at the RET instruction;
+- message names `rootRetMode = "strict-call-frame"`;
+- message states that default MASM32 Educational Mode accepts root RET;
+- no `[ESP]` read occurs;
+- no `ESP` mutation occurs;
+- no pseudo-EIP token is validated;
+- no `memoryChanges` row is created;
+- no successful terminal status is emitted.
+
+### Non-goals
+
+Phase 71A must not add:
+
+- active-frame provenance validation for ordinary helper RET;
+- call-depth limits;
+- call traces;
+- stack frames;
+- source-level PUSH/POP;
+- RET imm16;
+- RETF;
+- LEAVE;
+- LOCAL;
+- USES;
+- PROTO;
+- INVOKE;
+- ADDR;
+- Irvine32 callable routine dispatch;
+- PE loader behavior;
+- WinAPI behavior;
+- native x86 execution.
+
+### Tests
+
+Settings tests:
+
+- default normalized settings use `rootRetMode = "masm32-compatible"`;
+- explicit `rootRetMode = "masm32-compatible"` is accepted;
+- explicit `rootRetMode = "strict-call-frame"` is accepted;
+- unknown `rootRetMode` values produce a settings diagnostic and do not run source execution.
+
+Source-run tests:
+
+- default mode accepts selected-entry root RET;
+- explicit `masm32-compatible` mode accepts selected-entry root RET;
+- explicit `strict-call-frame` mode rejects selected-entry root RET with `root-ret-disallowed-by-mode`;
+- strict-mode rejection does not read `[ESP]`;
+- strict-mode rejection does not mutate `ESP`;
+- strict-mode rejection does not emit `invalid-address`;
+- strict-mode rejection does not emit `invalid-return-address`;
+- helper CALL/RET behavior remains unchanged in both modes;
+- non-entry procedure fallthrough behavior from Phase 71 remains unchanged in both modes.
+
+Rendered Simulator Messages tests:
+
+- strict-mode root RET rejection renders `root-ret-disallowed-by-mode`;
+- rendered message names the strict setting;
+- rendered message does not imply that real MASM32 rejects root RET.
+
+Static documentation tests:
+
+- README and `docs/SUPPORTED_SYNTAX.md` state that default mode accepts selected-entry root RET after Phase 71;
+- strict mode is documented as optional educational behavior, not the default;
+- current-status text does not imply that strict mode changes the project boundary or adds native call-frame emulation.
+
+### Acceptance criteria
+
+Phase 71A is accepted only when:
+
+- Phase 71 default selected-entry root RET success remains unchanged;
+- strict mode is opt-in only;
+- strict mode has a stable setting name and stable diagnostic code;
+- both default and strict behavior are covered by structured source-run tests and rendered Simulator Messages tests;
+- no ordinary helper RET semantics change;
+- no Phase 72 call-depth or call-trace behavior is introduced.
 
 ---
 

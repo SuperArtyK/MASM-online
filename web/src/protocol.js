@@ -16,13 +16,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 69;
+export const IMPLEMENTED_PHASE = 70;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 69 - Direct CALL to User Procedures";
+export const IMPLEMENTED_PHASE_NAME = "Phase 70 - RET Execution and Return Address Validation";
 
 /** Source-run JSON output-contract identifier expected by the Phase 69C browser/protocol layer. */
 export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-69c-source-run-output-contract-v1";
@@ -114,16 +114,33 @@ function createInvalidDiagnosticSettingsRunResult(diagnostic) {
 }
 
 /**
- * Creates a diagnostic for stale runtime/source-run behavior metadata.
+ * Formats reported runtime/source-run behavior phase metadata for diagnostics.
  *
- * @param {number | null} reportedPhase Runtime/source-run phase reported by the artifact.
- * @param {string} reportedSuffix Runtime/source-run phase suffix reported by the artifact.
+ * @param {number | null} reportedPhase Runtime/source-run phase reported by the artifact, or null when missing or malformed.
+ * @param {string | null} reportedSuffix Runtime/source-run phase suffix reported by the artifact, or null when missing or malformed.
+ * @returns {string} Human-readable phase label for the artifact mismatch diagnostic.
+ */
+function formatReportedRuntimePhaseLabel(reportedPhase, reportedSuffix) {
+  if (reportedPhase === null) {
+    return "unknown";
+  }
+
+  if (reportedSuffix === null) {
+    return `Phase ${reportedPhase} with missing or invalid suffix metadata`;
+  }
+
+  return `Phase ${reportedPhase}${reportedSuffix}`;
+}
+
+/**
+ * Creates a diagnostic for mismatched runtime/source-run behavior metadata.
+ *
+ * @param {number | null} reportedPhase Runtime/source-run phase reported by the artifact, or null when missing or malformed.
+ * @param {string | null} reportedSuffix Runtime/source-run phase suffix reported by the artifact, or null when missing or malformed.
  * @returns {{kind: string, code: string, message: string}} Structured Simulator Messages diagnostic.
  */
-function createStaleRuntimePhaseDiagnostic(reportedPhase, reportedSuffix) {
-  const reportedLabel = reportedPhase === null
-    ? "unknown"
-    : `Phase ${reportedPhase}${reportedSuffix}`;
+function createMismatchedRuntimePhaseDiagnostic(reportedPhase, reportedSuffix) {
+  const reportedLabel = formatReportedRuntimePhaseLabel(reportedPhase, reportedSuffix);
   return {
     kind: "internal-simulator-error",
     code: "stale-wasm-artifact",
@@ -158,10 +175,12 @@ function createStaleOutputContractDiagnostic(reportedContract) {
  *
  * Runtime/source-run behavior phase metadata and Phase 69C output-contract
  * metadata are checked separately so output-only stale artifacts are visible
- * without advancing the runtime behavior phase.
+ * without advancing the runtime behavior phase. Phase 70A makes runtime
+ * metadata an exact match: older, newer, missing, or malformed phase metadata
+ * all use the existing artifact-mismatch diagnostic channel.
  *
  * @param {unknown} runResult Parsed source-run result from the Wasm export.
- * @returns {unknown} The original result, with warning messages inserted when stale.
+ * @returns {unknown} The original result, with warning messages inserted when stale or mismatched.
  */
 function addStaleWasmDiagnosticIfNeeded(runResult) {
   if (!runResult || typeof runResult !== "object") {
@@ -169,13 +188,12 @@ function addStaleWasmDiagnosticIfNeeded(runResult) {
   }
 
   const diagnostics = [];
-  const reportedPhase = typeof runResult.phase === "number" ? runResult.phase : null;
-  const reportedSuffix = typeof runResult.phaseSuffix === "string" ? runResult.phaseSuffix : "";
+  const reportedPhase = Number.isInteger(runResult.phase) ? runResult.phase : null;
+  const reportedSuffix = typeof runResult.phaseSuffix === "string" ? runResult.phaseSuffix : null;
   const isCurrentPhase = reportedPhase === IMPLEMENTED_PHASE && reportedSuffix === IMPLEMENTED_PHASE_SUFFIX;
-  const isNewerNumericPhase = reportedPhase !== null && reportedPhase > IMPLEMENTED_PHASE;
 
-  if (!isCurrentPhase && !isNewerNumericPhase) {
-    diagnostics.push(createStaleRuntimePhaseDiagnostic(reportedPhase, reportedSuffix));
+  if (!isCurrentPhase) {
+    diagnostics.push(createMismatchedRuntimePhaseDiagnostic(reportedPhase, reportedSuffix));
   }
 
   if (runResult.sourceRunOutputContract !== SOURCE_RUN_OUTPUT_CONTRACT) {

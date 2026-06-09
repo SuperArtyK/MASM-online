@@ -1,12 +1,12 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 69 direct user-procedure CALL.
+ * @brief Unit and integration tests for the parser through Phase 70 plain near RET.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
- * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL, unsupported syntax,
+ * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL, Phase 70 plain near RET, unsupported syntax,
  * INCLUDELIB non-goal diagnostics, INVOKE/ADDR
  * external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
@@ -884,6 +884,8 @@ static int test_phase69_direct_call_to_user_procedure_parses_to_ir(void) {
     failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_CALL, "direct CALL should lower to the CALL IR opcode");
     failures += expect_u32((uint32_t)buffers.instructions[1].destination.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "direct CALL should use branch-target metadata for the procedure entry");
     failures += expect_u32(buffers.instructions[1].destination.immediate, 3U, "direct CALL should target the first executable Helper instruction");
+    failures += expect_u32((uint32_t)buffers.instructions[1].source.kind, (uint32_t)VM_IR_OPERAND_BRANCH_TARGET, "direct CALL should retain Phase 70 return-target metadata");
+    failures += expect_u32(buffers.instructions[1].source.immediate, 2U, "direct CALL should return to the next executable instruction in the same procedure");
     failures += expect_size(result.diagnostic_count, 0U, "accepted direct CALL should not emit diagnostics");
 
     failures += expect_parser_status(parse_for_test(
@@ -901,6 +903,24 @@ static int test_phase69_direct_call_to_user_procedure_parses_to_ir(void) {
     ), VM_PARSER_STATUS_OK, "default CASEMAP should resolve folded direct CALL procedure names");
     failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_CALL, "folded direct CALL should lower to CALL");
     failures += expect_u32(buffers.instructions[0].destination.immediate, 2U, "folded direct CALL should target Helper's executable entry");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 1U, "folded direct CALL should return to the same-procedure successor");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call Helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    mov eax, 1\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "terminal CALL fixture should parse without inventing a helper return successor");
+    failures += expect_size(result.instruction_count, 2U, "terminal CALL fixture should lower only CALL and helper MOV");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_CALL, "terminal direct CALL should lower to CALL");
+    failures += expect_u32(buffers.instructions[0].destination.immediate, 1U, "terminal direct CALL should still target Helper's executable entry");
+    failures += expect_u32(buffers.instructions[0].source.immediate, 2U, "terminal direct CALL should encode an invalid boundary return token instead of the helper body");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1041,6 +1061,102 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL unknown target should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "CALL unknown identifier should use unknown-symbol");
+
+    return failures;
+}
+
+
+/// Verifies Phase 70 accepts plain near RET and lowers it into executable IR.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase70_plain_ret_parses_to_ir(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 70 lowercase RET fixture should parse");
+    failures += expect_size(result.instruction_count, 1U, "plain RET should lower one executable instruction");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_RET, "plain RET should lower to RET opcode");
+    failures += expect_u32((uint32_t)buffers.instructions[0].destination.kind, (uint32_t)VM_IR_OPERAND_NONE, "plain RET destination should be empty");
+    failures += expect_u32((uint32_t)buffers.instructions[0].source.kind, (uint32_t)VM_IR_OPERAND_NONE, "plain RET source should be empty");
+    failures += expect_size(result.diagnostic_count, 0U, "plain RET should not emit parser diagnostics");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    RET\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 70 uppercase RET fixture should parse");
+    failures += expect_size(result.instruction_count, 1U, "uppercase RET should lower one executable instruction");
+    failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_RET, "uppercase RET should lower to RET opcode");
+
+    return failures;
+}
+
+/// Verifies Phase 70 rejects future RET forms without enabling stack-frame features.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase70_ret_form_rejections(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ret 4\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET imm16 should remain deferred");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET imm16 should use unsupported-instruction-form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 70 implements only plain near RET", "RET imm16 diagnostic should preserve Phase 70 boundary");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ret eax\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET register operand should remain unsupported");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET register operand should use unsupported-instruction-form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    ret WORD PTR [esp]\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET memory operand should remain unsupported");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET memory operand should use unsupported-instruction-form");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    retf\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RETF far return should remain unsupported");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RETF should use unsupported-instruction-form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "far returns are outside Phase 70", "RETF diagnostic should state far-return boundary");
 
     return failures;
 }
@@ -6946,6 +7062,8 @@ int main(void) {
     failures += test_phase68_call_target_classifier_casemap_policy();
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
+    failures += test_phase70_plain_ret_parses_to_ir();
+    failures += test_phase70_ret_form_rejections();
     failures += test_phase68_procedure_name_diagnostics();
     failures += test_phase68b_eip_control_state_diagnostics();
     failures += test_phase58_label_casemap_policy();

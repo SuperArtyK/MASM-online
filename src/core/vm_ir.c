@@ -227,6 +227,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "jna";
         case VM_IR_OPCODE_CALL:
             return "call";
+        case VM_IR_OPCODE_RET:
+            return "ret";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

@@ -3,8 +3,10 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.
-  Runtime behavior: Phase 69 direct CALL to user procedures.
+  Repository status: Phase 70A: Runtime Metadata Exact-Match Compatibility Check.
+  Runtime behavior: Phase 70 plain near RET returns through checked pseudo-EIP tokens.
+  Protocol behavior: runtime metadata and output-contract metadata must exactly
+  match the UI expectations before artifact warnings are suppressed.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -19,19 +21,22 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.</p>
+        <p class="muted">Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.</p>
         <label for="editor">Editor</label>
-        <textarea id="editor" spellcheck="false">.stack 4096
+        <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
+.stack 4096
 .data
 value DWORD 7
 .code
 main PROC
     call Helper       ; Writes pseudo-EIP return token at ESP - 4
-    mov eax, value    ; Not reached until RET exists in a later phase
+    mov eax, ebx      ; Runs after Helper returns with RET
+    exit
 main ENDP
 
 Helper PROC
     mov ebx, value
+    ret               ; Reads token at ESP and returns to mov eax, ebx
 Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

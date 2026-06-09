@@ -256,6 +256,8 @@ Phase 69C keeps the existing broad focused groups as the supported timeout-safe 
 
 Phase 69C also adds source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with value `phase-69c-source-run-output-contract-v1`. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
 
+Phase 70A tightens browser/Wasm runtime metadata checks. Protocol tests for that corrective phase must cover exact matching runtime phase and matching output contract, older runtime phase mismatch, newer runtime phase mismatch, missing runtime metadata, stale output-contract metadata, missing output-contract metadata, and combined runtime/output-contract mismatch diagnostics in deterministic order. Phase 70A tests must also prove that the correction does not change accepted MASM syntax, VM execution semantics, Program Console output, or public `memoryChanges` rows.
+
 Preferred future subgroup families are:
 
 ```text
@@ -1173,6 +1175,25 @@ For stack/procedure diagnostics, tests must prove:
 - fatal stack/procedure failures do not emit `execution-complete`;
 - no-partial-mutation behavior covers registers, modeled flags, flag-validity metadata, memory bytes, Program Console output, memory-change rows, stack pointer, instruction pointer, and call-depth metadata where applicable;
 - current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
+
+
+For Phase 71 root RET and non-entry fallthrough specifically, tests must prove:
+
+- a source-run fixture where the selected entry procedure contains only `ret` completes successfully;
+- a source-run fixture where the selected entry procedure calls a helper, the helper returns, and the selected entry procedure then uses root `ret` completes successfully;
+- selected-entry procedure fallthrough remains successful;
+- a called non-entry procedure that falls through without RET reports `non-root-procedure-fell-through`;
+- selected-entry root RET does not read `[ESP]`;
+- selected-entry root RET does not mutate `ESP`;
+- selected-entry root RET does not emit `invalid-address`;
+- selected-entry root RET does not emit `invalid-return-address`;
+- selected-entry root RET emits exactly one successful terminal status;
+- ordinary helper RET still emits checked-memory diagnostics when `[ESP]` must be read and is unreadable;
+- ordinary helper RET still emits `invalid-return-address` for readable invalid tokens;
+- rendered Simulator Messages show root RET completion exactly once;
+- rendered Simulator Messages for non-entry fallthrough include `non-root-procedure-fell-through`;
+- static documentation checks move selected-entry root RET from deferred to implemented only after Phase 71 is accepted;
+- static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
 
 
 ## Current-status documentation clutter checks

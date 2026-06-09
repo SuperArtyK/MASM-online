@@ -1,10 +1,10 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 69 direct CALL behavior.
+ * @brief Unit tests for the VM executor through Phase 70 RET behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
- * JMP, conditional-branch, and Phase 69 direct CALL runtime transfer, arithmetic fault rollback, and
+ * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, arithmetic fault rollback, and
  * last-step delta capture. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
@@ -4283,6 +4283,165 @@ static int test_phase69_invalid_call_metadata(void) {
     return failures;
 }
 
+
+/// Verifies Phase 70 RET reads a checked pseudo-EIP token and returns to the CALL successor.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase70_ret_returns_to_call_successor(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecRegisterChange *esp_change = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 3U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov ebx, eax", 1U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "exit", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 42U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 42", 3U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "ret", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for RET success test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "RET success program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("RET success flag setup should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL before RET should execute");
+    failures += expect_size(vm.instruction_pointer, 3U, "CALL should transfer to helper body");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper MOV before RET should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "RET should execute and transfer to CALL successor");
+    failures += expect_size(vm.instruction_pointer, 1U, "RET should transfer to the pseudo-EIP successor after CALL");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after successful RET should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "successful RET should increment ESP back to the empty-stack top");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "RET should preserve modeled flag values");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("successful RET should expose a last-step delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_RET, "RET delta should record RET opcode");
+        failures += expect_size(delta->memory_change_count, 0U, "RET token read should not record memory changes");
+        failures += expect_size(delta->memory_access_count, 1U, "RET should record one checked stack read access");
+        if (delta->memory_access_count >= 1U) {
+            failures += expect_u32((uint32_t)delta->memory_accesses[0].kind, (uint32_t)VM_EXEC_MEMORY_ACCESS_READ, "RET memory access should be a read");
+            failures += expect_u32(delta->memory_accesses[0].address, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "RET should read the return token at ESP");
+            failures += expect_u32(delta->memory_accesses[0].width_bits, 32U, "RET memory access should be DWORD-sized");
+        }
+        failures += expect_size(delta->flag_change_count, 0U, "RET should not report flag changes");
+        esp_change = find_register_change(delta, VM_REGISTER_ESP);
+        if (esp_change == NULL) {
+            failures += record_failure("RET should report ESP register change");
+        } else {
+            failures += expect_u32(esp_change->old_value, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "RET ESP old value should be return-token slot");
+            failures += expect_u32(esp_change->new_value, VM_MEMORY_DEFAULT_STACK_TOP, "RET ESP new value should be stack top");
+        }
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "post-RET MOV should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after post-RET MOV should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after post-RET MOV should succeed"));
+    failures += expect_u32(eax, 42U, "helper should leave EAX set to 42");
+    failures += expect_u32(ebx, 42U, "post-RET MOV should observe helper result");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 70 invalid readable return tokens stop without partial mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase70_ret_invalid_token_rolls_back(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov eax, 1", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid RET token test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "invalid RET token program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("ESP setup for invalid RET token should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, 0x12345678U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("invalid RET token setup should write stack DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_ZF, true) ? 0 : record_failure("invalid RET flag setup should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_RETURN_ADDRESS, "RET invalid token should fail as invalid-return-address");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after invalid RET token should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "invalid RET token should leave ESP unchanged");
+    failures += expect_size(vm.instruction_pointer, 0U, "invalid RET token should leave instruction pointer unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "invalid RET token should preserve flags");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || delta->has_instruction) {
+        failures += record_failure("failed RET token validation should not expose a committed instruction delta");
+    } else {
+        failures += expect_size(delta->memory_change_count, 0U, "invalid RET token should not record memory changes");
+        failures += expect_size(delta->memory_access_count, 1U, "invalid RET token should record the checked stack read");
+        failures += expect_size(delta->register_change_count, 0U, "invalid RET token should not report ESP mutation");
+        failures += expect_size(delta->flag_change_count, 0U, "invalid RET token should not report flag changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("invalid RET token should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_INVALID_RETURN_ADDRESS, "invalid RET token diagnostic should name invalid-return-address");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "invalid RET token diagnostic should point at RET instruction index");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_RETURN_ADDRESS), "invalid-return-address") == 0 ? 1U : 0U, 1U, "executor status helper should name invalid-return-address");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 70 RET empty-stack reads fail through the checked memory helper.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase70_ret_empty_stack_checked_read_failure(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for empty-stack RET test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "empty-stack RET program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("empty-stack RET flag setup should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "empty-stack RET should fail through checked memory helper");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after empty-stack RET should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "empty-stack RET should leave ESP unchanged");
+    failures += expect_size(vm.instruction_pointer, 0U, "empty-stack RET should leave instruction pointer unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "empty-stack RET should preserve flags");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || delta->has_instruction) {
+        failures += record_failure("empty-stack RET failure should not expose a committed instruction delta");
+    } else {
+        failures += expect_size(delta->memory_change_count, 0U, "empty-stack RET should not record memory changes");
+        failures += expect_size(delta->memory_access_count, 1U, "empty-stack RET should record the checked stack read");
+        failures += expect_size(delta->register_change_count, 0U, "empty-stack RET should not report ESP mutation");
+        failures += expect_size(delta->flag_change_count, 0U, "empty-stack RET should not report flag changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("empty-stack RET should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_MEMORY_ERROR, "empty-stack RET diagnostic should report memory-error");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "empty-stack RET diagnostic should point at RET instruction index");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4794,6 +4953,9 @@ int main(void) {
     failures += test_phase69_direct_call_stack_write_and_transfer();
     failures += test_phase69_direct_call_stack_write_failure_rolls_back();
     failures += test_phase69_invalid_call_metadata();
+    failures += test_phase70_ret_returns_to_call_successor();
+    failures += test_phase70_ret_invalid_token_rolls_back();
+    failures += test_phase70_ret_empty_stack_checked_read_failure();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -4804,6 +4966,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 67 arithmetic, branch, and watchdog harness coverage passed.");
+    puts("Executor tests through Phase 70 RET execution and validation coverage passed.");
     return 0;
 }

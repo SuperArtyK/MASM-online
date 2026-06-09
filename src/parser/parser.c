@@ -8,7 +8,7 @@
  * user-procedure CALL metadata, and emits only the minimal IR supported by the
  * current executor. Conditional control-flow transfer is implemented for direct
  * labels and procedure-entry labels; direct CALL is implemented only for user
- * procedure entries. Source-level stack instructions, RET, stack frames,
+ * procedure entries and Phase 70 plain RET. Source-level stack instructions, root RET, stack frames,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -4442,6 +4442,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_CALL;
         return true;
     }
+    if (vm_parser_token_equals(token, "ret")) {
+        *out_opcode = VM_IR_OPCODE_RET;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4647,7 +4651,7 @@ static bool vm_parser_token_is_nop_register_encoding_operand(const VmLexerToken 
 /// Returns whether an opcode uses no explicit source operands.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for accumulator conversion, NOP, and carry-control instructions.
+/// @return true for accumulator conversion, NOP, carry-control, RET, and EXIT instructions.
 static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_CBW ||
            opcode == VM_IR_OPCODE_CWDE ||
@@ -4657,6 +4661,7 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_CLC ||
            opcode == VM_IR_OPCODE_STC ||
            opcode == VM_IR_OPCODE_CMC ||
+           opcode == VM_IR_OPCODE_RET ||
            opcode == VM_IR_OPCODE_EXIT;
 }
 
@@ -7571,6 +7576,7 @@ static bool vm_parser_token_names_instruction_mnemonic(const VmLexerToken *token
 
     return vm_parser_token_equals(token, "call") ||
            vm_parser_token_equals(token, "ret") ||
+           vm_parser_token_equals(token, "retf") ||
            vm_parser_token_equals(token, "loop");
 }
 
@@ -8448,6 +8454,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             }
             opcode = VM_IR_OPCODE_EXIT;
         } else {
+            if (vm_parser_token_equals(mnemonic_token, "retf")) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "RETF far returns are outside Phase 70; only plain near RET with no operands is implemented.");
+                return false;
+            }
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
                 return false;
             }
@@ -8480,6 +8490,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     if (vm_parser_opcode_has_no_operands(opcode)) {
         if (opcode == VM_IR_OPCODE_EXIT && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "exit does not take operands.");
+            return false;
+        }
+        if (opcode == VM_IR_OPCODE_RET && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, vm_parser_current_token(state), "RET imm16, register, and memory operand forms are deferred; Phase 70 implements only plain near RET with no operands.");
             return false;
         }
         if ((opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
@@ -8915,6 +8929,45 @@ static bool vm_parser_reject_classified_call_target(
     }
 }
 
+
+/// Resolves Phase 70 CALL return-token metadata for a lowered CALL instruction.
+///
+/// A successful CALL/RET path may return only to the next executable lowered
+/// instruction inside the same source procedure as the CALL. When a CALL is the
+/// terminal executable instruction of its procedure, the returned token must not
+/// accidentally name the first instruction of a following helper procedure. In
+/// that case this helper returns the current program-count boundary so CALL can
+/// still execute but the later RET rejects the token as `invalid-return-address`.
+///
+/// @param context Parser metadata containing accepted procedure ranges.
+/// @param instruction_index Lowered CALL instruction index.
+/// @param instruction_count Total lowered executable instruction count.
+/// @return Return-target instruction index to encode as a pseudo-EIP token.
+static size_t vm_parser_phase70_call_return_target_index(
+    const VmParserCallTargetContext *context,
+    size_t instruction_index,
+    size_t instruction_count
+) {
+    size_t index = 0U;
+    size_t default_boundary = instruction_count;
+
+    if (instruction_index + 1U < instruction_index) {
+        return default_boundary;
+    }
+
+    if (context != NULL && context->procedure_ranges != NULL) {
+        for (index = 0U; index < context->procedure_range_count; index += 1U) {
+            const VmProcedureRange *range = &context->procedure_ranges[index];
+            if (instruction_index >= range->start_instruction_index && instruction_index < range->end_instruction_index) {
+                size_t successor = instruction_index + 1U;
+                return successor < range->end_instruction_index ? successor : default_boundary;
+            }
+        }
+    }
+
+    return instruction_index + 1U < instruction_count ? instruction_index + 1U : default_boundary;
+}
+
 /// Resolves one retained direct CALL fixup to a procedure-entry instruction index.
 ///
 /// @param state Parser state to mutate.
@@ -8975,6 +9028,11 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
     }
 
     instruction->destination = vm_ir_operand_branch_target((uint32_t)target_instruction_index);
+    instruction->source = vm_ir_operand_branch_target((uint32_t)vm_parser_phase70_call_return_target_index(
+        &context,
+        fixup->instruction_index,
+        state->result->instruction_count
+    ));
     return true;
 }
 

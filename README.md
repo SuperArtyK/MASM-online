@@ -5,22 +5,27 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
 
 Runtime/source-run MASM behavior phase:
-Phase 69 - Direct CALL to User Procedures
+Phase 70 - RET Execution and Return Address Validation
 
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Latest artifact/test-infrastructure cleanup phase:
+Latest source-run output-contract phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
-Phase 69B improves final-register display grouping and Simulator Messages ordering only. Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection and keeps the decomposed broad test groups unchanged. Neither phase changes supported MASM syntax, parser behavior, VM instruction semantics, Program Console output, or the runtime/source-run MASM behavior phase.
+Latest protocol/artifact compatibility cleanup phase:
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+
+Phase 69B improves final-register display grouping and Simulator Messages ordering only. Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection and keeps the decomposed broad test groups unchanged. Phase 70 advances runtime/source-run behavior by implementing plain near `RET` return-token execution and validation while preserving the Phase 69C source-run output-contract identifier. Phase 70A is protocol/artifact compatibility cleanup only: it requires exact matching runtime metadata and output-contract metadata between the UI and the loaded Wasm/source-run artifact, including rejecting newer runtime phase metadata by default.
 
 Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. That return-token write is an implicit VM stack write: it is checked through the central memory helpers and tracked internally, but the current public source-run output contract does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
-`RET`, Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, and `ADDR` remain deferred.
+Phase 70 implements plain near `ret`/`RET` with no operands. `RET` reads a DWORD pseudo-EIP return token from `[ESP]` through the central checked-memory path, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4 on success, and transfers to the validated target. Invalid readable return tokens emit `invalid-return-address`; unreadable `[ESP]` uses the existing checked-memory diagnostics. The implicit return-token read is internal VM control-flow machinery and is not exposed as a public source-run `memoryChanges` row.
+
+Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, root `RET` termination, non-entry procedure fallthrough diagnostics, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `leave`, and `ret imm16` remain deferred.
 
 For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -43,6 +48,7 @@ At a high level, the current subset includes:
 - `ESP` startup initialized from the active stack region empty-stack address;
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
 - direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes;
+- plain near `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer;
 - successful completion at the selected entry procedure's `ENDP` boundary;
 - procedure-entry and call-target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
@@ -55,7 +61,7 @@ Future/deferred simulator features include:
 
 - `loop`;
 - source-level `push` and `pop`;
-- plain `ret`, `leave`, and `ret imm16`;
+- root `ret`, `leave`, and `ret imm16`;
 - root procedure termination through `ret`;
 - non-entry procedure fallthrough diagnostics after CALL/RET are available;
 - stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
