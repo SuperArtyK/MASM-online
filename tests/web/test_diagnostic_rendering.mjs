@@ -1616,14 +1616,14 @@ END main
 `,
     reason: "Phase 57T realistic MASM32 playground diagnostic-recovery fixture."
   },
-  phase57tRetUnsupported: {
+  phase70RootRetCheckedRead: {
     source: `.code
 main PROC
     ret
 main ENDP
 END main
 `,
-    reason: "Phase 57T RET unsupported-instruction diagnostic fixture."
+    reason: "Phase 70 root RET checked-memory diagnostic fixture."
   },
   phase62CmpRegisterImmediateSuccess: {
     source: `.code
@@ -1632,7 +1632,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 69 runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 70 runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2209,7 +2209,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2252,7 +2252,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2289,9 +2289,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2317,7 +2317,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2344,7 +2344,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2369,7 +2369,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2393,7 +2393,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2419,7 +2419,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2459,7 +2459,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.instructionCount, 3);
   assert.equal(json.executedInstructionCount, 3);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2490,8 +2490,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phase, 70);
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2535,8 +2535,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phase, 70);
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2562,7 +2562,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2586,7 +2586,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2610,7 +2610,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2635,7 +2635,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2659,7 +2659,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2683,7 +2683,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2708,9 +2708,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2736,9 +2736,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2764,9 +2764,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2791,9 +2791,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2819,7 +2819,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2844,7 +2844,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2868,7 +2868,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3085,7 +3085,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 69);
+    assert.equal(json.phase, 70);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3098,7 +3098,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 69);
+  assert.equal(duplicateResult.json.phase, 70);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3600,7 +3600,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3621,7 +3621,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5054,9 +5054,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5115,9 +5115,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5174,9 +5174,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5211,9 +5211,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000000h");
@@ -5239,9 +5239,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.executedInstructionCount, 0);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
@@ -5272,9 +5272,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(json.phaseName, "Phase 70 - RET Execution and Return Address Validation");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6267,7 +6267,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6299,7 +6299,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -6384,13 +6384,13 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-procedure-name line 2, column 1, byte offset 6, span length 3: Procedure name must be an identifier before PROC.");
 });
 
-test("Phase 57T renders RET, loop, and WinAPI unsupported diagnostics exactly", () => {
-  const retName = "phase57tRetUnsupported";
+test("Phase 70 renders root RET checked-memory diagnostic, loop, and WinAPI diagnostics exactly", () => {
+  const retName = "phase70RootRetCheckedRead";
   const retSource = fixtureSource(retName);
   const retResult = runFixture(retName, retSource);
-  assertRunStatus(retResult.json, false, "parse-error");
+  assertRunStatus(retResult.json, false, "execution-error");
   assertNoExecutionComplete(retResult.json.simulatorMessages);
-  assertRenderedEquals(retName, retSource, retResult.rawJson, retResult.rendered, "[assembly-error] unsupported-instruction line 3, column 5, byte offset 20, span length 3: Unsupported instruction. This mnemonic has no executable behavior in MASM32 Educational Mode; use an implemented instruction listed in docs/SUPPORTED_SYNTAX.md.");
+  assertRenderedEquals(retName, retSource, retResult.rawJson, retResult.rendered, "[runtime-error] invalid-address line 3, column 5, byte offset 20, span length 3: Invalid memory read at 00900000h for 4 bytes. The address is outside the simulator's configured memory regions.");
 
   const jumpName = "phase57tLoopUnsupported";
   const jumpSource = fixtureSource(jumpName);
@@ -6405,6 +6405,26 @@ test("Phase 57T renders RET, loop, and WinAPI unsupported diagnostics exactly", 
   assertRunStatus(exitProcessResult.json, false, "parse-error");
   assertNoExecutionComplete(exitProcessResult.json.simulatorMessages);
   assertRenderedEquals(exitProcessName, exitProcessSource, exitProcessResult.rawJson, exitProcessResult.rendered, "[unsupported-feature] unsupported-invoke line 4, column 5, byte offset 41, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-winapi-execution line 4, column 12, byte offset 48, span length 11: ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.");
+});
+
+
+test("Phase 70 renders invalid-return-address diagnostic exactly", () => {
+  const name = "phase70InvalidReturnAddress";
+  const source = `.code
+main PROC
+    call Helper
+    mov eax, 1
+main ENDP
+Helper PROC
+    mov DWORD PTR [esp], 12345678h
+    ret
+Helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] invalid-return-address line 8, column 5, byte offset 108, span length 3: RET read a return token that does not map to an executable pseudo-EIP instruction target. Execution stopped before changing ESP or transferring control.");
 });
 
 
@@ -7023,7 +7043,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 69);
+  assert.equal(json.phase, 70);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

@@ -7,14 +7,16 @@
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
- * signed relational conditional jumps, and Irvine32 exit forms over the
- * currently supported operand shapes. Phase 59 source-run code layers an
- * instruction-count watchdog over this executor. Unsigned relational conditional
- * jumps are supported for direct labels. Phase 68A initializes ESP from the
- * active stack region at program startup; source-level stack instructions,
- * procedure frames, RET stack mutation, and non-exit Irvine32 routines remain
+ * signed relational conditional jumps, direct CALL, Phase 70 plain near RET,
+ * and Irvine32 exit forms over the currently supported operand shapes. Phase 59
+ * source-run code layers an instruction-count watchdog over this executor.
+ * Unsigned relational conditional jumps are supported for direct labels.
+ * Phase 68A initializes ESP from the active stack region at program startup;
+ * source-level stack instructions,
+ * procedure frames, root RET, RET imm16, and non-exit Irvine32 routines remain
  * later milestones; Phase 69 direct user-procedure CALL performs its internal
- * checked return-token stack write.
+ * checked return-token stack write, and Phase 70 plain RET performs its internal
+ * checked return-token stack read.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -75,6 +77,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_BRANCH_TARGET,
     /// A lowered direct CALL target was malformed or outside the loaded program.
     VM_EXEC_STATUS_INVALID_CALL_TARGET,
+    /// A checked RET return token did not map to an executable pseudo-EIP instruction target.
+    VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
 } VmExecStatus;
@@ -242,7 +246,7 @@ bool vm_exec_instruction_index_to_pseudo_eip(size_t instruction_index, uint32_t 
 
 /// Maps a valid displayed pseudo-EIP value back to a loaded instruction index.
 ///
-/// This Phase 68B reverse mapping is reserved for later procedure-return
+/// This Phase 68B reverse mapping is used by Phase 70 procedure-return
 /// validation. It accepts only values aligned to the canonical pseudo-code
 /// stride and inside the supplied executable instruction count.
 ///

@@ -14,8 +14,9 @@
  * diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow
  * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
- * virtual Irvine32 registry metadata, and Phase 68 call-target classification
- * metadata used by Phase 69 direct user-procedure CALL lowering.
+ * virtual Irvine32 registry metadata, Phase 68 call-target classification
+ * metadata used by Phase 69 direct user-procedure CALL lowering, and Phase 70
+ * plain near RET lowering.
  */
 
 #ifndef MASM32_SIM_PARSER_H

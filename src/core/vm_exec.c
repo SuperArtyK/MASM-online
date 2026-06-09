@@ -7,13 +7,15 @@
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
- * jumps, Phase 66 unsigned relational conditional jumps, and Irvine32 exit over
+ * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
+ * Phase 70 plain near RET, and Irvine32 exit over
  * the currently supported register and memory operand forms. It records last-step
  * deltas by snapshotting CPU state and copying memory-module byte changes after
  * each successful step. Phase 68A initializes ESP from the active stack region
- * at startup; source-level stack instructions, procedure frames, RET stack
- * mutation, and non-exit Irvine32 routines remain later milestones. Phase 69
- * implements direct user-procedure CALL as a checked internal stack write. Phase 68B
+ * at startup; source-level stack instructions, procedure frames, root RET,
+ * RET imm16, and non-exit Irvine32 routines remain later milestones. Phase 69
+ * implements direct user-procedure CALL as a checked internal stack write, and
+ * Phase 70 implements plain RET as a checked internal stack read. Phase 68B
  * displays EIP as VM control-state pseudo-code address metadata instead of a
  * source-writable or delta-tracked register.
  */
@@ -2954,7 +2956,8 @@ static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruc
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-    if (instruction->destination.kind != VM_IR_OPERAND_BRANCH_TARGET || instruction->source.kind != VM_IR_OPERAND_NONE) {
+    if (instruction->destination.kind != VM_IR_OPERAND_BRANCH_TARGET ||
+        (instruction->source.kind != VM_IR_OPERAND_NONE && instruction->source.kind != VM_IR_OPERAND_BRANCH_TARGET)) {
         return VM_EXEC_STATUS_INVALID_CALL_TARGET;
     }
     if ((size_t)instruction->destination.immediate >= vm->program_count) {
@@ -2967,7 +2970,8 @@ static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruc
 /// Executes one Phase 69 direct user-procedure CALL stack write.
 ///
 /// The helper validates target metadata before mutation, computes the return
-/// token from the pseudo-EIP of the lowered instruction after CALL, writes that
+/// token from parser-owned return-target metadata when present, falls back to
+/// the next lowered instruction for hand-authored native fixtures, writes that
 /// token to `ESP - 4` through checked memory, and updates ESP only after the
 /// write succeeds. The caller applies the instruction-pointer transfer after
 /// successful execution so accounting and deltas stay centralized in @ref vm_step.
@@ -2991,7 +2995,11 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     if (target_status != VM_EXEC_STATUS_OK) {
         return target_status;
     }
-    if (!vm_exec_instruction_index_to_pseudo_eip(vm->instruction_pointer + 1U, &return_token)) {
+    if (instruction->source.kind == VM_IR_OPERAND_BRANCH_TARGET) {
+        if (!vm_exec_instruction_index_to_pseudo_eip((size_t)instruction->source.immediate, &return_token)) {
+            return VM_EXEC_STATUS_INVALID_CALL_TARGET;
+        }
+    } else if (!vm_exec_instruction_index_to_pseudo_eip(vm->instruction_pointer + 1U, &return_token)) {
         return VM_EXEC_STATUS_INVALID_CALL_TARGET;
     }
     if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
@@ -3011,6 +3019,53 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Executes one Phase 70 plain near RET stack read and target validation.
+///
+/// RET consumes a DWORD pseudo-EIP return token from `[ESP]` through the
+/// central checked memory-read helper. The token must map to an executable
+/// lowered VM instruction before ESP is incremented or control transfers.
+/// Root-return sentinels, raw instruction indexes, data addresses, and
+/// out-of-range pseudo-EIP values remain invalid in Phase 70.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction RET instruction descriptor.
+/// @return Executor status for the RET read and return-target validation.
+static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instruction) {
+    VmMemoryDiagnostic memory_diagnostic;
+    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+    uint32_t original_esp = 0U;
+    uint32_t return_token = 0U;
+    size_t return_index = 0U;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &original_esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+    memory_status = vm_memory_read_u32(&vm->memory, original_esp, &return_token, &memory_diagnostic);
+    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, original_esp, 32U, memory_status);
+    if (!vm_memory_status_succeeded(memory_status)) {
+        vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
+        return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    if (!vm_exec_pseudo_eip_to_instruction_index(return_token, vm->program_count, &return_index)) {
+        return VM_EXEC_STATUS_INVALID_RETURN_ADDRESS;
+    }
+
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, original_esp + 4U)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    vm->instruction_pointer = return_index;
     return VM_EXEC_STATUS_OK;
 }
 
@@ -3175,6 +3230,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_validate_branch_target(vm, instruction);
         case VM_IR_OPCODE_CALL:
             return vm_exec_execute_call(vm, instruction);
+        case VM_IR_OPCODE_RET:
+            return vm_exec_execute_ret(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:
@@ -3605,6 +3662,8 @@ VmExecStatus vm_step(Vm *vm) {
 
     if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL) {
         vm->instruction_pointer = (size_t)instruction->destination.immediate;
+    } else if (instruction->opcode == VM_IR_OPCODE_RET) {
+        /* vm_exec_execute_ret already transferred to the validated pseudo-EIP target. */
     } else if (vm_exec_opcode_is_conditional_jump(instruction->opcode)) {
         bool branch_taken = false;
         if (!vm_exec_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
@@ -3670,6 +3729,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-branch-target";
         case VM_EXEC_STATUS_INVALID_CALL_TARGET:
             return "invalid-call-target";
+        case VM_EXEC_STATUS_INVALID_RETURN_ADDRESS:
+            return "invalid-return-address";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:
             return "branch-runtime-deferred";
         default:

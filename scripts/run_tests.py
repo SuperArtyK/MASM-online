@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 69 - Direct CALL to User Procedures")
+    assert_text_contains("README.md", "Phase 70 - RET Execution and Return Address Validation")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -552,9 +552,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 69")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 70")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 69 - Direct CALL to User Procedures")
+    assert_text_contains("web/src/protocol.js", "Phase 70 - RET Execution and Return Address Validation")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1412,13 +1412,13 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase69c_current_status_and_harness_documented() -> None:
-    """Verify Phase 69C current status, output-contract metadata, and direct CALL coverage."""
+def assert_phase70_current_status_and_harness_documented() -> None:
+    """Verify Phase 70 current status, output-contract metadata, CALL coverage, and RET coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
+Phase 70 - RET Execution and Return Address Validation"""
     runtime_status = """Runtime/source-run MASM behavior phase:
-Phase 69 - Direct CALL to User Procedures"""
+Phase 70 - RET Execution and Return Address Validation"""
     artifact_status = """Latest artifact/test-infrastructure cleanup phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
     for path in [
@@ -1432,12 +1432,12 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
+Phase 70 - RET Execution and Return Address Validation""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current runtime/source-run MASM behavior phase:
-Phase 69 - Direct CALL to User Procedures""",
+Phase 70 - RET Execution and Return Address Validation""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
@@ -1449,6 +1449,7 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
         "README.md",
         [
             "Phase 69 implements direct near `call ProcedureName`",
+            "Phase 70 implements plain near `ret`/`RET` with no operands",
             "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
             "That return-token write is an implicit VM stack write",
             "current public source-run output contract does not expose it as a visible `memoryChanges` row",
@@ -1459,7 +1460,8 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
             "`ESP` startup initialized from the active stack region empty-stack address",
             "displayed `EIP` derived from VM pseudo-code-address control state",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
-            "Phase 69 - Direct CALL to User Procedures",
+            "plain near `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
+            "Phase 70 - RET Execution and Return Address Validation",
             "Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection",
             "Phase 69B improves final-register display grouping and Simulator Messages ordering only.",
             "docs/SUPPORTED_SYNTAX.md",
@@ -1502,7 +1504,7 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
             "they are not future work merely because they are currently rejected",
             "Rejected simulator-owned CALL target forms remain rejected unless a later accepted phase explicitly changes that simulator-owned form",
             "External/API calls are not simulator-owned deferred CALL forms",
-            "Phase 69 direct user-procedure `CALL` demonstrates target transfer and checked pseudo-EIP return-token stack write only",
+            "`ret`/`RET` with no operands is implemented as a plain near return",
             "External/API calls and WinAPI behavior are non-goals, not deferred direct-CALL target forms",
             "Uninitialized-read warning policy is orthogonal to region-only address/range validation",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
@@ -1513,9 +1515,9 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
             "falling off the selected entry procedure at `ENDP` completes successfully",
             "Implemented direct branch and conditional branch families may target executable code labels or procedure-entry labels according to their instruction-specific rules.",
             "Direct user-procedure `CALL` targets user `PROC` entries only.",
-            "Calls to Irvine32 routines, source-level stack instructions, and procedure frames remain deferred according to the future-feature sections in this document.",
+            "Calls to Irvine32 routines, source-level stack instructions, root RET termination, RET imm16, and procedure frames remain deferred according to the future-feature sections in this document.",
             "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
-            "Plain `RET`, root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions",
+            "Root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions",
             "selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them",
             "direct `jmp label`",
             "equality conditional jumps",
@@ -1556,12 +1558,13 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
+            "Phase 70 - RET Execution and Return Address Validation",
             "Current runtime/source-run MASM behavior phase:",
             "Latest artifact/test-infrastructure cleanup phase:",
             "Next runtime implementation milestone:",
-            "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 69C is artifact/test-infrastructure cleanup only.",
+            "Phase 71 - Root Procedure Termination Semantics",
+            "Phase 69C was artifact/test-infrastructure cleanup only; it added the separate source-run output-contract identifier",
+            "Phase 70 is the current runtime/source-run behavior phase and implements plain near RET return-token execution and validation",
             "phase-69c-source-run-output-contract-v1",
             "stale-wasm-output-contract",
             "Artifact verification versus rebuild verification",
@@ -1589,15 +1592,17 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
             "Files changed",
             "Tests added",
             "Commands used to test",
+            "Phase 69 remains the latest completed runtime/source-run MASM behavior phase",
+            "Neither cleanup phase changes parser behavior",
         ],
     )
 
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 69C:",
+            "Current status at Phase 70:",
             "Phase 69C is artifact/test-infrastructure cleanup only.",
-            "Phase 69B is output/message-ordering cleanup only.",
+            "Phase 69B was output/message-ordering cleanup only.",
             "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Phase 69 implements direct user-procedure `CALL` to user `PROC` entries",
             "current public source-run JSON does not expose it as a visible `memoryChanges` row",
@@ -1615,8 +1620,8 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
             "Latest artifact/test-infrastructure cleanup phase:",
             "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
             "Next runtime implementation milestone:",
-            "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 70 remains the next runtime implementation phase",
+            "Phase 71 - Root Procedure Termination Semantics",
+            "Phase 70 - RET Execution and Return Address Validation is complete as runtime/source-run behavior",
             "## Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
             "Final register display now separates general registers, index registers, stack/frame registers, and control/modeled flag state",
             "startup-state-notice` first whenever execution begins",
@@ -1647,6 +1652,20 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
         "docs/FULL_IMPLEMENTATION_SPEC.md",
         [
             "As of the Phase 69 source-of-truth revision",
+            "current Phase 69 public output contract",
+            "current source-of-truth revision after Phase 69C",
+        ],
+    )
+    assert_all_text_not_contains(
+        "tests/core/test_wasm_source_run.c",
+        [
+            "current Phase 69 numeric phase metadata",
+        ],
+    )
+    assert_all_text_not_contains(
+        "tests/web/test_diagnostic_rendering.mjs",
+        [
+            "Current Phase 69 runtime metadata",
         ],
     )
     assert_all_text_contains(
@@ -1678,8 +1697,9 @@ Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
     assert_all_text_contains(
         "web/index.html",
         [
-            "Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.",
-            "Repository status: Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.",
+            "Milestone 70: RET execution and return address validation.",
+            "Repository status: Phase 70: RET Execution and Return Address Validation.",
+            "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
             "Writes pseudo-EIP return token at ESP - 4",
@@ -2053,7 +2073,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase69c_current_status_and_harness_documented()
+    assert_phase70_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

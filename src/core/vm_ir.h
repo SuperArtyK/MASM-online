@@ -136,6 +136,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_JNA,
     /// Direct near CALL to a user procedure entry.
     VM_IR_OPCODE_CALL,
+    /// Plain near RET that consumes a checked pseudo-EIP return token from the stack.
+    VM_IR_OPCODE_RET,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

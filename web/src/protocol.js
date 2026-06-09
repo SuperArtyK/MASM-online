@@ -16,13 +16,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 69;
+export const IMPLEMENTED_PHASE = 70;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 69 - Direct CALL to User Procedures";
+export const IMPLEMENTED_PHASE_NAME = "Phase 70 - RET Execution and Return Address Validation";
 
 /** Source-run JSON output-contract identifier expected by the Phase 69C browser/protocol layer. */
 export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-69c-source-run-output-contract-v1";
