@@ -24,6 +24,9 @@ export const IMPLEMENTED_PHASE_SUFFIX = "";
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
 export const IMPLEMENTED_PHASE_NAME = "Phase 69 - Direct CALL to User Procedures";
 
+/** Source-run JSON output-contract identifier expected by the Phase 69C browser/protocol layer. */
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-69c-source-run-output-contract-v1";
+
 /**
  * Creates the initial worker readiness response.
  *
@@ -38,7 +41,8 @@ export function createReadyMessage(wasmLoadInfo) {
       wasmTestValue: wasmLoadInfo.testValue,
       phase: IMPLEMENTED_PHASE,
       phaseSuffix: IMPLEMENTED_PHASE_SUFFIX,
-      phaseName: IMPLEMENTED_PHASE_NAME
+      phaseName: IMPLEMENTED_PHASE_NAME,
+      sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT
     }
   };
 }
@@ -110,42 +114,82 @@ function createInvalidDiagnosticSettingsRunResult(diagnostic) {
 }
 
 /**
- * Adds a diagnostic when a stale generated Wasm artifact runs newer UI source.
+ * Creates a diagnostic for stale runtime/source-run behavior metadata.
+ *
+ * @param {number | null} reportedPhase Runtime/source-run phase reported by the artifact.
+ * @param {string} reportedSuffix Runtime/source-run phase suffix reported by the artifact.
+ * @returns {{kind: string, code: string, message: string}} Structured Simulator Messages diagnostic.
+ */
+function createStaleRuntimePhaseDiagnostic(reportedPhase, reportedSuffix) {
+  const reportedLabel = reportedPhase === null
+    ? "unknown"
+    : `Phase ${reportedPhase}${reportedSuffix}`;
+  return {
+    kind: "internal-simulator-error",
+    code: "stale-wasm-artifact",
+    message: `The loaded Wasm artifact reports runtime/source-run MASM behavior ${reportedLabel}, but the UI/source files expect ${IMPLEMENTED_PHASE_NAME}. Rebuild web/dist with the Emscripten build script.`
+  };
+}
+
+/**
+ * Creates a diagnostic for stale or missing Phase 69C output-contract metadata.
+ *
+ * @param {unknown} reportedContract Source-run output contract reported by the artifact.
+ * @returns {{kind: string, code: string, message: string}} Structured Simulator Messages diagnostic.
+ */
+function createStaleOutputContractDiagnostic(reportedContract) {
+  if (typeof reportedContract !== "string") {
+    return {
+      kind: "internal-simulator-error",
+      code: "stale-wasm-output-contract",
+      message: "The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+    };
+  }
+
+  return {
+    kind: "internal-simulator-error",
+    code: "stale-wasm-output-contract",
+    message: `The loaded Wasm artifact reports source-run output contract "${reportedContract}", but the UI/source files expect "${SOURCE_RUN_OUTPUT_CONTRACT}". Rebuild web/dist with the Emscripten build script.`
+  };
+}
+
+/**
+ * Adds diagnostics when a generated Wasm artifact does not match UI expectations.
+ *
+ * Runtime/source-run behavior phase metadata and Phase 69C output-contract
+ * metadata are checked separately so output-only stale artifacts are visible
+ * without advancing the runtime behavior phase.
  *
  * @param {unknown} runResult Parsed source-run result from the Wasm export.
- * @returns {unknown} The original result, with a warning message inserted when stale.
+ * @returns {unknown} The original result, with warning messages inserted when stale.
  */
 function addStaleWasmDiagnosticIfNeeded(runResult) {
   if (!runResult || typeof runResult !== "object") {
     return runResult;
   }
 
+  const diagnostics = [];
   const reportedPhase = typeof runResult.phase === "number" ? runResult.phase : null;
   const reportedSuffix = typeof runResult.phaseSuffix === "string" ? runResult.phaseSuffix : "";
-  if (reportedPhase === null) {
-    return runResult;
-  }
-
   const isCurrentPhase = reportedPhase === IMPLEMENTED_PHASE && reportedSuffix === IMPLEMENTED_PHASE_SUFFIX;
-  const isNewerNumericPhase = reportedPhase > IMPLEMENTED_PHASE;
+  const isNewerNumericPhase = reportedPhase !== null && reportedPhase > IMPLEMENTED_PHASE;
 
-  if (isCurrentPhase || isNewerNumericPhase) {
-    return runResult;
+  if (!isCurrentPhase && !isNewerNumericPhase) {
+    diagnostics.push(createStaleRuntimePhaseDiagnostic(reportedPhase, reportedSuffix));
   }
 
-  const reportedLabel = reportedPhase === null
-    ? "unknown"
-    : `Phase ${reportedPhase}${reportedSuffix}`;
-  const diagnostic = {
-    kind: "internal-simulator-error",
-    code: "stale-wasm-artifact",
-    message: `The loaded Wasm artifact reports runtime/source-run MASM behavior ${reportedLabel}, but the UI/source files expect ${IMPLEMENTED_PHASE_NAME}. Rebuild web/dist with the Emscripten build script.`
-  };
+  if (runResult.sourceRunOutputContract !== SOURCE_RUN_OUTPUT_CONTRACT) {
+    diagnostics.push(createStaleOutputContractDiagnostic(runResult.sourceRunOutputContract));
+  }
+
+  if (diagnostics.length === 0) {
+    return runResult;
+  }
 
   const messages = Array.isArray(runResult.simulatorMessages) ? runResult.simulatorMessages : [];
   return {
     ...runResult,
-    simulatorMessages: [diagnostic, ...messages]
+    simulatorMessages: [...diagnostics, ...messages]
   };
 }
 

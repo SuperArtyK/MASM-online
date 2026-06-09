@@ -154,6 +154,21 @@ function test(name, body) {
   console.log(`PASS ${name}`);
 }
 
+test("Phase 69C renders stale output-contract warning exactly", () => {
+  const rendered = formatSimulatorMessages([
+    {
+      kind: "internal-simulator-error",
+      code: "stale-wasm-output-contract",
+      message: "The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+    }
+  ]);
+
+  assert.equal(
+    rendered,
+    "[internal-simulator-error] stale-wasm-output-contract: The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+  );
+});
+
 /**
  * Returns compact context for a fixture failure.
  *

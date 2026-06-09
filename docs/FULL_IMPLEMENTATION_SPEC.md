@@ -73,6 +73,33 @@ Current-status surfaces include, at minimum:
 - worker-generated `ui-error` messages;
 - newly created milestone reports and current handoff/status summaries, while historical milestone reports remain historical evidence and do not need retroactive cleanup unless the user explicitly asks for historical report cleanup.
 
+When repository/archive status and runtime/source-run MASM behavior status differ, visible user-facing status surfaces must identify both values in concise form.
+
+This requirement applies to browser-visible status text, README current-status text, supported-syntax current-status text, build/development current-status text, worker/protocol phase strings, source-run JSON metadata, and static tests that assert those strings.
+
+A distinction that appears only in an HTML comment, source-code comment, milestone report, historical handoff note, or static-test-only helper string is not sufficient for a visible user-facing surface. Comments may repeat the distinction for maintainers, but the visible user-facing text must not cause a reader to infer that a repository-maintenance, artifact-compatibility, output-ordering, test-runner, or documentation milestone changed accepted MASM syntax or VM execution behavior.
+
+For example, after Phase 69C, a browser-visible status line may say:
+
+```text
+Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.
+```
+
+That kind of wording is acceptable because it identifies both:
+
+- the repository/archive milestone; and
+- the runtime/source-run MASM behavior phase.
+
+A browser-visible status line must not say only:
+
+```text
+Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.
+```
+
+when that wording is the only visible user-facing status text, because Phase 69C is not a runtime/source-run MASM behavior phase.
+
+If a later runtime/source-run behavior phase is accepted, update both values in the same milestone. Do not leave visible user-facing text showing an older runtime behavior phase, and do not advance runtime/source-run behavior metadata merely because a non-runtime repository milestone was accepted.
+
 ### Current-status surfaces are not changelogs
 
 Current-status surfaces must be concise replacement summaries. They must not accumulate one paragraph per accepted milestone.
@@ -5196,6 +5223,25 @@ If a future source-less or synthesized runtime operation produces a memory chang
 source unavailable
 ```
 
+Implicit VM-internal memory accesses performed by simulator control-flow machinery are distinct from public source-run memory-change rows unless an owning milestone explicitly says otherwise.
+
+Examples of implicit VM-internal accesses include:
+
+- the Phase 69 direct `CALL` return-token stack write; and
+- the Phase 70 `RET` return-token stack read.
+
+These accesses are real VM memory accesses. They must use the same central checked VM memory helpers, mandatory address/range/permission validation, read-only range protection, planned-access policy integration where applicable, and no-partial-mutation rules as other VM memory accesses.
+
+However, an implicit simulator-owned stack access is not automatically a public source-program memory-change row. Public source-run JSON `memoryChanges` rows and any rendered UI memory-change display derived from that JSON are the user-visible output-contract surface for memory writes that the simulator intentionally exposes as program memory changes.
+
+A phase that introduces or changes implicit stack access must state explicitly whether that implicit access appears in public source-run JSON `memoryChanges` and rendered memory-change displays.
+
+Unless the owning milestone explicitly requires public visualization, implicit control-flow stack writes and reads must remain internal execution-delta/access-history facts and must not appear as public source-run JSON `memoryChanges` rows.
+
+This rule preserves the current Phase 69 public output contract: successful direct user-procedure `CALL` performs an internal checked pseudo-EIP return-token stack write, updates `ESP`, and transfers to the target procedure entry, but Phase 69 does not require that implicit stack write to appear as a public source-run `memoryChanges` row.
+
+Because `RET` reads the return token rather than writing one, Phase 70 `RET` return-token reads must not create public source-run JSON `memoryChanges` rows. If a later milestone deliberately adds public stack-effect visualization, that milestone must define the JSON fields, rendered display wording, source attribution behavior, tests, and compatibility impact.
+
 Source attribution must not create successful memory-change rows for failed writes. Failed `.CONST` writes, invalid-address writes, invalid-range writes, permission failures, strict planned-access failures, and any other no-partial-mutation failure must still produce no successful memory-change row.
 
 This rule affects memory-change attribution in source-run results and rendered memory-change display only. It does not change MASM syntax, parser acceptance, instruction semantics, memory safety, `.CONST` protection, planned-read or planned-write policy behavior, Program Console output, diagnostic codes, or diagnostic-policy behavior.
@@ -6423,7 +6469,7 @@ Important split areas:
 - Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
 - Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the current source-of-truth revision after Phase 69B, the sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. Phase 69A is documentation/static-check cleanup only and does not advance the MASM syntax or VM execution-semantics phase beyond Phase 69. Phase 69B is output/message-ordering cleanup only and must not implement `RET` or other future runtime semantics. Phase 69C is artifact/test-infrastructure cleanup only and must not implement `RET` or other future runtime semantics. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, `69B`, or `69C`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
+- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns the exact phase order. As of the current source-of-truth revision after Phase 69C, the sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then the later phases for root procedure termination, call-depth diagnostics, source-level `PUSH`/`POP`, `LEAVE`, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, and Irvine32 callable routine dispatch. Phase 68A defines `ESP` startup from the active stack region. `ESP` remains source-writable through supported explicit register instructions; the Phase 68A special rule is only the startup source for its initial value. Phase 68B defines displayed `EIP` as derived pseudo-code-address control state before Phase 69 stores return tokens. Phase 69A is documentation/static-check cleanup only and does not advance the MASM syntax or VM execution-semantics phase beyond Phase 69. Phase 69B is output/message-ordering cleanup only and must not implement `RET` or other future runtime semantics. Phase 69C is artifact/test-infrastructure cleanup only and must not implement `RET` or other future runtime semantics. If the guide uses corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, `69B`, or `69C`, preserve later phase identifiers and document dependencies rather than renumbering the roadmap.
 - Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
 - Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
 - High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
@@ -6502,7 +6548,7 @@ When a phase changes any C/Wasm-facing output contract without advancing runtime
 2. add or update a separate output-contract, artifact-build, source-run-format, or Wasm-compatibility identifier that changes when source-run JSON ordering, diagnostic serialization, status serialization, final-state serialization, protocol-relevant formatting, or Wasm-facing output behavior changes;
 3. if Emscripten is unavailable in the implementation environment, explicitly report browser/Wasm rebuild validation as skipped and state that the served `web/dist` artifacts may require a manual rebuild before release or distribution.
 
-A stale-artifact warning based only on runtime/source-run MASM behavior phase metadata is not sufficient to detect output-only C/Wasm changes when the runtime behavior phase intentionally remains unchanged.
+A stale-artifact warning based only on runtime/source-run MASM behavior phase metadata is not sufficient to detect output-only C/Wasm changes when the runtime behavior phase intentionally remains unchanged. The current Phase 69C source-run output-contract identifier is the JSON field `sourceRunOutputContract` with value `phase-69c-source-run-output-contract-v1`; browser/protocol code must treat missing or mismatched values as stale artifact metadata distinct from stale runtime/source-run behavior phase metadata.
 
 Milestone reports for output-only C/Wasm changes must distinguish:
 
@@ -6512,6 +6558,12 @@ Milestone reports for output-only C/Wasm changes must distinguish:
 - browser/Wasm artifacts not rebuilt because `emcc` was unavailable;
 - served `web/dist` artifact compatibility verified by a separate output-contract identifier, if one exists.
 
+Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts.
+
+A repository archive may contain checked-in `web/dist` artifacts that carry the current output-contract identifier even when the current audit environment cannot rebuild those artifacts because `emcc` is unavailable. In that case, documentation and milestone reports must distinguish artifact-content evidence from rebuild verification.
+
+Do not infer that checked-in `web/dist` is stale solely because `emcc` is unavailable. Do not claim Emscripten rebuild verification unless the artifact was rebuilt in the current environment. Do not claim served browser/Wasm verification unless a browser/Wasm smoke test or equivalent served-artifact check actually ran.
+
 ## 28. Future Roadmap
 
 This section is a high-level product roadmap only. It does not override the canonical post-30 implementation sequence in the implementation guide or the integration status in Section 29.
@@ -6520,7 +6572,7 @@ The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to 
 
 Roadmap ordering note for stack/procedure work:
 
-The implementation guide owns exact phase order. As of the current source-of-truth revision after Phase 69B, the current stack/procedure and corrective-infrastructure sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then later phases for Phase 71 root procedure termination, Phase 72 call-depth and active-frame diagnostics, Phase 72A source-level `PUSH` and `POP`, Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 75 `PROC USES`, Phase 76 `LOCAL`, Phase 77 `PROTO`, Phase 78 `INVOKE`, Phase 79 `ADDR`, and Phase 80 Irvine32 callable routine dispatch.
+The implementation guide owns exact phase order. As of the current source-of-truth revision after Phase 69C, the current stack/procedure and corrective-infrastructure sequence is: Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection; Phase 68 - Call Target Classification and Procedure Entry Metadata; Phase 68A - Stack Runtime Initialization and ESP Startup Contract; Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions; Phase 69 - Direct CALL to User Procedures; Phase 69A - Documentation and Static-Check Cleanup After Direct CALL; Phase 69B - Register Display Grouping and Startup Diagnostic Ordering; Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition; Phase 70 - RET Execution and Return Address Validation; then later phases for Phase 71 root procedure termination, Phase 72 call-depth and active-frame diagnostics, Phase 72A source-level `PUSH` and `POP`, Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 75 `PROC USES`, Phase 76 `LOCAL`, Phase 77 `PROTO`, Phase 78 `INVOKE`, Phase 79 `ADDR`, and Phase 80 Irvine32 callable routine dispatch.
 
 This roadmap section must not be read as permission to reorder, combine, or renumber those guide phases. Corrective non-renumbering phases such as `67A`, `68A`, `68B`, `69A`, `69B`, `69C`, and any later explicitly inserted corrective phases are deliberate. Later phases should depend on them by name rather than silently rewriting the history of completed phases. If a later audit finds a stale phase reference in this roadmap section, correct the active wording in place or add a non-renumbering corrective phase; do not renumber the existing roadmap unless a user explicitly requests roadmap renumbering.
 

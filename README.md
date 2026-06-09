@@ -5,7 +5,7 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 ## Current status
 
 Repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
@@ -13,9 +13,12 @@ Phase 69 - Direct CALL to User Procedures
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Phase 69B improves final-register display grouping and Simulator Messages ordering only. It does not change supported MASM syntax, parser behavior, VM instruction semantics, source-run protocol fields, or the runtime/source-run MASM behavior phase.
+Latest artifact/test-infrastructure cleanup phase:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
-Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
+Phase 69B improves final-register display grouping and Simulator Messages ordering only. Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection and keeps the decomposed broad test groups unchanged. Neither phase changes supported MASM syntax, parser behavior, VM instruction semantics, Program Console output, or the runtime/source-run MASM behavior phase.
+
+Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. That return-token write is an implicit VM stack write: it is checked through the central memory helpers and tracked internally, but the current public source-run output contract does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
 `RET`, Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, and `ADDR` remain deferred.
 
@@ -39,7 +42,7 @@ At a high level, the current subset includes:
 - selected-entry source-run startup from `END entryName`;
 - `ESP` startup initialized from the active stack region empty-stack address;
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
-- direct user-procedure `call ProcedureName` with checked pseudo-EIP return-token stack writes;
+- direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes;
 - successful completion at the selected entry procedure's `ENDP` boundary;
 - procedure-entry and call-target classification metadata for parser/tests;
 - instruction-count watchdog behavior;

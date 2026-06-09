@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Phase 69B register-display and startup-message ordering cleanup after Direct CALL.
+  Repository status: Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.
   Runtime behavior: Phase 69 direct CALL to user procedures.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
@@ -19,7 +19,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Repository status: Phase 69B register-display and startup-message ordering cleanup after direct <code>CALL</code>. Runtime behavior remains Phase 69: direct user-procedure <code>CALL</code> is executable for user <code>PROC</code> targets. Final Registers now use parent-family spacer rows, major high-level divider rows, and startup notices render first when execution begins. <code>RET</code>, Irvine32 routine calls, source-level <code>PUSH</code>/<code>POP</code>, and procedure frames remain deferred.</p>
+        <p class="muted">Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">.stack 4096
 .data

@@ -241,6 +241,8 @@ Whether aggregate success was claimed:
 Rules:
 
 - Do not report aggregate success if `--all` timed out or was not run.
+- Do not report browser/Wasm rebuild verification if `emcc` was unavailable.
+- Do not infer that checked-in `web/dist` is stale solely because `emcc` was unavailable. Treat checked-in artifact-content evidence, Emscripten rebuild verification, and browser/Wasm smoke verification as separate facts.
 - Do not report browser/Wasm artifact verification if `emcc` was unavailable and no artifact-compatibility identifier was checked.
 - Do not treat a maintenance-only repository/archive phase as a runtime/source-run MASM behavior phase.
 - Do not change runtime/source-run behavior metadata merely to align it with a documentation, output-ordering, artifact-compatibility, or test-infrastructure corrective phase.
@@ -250,7 +252,9 @@ Source-run subgroups such as `--source-run=memory-layout` are not currently impl
 
 Diagnostic subgroups such as `--diagnostics=memory` are not currently implemented because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
 
-Phase 69C may add smaller runner subgroups for timeout-safe verification. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any subgroup split must preserve the existing broad group flags.
+Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition and does not add subgroup flags. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any future subgroup split must preserve the existing broad group flags.
+
+Phase 69C also adds source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with value `phase-69c-source-run-output-contract-v1`. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
 
 Preferred future subgroup families are:
 
@@ -321,7 +325,7 @@ An assistant must not claim that the full aggregate suite passed unless the aggr
 
 An assistant may report focused verification only by naming the focused groups, subgroups, or fixtures that actually passed.
 
-If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `emcc` is unavailable. This is separate from native, source-run, Node, protocol, static, and rendered diagnostic test failure.
+If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `emcc` is unavailable. This is separate from native, source-run, Node, protocol, static, rendered diagnostic test failure, and any checked-in artifact-content scan that may still be possible.
 
 Recommended milestone-report wording for hosted timeout cases:
 

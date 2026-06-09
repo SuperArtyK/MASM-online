@@ -16,6 +16,9 @@
 /// Number of bytes reserved for local copies of source-run JSON results.
 #define TEST_JSON_COPY_CAPACITY 8192U
 
+/// Exact Phase 69C source-run output-contract identifier expected in source-run JSON.
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-69c-source-run-output-contract-v1\""
+
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
 
@@ -9728,6 +9731,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
     failures += expect_json_contains(valid_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "direct CALL should transfer to the helper procedure body");
     failures += expect_json_contains(valid_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "direct CALL should not fall through to the instruction after CALL before RET exists");
     failures += expect_json_contains(valid_copy, "\"ESP\":{\"hex\":\"008FFFFCh\",\"unsigned\":9437180}", "direct CALL should leave ESP decremented by the internal return-token write");
+    failures += expect_json_contains(valid_copy, "\"memoryChanges\":[]", "successful direct CALL should not expose the implicit return-token stack write as a public source-run memoryChanges row");
     failures += expect_json_contains(valid_copy, "execution-complete", "direct CALL source-run fixture should complete through existing program-boundary halt behavior without implementing RET");
 
     copy_source_run_json(object_strict_copy, sizeof(object_strict_copy), masm32_sim_wasm_run_source_json_with_ui_settings(
@@ -9805,6 +9809,7 @@ static int test_phase69_source_run_phase_metadata(void) {
     failures += expect_json_contains(json, "\"phase\":69", "Runtime metadata should report numeric Phase 69 metadata");
     failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 69 should report the suffix field");
     failures += expect_json_contains(json, "\"phaseName\":\"Phase 69 - Direct CALL to User Procedures\"", "Phase 69 should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 69C should report separate source-run output-contract metadata");
 
     return failures;
 }
@@ -10618,6 +10623,7 @@ static int test_phase59_instruction_limit_source_run(void) {
     failures += expect_json_contains(invalid_json, "\"ok\":false", "Zero instructionLimit should be rejected");
     failures += expect_json_contains(invalid_json, "invalid-instruction-limit-setting", "Zero instructionLimit should emit a structured setting diagnostic");
     failures += expect_json_contains(invalid_json, "instructionLimit", "Invalid instructionLimit response should identify the setting");
+    failures += expect_json_contains(invalid_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Invalid instructionLimit response should include Phase 69C output-contract metadata");
 
     return failures;
 }
@@ -10750,6 +10756,7 @@ static int test_phase57f_invalid_startup_register_flag_mode(void) {
     failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid startup register/flag mode should report invalid argument");
     failures += expect_json_contains(json, "\"code\":\"invalid-startup-setting\"", "Invalid startup register/flag mode should use startup-setting diagnostic code");
     failures += expect_json_contains(json, "startup_register_flag_mode", "Invalid startup register/flag mode should name the setting");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Invalid startup register/flag mode response should include Phase 69C output-contract metadata");
     failures += expect_json_not_contains(json, "execution-complete", "Invalid startup register/flag mode should not complete execution");
 
     return failures;
@@ -11341,6 +11348,7 @@ static int test_phase53e_invalid_ui_settings_return_invalid_argument(void) {
 
     failures += expect_json_contains(json, "\"ok\":false", "Invalid Phase 53E memory setting should fail");
     failures += expect_json_contains(json, "\"status\":\"invalid-argument\"", "Invalid Phase 53E memory setting should return invalid argument status");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Invalid Phase 53E setting response should include Phase 69C output-contract metadata");
 
     return failures;
 }

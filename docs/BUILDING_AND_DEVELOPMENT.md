@@ -12,7 +12,7 @@ Source-of-truth rule:
 ## Current status
 
 Current repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
 Current runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
@@ -20,13 +20,13 @@ Phase 69 - Direct CALL to User Procedures
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Next repository/archive corrective milestone:
+Latest artifact/test-infrastructure cleanup phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
 Next runtime implementation milestone:
 Phase 70 - RET Execution and Return Address Validation
 
-Phase 69B is output/message-ordering cleanup only. It does not change parser behavior, VM instruction semantics, supported MASM syntax, browser protocol fields, diagnostic codes, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
+Phase 69B is output/message-ordering cleanup only. Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1` and corresponding protocol tests so stale browser/Wasm artifacts can be detected without advancing runtime/source-run behavior metadata. It keeps the existing broad focused runner groups as the supported timeout-safe decomposition and does not add subgroup flags. Neither cleanup phase changes parser behavior, VM instruction semantics, supported MASM syntax, source-level diagnostic codes, Program Console output, or the runtime/source-run MASM behavior phase. Phase 69 remains the latest completed runtime/source-run MASM behavior phase. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract. Phase 70 may consume those return tokens for `RET`, but source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -35,6 +35,28 @@ For current accepted syntax, rejected forms, diagnostics, and future/deferred fe
 For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md).
 
 For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
+
+## Artifact verification versus rebuild verification
+
+Browser/Wasm artifact verification has separate levels:
+
+1. **Source-level verification**
+
+   Native C tests, source-run tests, Node protocol tests, rendered-message tests, and static documentation checks verify source files and checked-in JavaScript behavior. They do not prove that `web/dist` was rebuilt.
+
+2. **Checked-in artifact-content verification**
+
+   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-69c-source-run-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
+
+3. **Emscripten rebuild verification**
+
+   Running the Emscripten build script with `emcc` available proves that the current source can produce fresh `web/dist` artifacts in that environment.
+
+4. **Browser/Wasm smoke verification**
+
+   Serving the page and running a smoke program against the browser-loaded Wasm artifact verifies the served browser path. For Phase 69C and later output-contract checks, a successful browser/Wasm smoke should not show `stale-wasm-output-contract` when the loaded artifact reports the expected contract.
+
+If `emcc` is unavailable, report rebuild verification as skipped. Do not infer that checked-in `web/dist` is stale solely from missing `emcc`. Inspect the checked-in artifact or run browser/Wasm smoke if artifact status matters.
 
 Common paths:
 
@@ -313,6 +335,14 @@ or:
 ```text
 Browser/Wasm artifact compatibility verified through the documented output-contract identifier.
 ```
+
+The current Phase 69C identifier is:
+
+```text
+phase-69c-source-run-output-contract-v1
+```
+
+The C source-run JSON field is `sourceRunOutputContract`. The browser protocol expects the same value and renders a distinct `stale-wasm-output-contract` Simulator Messages warning when a loaded artifact omits the field or reports a different value. This warning is browser/protocol artifact-status metadata; it is not a MASM source diagnostic and does not change Program Console output.
 
 Do not advance runtime/source-run MASM behavior phase metadata solely to detect output-only artifact staleness. Runtime/source-run behavior metadata describes implemented MASM syntax and VM semantics, not whether `web/dist` was rebuilt after a formatting, ordering, serialization, documentation, or test-infrastructure cleanup.
 

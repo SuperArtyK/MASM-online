@@ -13,10 +13,14 @@ Source-of-truth rule:
 - Milestone reports, archived repository states, and this history file are historical evidence. They do not replace or override the canonical specification and implementation guide.
 - Curated audit and handoff reports are stored under [`history/`](history/), and standalone milestone reports are stored under [`history/reports/`](history/reports/). These archived files are historical evidence, not current behavior authority.
 
-Current status at Phase 69B:
+Recent milestone detail in this file may be listed most-recent-first for handoff convenience. That ordering is historical/navigation ordering only. It is not the canonical implementation order.
+
+The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
+
+Current status at Phase 69C:
 
 Repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
@@ -24,10 +28,14 @@ Phase 69 - Direct CALL to User Procedures
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Next repository/archive corrective milestone:
+Latest artifact/test-infrastructure cleanup phase:
 Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
-Phase 69B is output/message-ordering cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token for the lowered instruction after the call to the simulated stack at `ESP - 4`, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
+Phase 69B is output/message-ordering cleanup only. It keeps Phase 69 as the latest completed runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled.
+
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase.
+
+Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token to the simulated stack through checked VM memory helpers, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. That stack write is internal VM execution state; current public source-run JSON does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
 
 Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
 
@@ -39,15 +47,17 @@ Next runtime implementation milestone:
 Phase 70 - RET Execution and Return Address Validation
 
 Current source-of-truth roadmap note:
-The implementation guide now inserts Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition after Phase 69B and before Phase 70. Phase 69C is artifact/test-infrastructure cleanup only. It is not a MASM syntax or VM execution-semantics phase and must not be treated as implementing `RET` or any other future runtime feature.
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition is complete as repository/archive artifact/test-infrastructure cleanup. It added the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C did not add runner subgroup flags because the existing focused broad groups remain the supported timeout-safe decomposition. It is not a MASM syntax or VM execution-semantics phase and must not be treated as implementing `RET` or any other future runtime feature.
 
 Phase 70 remains the next runtime implementation phase and may consume the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It must still not implement source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, or Irvine32 callable routine dispatch unless its own canonical phase explicitly says otherwise.
 
 
 ## Concise milestone ledger
 
+- Phase 69C is artifact/test-infrastructure cleanup only. It adds separate source-run output-contract metadata and protocol/rendering/static tests for stale browser/Wasm artifact detection while preserving Phase 69 runtime/source-run behavior metadata and existing broad runner groups.
+- Phase 69B is output/message-ordering cleanup only. It adds final-register display grouping and startup-first Simulator Messages ordering without changing runtime/source-run MASM behavior.
 - Phase 69A is documentation/static-check cleanup only. It makes the current source-of-truth spec/guide revision clearer without changing runtime/source-run MASM behavior beyond Phase 69.
-- Phase 69 implements direct user-procedure `CALL` to user `PROC` entries with checked pseudo-EIP return-token stack writes and target transfer while preserving RET and Irvine32 routine calls as future work.
+- Phase 69 implements direct user-procedure `CALL` to user `PROC` entries with checked internal pseudo-EIP return-token stack writes and target transfer while preserving RET and Irvine32 routine calls as future work. Current public source-run JSON does not expose the implicit CALL return-token stack write as a visible `memoryChanges` row.
 - Phase 68B displays `EIP` as derived pseudo-code-address control state, rejects source-level `EIP` operands and definitions, and preserves direct supported `ESP` writes.
 - Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.
 - Phase 67A corrects source-run selected-entry startup and selected-entry procedure-boundary fallthrough without implementing CALL, RET, stack mutation, or Irvine32 routine dispatch.
@@ -135,6 +145,14 @@ Non-goals preserved:
 - no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
 - no new stack sizing UI, URL state, layout sizing behavior, heap sizing behavior, or randomized layout behavior.
 
+
+## Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the C source-run JSON field `sourceRunOutputContract` with value `phase-69c-source-run-output-contract-v1`. The browser protocol expects this value separately from runtime/source-run MASM behavior metadata and renders `stale-wasm-output-contract` when a loaded artifact omits the field or reports a different output contract. Stale runtime behavior metadata and stale output-contract metadata are reported distinctly.
+
+Phase 69C preserves the existing broad runner flags (`--structure`, `--native`, `--source-run`, `--web`, `--diagnostics`, `--protocol`, `--static`, and `--all`) and does not add subgroup flags. Documentation now states that preferred subgroup families remain future guidance unless the runner help exposes those flags. Phase 69C does not change parser behavior, VM instruction semantics, supported MASM syntax, source-level diagnostics, Program Console output, register values, memory values, memory-change rows, or the runtime/source-run MASM behavior phase.
 
 ## Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 

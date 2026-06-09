@@ -1,7 +1,7 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
 
 Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures
@@ -9,7 +9,10 @@ Phase 69 - Direct CALL to User Procedures
 Latest output/message-ordering cleanup phase:
 Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
 
-Phase 69B changes display/message ordering only. It does not change supported MASM syntax, parser behavior, VM instruction semantics, source-run protocol fields, or the runtime/source-run MASM behavior phase.
+Latest artifact/test-infrastructure cleanup phase:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+
+Phase 69B changes display/message ordering only. Phase 69C adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1` for browser/protocol stale-artifact detection and keeps existing broad test-runner groups as the supported decomposition. Neither phase changes supported MASM syntax, parser behavior, VM instruction semantics, Program Console output, source-level diagnostics, or the runtime/source-run MASM behavior phase.
 
 Repository/archive status may include corrective documentation, output-ordering, artifact-compatibility, or test-infrastructure phases beyond the latest runtime/source-run MASM behavior phase.
 
@@ -21,7 +24,7 @@ This document describes the currently accepted MASM32 Educational Mode syntax, r
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, and direct near user-procedure `call ProcedureName`.
 
-Branch forms target executable code labels or procedure-entry labels according to each instruction family. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry.
+Branch forms target executable code labels or procedure-entry labels according to each instruction family. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry. That successful CALL return-token stack write is an implicit simulator-owned stack write: it is checked and tracked internally by the VM, but the current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row.
 
 Plain `RET`, root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
@@ -454,6 +457,8 @@ The accepted explicit-width memory-looking forms reuse the current memory-addres
 `exit` is accepted only as a zero-operand virtual Irvine32 terminator after `INCLUDE Irvine32.inc`. It terminates execution successfully and skips following instructions without changing registers, flags, memory, or Program Console output. It is not `call ExitProcess` and does not model Windows API behavior.
 
 `call ProcedureName` supports direct near calls to user procedure entries declared with `ProcedureName PROC`. The target is resolved under the active user-symbol `CASEMAP` policy at the call site; default `CASEMAP:ALL` folds user procedure names, while `OPTION CASEMAP:NONE` requires exact-case user-symbol spelling. On success, the VM writes the pseudo-EIP return token for the executable lowered instruction immediately after the `CALL` to `ESP - 4`, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers execution to the target procedure entry. The internal stack write uses the central checked-memory diagnostic path. If the write fails, execution stops before committing the call transfer and before mutating `ESP`, instruction pointer, modeled flags, flag-validity metadata, Program Console output, terminal status, or memory-change rows.
+
+The successful CALL return-token stack write is an implicit simulator-owned stack write. It is checked and tracked internally by the VM, but the current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row. A later milestone may add public stack-write visualization only if that milestone updates the supported-syntax documentation, source-run JSON tests, rendered display tests, and compatibility notes together.
 
 The executable successor after `CALL` means the next lowered VM instruction that is actually executable in the selected procedure's execution path. It does not mean the next source line, source byte offset, ordinary label, data declaration, `ENDP`, first instruction in another procedure, source boundary, or synthetic boundary marker.
 

@@ -19968,11 +19968,19 @@ Recognized Irvine32 routine names are not user procedure targets. Before the own
 2. Compute the return token as the pseudo-EIP of the executable lowered VM instruction immediately following the CALL.
 3. Derive the stack write destination from the current `ESP` value using the documented downward-growing 32-bit stack convention.
 4. Validate the return-token write through the central checked memory write helper.
-5. If the write fails, report the selected existing checked-memory diagnostic and stop without changing the instruction pointer, without changing externally visible ESP, without writing memory, without emitting memory-change rows, and without mutating flags.
+5. If the write fails, report the selected existing checked-memory diagnostic and stop without changing the instruction pointer, without changing externally visible ESP, without writing memory, without committing an internal successful write delta, without creating public source-run JSON `memoryChanges` rows or rendered UI memory-change display rows derived from that JSON, and without mutating flags.
 6. If the write succeeds, commit the stack write, update `ESP` according to the stack convention, and set the internal VM instruction pointer to the target procedure entry.
-7. Record the stack memory change for the pushed pseudo-EIP return token.
+7. Record the stack write in the native VM execution delta/access history for the pushed pseudo-EIP return token.
 8. Displayed `EIP` after a successful CALL must be derived from the target procedure entry's pseudo-code address.
 9. Preserve all modeled flags and flag-validity metadata.
+
+The Phase 69 CALL stack write has two separate contracts:
+
+1. **Internal VM contract.** The return-token write is a real VM memory write. It must go through the central checked memory write path, it must participate in mandatory address/range/permission validation, and native executor tests must be able to verify that the write occurred or failed according to the no-partial-mutation rules.
+
+2. **Public source-run output contract.** Phase 69 does not require the implicit CALL stack write to appear as a public source-run JSON `memoryChanges` row or rendered UI memory-change display row derived from that JSON. Public stack-write visualization remains future-owned unless a later accepted phase explicitly defines it.
+
+A future assistant must not change public source-run `memoryChanges` behavior merely to satisfy the internal VM execution-delta requirement. If a later phase chooses to expose implicit control-flow stack writes publicly, that phase must define the JSON contract, rendered display text, source attribution, tests, compatibility impact, and documentation updates.
 
 The internal CALL return-token write is an implicit stack write. It must always use mandatory checked-memory validation. It must also route through the planned-write validation path so selected warning and strict policies can inspect the access before mutation when those policies are applicable.
 
@@ -20023,7 +20031,7 @@ If Phase 72 - Call Depth Limit and Call Trace Diagnostics remains later in the c
 
 No partial mutation rule:
 
-If the return-token push fails, the VM instruction pointer must not change, `ESP` must remain externally unchanged, call-depth metadata must not change if it exists, memory must not change, flags and flag-validity metadata must remain unchanged, Program Console output must not change, no memory-change row must be created, and no `execution-complete` message must be emitted after the fatal diagnostic.
+If the return-token push fails, the VM instruction pointer must not change, `ESP` must remain externally unchanged, call-depth metadata must not change if it exists, memory must not change, flags and flag-validity metadata must remain unchanged, Program Console output must not change, no internal successful memory-write delta must be committed, no public source-run JSON `memoryChanges` row must be created, no rendered UI memory-change display row derived from that JSON must be created, and no `execution-complete` message must be emitted after the fatal diagnostic.
 
 ### Diagnostics
 
@@ -20056,7 +20064,7 @@ Executor tests:
 - CALL with a valid stack destination succeeds even when optional data declared-object validation is enabled, provided no accepted phase has defined applicable stack-object metadata.
 - CALL with an invalid stack destination still fails through the central checked-memory diagnostic path before mutation.
 - CALL planned-write validation receives the final return-token write address and final byte range before the instruction commits.
-- Failed stack write does not change instruction pointer, `ESP`, memory, call-depth metadata if present, Program Console output, or memory-change rows.
+- Failed stack write does not change instruction pointer, `ESP`, memory, call-depth metadata if present, Program Console output, internal committed write history, public source-run JSON `memoryChanges` rows, rendered UI memory-change display rows derived from that JSON, or terminal status.
 - Malformed target metadata can produce the runtime `invalid-call-target` diagnostic without weakening parser validation.
 
 Source-run tests:
@@ -20736,6 +20744,27 @@ Phase 69C must not change:
 - memory-change rows;
 - runtime/source-run MASM behavior phase number, suffix, or title.
 
+### Visible current-status requirement
+
+Because Phase 69C advances repository/archive status without advancing runtime/source-run MASM behavior, every active visible current-status surface touched by this phase must distinguish those two facts.
+
+Required status meaning after Phase 69C:
+
+```text
+Repository/archive milestone: Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition.
+Runtime/source-run MASM behavior phase: Phase 69 - Direct CALL to User Procedures.
+```
+
+A compact UI string may shorten this wording, but it must still identify both values. For example:
+
+```text
+Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.
+```
+
+The distinction must be visible to users where the surface is user-facing. An HTML comment, source-code comment, historical report note, static-test helper string, or source-only metadata value is not enough for a visible user-facing surface.
+
+Phase 69C must not cause browser-visible status text, README status text, supported-syntax status text, worker/protocol phase strings, source-run JSON phase metadata, or static checks to imply that Phase 69C changed accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase.
+
 ### Artifact compatibility requirement
 
 Phase 69C must choose and document one of these two strategies:
@@ -20812,12 +20841,16 @@ Protocol/web tests, if an output-contract identifier is added:
 Milestone report requirements:
 
 - record whether `emcc` was available;
-- record whether `web/dist` was rebuilt;
-- record whether browser/Wasm smoke was run;
+- record whether `web/dist` was rebuilt during the milestone;
+- record whether checked-in `web/dist` artifacts were inspected for the current output-contract identifier;
+- record whether browser/Wasm smoke was run against a served browser artifact;
+- record whether the served browser artifact was checked-in or newly rebuilt;
 - record whether native source-run tests passed;
 - record whether Node/web/protocol tests passed;
 - record whether broad groups or subgroups timed out;
-- do not claim served browser artifact verification unless a browser/Wasm test or artifact-compatibility check actually ran.
+- do not claim served browser artifact verification unless a browser/Wasm smoke test or equivalent served-artifact check actually ran;
+- do not claim Emscripten rebuild verification unless `emcc` actually produced the checked artifact in the current environment;
+- do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable.
 
 ### Acceptance criteria
 
@@ -20844,7 +20877,7 @@ RET
 ### Rejected syntax
 
 ```asm
-ret 4          ; deferred to Phase 74 - RET imm16 Instruction
+ret 4          ; deferred to later canonical Phase 74 - RET imm16 Instruction
 ret eax
 ret WORD PTR [esp]
 retf
@@ -20870,6 +20903,12 @@ address = ESP at the start of RET
 size    = 4 bytes
 kind    = implicit RET return-token read
 ```
+
+The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push.
+
+The return-token read is an internal VM memory access. It must go through checked memory helpers and must participate in mandatory address/range/permission validation. Because it is a read, it must not create a public source-run JSON `memoryChanges` row.
+
+If Phase 70 or a later phase chooses to expose stack reads, stack writes, or stack-effect visualization in a public UI surface, that phase must define the JSON contract, rendered output, source attribution, tests, and compatibility impact explicitly. Do not infer public stack-effect visualization merely from the fact that CALL and RET use the simulated stack internally.
 
 Mandatory checked-memory validation remains the Level 1 authority for invalid address, invalid range, address overflow, invalid region, and invalid permission failures. Optional educational diagnostics must not replace, weaken, suppress, duplicate, or reinterpret those mandatory failures.
 
@@ -20984,7 +21023,7 @@ Planned-read and diagnostic-precedence tests:
 Parser tests:
 
 - `ret` accepted.
-- `ret 4` is deferred to **Phase 74 - RET imm16 Instruction**, which models the caller-cleanup stack-adjustment form. Phase 70 implements only near `ret` with no immediate operand.
+- `ret 4` is deferred to later canonical **Phase 74 - RET imm16 Instruction**, which models the caller-cleanup stack-adjustment form. Phase 70 implements only near `ret` with no immediate operand.
 - `retf` rejected as explicit non-goal.
 
 ### Source-run acceptance program
@@ -21027,7 +21066,9 @@ Expected Program Console:
 
 Expected behavior details:
 
-- `CALL` writes exactly one pseudo-EIP return token to the stack through the Phase 69 checked memory path.
+- `CALL` writes exactly one pseudo-EIP return token to the stack through the Phase 69 checked memory path and records that write in the native VM execution delta/access history.
+- Unless Phase 70 is deliberately broadened to introduce public stack-effect visualization, the implicit CALL return-token stack write remains internal and must not create a public source-run JSON `memoryChanges` row.
+- `RET` reads the pseudo-EIP return token through the checked memory path. Because the return-token pop is a read, it must not create a public source-run JSON `memoryChanges` row.
 - `RET` reads the DWORD return token from `[ESP]`, applies the Phase 70 planned-read, mandatory checked-read, and token-validation requirements, increments `ESP` by 4 only after successful validation, and transfers control to `mov ebx, eax`.
 - The final success status is emitted once.
 - Rendered final-register display, rendered Simulator Messages, Program Console output, memory-change rows, and source-run JSON status are separate output surfaces and must be asserted separately.

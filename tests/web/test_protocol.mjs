@@ -7,7 +7,7 @@
  */
 
 import assert from "node:assert/strict";
-import { IMPLEMENTED_PHASE, IMPLEMENTED_PHASE_NAME, IMPLEMENTED_PHASE_SUFFIX, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
+import { IMPLEMENTED_PHASE, IMPLEMENTED_PHASE_NAME, IMPLEMENTED_PHASE_SUFFIX, SOURCE_RUN_OUTPUT_CONTRACT, createReadyMessage, handleWorkerRequest } from "../../web/src/protocol.js";
 import {
   COMPATIBILITY_NOTICES_OFF,
   MEMORY_RANGE_DECLARED_OBJECT_WARN,
@@ -33,6 +33,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 69);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
   assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 69 - Direct CALL to User Procedures");
+  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-69c-source-run-output-contract-v1");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -44,7 +45,8 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       wasmTestValue: 32,
       phase: 69,
       phaseSuffix: "",
-      phaseName: "Phase 69 - Direct CALL to User Procedures"
+      phaseName: "Phase 69 - Direct CALL to User Procedures",
+      sourceRunOutputContract: "phase-69c-source-run-output-contract-v1"
     }
   });
 });
@@ -62,7 +64,8 @@ test("ready message supports not-built wasm status", () => {
       wasmTestValue: null,
       phase: 69,
       phaseSuffix: "",
-      phaseName: "Phase 69 - Direct CALL to User Procedures"
+      phaseName: "Phase 69 - Direct CALL to User Procedures",
+      sourceRunOutputContract: "phase-69c-source-run-output-contract-v1"
     }
   });
 });
@@ -102,6 +105,9 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           instructionLimit: 1000000
         });
         return {
+          phase: 69,
+          phaseSuffix: "",
+          sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           registers: {
             EAX: { hex: "0000002Ah", unsigned: 42 }
@@ -115,6 +121,9 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
   assert.deepEqual(response, {
     type: "RUN_RESULT",
     payload: {
+      phase: 69,
+      phaseSuffix: "",
+      sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
       ok: true,
       registers: {
         EAX: { hex: "0000002Ah", unsigned: 42 }
@@ -328,7 +337,8 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
     response.payload.simulatorMessages[0].message,
     "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 69 - Direct CALL to User Procedures. Rebuild web/dist with the Emscripten build script."
   );
-  assert.equal(response.payload.simulatorMessages[1].code, "unsupported-constant-expression");
+  assert.equal(response.payload.simulatorMessages[1].code, "stale-wasm-output-contract");
+  assert.equal(response.payload.simulatorMessages[2].code, "unsupported-constant-expression");
 });
 
 test("RUN_SOURCE marks stale pre-Phase 61 artifacts without the expected suffix as stale", () => {
@@ -345,6 +355,131 @@ test("RUN_SOURCE marks stale pre-Phase 61 artifacts without the expected suffix 
   assert.equal(response.payload.phase, 58);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
 });
+
+test("RUN_SOURCE accepts matching runtime and output-contract metadata", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return {
+          phase: 69,
+          phaseSuffix: "",
+          sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
+          ok: true,
+          simulatorMessages: [
+            { kind: "info", code: "execution-complete", message: "Execution completed successfully." }
+          ]
+        };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.simulatorMessages.length, 1);
+  assert.equal(response.payload.simulatorMessages[0].code, "execution-complete");
+});
+
+test("RUN_SOURCE marks matching runtime phase with missing output-contract metadata", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 69, phaseSuffix: "", ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.phase, 69);
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
+  assert.equal(
+    response.payload.simulatorMessages[0].message,
+    "The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+  );
+});
+
+test("RUN_SOURCE marks matching runtime phase with stale output-contract metadata", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 69, phaseSuffix: "", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
+  assert.equal(
+    response.payload.simulatorMessages[0].message,
+    `The loaded Wasm artifact reports source-run output contract "phase-69b-output-ordering", but the UI/source files expect "${SOURCE_RUN_OUTPUT_CONTRACT}". Rebuild web/dist with the Emscripten build script.`
+  );
+});
+
+test("RUN_SOURCE treats non-string output-contract metadata as missing", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 69, phaseSuffix: "", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
+  assert.equal(
+    response.payload.simulatorMessages[0].message,
+    "The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+  );
+});
+
+test("RUN_SOURCE creates stale-output-contract message when simulatorMessages is not an array", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 69, phaseSuffix: "", ok: true, simulatorMessages: "not an array" };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.simulatorMessages.length, 1);
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
+});
+
+test("RUN_SOURCE leaves non-object runtime results unchanged", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return "not-json-object";
+      }
+    }
+  );
+
+  assert.deepEqual(response, {
+    type: "RUN_RESULT",
+    payload: "not-json-object"
+  });
+});
+
+test("RUN_SOURCE reports stale runtime phase and stale output contract distinctly", () => {
+  const response = handleWorkerRequest(
+    { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
+    {
+      runSource() {
+        return { phase: 68, phaseSuffix: "", sourceRunOutputContract: "phase-68-runtime-output", ok: true, simulatorMessages: [] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
+  assert.equal(response.payload.simulatorMessages[1].code, "stale-wasm-output-contract");
+});
+
 
 test("RUN_SOURCE without source returns structured error", () => {
   assert.deepEqual(handleWorkerRequest({ type: "RUN_SOURCE", payload: {} }, { runSource() {} }), {

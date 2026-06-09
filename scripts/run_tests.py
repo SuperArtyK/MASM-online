@@ -1092,7 +1092,7 @@ Output modes:
 
 Notes:
   --quick is a smoke subset, not full verification.
-  Source-run and diagnostic subgroups are intentionally not split in Phase 56A;
+  Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition;
   rerun --source-run or --diagnostics independently when --all times out.
 
 Windows examples:
@@ -1235,12 +1235,16 @@ def print_summary(results: list[GroupResult], selected_groups: Sequence[str]) ->
 
 
 def assert_help_lists_supported_flags() -> None:
-    """Verify that help output lists every public runner flag."""
+    """Verify that help output lists every public runner flag and current Phase 69C guidance."""
 
     help_text = create_arg_parser().format_help()
     missing = [flag for flag in supported_help_flags() if flag not in help_text]
     if missing:
         raise TestFailure("help output is missing runner flags: " + ", ".join(missing))
+    if "Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition" not in help_text:
+        raise TestFailure("help output is missing Phase 69C broad-group decomposition guidance")
+    if "Source-run and diagnostic subgroups are intentionally not split in Phase 56A" in help_text:
+        raise TestFailure("help output still contains stale Phase 56A subgroup guidance")
 
 
 def assert_parser_accepts_required_flags() -> None:
@@ -1408,13 +1412,15 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase69b_current_status_and_harness_documented() -> None:
-    """Verify Phase 69B current status and direct CALL coverage."""
+def assert_phase69c_current_status_and_harness_documented() -> None:
+    """Verify Phase 69C current status, output-contract metadata, and direct CALL coverage."""
 
     repository_status = """Repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering"""
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
     runtime_status = """Runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures"""
+    artifact_status = """Latest artifact/test-infrastructure cleanup phase:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
@@ -1422,15 +1428,21 @@ Phase 69 - Direct CALL to User Procedures"""
     ]:
         assert_text_contains(path, repository_status)
         assert_text_contains(path, runtime_status)
+        assert_text_contains(path, artifact_status)
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current repository/archive milestone:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering""",
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
     )
     assert_text_contains(
         "docs/BUILDING_AND_DEVELOPMENT.md",
         """Current runtime/source-run MASM behavior phase:
 Phase 69 - Direct CALL to User Procedures""",
+    )
+    assert_text_contains(
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+        """Latest artifact/test-infrastructure cleanup phase:
+Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
     )
 
     assert_all_text_contains(
@@ -1438,14 +1450,17 @@ Phase 69 - Direct CALL to User Procedures""",
         [
             "Phase 69 implements direct near `call ProcedureName`",
             "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
+            "That return-token write is an implicit VM stack write",
+            "current public source-run output contract does not expose it as a visible `memoryChanges` row",
             "Failed internal stack writes use the central checked-memory diagnostic path",
             "displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "`ESP` startup initialized from the active stack region empty-stack address",
             "displayed `EIP` derived from VM pseudo-code-address control state",
-            "direct user-procedure `call ProcedureName` with checked pseudo-EIP return-token stack writes",
+            "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
             "Phase 69 - Direct CALL to User Procedures",
+            "Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection",
             "Phase 69B improves final-register display grouping and Simulator Messages ordering only.",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/MILESTONE_HISTORY.md",
@@ -1491,6 +1506,7 @@ Phase 69 - Direct CALL to User Procedures""",
             "External/API calls and WinAPI behavior are non-goals, not deferred direct-CALL target forms",
             "Uninitialized-read warning policy is orthogonal to region-only address/range validation",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
+            "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`END entryName` selects the source-run entry procedure.",
             "If the selected entry procedure has no executable instruction, source-run completes successfully without executing another procedure.",
             "Helper procedures before the selected entry procedure do not run automatically",
@@ -1513,6 +1529,7 @@ Phase 69 - Direct CALL to User Procedures""",
             "`OPTION NOKEYWORD` remains unsupported",
             "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`.",
             "invalid-eip-operand",
+            "Phase 69C adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1`",
             "Phase 69B final-register display uses stable high-level educational groups.",
             "Each major divider row is exactly `-------------------------------------------------------------------`",
             "parent-family spacer row `       |`",
@@ -1539,13 +1556,17 @@ Phase 69 - Direct CALL to User Procedures""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
-            "Current runtime/source-run MASM behavior phase:",
-            "Next repository/archive corrective milestone:",
             "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
+            "Current runtime/source-run MASM behavior phase:",
+            "Latest artifact/test-infrastructure cleanup phase:",
             "Next runtime implementation milestone:",
             "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 69B is output/message-ordering cleanup only.",
+            "Phase 69C is artifact/test-infrastructure cleanup only.",
+            "phase-69c-source-run-output-contract-v1",
+            "stale-wasm-output-contract",
+            "Artifact verification versus rebuild verification",
+            "Checked-in artifact-content verification",
+            "Do not infer that checked-in `web/dist` is stale solely from missing `emcc`",
             "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
             "python3 -m http.server 8000 --directory web",
             "./scripts/build_wasm.sh",
@@ -1574,10 +1595,13 @@ Phase 69 - Direct CALL to User Procedures""",
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 69B:",
+            "Current status at Phase 69C:",
+            "Phase 69C is artifact/test-infrastructure cleanup only.",
             "Phase 69B is output/message-ordering cleanup only.",
             "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
             "Phase 69 implements direct user-procedure `CALL` to user `PROC` entries",
+            "current public source-run JSON does not expose it as a visible `memoryChanges` row",
+            "Recent milestone detail in this file may be listed most-recent-first",
             "Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.",
             "Phase 68 adds parser-owned metadata for user procedure target classification.",
             "## Phase 69 - Direct CALL to User Procedures",
@@ -1588,7 +1612,7 @@ Phase 69 - Direct CALL to User Procedures""",
             "Detailed milestone report references",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
-            "Next repository/archive corrective milestone:",
+            "Latest artifact/test-infrastructure cleanup phase:",
             "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
             "Next runtime implementation milestone:",
             "Phase 70 - RET Execution and Return Address Validation",
@@ -1613,6 +1637,10 @@ Phase 69 - Direct CALL to User Procedures""",
             "The executable successor after `CALL` means the next lowered VM instruction",
             "Source-run Output-Contract and Wasm Artifact Compatibility",
             "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
+            "sourceRunOutputContract",
+            "phase-69c-source-run-output-contract-v1",
+            "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
+            "Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts",
         ],
     )
     assert_all_text_not_contains(
@@ -1641,22 +1669,33 @@ Phase 69 - Direct CALL to User Procedures""",
             "INCLUDE Irvine32.inc",
             "This fixture deliberately includes `INCLUDE Irvine32.inc`",
             "Phase 69 permitted limited source-run test scaffolding",
+            "Visible current-status requirement",
+            "The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push",
+            "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
         ],
     )
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Repository status: Phase 69B register-display and startup-message ordering cleanup after direct <code>CALL</code>.",
-            "Runtime behavior remains Phase 69:",
-            "Final Registers now use parent-family spacer rows, major high-level divider rows, and startup notices render first when execution begins.",
+            "Repository milestone 69C. Runtime behavior phase 69: Direct CALL to user procedures.",
+            "Repository status: Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.",
             ".stack 4096",
-            "direct user-procedure <code>CALL</code> is executable",
-            "RET</code>, Irvine32 routine calls",
             "call Helper",
             "Writes pseudo-EIP return token at ESP - 4",
             "final-registers",
             "Program Console",
+        ],
+    )
+    assert_all_text_not_contains(
+        "web/index.html",
+        [
+            "Runtime behavior remains Phase 69:",
+            "Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.</p>",
+            "Source-run JSON now carries a separate output-contract identifier",
+            "Final Registers still use parent-family spacer rows and major high-level divider rows",
+            "direct user-procedure <code>CALL</code> is executable",
+            "RET</code>, Irvine32 routine calls",
         ],
     )
 
@@ -1664,6 +1703,7 @@ Phase 69 - Direct CALL to User Procedures""",
         "tests/core/test_wasm_source_run.c",
         [
             "test_phase69_direct_call_source_run_behavior",
+            "successful direct CALL should not expose the implicit return-token stack write as a public source-run memoryChanges row",
             "test_phase68a_source_run_observes_fixed_layout_esp_startup",
             "test_phase68a_seeded_startup_preserves_stack_pointer_contract",
             "test_phase68a_automatic_layout_esp_uses_selected_stack_metadata",
@@ -1703,12 +1743,32 @@ Phase 69 - Direct CALL to User Procedures""",
         [
             "Phase 69 renders direct CALL invalid target diagnostic exactly",
             "Phase 69 renders direct CALL checked stack write failure exactly",
+            "Phase 69C renders stale output-contract warning exactly",
             "renders Phase 67 branch-target classifier diagnostic exactly",
             "renders Phase 67 division runtime diagnostic exactly",
             "renders Phase 67 branch-loop instruction-limit diagnostic exactly",
             "Phase 68 renders duplicate procedure diagnostic exactly",
             "Phase 68 renders reserved Irvine32 procedure-name diagnostic exactly",
             "Phase 68 renders malformed procedure-name diagnostic exactly",
+        ],
+    )
+
+    assert_all_text_contains(
+        "tests/web/test_protocol.mjs",
+        [
+            "SOURCE_RUN_OUTPUT_CONTRACT",
+            "RUN_SOURCE accepts matching runtime and output-contract metadata",
+            "RUN_SOURCE marks matching runtime phase with missing output-contract metadata",
+            "RUN_SOURCE marks matching runtime phase with stale output-contract metadata",
+            "RUN_SOURCE reports stale runtime phase and stale output contract distinctly",
+        ],
+    )
+    assert_all_text_contains(
+        "web/src/protocol.js",
+        [
+            "SOURCE_RUN_OUTPUT_CONTRACT",
+            "stale-wasm-output-contract",
+            "sourceRunOutputContract",
         ],
     )
 
@@ -1993,7 +2053,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase69b_current_status_and_harness_documented()
+    assert_phase69c_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()
