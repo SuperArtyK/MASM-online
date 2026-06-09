@@ -3,11 +3,11 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Phase 70B: Canonical Documentation Alignment and Compatibility Test Matrix Cleanup.
-  Runtime behavior: Phase 70 plain near RET returns through checked pseudo-EIP tokens.
-  Protocol behavior: Phase 70A requires runtime metadata and output-contract
+  Repository status: Phase 71: Root Procedure Termination Semantics.
+  Runtime behavior: Phase 71 selected-entry root RET terminates successfully while
+  helper RET keeps checked pseudo-EIP token validation.
+  Protocol behavior: Phase 70A and later require runtime metadata and output-contract
   metadata to exactly match UI expectations before artifact warnings are suppressed.
-  Phase 70B changes documentation/static checks only.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -22,7 +22,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 70B: documentation/static-check alignment; MASM runtime behavior remains Phase 70 RET execution.</p>
+        <p class="muted">Milestone 71: selected-entry root RET completes successfully; called helper fallthrough reports a structured diagnostic.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -32,12 +32,12 @@ value DWORD 7
 main PROC
     call Helper       ; Writes pseudo-EIP return token at ESP - 4
     mov eax, ebx      ; Runs after Helper returns with RET
-    exit
+    ret               ; Root RET completes without reading ESP
 main ENDP
 
 Helper PROC
     mov ebx, value
-    ret               ; Reads token at ESP and returns to mov eax, ebx
+    ret               ; Helper RET reads token and returns to mov eax, ebx
 Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">

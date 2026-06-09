@@ -14,8 +14,9 @@
  * IMUL, two- and three-operand signed IMUL, unsigned DIV, signed IDIV, the virtual Irvine32 `exit` terminator, Phase 67A selected END-entry
  * procedure startup and fallthrough boundaries, Phase 68 procedure-entry and
  * direct user-procedure CALL execution metadata, Phase 68A ESP stack startup,
- * Phase 68B displayed EIP pseudo-code-address control state, Phase 70 plain
- * near RET execution, and recovered unsupported-feature diagnostics, then
+ * Phase 68B displayed EIP pseudo-code-address control state, Phase 70
+ * helper RET execution, Phase 71 root RET termination and non-entry
+ * fallthrough diagnostics, and recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -78,16 +79,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 70U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 71U
 
-/// Suffix for the current Phase 70 runtime/source-run behavior phase.
+/// Suffix for the current Phase 71 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 70 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 70 - RET Execution and Return Address Validation"
+/// Full name of the current Phase 71 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71 - Root Procedure Termination Semantics"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 69C artifact compatibility checks.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-69c-source-run-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 71 terminal-state semantics.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71-source-run-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -5326,7 +5327,10 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
                      (diagnostic->memory_status == VM_MEMORY_STATUS_REGION_BOUNDARY_CROSSING && diagnostic->memory_diagnostic.has_code_overlap))) ||
                    status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
                    status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_INVALID_CALL_TARGET ||
-                   status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS || status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
+                   status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS ||
+                   status == VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH ||
+                   status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE ||
+                   status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
             masm32_sim_wasm_copy_instruction_source_span(
                 &diagnostic->instruction,
                 g_masm32_sim_wasm_run_storage.source_text,
@@ -5364,6 +5368,12 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     } else if (status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS) {
         message_code = "invalid-return-address";
         message_text = "RET read a return token that does not map to an executable pseudo-EIP instruction target. Execution stopped before changing ESP or transferring control.";
+    } else if (status == VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH) {
+        message_code = "non-root-procedure-fell-through";
+        message_text = "A called non-entry procedure reached its ENDP boundary without RET. Execution stopped before treating helper fallthrough as program completion.";
+    } else if (status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE) {
+        message_code = "invalid-root-termination-state";
+        message_text = "The VM detected inconsistent root/helper RET termination metadata. Execution stopped before mutating ESP or transferring control.";
     } else if (status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
         message_code = "branch-runtime-deferred";
         message_text = "A branch form was accepted for metadata, but runtime branch execution for that form is deferred to a later branch phase. Execution stopped before applying the branch.";
@@ -6496,6 +6506,40 @@ static bool masm32_sim_wasm_reached_selected_entry_boundary_by_fallthrough(
     return after_ip == before_ip + 1U;
 }
 
+/// Configures executor procedure boundaries from parser-owned procedure ranges.
+///
+/// @param vm VM instance already loaded with the lowered instruction program.
+/// @param parser_result Parser result containing the selected entry metadata.
+/// @param storage Source-run storage containing procedure ranges.
+/// @return Executor status from the boundary configuration helper.
+static VmExecStatus masm32_sim_wasm_configure_exec_procedure_boundaries(
+    Vm *vm,
+    const VmParserResult *parser_result,
+    const Masm32SimWasmRunStorage *storage
+) {
+    VmExecProcedureBoundary boundaries[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
+    size_t index = 0U;
+
+    if (vm == NULL || parser_result == NULL || storage == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (parser_result->procedure_range_count > (size_t)MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    memset(boundaries, 0, sizeof(boundaries));
+    for (index = 0U; index < parser_result->procedure_range_count; index += 1U) {
+        const VmProcedureRange *range = &storage->procedure_ranges[index];
+        boundaries[index].start_instruction_index = range->start_instruction_index;
+        boundaries[index].end_instruction_index = range->end_instruction_index;
+        boundaries[index].has_executable_instruction = range->has_executable_instruction;
+        boundaries[index].is_selected_entry = parser_result->has_selected_entry_procedure &&
+            index == parser_result->selected_entry_procedure_index;
+    }
+
+    return vm_configure_procedure_boundaries(vm, boundaries, parser_result->procedure_range_count);
+}
+
 /// Parses, optionally applies policy-selected layout, and executes source.
 ///
 /// @param source Source text to run.
@@ -6706,6 +6750,9 @@ static const char *masm32_sim_wasm_run_source_json_internal(
     vm_memory_clear_changes(&vm.memory);
 
     exec_status = vm_load_program(&vm, g_masm32_sim_wasm_run_storage.instructions, parser_result.instruction_count);
+    if (exec_status == VM_EXEC_STATUS_OK) {
+        exec_status = masm32_sim_wasm_configure_exec_procedure_boundaries(&vm, &parser_result, &g_masm32_sim_wasm_run_storage);
+    }
     if (exec_status == VM_EXEC_STATUS_OK && parser_result.has_selected_entry_procedure) {
         if (parser_result.selected_entry_start_instruction_index > parser_result.instruction_count ||
             parser_result.selected_entry_end_instruction_index > parser_result.instruction_count ||

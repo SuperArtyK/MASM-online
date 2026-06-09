@@ -7,16 +7,16 @@
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
- * signed relational conditional jumps, direct CALL, Phase 70 plain near RET,
- * and Irvine32 exit forms over the currently supported operand shapes. Phase 59
+ * signed relational conditional jumps, direct CALL, Phase 71 root/helper plain near RET,
+ * called non-entry procedure fallthrough diagnostics, and Irvine32 exit forms over the currently supported operand shapes. Phase 59
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
- * source-level stack instructions,
- * procedure frames, root RET, RET imm16, and non-exit Irvine32 routines remain
- * later milestones; Phase 69 direct user-procedure CALL performs its internal
- * checked return-token stack write, and Phase 70 plain RET performs its internal
- * checked return-token stack read.
+ * source-level stack instructions, procedure frames, RET imm16, and non-exit
+ * Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * performs its internal checked return-token stack write, Phase 70 helper RET
+ * performs its internal checked return-token stack read, and Phase 71 treats a
+ * selected-entry root RET as successful program termination.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -41,6 +41,9 @@
 
 /// Maximum checked memory accesses retained in one step delta.
 #define VM_EXEC_MAX_MEMORY_ACCESSES 4U
+
+/// Maximum procedure boundaries retained for root/fallthrough termination checks.
+#define VM_EXEC_MAX_PROCEDURE_BOUNDARIES 128U
 
 /// Canonical Phase 68B pseudo-code-address base for displayed EIP.
 #define VM_EXEC_PSEUDO_EIP_BASE 0x00401000U
@@ -79,9 +82,26 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_CALL_TARGET,
     /// A checked RET return token did not map to an executable pseudo-EIP instruction target.
     VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
+    /// A CALL-reached non-entry procedure fell through its ENDP boundary without RET.
+    VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH,
+    /// The VM detected an impossible root/helper termination state.
+    VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
 } VmExecStatus;
+
+
+/// Describes one procedure boundary used by Phase 71 terminal-state checks.
+typedef struct VmExecProcedureBoundary {
+    /// Zero-based first executable instruction index in the procedure body.
+    size_t start_instruction_index;
+    /// Exclusive instruction index of the procedure ENDP boundary.
+    size_t end_instruction_index;
+    /// Whether this procedure is the selected END entry procedure.
+    bool is_selected_entry;
+    /// Whether the procedure contains at least one executable instruction.
+    bool has_executable_instruction;
+} VmExecProcedureBoundary;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.
 typedef enum VmUndefinedFlagUsePolicy {
@@ -214,6 +234,16 @@ typedef struct Vm {
     VmExecDelta last_delta;
     /// Last structured executor diagnostic.
     VmExecDiagnostic last_diagnostic;
+    /// Procedure boundaries used by Phase 71 root RET and fallthrough checks.
+    VmExecProcedureBoundary procedure_boundaries[VM_EXEC_MAX_PROCEDURE_BOUNDARIES];
+    /// Number of valid entries in @ref procedure_boundaries.
+    size_t procedure_boundary_count;
+    /// Whether @ref selected_entry_procedure_index identifies the selected entry procedure.
+    bool has_selected_entry_procedure;
+    /// Index in @ref procedure_boundaries for the selected entry procedure.
+    size_t selected_entry_procedure_index;
+    /// Internal count of committed helper return tokens currently pending.
+    size_t active_helper_return_count;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
@@ -278,6 +308,20 @@ bool vm_sync_display_eip(Vm *vm);
 /// @param vm VM whose initialized memory layout supplies the stack region.
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_initialize_stack_pointer(Vm *vm);
+
+/// Configures Phase 71 root and procedure-boundary metadata for a loaded VM.
+///
+/// The executor copies the supplied boundaries and uses them only to distinguish
+/// selected-entry root RET success from ordinary helper RET token reads, and to
+/// diagnose CALL-reached non-entry procedure fallthrough. The count is not a Phase
+/// 72 call-depth limit or public call trace. Passing zero boundaries clears the
+/// metadata.
+///
+/// @param vm VM instance to mutate.
+/// @param boundaries Procedure-boundary records to copy; may be NULL only when count is zero.
+/// @param boundary_count Number of boundary records supplied.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
+VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoundary *boundaries, size_t boundary_count);
 
 /// Releases resources owned by a VM instance.
 ///

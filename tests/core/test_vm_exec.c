@@ -1,10 +1,10 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 70 RET behavior.
+ * @brief Unit tests for the VM executor through Phase 71 root RET termination behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
- * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, arithmetic fault rollback, and
+ * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, arithmetic fault rollback, and
  * last-step delta capture. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
@@ -4398,6 +4398,50 @@ static int test_phase70_ret_invalid_token_rolls_back(void) {
     return failures;
 }
 
+
+/// Verifies Phase 71 does not add active-frame provenance validation to non-root RET.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71_non_root_ret_with_valid_token_preserves_phase70_path(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 7", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for non-root RET preservation test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "non-root RET preservation program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "non-root RET preservation metadata should configure");
+    vm.instruction_pointer = 1U;
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("ESP setup for non-root RET preservation should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, VM_EXEC_PSEUDO_EIP_BASE, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("valid non-root RET token setup should write stack DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "valid non-root RET token should preserve the Phase 70 path without active-frame provenance validation");
+    failures += expect_size(vm.instruction_pointer, 0U, "valid non-root RET token should transfer to the decoded pseudo-EIP target");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after non-root RET preservation should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "valid non-root RET token should pop ESP even when no helper return counter is pending");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("valid non-root RET should expose a committed RET delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_RET, "valid non-root RET delta should record RET opcode");
+        failures += expect_size(delta->memory_access_count, 1U, "valid non-root RET should keep the checked stack read");
+        failures += expect_size(delta->memory_change_count, 0U, "valid non-root RET should not report memory changes");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 70 RET empty-stack reads fail through the checked memory helper.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -4436,6 +4480,158 @@ static int test_phase70_ret_empty_stack_checked_read_failure(void) {
     } else {
         failures += expect_status(diagnostic->status, VM_EXEC_STATUS_MEMORY_ERROR, "empty-stack RET diagnostic should report memory-error");
         failures += expect_u32(diagnostic->instruction_index, 0U, "empty-stack RET diagnostic should point at RET instruction index");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies Phase 71 selected-entry root RET terminates without reading the stack.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71_root_ret_terminates_without_stack_read(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71 root RET test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "root RET program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "root RET procedure boundary metadata should configure");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("root RET flag setup should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "selected-entry root RET should terminate successfully");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "selected-entry root RET should halt execution");
+    failures += expect_size(vm.instruction_pointer, 0U, "selected-entry root RET should not fabricate a return target");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after root RET should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "root RET should leave ESP unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "root RET should preserve flags");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("root RET should expose a committed terminal instruction delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_RET, "root RET delta should record RET opcode");
+        failures += expect_size(delta->memory_access_count, 0U, "root RET should not read ESP memory");
+        failures += expect_size(delta->memory_change_count, 0U, "root RET should not report memory changes");
+        failures += expect_size(delta->register_change_count, 0U, "root RET should not report register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "root RET should not report flag changes");
+    }
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic != NULL && diagnostic->status != VM_EXEC_STATUS_OK) {
+        failures += record_failure("root RET should not populate an error diagnostic");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH), "non-root-procedure-fell-through") == 0 ? 1U : 0U, 1U, "executor status helper should name non-root-procedure-fell-through");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE), "invalid-root-termination-state") == 0 ? 1U : 0U, 1U, "executor status helper should name invalid-root-termination-state");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71 reports internally inconsistent root metadata before stack reads.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71_invalid_root_metadata_diagnostic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid root metadata test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "invalid root metadata program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "invalid root metadata baseline should configure");
+    vm.selected_entry_procedure_index = 1U;
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE, "inconsistent root metadata should emit invalid-root-termination-state");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after invalid root metadata should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "invalid root metadata should leave ESP unchanged");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || delta->has_instruction) {
+        failures += record_failure("invalid root metadata should not expose a committed instruction delta");
+    } else {
+        failures += expect_size(delta->memory_access_count, 0U, "invalid root metadata should not read stack memory");
+        failures += expect_size(delta->memory_change_count, 0U, "invalid root metadata should not report memory changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("invalid root metadata should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE, "invalid root metadata diagnostic should name invalid-root-termination-state");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "invalid root metadata diagnostic should point at RET instruction");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71 reports CALL-reached non-entry procedure fallthrough.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71_called_helper_fallthrough_diagnostic(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t eax = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ret", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true},
+        {2U, 3U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for helper fallthrough test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "helper fallthrough program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "helper fallthrough boundary metadata should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL should transfer to helper");
+    failures += expect_size(vm.instruction_pointer, 2U, "CALL should enter helper procedure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH, "CALL-reached helper fallthrough should emit non-root diagnostic");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "helper fallthrough diagnostic should halt execution");
+    failures += expect_size(vm.instruction_pointer, 2U, "helper fallthrough diagnostic should preserve helper instruction pointer");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after helper fallthrough should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "helper fallthrough should leave pending return token on the internal stack");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after helper fallthrough should succeed"));
+    failures += expect_u32(eax, 7U, "helper instruction before fallthrough should commit normally");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || delta->has_instruction) {
+        failures += record_failure("helper fallthrough diagnostic should not expose an additional terminal instruction delta");
+    } else {
+        failures += expect_size(delta->memory_change_count, 0U, "helper fallthrough diagnostic should not report memory changes");
+        failures += expect_size(delta->memory_access_count, 0U, "helper fallthrough diagnostic should not report memory accesses");
+        failures += expect_size(delta->register_change_count, 0U, "helper fallthrough diagnostic should not report register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "helper fallthrough diagnostic should not report flag changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("helper fallthrough should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH, "helper fallthrough diagnostic should name non-root-procedure-fell-through");
+        failures += expect_u32(diagnostic->instruction_index, 2U, "helper fallthrough diagnostic should preserve helper instruction index");
+        if (!diagnostic->has_instruction || diagnostic->instruction.source_line != 8U) {
+            failures += record_failure("helper fallthrough diagnostic should preserve best available source location");
+        }
     }
 
     vm_deinit(&vm);
@@ -4956,6 +5152,10 @@ int main(void) {
     failures += test_phase70_ret_returns_to_call_successor();
     failures += test_phase70_ret_invalid_token_rolls_back();
     failures += test_phase70_ret_empty_stack_checked_read_failure();
+    failures += test_phase71_non_root_ret_with_valid_token_preserves_phase70_path();
+    failures += test_phase71_root_ret_terminates_without_stack_read();
+    failures += test_phase71_invalid_root_metadata_diagnostic();
+    failures += test_phase71_called_helper_fallthrough_diagnostic();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -4966,6 +5166,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 70 RET execution and validation coverage passed.");
+    puts("Executor tests through Phase 71 root RET termination coverage passed.");
     return 0;
 }

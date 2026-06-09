@@ -8,9 +8,10 @@
  * user-procedure CALL metadata, and emits only the minimal IR supported by the
  * current executor. Conditional control-flow transfer is implemented for direct
  * labels and procedure-entry labels; direct CALL is implemented only for user
- * procedure entries and Phase 70 plain RET. Source-level stack instructions, root RET, stack frames,
- * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
- * parsing remain later milestones. The parser records
+ * procedure entries, and no-operand plain RET is lowered for the executor's
+ * helper/root semantics. Source-level stack instructions, RET imm16, stack
+ * frames, scaled-index addressing, Irvine32 routine bodies, and full MASM
+ * expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit

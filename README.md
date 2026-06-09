@@ -6,17 +6,17 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 Repository/archive milestone:
 
-- Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
+- Phase 71 - Root Procedure Termination Semantics
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 70 - RET Execution and Return Address Validation
+- Phase 71 - Root Procedure Termination Semantics
 
 Source-run output-contract identifier naming:
 
-- Current expected protocol token in this revision: `phase-69c-source-run-output-contract-v1`
+- Current expected protocol token in this revision: `phase-71-source-run-output-contract-v1`
 
-Treat the token as a source-run output-contract version identifier, not as phase-status prose. The `69c` portion is historical naming from the phase that introduced this output-contract field; it is not the current repository milestone, not the current runtime/source-run MASM behavior phase, and not an immutable value for future output-contract-changing phases.
+Treat the token as a source-run output-contract version identifier, not as phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
 
 Protocol/artifact compatibility policy:
 
@@ -24,19 +24,21 @@ Protocol/artifact compatibility policy:
 - Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
 - Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
 - Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
-- Phase 70A changed artifact compatibility only. Phase 70B changes documentation and static checks only. Neither phase adds MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, or source-run output shape changes.
+- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior.
 
 Canonical phase navigation:
 
 - The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
-- After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics.
-- Phase 71 is also the next runtime/source-run MASM behavior phase unless a later guide revision explicitly changes that ordering.
+- After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode.
+- Phase 71A is optional and must not be treated as required runtime behavior unless the project owner explicitly accepts the strict-mode setting.
+- After Phase 71A is deferred or completed, Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup is the next non-renumbering corrective guide phase. Phase 71B is diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase that changes call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata.
 
 Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. That return-token write is an implicit VM stack write: it is checked through the central memory helpers and tracked internally, but the current public source-run output contract does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
-Phase 70 implements plain near `ret`/`RET` with no operands. `RET` reads a DWORD pseudo-EIP return token from `[ESP]` through the central checked-memory path, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4 on success, and transfers to the validated target. Invalid readable return tokens emit `invalid-return-address`; unreadable `[ESP]` uses the existing checked-memory diagnostics. The implicit return-token read is internal VM control-flow machinery and is not exposed as a public source-run `memoryChanges` row.
+Phase 70 implements helper plain near `ret`/`RET` with no operands for active user-procedure calls. Helper `RET` reads a DWORD pseudo-EIP return token from `[ESP]` through the central checked-memory path, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4 on success, and transfers to the validated target. Invalid readable return tokens emit `invalid-return-address`; unreadable `[ESP]` uses the existing checked-memory diagnostics. The implicit return-token read is internal VM control-flow machinery and is not exposed as a public source-run `memoryChanges` row. Phase 71 adds selected-entry root `RET` termination: when the selected entry procedure executes `ret` with no helper return pending, execution completes successfully without reading `[ESP]`, mutating `ESP`, or emitting return-token diagnostics. Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`.
 
-Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, root `RET` termination, non-entry procedure fallthrough diagnostics, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `leave`, and `ret imm16` remain deferred.
+Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `leave`, and `ret imm16` remain deferred.
 
 For implemented source-language behavior, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For future phase ordering and acceptance criteria, see [`docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`](docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -59,7 +61,9 @@ At a high level, the current subset includes:
 - `ESP` startup initialized from the active stack region empty-stack address;
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
 - direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes;
-- plain near `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer;
+- plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer;
+- selected-entry root `ret`/`RET` success without stack reads when no helper return is pending;
+- `non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`;
 - successful completion at the selected entry procedure's `ENDP` boundary;
 - procedure-entry and call-target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
@@ -72,9 +76,7 @@ Future/deferred simulator features include:
 
 - `loop`;
 - source-level `push` and `pop`;
-- root `ret`, `leave`, and `ret imm16`;
-- root procedure termination through `ret`;
-- non-entry procedure fallthrough diagnostics after CALL/RET are available;
+- `leave` and `ret imm16`;
 - stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;

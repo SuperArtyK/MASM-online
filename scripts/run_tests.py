@@ -473,7 +473,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 70 - RET Execution and Return Address Validation")
+    assert_text_contains("README.md", "Phase 71 - Root Procedure Termination Semantics")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -552,9 +552,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 70")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 71")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 70 - RET Execution and Return Address Validation")
+    assert_text_contains("web/src/protocol.js", "Phase 71 - Root Procedure Termination Semantics")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1412,8 +1412,8 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
-def assert_phase70_current_status_and_harness_documented() -> None:
-    """Verify Phase 70B documentation status, Phase 70 runtime status, and Phase 70A compatibility coverage."""
+def assert_phase71_current_status_and_harness_documented() -> None:
+    """Verify Phase 71 status, root RET semantics, and artifact/protocol coverage."""
 
     for path in [
         "README.md",
@@ -1423,17 +1423,15 @@ def assert_phase70_current_status_and_harness_documented() -> None:
         assert_all_text_contains(
             path,
             [
-                "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-                "Phase 70 - RET Execution and Return Address Validation",
-                "phase-69c-source-run-output-contract-v1",
+                "Phase 71 - Root Procedure Termination Semantics",
+                "phase-71-source-run-output-contract-v1",
                 "Current expected protocol token in this revision",
                 "source-run output-contract version identifier",
                 "Phase 70A",
                 "Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
                 "Artifact compatibility failures are not MASM source diagnostics",
-                "Phase 70B changes documentation",
-                "After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
-                "Phase 71 is also the next runtime/source-run MASM behavior phase",
+                "Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior",
+                "After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode",
             ],
         )
         assert_all_text_not_contains(
@@ -1444,6 +1442,9 @@ def assert_phase70_current_status_and_harness_documented() -> None:
                 "Latest protocol/artifact compatibility cleanup phase:",
                 "Next recommended implementation work",
                 "unsupported `call` forms including Irvine32 routine calls, external/API calls",
+                "root `RET` termination, non-entry procedure fallthrough diagnostics",
+                "root procedure termination through `ret`",
+                "non-entry procedure fallthrough diagnostics after CALL/RET are available",
             ],
         )
 
@@ -1455,14 +1456,17 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "That return-token write is an implicit VM stack write",
             "current public source-run output contract does not expose it as a visible `memoryChanges` row",
             "Failed internal stack writes use the central checked-memory diagnostic path",
-            "Phase 70 implements plain near `ret`/`RET` with no operands",
-            "`RET` reads a DWORD pseudo-EIP return token from `[ESP]`",
-            "The implicit return-token read is internal VM control-flow machinery",
+            "Phase 70 implements helper plain near `ret`/`RET` with no operands",
+            "Phase 71 adds selected-entry root `RET` termination",
+            "execution completes successfully without reading `[ESP]`",
+            "Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`",
             "displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
-            "plain near `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
+            "plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
+            "selected-entry root `ret`/`RET` success without stack reads when no helper return is pending",
+            "`non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
@@ -1499,12 +1503,14 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
-            "Root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions",
-            "selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them",
+            "Selected-entry root `RET` success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71",
             "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
             "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
             "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
+            "In the selected entry procedure, a no-operand root `RET` with no helper return pending terminates successfully without reading `[ESP]`",
+            "A called non-entry procedure that reaches its `ENDP` boundary without `RET` stops with `non-root-procedure-fell-through`",
+            "Source-level stack instructions, `RET imm16`, and procedure frames remain deferred",
             "direct `jmp label`",
             "equality conditional jumps",
             "signed relational conditional jumps",
@@ -1528,6 +1534,9 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "Latest output/message-ordering cleanup phase:",
             "Latest source-run output-contract phase:",
             "Latest protocol/artifact compatibility cleanup phase:",
+            "Root `RET`, non-entry procedure fallthrough diagnostics",
+            "root RET termination, RET imm16",
+            "root RET termination, RET imm16",
         ],
     )
 
@@ -1542,14 +1551,15 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "The token is a source-run output-contract version identifier",
             "Next canonical guide phase:",
             "Next runtime/source-run MASM behavior phase:",
-            "Phase 69C was artifact/test-infrastructure cleanup only; it introduced the separate `sourceRunOutputContract` metadata field",
-            "Phase 70 is the current runtime/source-run behavior phase and implements plain near RET return-token execution and validation",
+            "Phase 69C introduced the separate `sourceRunOutputContract` metadata field",
+            "Phase 70 implements helper plain near RET return-token execution and validation",
             "Phase 70A is protocol/artifact compatibility cleanup only",
-            "Phase 70B is documentation/static-test cleanup only",
-            "browser/protocol code now warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata",
-            "phase-69c-source-run-output-contract-v1",
+            "Phase 71 is the current runtime/source-run behavior phase",
+            "selected-entry root `RET` terminates successfully without an `[ESP]` read",
+            "called non-entry procedure fallthrough emits `non-root-procedure-fell-through`",
+            "browser/protocol code warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata",
+            "phase-71-source-run-output-contract-v1",
             "source-run output-contract version identifier",
-            "not a claim that Phase 69C is the current repository milestone",
             "A later accepted phase that changes the public source-run JSON shape",
             "stale-wasm-output-contract",
             "Artifact verification versus rebuild verification",
@@ -1585,20 +1595,19 @@ def assert_phase70_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 70B:",
-            "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-            "Phase 70 - RET Execution and Return Address Validation",
-            "source-run output-contract version identifier for the current public source-run output contract",
+            "Current status at Phase 71:",
+            "Phase 71 - Root Procedure Termination Semantics",
+            "phase-71-source-run-output-contract-v1",
             "Current protocol/artifact compatibility policy:",
             "Current expected protocol token in this revision",
             "The token is a source-run output-contract version identifier",
             "Next canonical guide phase:",
             "Next runtime/source-run MASM behavior phase:",
-            "Runtime/source-run MASM behavior remains Phase 70 until Phase 71 or another later runtime/source-run behavior phase is completed",
+            "Phase 71 is a runtime/source-run behavior phase and is the current repository/archive status",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
-            "Phase 70B is documentation/static-test cleanup only",
-            "## Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "## Phase 71 - Root Procedure Termination Semantics",
             "## Phase 70 - RET Execution and Return Address Validation",
             "Recent milestone detail in this file may be listed most-recent-first",
             "Concise milestone ledger",
@@ -1634,15 +1643,17 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "A later accepted phase that deliberately changes the public source-run JSON shape",
             "The full specification owns stable product boundaries",
             "The required dependency order is:",
-            "As of the source-of-truth revision after Phase 70B",
-            "Phase 70B is complete as documentation/static-test cleanup",
-            "The next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
+            "As of the source-of-truth revision after Phase 71",
+            "Phase 71 is complete as root procedure termination behavior",
+            "The next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode",
             "This specification must not duplicate the complete future phase list as phase-order authority",
             "Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`",
             "Do not renumber existing guide phases from this specification",
             "native process execution, or native x86 execution",
             "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
             "Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts",
+            "current selected-entry root `RET` behavior",
+            "`RET imm16`, `RETF`, `LEAVE`, source-level stack instructions",
         ],
     )
     assert_all_text_not_contains(
@@ -1655,6 +1666,8 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "The current Phase 69C identifier is:",
             "Phase 75 `PROC USES`; Phase 76 `LOCAL`; Phase 77 `PROTO`; Phase 78 `INVOKE`; Phase 79 `ADDR`; and Phase 80 Irvine32 callable routine dispatch",
             "Phase 70A is protocol/artifact compatibility cleanup only and must not implement root `RET` or any other MASM runtime behavior. If the guide uses corrective non-renumbering phases",
+            "root `RET` termination, `RET imm16`, `RETF`, `LEAVE",
+            "root `RET`, Irvine32 routine dispatch, and other CALL/RET forms remain future-owned",
         ],
     )
 
@@ -1669,6 +1682,7 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "## 74A. Phase 70A - Runtime Metadata Exact-Match Compatibility Check",
             "## 74B. Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
             "## 75. Phase 71 - Root Procedure Termination Semantics",
+            "## 75A. Phase 71A - Optional Root RET Strictness Mode",
             "Phase 70A is a UI/protocol/artifact compatibility corrective phase",
             "Missing suffix metadata is invalid even when the expected suffix is the empty string",
             "Malformed source-run output-contract metadata includes any present value that is not a string",
@@ -1676,14 +1690,10 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "historical contract-version naming",
             "not the current repository milestone, not the current runtime/source-run MASM behavior phase",
             "Runtime/source-run behavior metadata problems must be reported before source-run output-contract metadata problems",
-            "Phase 70B is inserted after Phase 70A and before Phase 71",
-            "After Phase 70B is accepted, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
-            "Phase 70B must add or update static documentation tests only",
-            "Phase 70B does not require new runtime, parser, VM, source-run, or instruction behavior tests",
-            "change the source-run output-contract token solely because the repository/archive milestone or runtime/source-run MASM behavior phase advanced",
-            "token introduced during Phase 69C still passes while the public source-run output contract remains unchanged",
-            "Visible current-status requirement",
             "The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push",
+            "Phase 71 must check selected-entry root RET eligibility before attempting the Phase 70 DWORD read from `[ESP]`",
+            "non-root-procedure-fell-through",
+            "invalid-root-termination-state",
             "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
         ],
     )
@@ -1691,29 +1701,29 @@ def assert_phase70_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/TESTING_GUIDE.md",
         [
-            "Current repository/archive status for this guide revision is Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-            "Current runtime/source-run MASM behavior remains Phase 70 - RET Execution and Return Address Validation",
-            "phase-69c-source-run-output-contract-v1",
-            "contract-version naming for an unchanged output contract",
-            "not the current repository milestone or runtime/source-run MASM behavior phase",
-            "Phase 70B changes documentation and static checks only",
+            "Current repository/archive status for this guide revision is Phase 71 - Root Procedure Termination Semantics",
+            "Current runtime/source-run MASM behavior is Phase 71 - Root Procedure Termination Semantics",
+            "phase-71-source-run-output-contract-v1",
+            "Phase 71 requires runtime, source-run, rendered Simulator Messages, protocol, and static documentation regression tests",
             "Phase 69C introduced source-run output-contract verification",
             "token expected by the current UI/source pair",
-            "not current phase status and not a rule that future output-contract-changing phases must preserve the same token",
+            "tests must prove:",
+            "selected-entry root RET does not read `[ESP]`",
+            "static documentation checks assert selected-entry root RET and called non-entry procedure fallthrough are implemented after Phase 71 is accepted",
         ],
     )
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 70B: documentation/static-check alignment",
-            "Repository status: Phase 70B: Canonical Documentation Alignment and Compatibility Test Matrix Cleanup.",
-            "Runtime behavior: Phase 70 plain near RET returns through checked pseudo-EIP tokens.",
-            "Phase 70B changes documentation/static checks only.",
+            "Milestone 71: selected-entry root RET completes successfully",
+            "Repository status: Phase 71: Root Procedure Termination Semantics.",
+            "Runtime behavior: Phase 71 selected-entry root RET terminates successfully",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
             "Writes pseudo-EIP return token at ESP - 4",
+            "Root RET completes without reading ESP",
             "final-registers",
             "Program Console",
         ],
@@ -1728,6 +1738,7 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "direct user-procedure <code>CALL</code> is executable",
             "RET</code>, Irvine32 routine calls",
             "Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.",
+            "Milestone 70B: documentation/static-check alignment",
         ],
     )
 
@@ -1755,6 +1766,19 @@ def assert_phase70_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
+            "IMPLEMENTED_PHASE = 71",
+        ],
+    )
+    assert_all_text_not_contains(
+        "src/core/vm_exec.c",
+        [
+            "source-level stack instructions, procedure frames, root RET",
+        ],
+    )
+    assert_all_text_not_contains(
+        "src/parser/parser.c",
+        [
+            "Source-level stack instructions, root RET",
         ],
     )
     assert_all_text_not_contains(
@@ -2062,7 +2086,7 @@ def run_static_tests() -> None:
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
     assert_live_text_avoids_milestone_relative_wording()
-    assert_phase70_current_status_and_harness_documented()
+    assert_phase71_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

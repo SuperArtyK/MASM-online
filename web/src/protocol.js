@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 70;
+export const IMPLEMENTED_PHASE = 71;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 70 - RET Execution and Return Address Validation";
+export const IMPLEMENTED_PHASE_NAME = "Phase 71 - Root Procedure Termination Semantics";
 
-/** Source-run JSON output-contract identifier expected by the Phase 69C browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-69c-source-run-output-contract-v1";
+/** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71-source-run-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.
@@ -149,7 +149,7 @@ function createMismatchedRuntimePhaseDiagnostic(reportedPhase, reportedSuffix) {
 }
 
 /**
- * Creates a diagnostic for stale or missing Phase 69C output-contract metadata.
+ * Creates a diagnostic for stale or missing source-run output-contract metadata.
  *
  * @param {unknown} reportedContract Source-run output contract reported by the artifact.
  * @returns {{kind: string, code: string, message: string}} Structured Simulator Messages diagnostic.
@@ -159,7 +159,7 @@ function createStaleOutputContractDiagnostic(reportedContract) {
     return {
       kind: "internal-simulator-error",
       code: "stale-wasm-output-contract",
-      message: "The loaded Wasm artifact does not report the Phase 69C source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact does not report the current source-run output-contract identifier required by the current UI/source files. Rebuild web/dist with the Emscripten build script."
     };
   }
 
@@ -173,7 +173,7 @@ function createStaleOutputContractDiagnostic(reportedContract) {
 /**
  * Adds diagnostics when a generated Wasm artifact does not match UI expectations.
  *
- * Runtime/source-run behavior phase metadata and Phase 69C output-contract
+ * Runtime/source-run behavior phase metadata and source-run output-contract
  * metadata are checked separately so output-only stale artifacts are visible
  * without advancing the runtime behavior phase. Phase 70A makes runtime
  * metadata an exact match: older, newer, missing, or malformed phase metadata

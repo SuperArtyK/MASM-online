@@ -21971,49 +21971,582 @@ Phase 71A is accepted only when:
 
 ---
 
+## 75B. Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
+
+### Goal
+
+Remove stale milestone-number wording from active user-facing diagnostics while preserving parser acceptance, VM execution behavior, diagnostic codes, diagnostic severity, diagnostic source spans, Program Console output, public source-run JSON schema, and source-run terminal behavior.
+
+This phase is diagnostic-copy cleanup only. It exists to make active Simulator Messages explain stable simulator boundaries instead of historical milestone numbers.
+
+### Dependency
+
+Phase 71 must already be complete. Phase 71B may be completed whether Phase 71A is deferred or accepted.
+
+Phase 71B must not renumber Phase 72 or any later phase.
+
+### Scope
+
+Phase 71B may change:
+
+- active parser/runtime diagnostic message text;
+- tests that assert the exact diagnostic text;
+- rendered Simulator Messages tests that assert exact user-visible output;
+- static documentation or source checks that prevent future milestone-number wording in active user-facing diagnostics;
+- supported-syntax or testing documentation that describes the diagnostic-copy rule;
+- source-run output-contract metadata, if exact diagnostic message text is part of the source-run output contract.
+
+Phase 71B must not change:
+
+- accepted syntax;
+- rejected syntax categories;
+- diagnostic codes;
+- diagnostic severity;
+- diagnostic source line, source column, byte offset, or span length;
+- parser recovery behavior;
+- VM execution behavior;
+- register behavior;
+- flag behavior;
+- flag-validity metadata behavior;
+- memory behavior;
+- `ESP` behavior;
+- pseudo-EIP behavior;
+- Program Console output;
+- source-run JSON field names, ordering, or schema;
+- source-run terminal status semantics;
+- checked-memory behavior;
+- root/helper `RET` behavior;
+- call-depth accounting;
+- call-depth settings;
+- call-trace behavior.
+
+### Source-run output-contract metadata requirement
+
+If Phase 71B changes exact diagnostic message text that is visible through source-run output, the phase must advance the source-run output-contract token.
+
+Use this token unless the project owner explicitly chooses a different token during the phase:
+
+```text
+phase-71b-source-run-output-contract-v1
+```
+
+The phase report must explicitly state:
+
+```text
+Phase 71B changes rendered diagnostic wording only. It advances the source-run output-contract token because exact rendered diagnostic text is part of the tested source-run output contract. It does not change parser acceptance, VM semantics, diagnostic codes, severity, source spans, Program Console output, JSON schema, or terminal-status semantics.
+```
+
+If an implementation attempts to change diagnostic wording without advancing the output-contract token, the phase report must justify that decision and identify the tests proving that downstream source-run compatibility is unaffected. The default expected decision is to advance the token.
+
+### Required cleanup rule
+
+Active user-facing diagnostics must not explain rejected current behavior with milestone-relative wording such as:
+
+```text
+not supported in Phase N
+outside Phase N
+Phase N accepts only
+deferred to Phase N
+```
+
+This prohibition applies to active diagnostics emitted by parser, runtime, source-run, or UI/Wasm compatibility paths when those diagnostics are visible to users through Simulator Messages.
+
+This prohibition does not apply to:
+
+- milestone reports under `docs/history/`;
+- historical audit notes under `docs/history/`;
+- documentation sections explicitly labeled as historical legacy material;
+- tests that intentionally list forbidden strings for static checks;
+- comments that are not emitted to users, provided the comments do not mislead future implementation work.
+
+Active canonical docs outside `docs/history/` should avoid milestone-relative user-facing wording unless the surrounding section explicitly explains that it is historical, corrective, or roadmap navigation text.
+
+### Required replacement style
+
+Replacement wording must describe the stable simulator boundary or current accepted subset.
+
+Use this style:
+
+```text
+This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.
+```
+
+Do not use this style:
+
+```text
+Phase 69 accepts only a plain user procedure name.
+```
+
+Use this style:
+
+```text
+This simulator accepts plain near RET with no operands. RET imm16 and far RET are not implemented.
+```
+
+Do not use this style:
+
+```text
+RETF far returns are outside Phase 70.
+```
+
+Use this style:
+
+```text
+This IMUL form is not accepted. Use an implemented one-, two-, or three-operand IMUL form.
+```
+
+Do not use this style:
+
+```text
+IMUL reg, imm is not supported in Phase 55.
+```
+
+### Known active diagnostic families to review
+
+At minimum, inspect active diagnostics and rendered-message tests for:
+
+- IMUL rejected forms;
+- CALL distance/type override targets;
+- CALL memory targets;
+- CALL register targets;
+- CALL expression or immediate targets;
+- CALL directive-name targets;
+- CALL `OFFSET` targets;
+- RETF and far-return forms;
+- any other active parser/runtime diagnostic containing `Phase ` followed by a number.
+
+The phase may update additional active user-facing diagnostics found by the same search pattern.
+
+### Required tests
+
+Parser tests:
+
+- Update tests for every changed diagnostic to assert the unchanged diagnostic code.
+- Assert the unchanged severity where the parser test harness exposes severity.
+- Assert the unchanged source line, source column, byte offset, and span length where the harness exposes them.
+- Assert the new stable wording.
+- Assert that old milestone-relative substrings no longer appear in active diagnostic messages.
+
+Source-run tests:
+
+- Update source-run JSON tests for every changed diagnostic that is reachable through source-run.
+- Assert unchanged diagnostic code and source location fields.
+- Assert unchanged source-run JSON schema.
+- Assert unchanged terminal status.
+- Assert the new stable message text.
+- Assert absence of stale milestone-relative phrases in active diagnostics.
+- Assert the source-run output-contract token is `phase-71b-source-run-output-contract-v1`, unless the phase report explicitly documents a different accepted token.
+
+Rendered Simulator Messages tests:
+
+- Update exact rendered output for every changed diagnostic.
+- Assert the rendered output still includes severity, code, source line, source column, byte offset, span length, and the new message text.
+- Assert the rendered output does not contain stale milestone-relative phrases for the changed cases.
+
+Static checks:
+
+- Add or update a static guard that scans active diagnostic message strings in source files and active rendered-message expected strings in non-historical tests.
+- The guard must fail on active user-facing message strings containing patterns equivalent to:
+  - `not supported in Phase`
+  - `outside Phase`
+  - `Phase <number> accepts only`
+  - `deferred to Phase <number>`
+- The guard must ignore `docs/history/`.
+- The guard must ignore documentation sections explicitly labeled as historical legacy material.
+- The guard must allow explicit forbidden-string lists used by the guard itself.
+
+### Acceptance criteria
+
+Phase 71B is accepted only when:
+
+- all active user-facing diagnostics found by the required search are rewritten to stable simulator-boundary wording;
+- no parser acceptance changes are introduced;
+- no runtime execution changes are introduced;
+- no diagnostic code, severity, or source-span changes are introduced unless the phase report explicitly identifies an accidental pre-existing test gap and the project owner accepts the correction;
+- structured diagnostic tests pass;
+- source-run tests pass;
+- rendered Simulator Messages tests pass;
+- the source-run output-contract token is advanced if exact source-run-visible diagnostic wording changes;
+- the static guard prevents new active milestone-relative diagnostic wording;
+- Phase 72 call-depth resource-limit behavior is not implemented;
+- Phase 72 call-depth setting behavior is not implemented;
+- Phase 72 call-trace behavior is not implemented;
+- source-level PUSH/POP, LEAVE, RET imm16, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, and Irvine32 callable routine dispatch remain deferred unless separately owned by their later accepted phases.
+
+---
+
 ## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
 ### Goal
 
-Add resource protection and diagnostics for recursive or runaway CALL chains.
+Add deterministic resource protection for recursive or runaway direct user-procedure `CALL` chains.
 
-This phase must not add new CALL forms or procedure syntax. It only adds depth accounting and diagnostics.
+This phase adds call-depth accounting, a configurable call-depth limit, settings validation for that limit, and the `call-depth-exceeded` diagnostic. It may also add call-trace metadata only if the exact trace contract is specified and tested in this phase.
 
-### Tasks
+This phase must not add new CALL target forms, new procedure syntax, source-level stack instructions, stack frames, Irvine32 routine dispatch, debugger stepping, Step Over behavior, breakpoint behavior, native call-stack behavior, PE behavior, WinAPI behavior, or full x86 emulation behavior.
 
-1. Add named configuration constant `default_call_depth_limit`.
-2. Increment call depth only after a CALL is guaranteed to commit.
-3. Decrement call depth only after RET target validation succeeds.
-4. Stop before pushing a new return token if the next CALL would exceed the limit.
-5. Include current depth, configured limit, target name, and source location in JSON diagnostics.
-6. Add optional call trace metadata with procedure names and source locations.
-7. Preserve deterministic behavior across Run and Step.
+### Dependencies
 
-### Diagnostics
+Phase 72 depends on:
 
-- `call-depth-exceeded`: resource-limit error.
-- `call-trace-truncated`: optional simulator warning if a displayed trace is truncated.
+- Phase 69 direct user-procedure `CALL`;
+- Phase 70 ordinary helper plain near `RET`;
+- Phase 71 selected-entry root `RET` and non-entry fallthrough behavior;
+- central checked-memory helpers for the internal CALL return-token stack write and helper RET return-token read;
+- existing source-run JSON diagnostics and rendered Simulator Messages paths;
+- completion of Phase 71B, unless the project owner explicitly defers or removes that corrective phase before Phase 72.
 
-### Tests
+Phase 72 must preserve the Phase 71 distinction between:
+
+- selected-entry root `RET`, which succeeds without reading `[ESP]` when no helper return is pending; and
+- ordinary helper `RET`, which reads and validates a pseudo-EIP return token through the checked-memory path.
+
+### Non-goals
+
+Phase 72 must not implement:
+
+- source-level `push`;
+- source-level `pop`;
+- `leave`;
+- `ret imm16`;
+- `retf`;
+- `enter`;
+- stack frames;
+- `LOCAL`;
+- `USES`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- active-frame provenance validation beyond the call-depth counter defined here;
+- Step Over;
+- debugger call-stack UI;
+- native x86 call-stack behavior;
+- PE loader behavior;
+- WinAPI behavior;
+- Irvine32 callable routine dispatch.
+
+Phase 72 must not rename or reinterpret the Phase 71 internal root/helper terminal-state metadata as public call-depth metadata. It must create and maintain a separate call-depth counter with the semantics defined in this phase.
+
+### Required constants and setting names
+
+Add this C constant in an appropriate C99 core header or module:
+
+```c
+#define VM_DEFAULT_CALL_DEPTH_LIMIT 64u
+```
+
+The default source-run setting name is:
+
+```text
+callDepthLimit
+```
+
+The accepted range is:
+
+```text
+minimum: 1
+maximum: 4096
+default: 64
+```
+
+The invalid-setting diagnostic code is:
+
+```text
+invalid-call-depth-limit
+```
+
+The setting must be available through the source-run settings path used by native source-run tests and Wasm/source-run protocol tests.
+
+Browser UI exposure is optional for Phase 72. If a browser UI control is added, it must use the same setting name, range, default, normalization behavior, and diagnostics. If no browser UI control is added, browser tests must prove that the default value is used consistently and that the absence of a UI control does not change source-run behavior.
+
+Do not use vague or alternate setting names such as:
+
+```text
+limit
+depth
+maxDepth
+recursion
+recursionLimit
+stackDepth
+strict
+```
+
+unless the project owner explicitly changes the canonical setting name and updates all source-run, protocol, documentation, and UI tests in the same phase.
+
+### Public call-depth semantics
+
+Phase 72 defines `currentCallDepth` as:
+
+```text
+the number of committed direct user-procedure CALL frames that have not yet returned through a successfully validated ordinary helper RET
+```
+
+Rules:
+
+- The selected entry procedure itself is not counted as a CALL frame.
+- A selected-entry root `RET` does not decrement call depth.
+- A direct user-procedure `CALL` increments call depth only after the call-depth limit check has passed and the CALL is otherwise guaranteed to commit.
+- An ordinary helper `RET` decrements call depth only after the return-token read has succeeded, the return token has been validated, `ESP` has been restored, and the transfer to the validated return target is committed.
+- A called non-entry procedure fallthrough diagnostic must stop execution without inventing a return, without decrementing call depth, and without emitting successful terminal status.
+- Invalid return-token reads, unreadable `[ESP]`, invalid readable return-token values, CALL stack-write failures, and non-entry fallthrough diagnostics must not partially mutate call depth.
+- Repeated source runs must start with call depth zero.
+- A failed run must not leak call-depth state into a later run.
+
+### CALL execution order for depth-limit checking
+
+For a direct user-procedure `CALL`, use this order:
+
+1. Resolve and validate the CALL target according to the already-accepted direct user-procedure CALL rules.
+2. Compute:
+
+   ```text
+   attemptedDepth = currentCallDepth + 1
+   ```
+
+3. If `attemptedDepth` is greater than the configured `callDepthLimit`, stop execution with `call-depth-exceeded`.
+4. If the depth check passes, perform the existing checked-memory return-token stack write.
+5. If the checked-memory write succeeds, commit the `ESP` change, call-depth increment, and transfer to the callee according to existing CALL semantics.
+
+This order is mandatory. Do not choose diagnostic precedence ad hoc during implementation.
+
+If the target is not a valid direct user-procedure CALL target, the existing parser or runtime target diagnostic remains authoritative and no call-depth check occurs.
+
+If the target is valid but the next CALL would exceed the depth limit, `call-depth-exceeded` takes precedence over the CALL return-token stack write because the write must not be attempted after the depth check fails.
+
+If the target is valid and the depth check passes but the return-token stack write fails through central checked-memory validation, the existing checked-memory diagnostic path remains authoritative.
+
+### No-partial-mutation rule for `call-depth-exceeded`
+
+When `call-depth-exceeded` is emitted, execution must stop before:
+
+- writing the return token to `[ESP - 4]`;
+- changing `ESP`;
+- changing the instruction pointer;
+- changing modeled flags;
+- changing flag-validity metadata;
+- changing call depth;
+- changing call trace metadata;
+- creating a public `memoryChanges` row;
+- writing Program Console output;
+- emitting successful terminal status.
+
+### Diagnostic: `call-depth-exceeded`
+
+Diagnostic code:
+
+```text
+call-depth-exceeded
+```
+
+Severity:
+
+```text
+resource-limit-error
+```
+
+Meaning:
+
+```text
+The next direct user-procedure CALL would exceed the configured simulator call-depth limit.
+```
+
+Required structured fields, where the existing diagnostic model supports them:
+
+- diagnostic code;
+- severity;
+- source line;
+- source column;
+- source byte offset;
+- source span length;
+- current depth before the rejected CALL;
+- attempted depth;
+- configured limit;
+- target procedure name;
+- selected entry procedure name, if available through existing metadata without adding broad call-stack UI behavior.
+
+Source location:
+
+- Prefer the CALL target operand span.
+- If the target operand span is not available, use the full CALL instruction span.
+- Do not use the callee procedure declaration span as the primary source location for this diagnostic.
+
+Rendered Simulator Messages wording must include:
+
+- `call-depth-exceeded`;
+- severity `resource-limit-error`;
+- the configured limit;
+- the attempted depth;
+- the attempted target procedure name;
+- enough source location detail to match the existing rendered diagnostic style.
+
+Rendered wording must not imply native stack overflow, OS process stack overflow, Windows exception behavior, PE loader behavior, host call-stack behavior, or full x86 emulation.
+
+### Diagnostic: `invalid-call-depth-limit`
+
+Diagnostic code:
+
+```text
+invalid-call-depth-limit
+```
+
+Severity:
+
+```text
+settings-error
+```
+
+Meaning:
+
+```text
+The requested source-run callDepthLimit setting is outside the accepted range or is not an integer.
+```
+
+Accepted values:
+
+```text
+1 through 4096 inclusive
+```
+
+Default value when omitted:
+
+```text
+64
+```
+
+Invalid values must prevent execution. They must not fall back silently to the default.
+
+Invalid examples that must be rejected:
+
+```text
+0
+-1
+4097
+1.5
+"64"
+"abc"
+null
+true
+false
+```
+
+If the settings path cannot distinguish some invalid JSON types because of existing API constraints, Phase 72 must document the actual reachable invalid cases and add tests for every reachable invalid case.
+
+Rendered Simulator Messages wording for `invalid-call-depth-limit` must include:
+
+- `invalid-call-depth-limit`;
+- accepted range `1..4096`;
+- the rejected value when safely renderable;
+- no implication that the program itself executed.
+
+### Optional call trace metadata
+
+Phase 72 may expose call trace metadata only if it defines the exact contract.
+
+If call trace metadata is implemented in Phase 72, define:
+
+```text
+JSON field name:
+whether the field appears on success, diagnostics only, or both:
+entry ordering:
+entry fields:
+maximum retained entries:
+truncation rule:
+whether recursive repeated frames are repeated or compacted:
+whether the selected entry procedure appears in the trace:
+whether the rejected CALL appears in the trace:
+rendered Simulator Messages behavior:
+```
+
+Recommended minimal trace entry fields:
+
+```text
+procedureName
+callSourceLine
+callSourceColumn
+callSourceByteOffset
+callSourceSpanLength
+```
+
+If trace truncation is implemented, use diagnostic code:
+
+```text
+call-trace-truncated
+```
+
+Severity:
+
+```text
+simulator-warning
+```
+
+`call-trace-truncated` must not be emitted unless call trace metadata is actually exposed and a trace is actually truncated.
+
+If Phase 72 does not expose call trace metadata, it must not emit `call-trace-truncated`, must not add undocumented trace JSON, and must not add a rendered call-stack display.
+
+### Required tests
 
 Native executor tests:
 
-- CALL at depth `limit - 1` succeeds.
-- CALL at depth `limit` fails before stack mutation.
-- Failed depth check does not change ESP, memory, instruction pointer, or call trace.
+- A CALL at depth `limit - 1` succeeds.
+- A CALL that would produce `attemptedDepth = limit + 1` fails with `call-depth-exceeded`.
+- The rejected CALL does not write a return token.
+- The rejected CALL does not change `ESP`.
+- The rejected CALL does not change the instruction pointer to the callee.
+- The rejected CALL does not change modeled flags or flag-validity metadata.
+- The rejected CALL does not create a memory-change row.
+- A successful ordinary helper `RET` decrements call depth exactly once.
+- Selected-entry root `RET` does not decrement call depth.
+- Invalid readable return tokens do not decrement call depth.
+- Unreadable `[ESP]` during helper `RET` does not decrement call depth.
+- Called non-entry procedure fallthrough does not decrement call depth.
+- A failed source run does not leak call-depth state into the next source run.
 
 Source-run tests:
 
-- A recursive procedure hits `call-depth-exceeded` with deterministic instruction count.
-- A non-recursive call chain under the limit succeeds.
+- A recursive procedure hits `call-depth-exceeded` deterministically with a low test limit.
+- A non-recursive call chain below the limit completes successfully.
+- A call chain exactly at the configured limit completes if no next CALL exceeds the limit.
+- A source-run fixture confirms that the selected entry procedure itself is not counted as a CALL frame.
+- A helper CALL followed by helper RET returns to the caller and allows the caller's root `RET` to complete.
+- Re-running the same recursive source after failure starts from depth zero.
+- Omitted `callDepthLimit` uses default value `64`.
+- Valid `callDepthLimit` values `1`, `64`, and `4096` are accepted.
+- Invalid `callDepthLimit` values produce `invalid-call-depth-limit` and do not run execution.
+- Invalid settings do not write Program Console output and do not emit successful terminal status.
 
 Rendered Simulator Messages tests:
 
-- Resource-limit diagnostic includes depth and limit.
+- `call-depth-exceeded` renders with severity `resource-limit-error`.
+- The rendered message includes the configured limit.
+- The rendered message includes the attempted depth.
+- The rendered message includes the attempted target procedure name.
+- The rendered message uses the CALL target or CALL instruction source span according to this phase.
+- The rendered message does not mention native stack overflow, Windows exceptions, PE loading, host call stacks, or full x86 execution.
+- `invalid-call-depth-limit` renders with severity `settings-error`.
+- `invalid-call-depth-limit` renders the accepted range `1..4096`.
+- If call trace metadata is implemented, rendered output follows the exact trace contract.
+- If call trace metadata is not implemented, rendered output contains no trace section and no `call-trace-truncated` warning.
 
-Acceptance program:
+Protocol/UI tests, if a UI setting is exposed:
+
+- Default settings normalize to `callDepthLimit = 64`.
+- Explicit valid setting values are accepted.
+- Invalid values are rejected with `invalid-call-depth-limit`.
+- UI settings, source-run request normalization, worker payloads, and backend settings agree on the setting name and allowed range.
+
+Static documentation tests:
+
+- Active docs list Phase 72 as call-depth/resource-limit behavior, not as native stack emulation.
+- Active docs still list source-level PUSH/POP, LEAVE, RET imm16, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, Irvine32 routine dispatch, PE loading, WinAPI behavior, native x86 execution, and full x86 emulation as deferred or non-goals according to their owning categories.
+- Active docs do not describe Phase 71 root/helper terminal-state metadata as public call-depth metadata.
+
+### Acceptance program
+
+With `callDepthLimit` set to a deliberately low test value, this program must stop with `call-depth-exceeded` before mutating the stack for the rejected recursive CALL:
 
 ```asm
+include Irvine32.inc
+
 .code
 main PROC
     call Recur
@@ -22024,17 +22557,43 @@ Recur PROC
     call Recur
     ret
 Recur ENDP
+
 END main
 ```
 
-Expected with a low test limit:
+Expected diagnostic category:
 
 ```text
 [resource-limit-error] call-depth-exceeded
 ```
 
----
+The exact rendered text must also include:
 
+- the configured limit;
+- the attempted depth;
+- the attempted target procedure name `Recur`;
+- the source location of the rejected CALL target or full CALL instruction.
+
+### Acceptance criteria
+
+Phase 72 is accepted only when:
+
+- `VM_DEFAULT_CALL_DEPTH_LIMIT` is defined as `64u`;
+- `callDepthLimit` is the source-run setting name;
+- accepted values are integers from `1` through `4096` inclusive;
+- invalid setting values produce `invalid-call-depth-limit` and prevent execution;
+- call-depth accounting follows the exact committed-CALL and committed-helper-RET rules in this phase;
+- selected-entry root `RET` behavior from Phase 71 remains unchanged;
+- ordinary helper `RET` checked-memory behavior from Phase 70 remains unchanged;
+- the rejected over-limit CALL has no partial mutation;
+- `call-depth-exceeded` precedence follows the fixed order in this phase;
+- structured diagnostics include the required source location and depth/limit information;
+- rendered Simulator Messages tests cover the new diagnostics;
+- repeated source runs reset call-depth state;
+- no source-level PUSH/POP, LEAVE, RET imm16, stack-frame, LOCAL, USES, PROTO, INVOKE, ADDR, Irvine32 routine-dispatch, debugger, PE, WinAPI, native x86, or full x86 behavior is introduced;
+- call trace metadata is either fully specified and tested or not emitted at all.
+
+---
 
 ## 76A. Phase 72A - PUSH and POP Stack Instructions
 

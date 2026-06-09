@@ -4,7 +4,7 @@ This document describes practical ways to build, run, and manually test the MASM
 
 The examples assume commands are run from the repository root.
 
-Current repository/archive status for this guide revision is Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup. Current runtime/source-run MASM behavior remains Phase 70 - RET Execution and Return Address Validation. The source-run output-contract token expected by this revision is `phase-69c-source-run-output-contract-v1`; that token is contract-version naming for an unchanged output contract, and the embedded `69c` label is not the current repository milestone or runtime/source-run MASM behavior phase. Phase 70B changes documentation and static checks only; it does not require runtime, parser, VM, source-run, or instruction behavior tests beyond preserving existing focused groups.
+Current repository/archive status for this guide revision is Phase 71 - Root Procedure Termination Semantics. Current runtime/source-run MASM behavior is Phase 71 - Root Procedure Termination Semantics. The source-run output-contract token expected by this revision is `phase-71-source-run-output-contract-v1`; that token is contract-version naming for the current source-run output contract. Phase 71 requires runtime, source-run, rendered Simulator Messages, protocol, and static documentation regression tests for selected-entry root RET success, helper RET preservation, and called non-entry procedure fallthrough diagnostics.
 
 ## 1. Prerequisites
 
@@ -256,7 +256,7 @@ Diagnostic subgroups such as `--diagnostics=memory` are not currently implemente
 
 Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition and does not add subgroup flags. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any future subgroup split must preserve the existing broad group flags.
 
-Phase 69C introduced source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with the token expected by the current UI/source pair. In this source tree, that token remains `phase-69c-source-run-output-contract-v1` because later accepted phases have not changed the public source-run output contract. The embedded `69c` label is historical contract-version naming, not current phase status and not a rule that future output-contract-changing phases must preserve the same token. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
+Phase 69C introduced source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with the token expected by the current UI/source pair. In this source tree, that token is `phase-71-source-run-output-contract-v1`. A phase-looking prefix in a source-run output-contract token is contract-version naming, not a separate repository/runtime status field and not a rule that future output-contract-changing phases must preserve the same token. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
 
 Phase 70A tightens browser/Wasm runtime metadata checks. Protocol tests for that corrective phase must cover exact matching runtime phase and matching output contract, older runtime phase mismatch, newer runtime phase mismatch, missing runtime metadata, stale output-contract metadata, missing output-contract metadata, and combined runtime/output-contract mismatch diagnostics in deterministic order. Phase 70A tests must also prove that the correction does not change accepted MASM syntax, VM execution semantics, Program Console output, or public `memoryChanges` rows.
 
@@ -1159,7 +1159,7 @@ Future stack/procedure milestones must separate focused executor tests from comp
 Use executor/native tests when a phase implements an instruction whose full source-run program would require a later phase. Examples:
 
 - Phase 69 - Direct CALL to User Procedures can be tested by stepping one CALL and checking the return token, stack write, instruction pointer, modeled flags, and no-partial-mutation behavior.
-- Phase 70 - RET Execution and Return Address Validation can be tested with executor-level stack setup before Phase 71 - Root Procedure Termination Semantics exists.
+- Phase 70 - RET Execution and Return Address Validation can be tested with executor-level stack setup before complete source-level CALL/root termination programs exist.
 - Phase 73 - LEAVE Instruction can be tested with direct frame setup even when source-level setup instructions are also available.
 
 Use source-run tests only when all required source-level dependencies already exist. Examples:
@@ -1194,7 +1194,7 @@ For Phase 71 root RET and non-entry fallthrough specifically, tests must prove:
 - ordinary helper RET still emits `invalid-return-address` for readable invalid tokens;
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `non-root-procedure-fell-through`;
-- static documentation checks move selected-entry root RET from deferred to implemented only after Phase 71 is accepted;
+- static documentation checks assert selected-entry root RET and called non-entry procedure fallthrough are implemented after Phase 71 is accepted;
 - static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
 
 
@@ -1235,6 +1235,17 @@ Recommended checks:
 15. Active roadmap sections must state that roadmap themes are not a current-support table and that current support comes from the canonical guide, supported-syntax document, latest repository state, latest accepted milestone report, and current tests.
 16. Optional or future virtual-filesystem wording must state that it would be simulator-owned educational behavior only and must not imply direct browser filesystem access, host filesystem access, Windows file API behavior, PE loading, or import-library behavior.
 17. Active Irvine32 routine-contract text that mentions `EIP`, including future `DumpRegs` behavior, must state that `EIP` is the displayed pseudo-EIP/control-state value, not a native address, PE/RVA/linker address, raw VM instruction index, source byte offset, or source-writable register value.
+18. Active user-facing diagnostic message strings in source files and active rendered-message expected strings in non-historical tests must not explain current rejected behavior with milestone-relative phrases such as:
+    - `not supported in Phase`
+    - `outside Phase`
+    - `Phase <number> accepts only`
+    - `deferred to Phase <number>`
+
+    This check must ignore `docs/history/`, milestone reports, audit notes, documentation sections explicitly labeled as historical legacy material, and explicit forbidden-string lists used by the check itself.
+19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
+20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
+21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

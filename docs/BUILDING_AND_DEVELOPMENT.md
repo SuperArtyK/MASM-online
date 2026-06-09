@@ -13,36 +13,38 @@ Source-of-truth rule:
 
 Current repository/archive milestone:
 
-- Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
+- Phase 71 - Root Procedure Termination Semantics
 
 Current runtime/source-run MASM behavior phase:
 
-- Phase 70 - RET Execution and Return Address Validation
+- Phase 71 - Root Procedure Termination Semantics
 
 Source-run output-contract identifier naming:
 
-- Current expected protocol token in this revision: `phase-69c-source-run-output-contract-v1`
+- Current expected protocol token in this revision: `phase-71-source-run-output-contract-v1`
 
-The token is a source-run output-contract version identifier, not phase-status prose. The `69c` portion is historical naming from the phase that introduced this output-contract field.
+The token is a source-run output-contract version identifier, not phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
 
 Current protocol/artifact compatibility policy:
 
 - Phase 70A requires exact runtime/source-run behavior metadata and exact source-run output-contract metadata by default.
 - Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata produces a UI/Wasm artifact mismatch.
 - Missing, malformed, or mismatched source-run output-contract metadata produces a UI/Wasm artifact mismatch.
-- Artifact compatibility failures are UI/Wasm artifact problems, not MASM source diagnostics. Artifact compatibility failures are not MASM source diagnostics.
+- Artifact compatibility failures are not MASM source diagnostics; they are UI/Wasm artifact problems.
 
 Next canonical guide phase:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode
 
 Next runtime/source-run MASM behavior phase:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode, if selected; otherwise Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase after any accepted corrective suffix phases.
 
-After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics. Phase 71 is also the next runtime/source-run MASM behavior phase unless a later guide revision explicitly changes that ordering.
+After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode. Phase 71A is optional strictness-mode work. After Phase 71A is deferred or completed, Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup is the next non-renumbering corrective guide phase. Phase 71B may update diagnostic wording, tests, and source-run output-contract metadata only. Corrective suffix phases do not grant permission to implement Phase 72 call-depth accounting, call-depth settings, recursion diagnostics, or call-trace behavior early.
 
-Phase 69B was output/message-ordering cleanup only. Phase 69C was artifact/test-infrastructure cleanup only; it introduced the separate `sourceRunOutputContract` metadata field and an identifier token, `phase-69c-source-run-output-contract-v1`, so stale browser/Wasm artifacts can be detected without treating the output contract as a runtime/source-run behavior phase. That token name is historical contract-version naming, not a claim that Phase 69C remains current status and not a rule that future output-contract-changing phases must keep the same value. Phase 70 is the current runtime/source-run behavior phase and implements plain near RET return-token execution and validation without changing the public source-run output contract. Phase 70A is protocol/artifact compatibility cleanup only; browser/protocol code now warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata unless a later accepted compatibility phase defines a safe range. Phase 70B changes documentation and static checks only. Phase 70B is documentation/static-test cleanup only; it aligns canonical documentation and static assertions without changing parser behavior, VM behavior, accepted syntax, source-run output shape, Program Console output, or Simulator Messages behavior. Direct user-procedure `CALL` consumes pseudo-EIP return tokens and the Phase 68A `ESP` startup contract, and Phase 70 `RET` consumes those return tokens through a checked internal stack read. Source-level PUSH/POP, Irvine32 routine dispatch, root procedure termination, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
+Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior.
+
+Phase 69B was output/message-ordering cleanup only. Phase 69C introduced the separate `sourceRunOutputContract` metadata field so stale browser/Wasm artifacts can be detected without treating the output contract as a runtime/source-run behavior phase. Phase 70 implements helper plain near RET return-token execution and validation. Phase 70A is protocol/artifact compatibility cleanup only; browser/protocol code warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata unless a later accepted compatibility phase defines a safe range. Phase 70B changed documentation and static checks only. Phase 71 is the current runtime/source-run behavior phase: selected-entry root `RET` terminates successfully without an `[ESP]` read when no helper return is pending, helper `RET` still consumes checked pseudo-EIP return tokens, and called non-entry procedure fallthrough emits `non-root-procedure-fell-through`. Source-level PUSH/POP, Irvine32 routine dispatch beyond virtual `exit`, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
 
@@ -62,7 +64,7 @@ Browser/Wasm artifact verification has separate levels:
 
 2. **Checked-in artifact-content verification**
 
-   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-69c-source-run-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
+   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-71-source-run-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
 
 3. **Emscripten rebuild verification**
 
@@ -355,10 +357,10 @@ Browser/Wasm artifact compatibility verified through the documented output-contr
 The C source-run JSON field is `sourceRunOutputContract`. Its value is a source-run output-contract version token for the public source-run JSON shape, ordering, serialization, and protocol interpretation. A token may include the milestone in which that output contract was introduced. For example:
 
 ```text
-phase-69c-source-run-output-contract-v1
+phase-71-source-run-output-contract-v1
 ```
 
-The example above is both the token expected by this source tree and an example of the naming convention. The `69c` portion is historical contract-version naming from the phase that introduced the separate output-contract field. It is not a claim that Phase 69C is the current repository milestone, current runtime/source-run MASM behavior phase, or an absolute value that future output-contract-changing phases must keep.
+The example above is both the token expected by this source tree and an example of the naming convention. A phase-looking prefix in such a token is contract-version naming from the phase that introduced that specific output contract. It is not a separate repository/runtime status field or an absolute value that future output-contract-changing phases must keep.
 
 The browser protocol expects the loaded artifact to report the same token value as the current UI/source files. It renders a distinct `stale-wasm-output-contract` Simulator Messages warning when a loaded artifact omits the field or reports a different value. This warning is browser/protocol artifact-status metadata; it is not a MASM source diagnostic and does not change Program Console output. A later accepted phase that changes the public source-run JSON shape, ordering, serialization, or protocol interpretation must define and test a new output-contract identifier token.
 

@@ -8,14 +8,16 @@
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
- * Phase 70 plain near RET, and Irvine32 exit over
- * the currently supported register and memory operand forms. It records last-step
- * deltas by snapshotting CPU state and copying memory-module byte changes after
- * each successful step. Phase 68A initializes ESP from the active stack region
- * at startup; source-level stack instructions, procedure frames, root RET,
+ * Phase 70 helper plain near RET, Phase 71 selected-entry root RET termination,
+ * Phase 71 called non-entry procedure fallthrough diagnostics, and Irvine32 exit
+ * over the currently supported register and memory operand forms. It records
+ * last-step deltas by snapshotting CPU state and copying memory-module byte
+ * changes after each successful step. Phase 68A initializes ESP from the active
+ * stack region at startup; source-level stack instructions, procedure frames,
  * RET imm16, and non-exit Irvine32 routines remain later milestones. Phase 69
- * implements direct user-procedure CALL as a checked internal stack write, and
- * Phase 70 implements plain RET as a checked internal stack read. Phase 68B
+ * implements direct user-procedure CALL as a checked internal stack write,
+ * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
+ * treats an eligible selected-entry root RET as successful termination. Phase 68B
  * displays EIP as VM control-state pseudo-code address metadata instead of a
  * source-writable or delta-tracked register.
  */
@@ -218,6 +220,152 @@ static void vm_exec_set_memory_diagnostic(
     if (memory_diagnostic != NULL) {
         vm->last_diagnostic.memory_diagnostic = *memory_diagnostic;
     }
+}
+
+/// Clears Phase 71 procedure-boundary and helper-return metadata.
+///
+/// @param vm VM instance to mutate. NULL is ignored.
+static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
+    if (vm == NULL) {
+        return;
+    }
+
+    memset(vm->procedure_boundaries, 0, sizeof(vm->procedure_boundaries));
+    vm->procedure_boundary_count = 0U;
+    vm->has_selected_entry_procedure = false;
+    vm->selected_entry_procedure_index = 0U;
+    vm->active_helper_return_count = 0U;
+}
+
+/// Returns whether @p boundary has usable instruction bounds for @p vm.
+///
+/// @param vm VM instance containing the current program size.
+/// @param boundary Procedure boundary to inspect.
+/// @return true when the boundary is ordered and inside the loaded program.
+static bool vm_exec_procedure_boundary_is_valid(const Vm *vm, const VmExecProcedureBoundary *boundary) {
+    if (vm == NULL || boundary == NULL) {
+        return false;
+    }
+
+    return boundary->start_instruction_index <= boundary->end_instruction_index &&
+           boundary->end_instruction_index <= vm->program_count;
+}
+
+/// Returns whether an instruction index is inside a procedure boundary.
+///
+/// @param boundary Procedure boundary to inspect.
+/// @param instruction_index Instruction index to classify.
+/// @return true when @p instruction_index is inside the half-open boundary.
+static bool vm_exec_index_is_inside_procedure_boundary(const VmExecProcedureBoundary *boundary, size_t instruction_index) {
+    return boundary != NULL &&
+           instruction_index >= boundary->start_instruction_index &&
+           instruction_index < boundary->end_instruction_index;
+}
+
+/// Returns whether Phase 71 root metadata is internally inconsistent.
+///
+/// @param vm VM instance containing selected-entry metadata.
+/// @return true when the selected-entry fields cannot identify one valid root boundary.
+static bool vm_exec_root_metadata_is_inconsistent(const Vm *vm) {
+    const VmExecProcedureBoundary *root = NULL;
+
+    if (vm == NULL || !vm->has_selected_entry_procedure) {
+        return false;
+    }
+    if (vm->selected_entry_procedure_index >= vm->procedure_boundary_count) {
+        return true;
+    }
+
+    root = &vm->procedure_boundaries[vm->selected_entry_procedure_index];
+    return !root->is_selected_entry || !vm_exec_procedure_boundary_is_valid(vm, root);
+}
+
+/// Returns whether the current instruction is an eligible Phase 71 selected-entry root RET.
+///
+/// @param vm VM instance containing selected-entry and helper-return metadata.
+/// @return true when no helper return is pending and the instruction pointer is inside the selected entry procedure.
+static bool vm_exec_current_instruction_is_root_ret(const Vm *vm) {
+    const VmExecProcedureBoundary *root = NULL;
+
+    if (vm == NULL || !vm->has_selected_entry_procedure ||
+        vm_exec_root_metadata_is_inconsistent(vm) ||
+        vm->active_helper_return_count != 0U) {
+        return false;
+    }
+
+    root = &vm->procedure_boundaries[vm->selected_entry_procedure_index];
+    return vm_exec_index_is_inside_procedure_boundary(root, vm->instruction_pointer);
+}
+
+/// Finds the procedure boundary containing an instruction index.
+///
+/// @param vm VM instance containing configured procedure boundaries.
+/// @param instruction_index Instruction index to classify.
+/// @return Pointer to the containing boundary, or NULL when none matches.
+static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary(const Vm *vm, size_t instruction_index) {
+    size_t index = 0U;
+
+    if (vm == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < vm->procedure_boundary_count; index += 1U) {
+        const VmExecProcedureBoundary *boundary = &vm->procedure_boundaries[index];
+        if (vm_exec_procedure_boundary_is_valid(vm, boundary) &&
+            vm_exec_index_is_inside_procedure_boundary(boundary, instruction_index)) {
+            return boundary;
+        }
+    }
+
+    return NULL;
+}
+
+/// Returns whether a committed step moved by ordinary fallthrough.
+///
+/// @param instruction Instruction that just executed.
+/// @param before_ip Instruction pointer before execution.
+/// @param after_ip Instruction pointer after execution.
+/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/taken branch.
+static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip) {
+    if (instruction == NULL || after_ip != before_ip + 1U) {
+        return false;
+    }
+    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET) {
+        return false;
+    }
+
+    return true;
+}
+
+/// Applies Phase 71 procedure-boundary fallthrough semantics after one committed step.
+///
+/// @param vm VM instance to inspect and possibly halt.
+/// @param instruction Instruction that just executed.
+/// @param before_ip Instruction pointer before execution.
+/// @return OK for normal continuation/successful root fallthrough, or a terminal diagnostic status.
+static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstruction *instruction, size_t before_ip) {
+    const VmExecProcedureBoundary *boundary = NULL;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_step_was_fallthrough(instruction, before_ip, vm->instruction_pointer)) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    boundary = vm_exec_find_procedure_boundary(vm, before_ip);
+    if (boundary == NULL || vm->instruction_pointer != boundary->end_instruction_index) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    if (boundary->is_selected_entry) {
+        vm->halted = true;
+        return VM_EXEC_STATUS_OK;
+    }
+    if (vm->active_helper_return_count > 0U) {
+        vm->halted = true;
+        vm->instruction_pointer = before_ip;
+        return VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH;
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 /// Returns a bit mask for a supported execution width.
@@ -3018,17 +3166,19 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, new_esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
+    if (vm->active_helper_return_count < (size_t)UINT32_MAX) {
+        vm->active_helper_return_count += 1U;
+    }
 
     return VM_EXEC_STATUS_OK;
 }
 
-/// Executes one Phase 70 plain near RET stack read and target validation.
+/// Executes one Phase 71 plain near RET root/helper operation.
 ///
-/// RET consumes a DWORD pseudo-EIP return token from `[ESP]` through the
-/// central checked memory-read helper. The token must map to an executable
-/// lowered VM instruction before ESP is incremented or control transfers.
-/// Root-return sentinels, raw instruction indexes, data addresses, and
-/// out-of-range pseudo-EIP values remain invalid in Phase 70.
+/// A selected-entry root RET with no helper return pending terminates
+/// successfully before reading `[ESP]`. Every other RET preserves the Phase 70
+/// checked DWORD pseudo-EIP token read, return-target validation, and ESP
+/// mutation ordering.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction RET instruction descriptor.
@@ -3045,6 +3195,13 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
     }
     if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
         return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+    if (vm_exec_root_metadata_is_inconsistent(vm)) {
+        return VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE;
+    }
+    if (vm_exec_current_instruction_is_root_ret(vm)) {
+        vm->halted = true;
+        return VM_EXEC_STATUS_OK;
     }
     if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &original_esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -3066,6 +3223,9 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
     vm->instruction_pointer = return_index;
+    if (vm->active_helper_return_count > 0U) {
+        vm->active_helper_return_count -= 1U;
+    }
     return VM_EXEC_STATUS_OK;
 }
 
@@ -3391,6 +3551,47 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     return VM_EXEC_STATUS_OK;
 }
 
+VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoundary *boundaries, size_t boundary_count) {
+    size_t index = 0U;
+    size_t selected_index = 0U;
+    bool has_selected = false;
+
+    if (vm == NULL || (boundaries == NULL && boundary_count > 0U) ||
+        boundary_count > (size_t)VM_EXEC_MAX_PROCEDURE_BOUNDARIES) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm_exec_clear_procedure_runtime_metadata(vm);
+    for (index = 0U; index < boundary_count; index += 1U) {
+        const VmExecProcedureBoundary *boundary = &boundaries[index];
+        if (!vm_exec_procedure_boundary_is_valid(vm, boundary)) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+            vm_exec_clear_procedure_runtime_metadata(vm);
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        if (boundary->is_selected_entry) {
+            if (has_selected) {
+                vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+                vm_exec_clear_procedure_runtime_metadata(vm);
+                return VM_EXEC_STATUS_INVALID_ARGUMENT;
+            }
+            has_selected = true;
+            selected_index = index;
+        }
+        vm->procedure_boundaries[index] = *boundary;
+    }
+
+    vm->procedure_boundary_count = boundary_count;
+    vm->has_selected_entry_procedure = has_selected;
+    vm->selected_entry_procedure_index = selected_index;
+    vm->active_helper_return_count = 0U;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
+}
+
 void vm_deinit(Vm *vm) {
     if (vm == NULL) {
         return;
@@ -3402,6 +3603,7 @@ void vm_deinit(Vm *vm) {
     vm->instruction_pointer = 0U;
     vm->instruction_count = 0U;
     vm->halted = true;
+    vm_exec_clear_procedure_runtime_metadata(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_HALTED);
 }
@@ -3427,6 +3629,7 @@ VmExecStatus vm_load_program(Vm *vm, const VmIrInstruction *program, size_t prog
     vm->instruction_pointer = 0U;
     vm->instruction_count = 0U;
     vm->halted = false;
+    vm_exec_clear_procedure_runtime_metadata(vm);
     (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
@@ -3631,6 +3834,7 @@ static bool vm_exec_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, 
 VmExecStatus vm_step(Vm *vm) {
     const VmIrInstruction *instruction = NULL;
     VmCpu before_cpu;
+    size_t instruction_pointer_before_step = 0U;
     VmExecStatus status = VM_EXEC_STATUS_OK;
 
     if (vm == NULL) {
@@ -3650,6 +3854,7 @@ VmExecStatus vm_step(Vm *vm) {
         return VM_EXEC_STATUS_HALTED;
     }
 
+    instruction_pointer_before_step = vm->instruction_pointer;
     instruction = &vm->program[vm->instruction_pointer];
     before_cpu = vm->cpu;
     status = vm_exec_execute_instruction(vm, instruction);
@@ -3663,7 +3868,7 @@ VmExecStatus vm_step(Vm *vm) {
     if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL) {
         vm->instruction_pointer = (size_t)instruction->destination.immediate;
     } else if (instruction->opcode == VM_IR_OPCODE_RET) {
-        /* vm_exec_execute_ret already transferred to the validated pseudo-EIP target. */
+        /* vm_exec_execute_ret either halted a root RET or transferred to the validated pseudo-EIP target. */
     } else if (vm_exec_opcode_is_conditional_jump(instruction->opcode)) {
         bool branch_taken = false;
         if (!vm_exec_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
@@ -3675,6 +3880,11 @@ VmExecStatus vm_step(Vm *vm) {
         vm->instruction_pointer += 1U;
     }
     vm->instruction_count += 1U;
+    status = vm_exec_apply_procedure_fallthrough(vm, instruction, instruction_pointer_before_step);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm_exec_set_diagnostic(vm, status, instruction);
+        return status;
+    }
     if (vm->instruction_pointer >= vm->program_count) {
         vm->halted = true;
     } else if (!vm_sync_display_eip(vm)) {
@@ -3731,6 +3941,10 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-call-target";
         case VM_EXEC_STATUS_INVALID_RETURN_ADDRESS:
             return "invalid-return-address";
+        case VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH:
+            return "non-root-procedure-fell-through";
+        case VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE:
+            return "invalid-root-termination-state";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:
             return "branch-runtime-deferred";
         default:

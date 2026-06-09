@@ -141,7 +141,7 @@ Phase 61D remains...
 Use compact feature-category wording instead:
 
 ```text
-Current control-flow support includes direct JMP, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near CALL to user procedure entries, and plain near RET through simulator pseudo-EIP return tokens. Runtime loop protection currently uses the implemented instruction-count watchdog. Loop-family instructions, indirect/register/memory/immediate branch targets, branch distance/type overrides, root RET termination, RET imm16, RETF, LEAVE, source-level stack instructions, procedure frames, Irvine32 callable routine dispatch, debugger/editor branch behavior, and active-time or wall-clock watchdog behavior remain future or separate-phase work. External/API calls, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, and Windows process/DLL/handle/kernel behavior remain non-goals rather than future CALL or RET target categories.
+Current control-flow support includes direct JMP, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near CALL to user procedure entries, helper plain near RET through simulator pseudo-EIP return tokens, selected-entry root RET success, selected-entry procedure fallthrough success, called non-entry procedure fallthrough diagnostics, and the virtual Irvine32 `exit` terminator. Runtime loop protection currently uses the implemented instruction-count watchdog. Loop-family instructions, indirect/register/memory/immediate branch targets, branch distance/type overrides, RET imm16, RETF, LEAVE, source-level stack instructions, procedure frames, Irvine32 callable routine dispatch beyond virtual `exit`, debugger/editor branch behavior, and active-time or wall-clock watchdog behavior remain future or separate-phase work. External/API calls, PE loading, object-file linking, import-library behavior, host filesystem include loading, native x86 execution, full x86 emulation, and Windows process/DLL/handle/kernel behavior remain non-goals rather than future CALL or RET target categories.
 ```
 
 The example above is intentionally behavior-specific rather than milestone-ledger-specific. When later phases promote any listed future item to implemented behavior, update the active current-status wording in place. Do not keep stale examples that describe already-implemented behavior as future work.
@@ -3705,7 +3705,17 @@ An ordinary helper-procedure RET consumes a simulator pseudo-EIP return token th
 
 A root-procedure RET is a RET executed by the selected entry procedure when no helper-procedure return is pending. In MASM32 Educational Mode, root-procedure RET is allowed only after an accepted implementation-guide phase defines the root terminal behavior. The intended educational behavior is that root RET terminates the source run successfully, similar to returning from a program startup/runtime context in a real MASM32-style build, without modeling the Windows loader, PE entrypoint, C runtime startup, MASM linker output, import libraries, host call stack, or native process teardown.
 
-Root RET support must not be implemented by exposing a fake host address, real native return address, PE entrypoint, linker-generated thunk, WinAPI call, or readable instruction memory. It must be implemented with VM-internal terminal-state metadata such as root/helper return state, a root-return flag, a root sentinel that is never exposed as a user memory value, or an equivalent simulator-only mechanism.
+Root RET support must not be implemented by exposing a fake host address, real native return address, PE entrypoint, linker-generated thunk, WinAPI call, readable instruction memory, source byte offset, source line number, raw VM instruction index, or source-written `EIP` value.
+
+The simulator uses 32-bit VM return tokens for ordinary helper `CALL`/`RET` flow. Those return tokens are simulator control-flow metadata, not native addresses and not a stable public ABI. A successful direct user-procedure `CALL` may encode the pseudo-EIP value for the executable lowered VM instruction immediately after the `CALL` as a 32-bit return token, write that token through the central checked-memory helper, and later allow ordinary helper `RET` to read and validate that token through the central checked-memory helper.
+
+Ordinary helper return-token bytes may appear as modeled stack memory effects because the educational VM models the CALL return-token stack write. That visibility does not make the token encoding a stable external interface. Tests may assert behavior through documented simulator effects such as checked memory writes, checked memory reads, diagnostics, terminal status, register state, and rendered messages. Tests must not treat the private token encoding as a public ABI unless a later accepted phase explicitly promotes it to one.
+
+Selected-entry root `RET` is different from ordinary helper `RET`. Current Phase 71 root `RET` behavior does not require, expose, read, write, or validate a root-return token. The accepted Phase 71 implementation model is VM-internal root/helper terminal-state metadata: selected-entry root `RET` succeeds before any `[ESP]` read when no helper-procedure return is pending.
+
+A future implementation must not introduce a root-return sentinel, synthetic terminal pseudo-EIP, `ENDP` return token, source-boundary token, native-address-like token, or instruction-after-procedure placeholder by implication. A numeric value such as `0xFFFFFFFFu` is not a valid or required root-return token unless a later accepted guide phase explicitly defines the sentinel, names the symbol, proves that the value cannot collide with ordinary pseudo-EIP return tokens, defines validation and diagnostic behavior, proves that it is never exposed as a user-authored memory value or as a documented public ABI value, and adds structured diagnostics tests plus rendered Simulator Messages tests.
+
+This rule preserves the current Phase 71 behavior: selected-entry root `RET` is terminal VM state, not a hidden stack token. Ordinary helper `RET` remains checked pseudo-EIP return-token behavior.
 
 The root terminal mechanism must not be exposed as:
 
@@ -3748,7 +3758,6 @@ A phase must not implement future procedure or stack behavior merely to make its
 - an Irvine32 registry phase must not insert Irvine32 names into the user procedure namespace;
 - a procedure-metadata phase must not make CALL or INVOKE source programs executable.
 
-The simulator uses 32-bit VM return tokens for call/return flow. Return tokens are not native addresses. The root return sentinel is `VM_RETURN_TOKEN_ROOT = 0xFFFFFFFFu`, reserved and never emitted as a normal instruction index.
 
 The educational frame model is explicit:
 
@@ -5937,12 +5946,12 @@ A realistic unsupported program should produce a concise set of structured diagn
 - MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
 - high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
 - unsupported `CALL` forms beyond direct user-procedure CALL, such as Irvine32 routine calls, external/API calls, ordinary-label targets, register targets, memory targets, and indirect calls;
-- root `RET` termination, `RET imm16`, `RETF`, `LEAVE`, source-level stack instructions, procedure frames, and Irvine32 callable routine dispatch until their owning phases implement those features;
+- `RET imm16`, `RETF`, `LEAVE`, source-level stack instructions, procedure frames, and Irvine32 callable routine dispatch until their owning phases implement those features;
 - loop-family instructions, indirect/register/memory/immediate branch targets, and branch distance/type overrides until their owning phases are implemented.
 
 Already-implemented branch forms must not be described as unsupported in current source-of-truth text. Direct `jmp label`, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps are current implemented behavior and should follow their implemented diagnostics and execution rules.
 
-Current direct user-procedure `CALL` behavior and current plain near helper `RET` behavior must not be removed or described as unsupported merely because root `RET`, Irvine32 routine dispatch, and other CALL/RET forms remain future-owned.
+Current direct user-procedure `CALL`, current plain near helper `RET`, and current selected-entry root `RET` behavior must not be removed or described as unsupported merely because Irvine32 routine dispatch, `RET imm16`, and other CALL/RET forms remain future-owned.
 
 The simulator should avoid flooding the user with repeated character-level diagnostics when a more meaningful unsupported-feature diagnostic is possible.
 
@@ -6494,16 +6503,22 @@ Important split areas:
 - Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
 - Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase numbering, phase titles, phase dependencies, phase tasks, required tests, and phase acceptance criteria. This specification owns stable product boundaries, non-goals, simulator behavior requirements, safety invariants, diagnostic expectations, and long-term architecture rules. When this specification and the guide both mention future stack/procedure work, the guide is authoritative for exact phase order and phase numbers.
 
-  As of the source-of-truth revision after Phase 70B, Phase 70B is complete as documentation/static-test cleanup. The next canonical guide phase is Phase 71 - Root Procedure Termination Semantics, and Phase 71 is also the next runtime/source-run MASM behavior phase. Future assistants must distinguish these concepts:
+  As of the source-of-truth revision after Phase 71, Phase 71 is complete as root procedure termination behavior. The next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode. Phase 71A is optional and must not be treated as required runtime behavior unless the project owner explicitly accepts the strict-mode setting.
+
+  If Phase 71A is deferred or completed, the guide now includes the non-renumbering corrective Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup before Phase 72. Phase 71B is a documentation, test, diagnostic-copy, and source-run output-contract metadata corrective phase. Phase 71B must not be treated as permission to implement Phase 72 behavior early.
+
+  Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase that changes call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata. Future assistants must distinguish these concepts:
 
   - the repository/archive milestone identifies the latest accepted repository state and may advance for documentation, static checks, test infrastructure, protocol compatibility, display cleanup, or other non-runtime work;
   - the runtime/source-run MASM behavior phase identifies the latest accepted parser, VM, instruction, Irvine32, memory, source-run output-semantics, or rendered simulator behavior change;
-  - non-runtime corrective phases such as Phase 69A, Phase 69B, Phase 69C, Phase 70A, and Phase 70B do not grant permission to implement later runtime behavior early.
+  - optional or corrective suffix phases do not grant permission to implement later runtime behavior early;
+  - Phase 71 implements selected-entry root `RET` success and called non-entry procedure fallthrough diagnostics while preserving ordinary helper `RET` checked return-token behavior;
+  - Phase 71B is defined to change only active user-facing diagnostic wording, tests that assert that wording, and required source-run output-contract metadata. It must not change parser acceptance, VM semantics, Program Console output, diagnostic codes, severity, source spans, register behavior, flag behavior, or memory behavior.
 
   Later stack, procedure, LOCAL, PROC USES, PROTO, ADDR, INVOKE, Program Console, and Irvine32 routine work is intentionally split across smaller implementation-guide phases. This specification must not duplicate the complete future phase list as phase-order authority. The required dependency order is:
 
   1. Preserve the C99 core, checked memory-helper policy, structured diagnostics policy, and Program Console versus Simulator Messages separation.
-  2. Complete root procedure termination semantics before adding broader procedure-call behavior.
+  2. Preserve completed root procedure termination semantics before adding broader procedure-call behavior.
   3. Complete call-stack return-address validation before adding higher-level procedure conveniences.
   4. Complete procedure metadata and syntax validation before adding runtime save/restore behavior for procedure attributes such as `USES`.
   5. Complete LOCAL parser and frame-layout metadata before adding runtime stack allocation, frame-relative addressing, or LOCAL operand execution.
@@ -6622,7 +6637,11 @@ Roadmap ownership and future stack/procedure sequencing:
 
 The full specification owns stable product boundaries, non-goals, simulator behavior requirements, safety invariants, diagnostic expectations, and long-term architecture rules. The implementation guide owns exact phase numbering, phase titles, phase dependencies, phase tasks, required tests, and phase acceptance criteria. When this specification and the implementation guide both mention future work, the implementation guide is authoritative for exact phase order and phase numbers.
 
-As of the source-of-truth revision after Phase 70B, Phase 70B is complete as documentation/static-test cleanup. The next canonical guide phase is Phase 71 - Root Procedure Termination Semantics. Phase 71 is also the next runtime/source-run MASM behavior phase unless a later accepted guide revision explicitly inserts another corrective non-runtime phase before it.
+As of the source-of-truth revision after Phase 71, Phase 71 is complete as root procedure termination behavior. The next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode. Phase 71A is optional and must not be treated as required runtime behavior unless the project owner explicitly accepts the strict-mode setting.
+
+If Phase 71A is deferred or completed, the guide now includes Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup before Phase 72. Phase 71B is a non-renumbering corrective phase for active user-facing diagnostic wording, tests, and required source-run output-contract metadata. It does not implement new MASM syntax, VM semantics, call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata.
+
+Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase that changes call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata.
 
 Future assistants must distinguish these two concepts:
 
@@ -6636,7 +6655,7 @@ Later stack, procedure, LOCAL, PROC USES, PROTO, ADDR, INVOKE, Program Console, 
 The required dependency order is:
 
 1. Preserve the C99 core, checked memory-helper policy, structured diagnostics policy, and Program Console versus Simulator Messages separation.
-2. Complete root procedure termination semantics before adding broader procedure-call behavior.
+2. Preserve completed root procedure termination semantics before adding broader procedure-call behavior.
 3. Complete call-stack return-address validation before adding higher-level procedure conveniences.
 4. Complete procedure metadata and syntax validation before adding runtime save/restore behavior for procedure attributes such as `USES`.
 5. Complete LOCAL parser and frame-layout metadata before adding runtime stack allocation, frame-relative addressing, or LOCAL operand execution.
