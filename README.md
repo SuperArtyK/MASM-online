@@ -2,24 +2,35 @@
 
 Static browser-based educational simulator for small MASM32/Irvine32-style console programs. The project uses a C99 MASM-like parser plus an internal virtual machine compiled to WebAssembly with Emscripten, then runs through a JavaScript browser UI and Web Worker.
 
-## Current status
+## Current repository status
 
 Repository/archive milestone:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+
+- Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
 
 Runtime/source-run MASM behavior phase:
-Phase 70 - RET Execution and Return Address Validation
 
-Latest output/message-ordering cleanup phase:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+- Phase 70 - RET Execution and Return Address Validation
 
-Latest source-run output-contract phase:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+Source-run output-contract identifier naming:
 
-Latest protocol/artifact compatibility cleanup phase:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+- Current expected protocol token in this revision: `phase-69c-source-run-output-contract-v1`
 
-Phase 69B improves final-register display grouping and Simulator Messages ordering only. Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection and keeps the decomposed broad test groups unchanged. Phase 70 advances runtime/source-run behavior by implementing plain near `RET` return-token execution and validation while preserving the Phase 69C source-run output-contract identifier. Phase 70A is protocol/artifact compatibility cleanup only: it requires exact matching runtime metadata and output-contract metadata between the UI and the loaded Wasm/source-run artifact, including rejecting newer runtime phase metadata by default.
+Treat the token as a source-run output-contract version identifier, not as phase-status prose. The `69c` portion is historical naming from the phase that introduced this output-contract field; it is not the current repository milestone, not the current runtime/source-run MASM behavior phase, and not an immutable value for future output-contract-changing phases.
+
+Protocol/artifact compatibility policy:
+
+- The browser UI expects the loaded Wasm artifact to report the exact runtime/source-run behavior metadata and exact source-run output-contract metadata required by the current UI.
+- Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
+- Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
+- Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
+- Phase 70A changed artifact compatibility only. Phase 70B changes documentation and static checks only. Neither phase adds MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, or source-run output shape changes.
+
+Canonical phase navigation:
+
+- The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
+- After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics.
+- Phase 71 is also the next runtime/source-run MASM behavior phase unless a later guide revision explicitly changes that ordering.
 
 Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. That return-token write is an implicit VM stack write: it is checked through the central memory helpers and tracked internally, but the current public source-run output contract does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
@@ -27,7 +38,7 @@ Phase 70 implements plain near `ret`/`RET` with no operands. `RET` reads a DWORD
 
 Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, root `RET` termination, non-entry procedure fallthrough diagnostics, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `leave`, and `ret imm16` remain deferred.
 
-For the complete current syntax list, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
+For implemented source-language behavior, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For future phase ordering and acceptance criteria, see [`docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`](docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md). For historical milestone detail, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
 ## Current simulator scope
 

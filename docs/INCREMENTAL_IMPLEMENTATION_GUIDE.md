@@ -21158,43 +21158,79 @@ Do not describe Phase 70 as implementing:
 
 ### Goal
 
-Correct browser/Wasm runtime metadata compatibility checks so that the UI warns on both older and newer runtime/source-run behavior phase mismatches unless a later accepted compatibility phase explicitly defines safe forward-compatible behavior.
+Correct browser/Wasm runtime metadata compatibility checks so that the UI warns on older, newer, missing, malformed, suffix-mismatched, or otherwise incompatible runtime/source-run behavior metadata unless a later accepted compatibility phase explicitly defines safe forward-compatible behavior.
 
-This is a protocol/artifact compatibility corrective phase. It does not change accepted MASM syntax, parser behavior, VM execution semantics, memory layout, source-execution diagnostics, CALL behavior, or RET behavior.
+Phase 70A is a UI/protocol/artifact compatibility corrective phase. It does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM execution semantics, memory layout, source-execution diagnostics, CALL behavior, RET behavior, Program Console output, Simulator Messages behavior beyond artifact compatibility reporting, or public source-run output shape.
 
-Phase 70A must not renumber Phase 71 or any later phase. After Phase 70A, the next runtime/source-run MASM behavior phase remains Phase 71 - Root Procedure Termination Semantics.
+Phase 70A must not renumber Phase 71 or any later phase. After Phase 70A, the next runtime/source-run MASM behavior phase remains Phase 71 - Root Procedure Termination Semantics. If a non-runtime corrective phase such as Phase 70B is inserted after Phase 70A, that phase may become the next canonical guide phase while Phase 71 remains the next runtime/source-run MASM behavior phase.
+
+### Scope
+
+Phase 70A owns:
+
+- exact runtime/source-run behavior phase-number metadata checking;
+- exact runtime/source-run behavior phase-suffix metadata checking;
+- exact source-run output-contract metadata checking;
+- deterministic UI/Wasm artifact mismatch reporting;
+- protocol tests for stale, newer, missing, malformed, suffix-mismatched, and output-contract-mismatched metadata;
+- documentation that distinguishes repository/archive status from runtime/source-run MASM behavior status.
+
+Phase 70A does not own:
+
+- Phase 71 root procedure termination semantics;
+- changes to MASM parser acceptance;
+- changes to instruction execution;
+- changes to RET behavior beyond what Phase 70 already implemented;
+- changes to source-run JSON shape;
+- changes to MASM source diagnostic codes;
+- compatibility ranges between multiple accepted runtime phases;
+- automatic fallback to older Wasm artifacts;
+- any PE, WinAPI, native x86, host filesystem, external library, or native process behavior.
 
 ### Required behavior
 
-The browser/protocol layer must treat runtime/source-run behavior phase metadata as an exact compatibility check by default.
+The browser-side source-run protocol must require the loaded Wasm artifact to report the exact runtime/source-run behavior metadata expected by the UI.
 
-A loaded Wasm artifact is mismatched when any of these are true:
+The required metadata fields are:
 
-- the reported runtime/source-run behavior phase number is older than the UI expected phase number;
-- the reported runtime/source-run behavior phase number is newer than the UI expected phase number;
-- the reported runtime/source-run behavior phase suffix differs from the UI expected suffix;
-- required runtime/source-run phase metadata is missing;
-- the reported source-run output-contract identifier differs from the UI expected output-contract identifier;
-- required output-contract metadata is missing.
+- runtime/source-run behavior phase number;
+- runtime/source-run behavior phase suffix;
+- source-run output-contract identifier.
 
-A newer numeric runtime phase must not be silently accepted merely because it is newer. Newer runtime behavior may have changed accepted syntax, rejected syntax, diagnostic codes, source locations, terminal-state behavior, message ordering, JSON fields, or output-field meaning in ways that the older UI does not understand.
+The runtime/source-run behavior phase number and suffix identify the MASM simulator behavior implemented by the loaded Wasm artifact. The source-run output-contract identifier identifies the shape, ordering, and interpretation of the source-run output expected by the UI.
 
-A later accepted compatibility phase may define forward-compatible newer-runtime acceptance only if it specifies:
+A loaded artifact is incompatible when any of the following is true:
 
-- compatible phase ranges;
-- compatible output-contract identifiers;
-- safe UI behavior across those versions;
-- diagnostic rendering behavior;
-- source-run JSON compatibility guarantees;
-- test coverage proving compatibility.
+- the runtime/source-run behavior phase number is older than the UI expects;
+- the runtime/source-run behavior phase number is newer than the UI expects;
+- the runtime/source-run behavior phase number is missing;
+- the runtime/source-run behavior phase number is malformed or not an integer;
+- the runtime/source-run behavior phase suffix is missing;
+- the runtime/source-run behavior phase suffix is malformed or not a string;
+- the runtime/source-run behavior phase suffix differs from the UI-expected suffix, including the case where the expected suffix is the empty string;
+- the source-run output-contract identifier is missing;
+- the source-run output-contract identifier is malformed or not a string;
+- the source-run output-contract identifier differs from the UI-expected identifier.
 
-Until such a phase exists, exact match is required.
+Missing suffix metadata is invalid even when the expected suffix is the empty string. The empty expected suffix is still an explicit compatibility value, not permission to omit the field.
+
+Malformed source-run output-contract metadata includes any present value that is not a string equal to the expected output-contract identifier.
+
+When artifact metadata is incompatible, the UI must report a UI/Wasm artifact mismatch. The mismatch must not be reported as a MASM source diagnostic. Artifact compatibility failure means the simulator artifact and UI are not a safe pair; it does not mean the user's assembly source text is invalid.
+
+If multiple metadata fields are incompatible, the UI must report all applicable compatibility problems in deterministic order. Runtime/source-run behavior metadata problems must be reported before source-run output-contract metadata problems.
+
+Phase 70A keeps the runtime/source-run MASM behavior phase at Phase 70 unless a later runtime/source-run behavior phase is also implemented. Phase 70A may update repository/archive status documentation to say Phase 70A, but it must not advance runtime/source-run MASM behavior metadata to Phase 70A.
+
+Phase 70A does not define a new source-run output-contract token because Phase 70A does not change the public source-run output shape, ordering, serialization, or protocol interpretation. It preserves the output-contract token already expected by the matching UI/source pair.
+
+A token may include the milestone in which that output contract was introduced. For example, `phase-69c-source-run-output-contract-v1` names the output contract introduced during Phase 69C and remains a valid token for later phases only while the public source-run output contract remains unchanged. The embedded `69c` label is historical contract-version naming; it is not the current repository milestone, not the current runtime/source-run MASM behavior phase, and not an absolute value that future output-contract-changing phases must preserve. A later accepted phase that deliberately changes the public source-run output shape, ordering, serialization, or protocol interpretation must define and test a new output-contract identifier token.
 
 ### Diagnostic behavior
 
 Phase 70A must use the existing stale or mismatched artifact diagnostic channel. It must not invent a MASM source diagnostic for artifact mismatch.
 
-If both runtime/source-run behavior metadata and output-contract metadata are stale or mismatched, both problems must be reported in deterministic order.
+If both runtime/source-run behavior metadata and output-contract metadata are stale, missing, malformed, or mismatched, all applicable problems must be reported in deterministic order.
 
 The diagnostic wording must make clear that the problem is a UI/Wasm artifact mismatch, not an error in the user's MASM source program.
 
@@ -21203,7 +21239,7 @@ The diagnostic wording must make clear that the problem is a UI/Wasm artifact mi
 Phase 70A must not:
 
 - change the Phase 70 runtime/source-run MASM behavior phase;
-- change the Phase 69C output-contract identifier unless the public source-run output contract actually changes;
+- change the source-run output-contract token solely because the repository/archive milestone or runtime/source-run MASM behavior phase advanced; a later phase must define a new token only when the public source-run output contract actually changes;
 - implement Phase 71 root RET;
 - change CALL or RET execution semantics;
 - add new user-visible MASM diagnostics unrelated to artifact compatibility;
@@ -21215,21 +21251,67 @@ Phase 70A must not:
 
 Protocol tests must cover:
 
-- exact matching runtime phase and matching output contract: no stale or mismatch diagnostic;
-- older runtime phase: mismatch diagnostic;
-- newer runtime phase: mismatch diagnostic;
-- missing runtime phase metadata: mismatch diagnostic;
-- stale output-contract identifier: output-contract mismatch diagnostic;
-- missing output-contract metadata: output-contract mismatch diagnostic;
-- stale runtime phase plus stale output contract: both diagnostics appear in deterministic order;
-- matching Phase 70 runtime metadata with the current Phase 69C output-contract identifier remains accepted.
+1. Matching runtime/source-run behavior phase number, matching suffix, and matching output-contract identifier:
+   - source-run protocol accepts the artifact;
+   - no artifact mismatch is reported.
+
+2. Older runtime/source-run behavior phase number:
+   - source-run protocol rejects the artifact;
+   - stale or mismatched artifact message is reported;
+   - no MASM source diagnostic is produced for the user's source text.
+
+3. Newer runtime/source-run behavior phase number:
+   - source-run protocol rejects the artifact;
+   - mismatched artifact message is reported;
+   - no MASM source diagnostic is produced for the user's source text.
+
+4. Missing runtime/source-run behavior phase number:
+   - source-run protocol rejects the artifact;
+   - missing runtime metadata is reported as an artifact mismatch.
+
+5. Malformed or non-integer runtime/source-run behavior phase number:
+   - source-run protocol rejects the artifact;
+   - malformed runtime metadata is reported as an artifact mismatch.
+
+6. Missing runtime/source-run behavior phase suffix:
+   - source-run protocol rejects the artifact;
+   - missing suffix metadata is reported as an artifact mismatch;
+   - this remains true when the UI-expected suffix is the empty string.
+
+7. Malformed or non-string runtime/source-run behavior phase suffix:
+   - source-run protocol rejects the artifact;
+   - malformed suffix metadata is reported as an artifact mismatch.
+
+8. Runtime/source-run behavior phase suffix mismatch:
+   - source-run protocol rejects the artifact;
+   - suffix mismatch is reported as an artifact mismatch.
+
+9. Missing source-run output-contract identifier:
+   - source-run protocol rejects the artifact;
+   - missing output-contract metadata is reported as an artifact mismatch.
+
+10. Malformed or non-string source-run output-contract identifier:
+    - source-run protocol rejects the artifact;
+    - malformed output-contract metadata is reported as an artifact mismatch.
+
+11. Source-run output-contract identifier mismatch:
+    - source-run protocol rejects the artifact;
+    - output-contract mismatch is reported as an artifact mismatch.
+
+12. Combined runtime metadata and output-contract metadata mismatch:
+    - source-run protocol rejects the artifact;
+    - all applicable artifact mismatch messages appear;
+    - message order is deterministic;
+    - runtime/source-run behavior metadata problems appear before output-contract metadata problems.
 
 Static documentation tests must verify:
 
 - active documentation does not claim newer runtime artifacts are accepted by default;
 - Phase 70A is described as protocol/artifact compatibility only;
-- the next runtime/source-run MASM behavior phase remains Phase 71;
-- README and `docs/SUPPORTED_SYNTAX.md` remain Phase 70 unless Phase 71 is also implemented.
+- active documentation distinguishes repository/archive milestone status from runtime/source-run MASM behavior phase;
+- active documentation distinguishes source-run output-contract status from runtime/source-run MASM behavior phase;
+- README and `docs/SUPPORTED_SYNTAX.md` may identify repository/archive status as Phase 70A after Phase 70A, but must keep runtime/source-run MASM behavior wording at Phase 70 unless Phase 71 or another later runtime/source-run behavior phase is also implemented;
+- README and `docs/SUPPORTED_SYNTAX.md` must not imply that Phase 70A changed parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, source-run output shape, or MASM source-language support.
 
 ### Acceptance criteria
 
@@ -21237,10 +21319,120 @@ Phase 70A is accepted only when:
 
 - newer numeric Wasm runtime phases no longer pass silently by default;
 - older numeric Wasm runtime phases still produce the expected stale or mismatch diagnostic;
-- stale/mismatched output-contract metadata still produces the expected output-contract diagnostic;
+- missing, malformed, and suffix-mismatched runtime/source-run behavior metadata produce artifact mismatch diagnostics;
+- stale, missing, and malformed output-contract metadata produce output-contract mismatch diagnostics;
 - combined runtime/output-contract mismatch diagnostics are deterministic;
-- existing matching Phase 70 runtime plus Phase 69C output-contract behavior still passes;
+- existing matching Phase 70 runtime plus the source-run output-contract token introduced during Phase 69C still passes while the public source-run output contract remains unchanged;
+- README and `docs/SUPPORTED_SYNTAX.md` distinguish repository/archive Phase 70A from runtime/source-run MASM behavior Phase 70;
 - no MASM source behavior changes are introduced.
+
+---
+
+## 74B. Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
+
+### Goal
+
+Align the canonical spec, implementation guide, active status documentation, historical navigation, and static documentation tests after Phase 70A.
+
+Phase 70B is inserted after Phase 70A and before Phase 71. After Phase 70B is accepted, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics. Phase 71 remains the next runtime/source-run MASM behavior phase and must not be renumbered.
+
+This phase is intentionally non-runtime and non-renumbering. It must not shift Phase 71 or any later phase number.
+
+### Scope
+
+Phase 70B owns:
+
+- removing stale exact future phase-number lists from the full specification when those lists conflict with the implementation guide;
+- clarifying that the implementation guide owns exact phase numbering and phase acceptance criteria;
+- clarifying Phase 70A's malformed metadata compatibility matrix;
+- clarifying active documentation status blocks so they distinguish repository/archive milestone from runtime/source-run MASM behavior phase;
+- clarifying that historical audit/handoff reports are navigation aids and do not override the canonical spec or guide;
+- adding or updating static documentation tests that prevent recurrence of the same ambiguity.
+
+Phase 70B does not own:
+
+- any parser behavior change;
+- any VM behavior change;
+- any memory behavior change;
+- any instruction execution change;
+- any Irvine32 behavior change;
+- any Program Console behavior change;
+- any Simulator Messages behavior change, except documentation about artifact mismatch wording already implemented by Phase 70A;
+- Phase 71 root procedure termination semantics;
+- changes to the source-run output contract;
+- changes to the runtime/source-run behavior phase metadata;
+- changes to accepted MASM source syntax;
+- roadmap renumbering.
+
+Phase 70B must add or update static documentation tests only. Existing Phase 70A protocol tests must remain passing, but Phase 70B does not require new runtime, parser, VM, source-run, or instruction behavior tests unless a documentation change exposes an existing missing static assertion.
+
+### Required edits
+
+1. In `docs/FULL_IMPLEMENTATION_SPEC.md`, replace stale exact future phase-number lists with wording that says:
+   - the spec owns stable product boundaries and behavior requirements;
+   - the implementation guide owns exact future phase numbering;
+   - future stack/procedure/Irvine32 work must follow the dependency order in the guide;
+   - future assistants must not renumber phases from the spec.
+
+2. In `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, clarify Phase 70A so it explicitly covers:
+   - missing runtime phase metadata;
+   - malformed runtime phase metadata;
+   - missing runtime phase suffix metadata;
+   - malformed runtime phase suffix metadata;
+   - suffix mismatch;
+   - missing source-run output-contract metadata;
+   - malformed source-run output-contract metadata;
+   - output-contract mismatch;
+   - deterministic ordering when multiple artifact compatibility problems are present;
+   - the source-run output-contract token naming rule: a token such as `phase-69c-source-run-output-contract-v1` may include the phase that introduced a contract shape, but that embedded phase label is historical naming, not current phase status and not an immutable future value.
+
+3. In README and `docs/SUPPORTED_SYNTAX.md`, replace rolling milestone-ledger style opening text with a compact current-status block that identifies:
+   - repository/archive milestone;
+   - runtime/source-run MASM behavior phase;
+   - source-run output-contract identifier;
+   - protocol/artifact compatibility policy;
+   - next canonical guide phase and next runtime/source-run MASM behavior phase.
+
+4. In `docs/MILESTONE_HISTORY.md` and `docs/history/HISTORY_README.md`, preserve or add notes that:
+   - milestone reports and project audit/handoff reports are historical evidence;
+   - they do not override the canonical full spec or implementation guide;
+   - a project audit/handoff report may stop before the current repository/archive milestone;
+   - current status after that point must be determined from `docs/MILESTONE_HISTORY.md`, the latest milestone report, the current README status block, and the canonical spec and guide.
+
+### Required static documentation tests
+
+Add or keep static tests that verify:
+
+- the full spec no longer contains stale exact future phase-number claims that conflict with the guide's Phase 75 and later split;
+- README and `docs/SUPPORTED_SYNTAX.md` identify repository/archive status separately from runtime/source-run MASM behavior status;
+- README and `docs/SUPPORTED_SYNTAX.md` do not imply that Phase 70A or Phase 70B changed MASM source-language behavior;
+- README and `docs/SUPPORTED_SYNTAX.md` identify the source-run output-contract token expected by this revision while explaining that a phase-looking token such as `phase-69c-source-run-output-contract-v1` is contract-version naming, not current phase status, and may change in a later accepted output-contract-changing phase;
+- historical reports are described as historical evidence, not canonical source-of-truth;
+- after Phase 70B is accepted, Phase 71 is described as the next canonical guide phase and the next runtime/source-run MASM behavior phase.
+- active documentation does not describe Phase 69C as the current phase when documenting the source-run output-contract identifier; historical Phase 69C naming may appear only as the origin of the identifier value or in historical reports.
+
+### Acceptance criteria
+
+Phase 70B is complete only when:
+
+- the canonical spec no longer contains a stale exact phase-number list that conflicts with the implementation guide;
+- the guide's Phase 70A compatibility test matrix is explicit enough that malformed, missing, suffix-mismatched, and output-contract-mismatched metadata cannot be mistaken for optional tests;
+- active documentation distinguishes repository/archive milestone status from runtime/source-run behavior status;
+- active documentation distinguishes the next canonical guide phase from the next runtime/source-run MASM behavior phase;
+- active documentation explains the source-run output-contract token naming rule and states that a phase-looking token such as `phase-69c-source-run-output-contract-v1` is contract-version naming, not current phase status or an immutable future value;
+- historical navigation documentation warns future assistants not to treat older handoff reports as current source-of-truth;
+- all changed documentation remains consistent with the project definition:
+  - static browser application;
+  - C99 MASM-like parser plus internal VM compiled to WebAssembly with Emscripten;
+  - browser UI in JS/TS;
+  - educational MASM32/Irvine32-style console simulator;
+  - not a full MASM compiler;
+  - not a full x86 emulator;
+  - not a Windows emulator;
+  - not a PE loader/linker;
+  - not a WinAPI simulator;
+- focused documentation/static tests pass;
+- existing protocol tests for Phase 70A artifact compatibility continue to pass.
 
 ---
 

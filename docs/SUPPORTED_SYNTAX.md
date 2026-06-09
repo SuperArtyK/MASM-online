@@ -1,27 +1,34 @@
 # Supported MASM32 Educational Simulator Syntax
 
 Repository/archive milestone:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+
+- Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
 
 Runtime/source-run MASM behavior phase:
-Phase 70 - RET Execution and Return Address Validation
 
-Latest output/message-ordering cleanup phase:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+- Phase 70 - RET Execution and Return Address Validation
 
-Latest source-run output-contract phase:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+Source-run output-contract identifier naming:
 
-Latest protocol/artifact compatibility cleanup phase:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+- Current expected protocol token in this revision: `phase-69c-source-run-output-contract-v1`
 
-Phase 69B changes display/message ordering only. Phase 69C adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1` for browser/protocol stale-artifact detection and keeps existing broad test-runner groups as the supported decomposition. Phase 70 advances supported runtime/source-run MASM behavior by implementing plain near `RET` return-token execution and validation while preserving the Phase 69C source-run output-contract identifier. Phase 70A tightens browser/Wasm runtime metadata checks. Phase 70A changes artifact compatibility only: browser/protocol code now requires exact runtime/source-run behavior phase metadata and exact source-run output-contract metadata, so newer or older runtime metadata is reported as a UI/Wasm artifact mismatch by default.
+Treat the token as a source-run output-contract version identifier, not as phase-status prose. The `69c` portion is historical naming from the phase that introduced this output-contract field; it is not the current repository milestone, not the current runtime/source-run MASM behavior phase, and not an immutable value for future output-contract-changing phases.
 
-Repository/archive status may include corrective documentation, output-ordering, artifact-compatibility, or test-infrastructure phases beyond the latest runtime/source-run MASM behavior phase.
+Protocol/artifact compatibility policy:
 
-Supported syntax and VM execution behavior are determined by the latest completed runtime/source-run MASM behavior phase, not by maintenance-only repository/archive phase labels.
+- The browser UI expects the loaded Wasm artifact to report the exact runtime/source-run behavior metadata and exact source-run output-contract metadata required by the current UI.
+- Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
+- Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
+- Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
+- Phase 70A changed artifact compatibility only. Phase 70B changes documentation and static checks only. Neither phase adds MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, or source-run output shape changes.
 
-A corrective phase must not be described here as adding accepted syntax, executable instructions, diagnostics for MASM source behavior, or VM semantics unless that phase explicitly implements and tests those runtime/source-run behavior changes.
+Canonical phase navigation:
+
+- The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
+- After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics.
+- Phase 71 is also the next runtime/source-run MASM behavior phase unless a later guide revision explicitly changes that ordering.
+
+This document describes implemented behavior only. Future roadmap items in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` are not supported syntax until their phases are completed and this file is updated.
 
 This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
 

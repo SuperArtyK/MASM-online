@@ -1092,7 +1092,7 @@ Output modes:
 
 Notes:
   --quick is a smoke subset, not full verification.
-  Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition;
+  The existing broad focused groups remain the supported timeout-safe decomposition;
   rerun --source-run or --diagnostics independently when --all times out.
 
 Windows examples:
@@ -1235,14 +1235,14 @@ def print_summary(results: list[GroupResult], selected_groups: Sequence[str]) ->
 
 
 def assert_help_lists_supported_flags() -> None:
-    """Verify that help output lists every public runner flag and current Phase 69C guidance."""
+    """Verify that help output lists every public runner flag and broad-group guidance."""
 
     help_text = create_arg_parser().format_help()
     missing = [flag for flag in supported_help_flags() if flag not in help_text]
     if missing:
         raise TestFailure("help output is missing runner flags: " + ", ".join(missing))
-    if "Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition" not in help_text:
-        raise TestFailure("help output is missing Phase 69C broad-group decomposition guidance")
+    if "The existing broad focused groups remain the supported timeout-safe decomposition" not in help_text:
+        raise TestFailure("help output is missing broad-group decomposition guidance")
     if "Source-run and diagnostic subgroups are intentionally not split in Phase 56A" in help_text:
         raise TestFailure("help output still contains stale Phase 56A subgroup guidance")
 
@@ -1413,69 +1413,58 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase70_current_status_and_harness_documented() -> None:
-    """Verify Phase 70A current status, exact-match protocol checks, CALL coverage, and RET coverage."""
+    """Verify Phase 70B documentation status, Phase 70 runtime status, and Phase 70A compatibility coverage."""
 
-    repository_status = """Repository/archive milestone:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check"""
-    runtime_status = """Runtime/source-run MASM behavior phase:
-Phase 70 - RET Execution and Return Address Validation"""
-    output_contract_status = """Latest source-run output-contract phase:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition"""
-    protocol_status = """Latest protocol/artifact compatibility cleanup phase:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check"""
     for path in [
         "README.md",
         "docs/SUPPORTED_SYNTAX.md",
-        "docs/MILESTONE_HISTORY.md",
+        "docs/BUILDING_AND_DEVELOPMENT.md",
     ]:
-        assert_text_contains(path, repository_status)
-        assert_text_contains(path, runtime_status)
-        assert_text_contains(path, output_contract_status)
-        assert_text_contains(path, protocol_status)
-    assert_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        """Current repository/archive milestone:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
-    )
-    assert_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        """Current runtime/source-run MASM behavior phase:
-Phase 70 - RET Execution and Return Address Validation""",
-    )
-    assert_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        """Latest source-run output-contract phase:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition""",
-    )
-    assert_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        """Latest protocol/artifact compatibility cleanup phase:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
-    )
+        assert_all_text_contains(
+            path,
+            [
+                "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+                "Phase 70 - RET Execution and Return Address Validation",
+                "phase-69c-source-run-output-contract-v1",
+                "Current expected protocol token in this revision",
+                "source-run output-contract version identifier",
+                "Phase 70A",
+                "Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
+                "Artifact compatibility failures are not MASM source diagnostics",
+                "Phase 70B changes documentation",
+                "After Phase 70B, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
+                "Phase 71 is also the next runtime/source-run MASM behavior phase",
+            ],
+        )
+        assert_all_text_not_contains(
+            path,
+            [
+                "Latest output/message-ordering cleanup phase:",
+                "Latest source-run output-contract phase:",
+                "Latest protocol/artifact compatibility cleanup phase:",
+                "Next recommended implementation work",
+                "unsupported `call` forms including Irvine32 routine calls, external/API calls",
+            ],
+        )
 
     assert_all_text_contains(
         "README.md",
         [
             "Phase 69 implements direct near `call ProcedureName`",
-            "Phase 70 implements plain near `ret`/`RET` with no operands",
             "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
             "That return-token write is an implicit VM stack write",
             "current public source-run output contract does not expose it as a visible `memoryChanges` row",
             "Failed internal stack writes use the central checked-memory diagnostic path",
+            "Phase 70 implements plain near `ret`/`RET` with no operands",
+            "`RET` reads a DWORD pseudo-EIP return token from `[ESP]`",
+            "The implicit return-token read is internal VM control-flow machinery",
             "displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
-            "`ESP` startup initialized from the active stack region empty-stack address",
-            "displayed `EIP` derived from VM pseudo-code-address control state",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
             "plain near `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
-            "Phase 70 - RET Execution and Return Address Validation",
-            "Phase 70A - Runtime Metadata Exact-Match Compatibility Check",
-            "Phase 70A is protocol/artifact compatibility cleanup only",
-            "rejecting newer runtime phase metadata by default",
-            "Phase 69C adds a separate source-run output-contract identifier for stale browser/Wasm artifact detection",
-            "Phase 69B improves final-register display grouping and Simulator Messages ordering only.",
             "docs/SUPPORTED_SYNTAX.md",
+            "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
             "docs/MILESTONE_HISTORY.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
             "direct `jmp`",
@@ -1496,75 +1485,49 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
             "Files changed",
             "Tests added",
             "Commands used to test",
-            "Next recommended implementation work",
-            "unsupported `call` forms including Irvine32 routine calls, external/API calls",
+            "Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.",
         ],
     )
 
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
+            "This document describes implemented behavior only",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
-            "The executable successor after `CALL` means the next lowered VM instruction",
-            "synthetic terminal pseudo-EIP",
-            "root-return sentinel",
-            "instruction-after-the-procedure placeholder",
-            "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
-            "they are not future work merely because they are currently rejected",
-            "Rejected simulator-owned CALL target forms remain rejected unless a later accepted phase explicitly changes that simulator-owned form",
-            "External/API calls are not simulator-owned deferred CALL forms",
-            "`ret`/`RET` with no operands is implemented as a plain near return",
-            "External/API calls and WinAPI behavior are non-goals, not deferred direct-CALL target forms",
-            "Uninitialized-read warning policy is orthogonal to region-only address/range validation",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
-            "`END entryName` selects the source-run entry procedure.",
-            "If the selected entry procedure has no executable instruction, source-run completes successfully without executing another procedure.",
-            "Helper procedures before the selected entry procedure do not run automatically",
-            "falling off the selected entry procedure at `ENDP` completes successfully",
-            "Implemented direct branch and conditional branch families may target executable code labels or procedure-entry labels according to their instruction-specific rules.",
-            "Direct user-procedure `CALL` targets user `PROC` entries only.",
-            "Calls to Irvine32 routines, source-level stack instructions, root RET termination, RET imm16, and procedure frames remain deferred according to the future-feature sections in this document.",
-            "Phase 70A changes artifact compatibility only",
-            "newer or older runtime metadata is reported as a UI/Wasm artifact mismatch by default",
-            "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
+            "`ret`/`RET` with no operands is implemented as a plain near return",
             "Root `RET`, non-entry procedure fallthrough diagnostics, source-level stack instructions",
             "selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them",
+            "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
+            "they are not future work merely because they are currently rejected",
+            "External/API calls are not simulator-owned deferred CALL forms",
+            "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
             "direct `jmp label`",
             "equality conditional jumps",
             "signed relational conditional jumps",
             "unsigned relational conditional jumps",
-            "`ja label` / `jnbe label`",
-            "No unsigned relational conditional jump consumes `SF` or `OF`",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
             "`OPTION NOKEYWORD` remains unsupported",
-            "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`.",
-            "invalid-eip-operand",
-            "Phase 69C adds the separate source-run output-contract identifier `phase-69c-source-run-output-contract-v1`",
-            "Phase 70A tightens browser/Wasm runtime metadata checks",
-            "Phase 69B final-register display uses stable high-level educational groups.",
-            "Each major divider row is exactly `-------------------------------------------------------------------`",
-            "parent-family spacer row `       |`",
-            "Rendered Simulator Messages now use Phase 69B logical ordering.",
-            "startup-state-notice` is enabled, the startup notice is serialized and rendered first",
-            "Repository/archive status may include corrective documentation, output-ordering, artifact-compatibility, or test-infrastructure phases",
-            "Supported syntax and VM execution behavior are determined by the latest completed runtime/source-run MASM behavior phase",
+            "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`",
+            "Phase 69B final-register display uses stable high-level educational groups",
+            "### Simulator Messages grouping",
         ],
     )
     assert_all_text_not_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "Known pre-Phase-67A defect",
-            "Do not rely on helper procedure placement before or after `main` until Phase 67A",
-            "corrected `END entryName` source-run entry behavior",
+            "Phase 66 remains the latest runtime/source-run MASM behavior phase",
             "source-run execution may begin at the first lowered instruction",
-            "Irvine32 routine calls, unsupported CALL target forms, source-level stack instructions",
             "unsupported CALL target forms remain deferred",
             "Windows/API execution remain deferred or outside scope",
+            "Latest output/message-ordering cleanup phase:",
+            "Latest source-run output-contract phase:",
+            "Latest protocol/artifact compatibility cleanup phase:",
         ],
     )
 
@@ -1572,17 +1535,22 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current repository/archive milestone:",
-            "Phase 70 - RET Execution and Return Address Validation",
             "Current runtime/source-run MASM behavior phase:",
-            "Latest source-run output-contract phase:",
-            "Latest protocol/artifact compatibility cleanup phase:",
-            "Next runtime implementation milestone:",
-            "Phase 71 - Root Procedure Termination Semantics",
-            "Phase 69C was artifact/test-infrastructure cleanup only; it added the separate source-run output-contract identifier",
+            "Source-run output-contract identifier naming:",
+            "Current protocol/artifact compatibility policy:",
+            "Current expected protocol token in this revision",
+            "The token is a source-run output-contract version identifier",
+            "Next canonical guide phase:",
+            "Next runtime/source-run MASM behavior phase:",
+            "Phase 69C was artifact/test-infrastructure cleanup only; it introduced the separate `sourceRunOutputContract` metadata field",
             "Phase 70 is the current runtime/source-run behavior phase and implements plain near RET return-token execution and validation",
             "Phase 70A is protocol/artifact compatibility cleanup only",
+            "Phase 70B is documentation/static-test cleanup only",
             "browser/protocol code now warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata",
             "phase-69c-source-run-output-contract-v1",
+            "source-run output-contract version identifier",
+            "not a claim that Phase 69C is the current repository milestone",
+            "A later accepted phase that changes the public source-run JSON shape",
             "stale-wasm-output-contract",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
@@ -1617,33 +1585,36 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 70A:",
-            "Phase 69C is artifact/test-infrastructure cleanup only.",
-            "Phase 69B was output/message-ordering cleanup only.",
-            "Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
-            "Phase 69 implements direct user-procedure `CALL` to user `PROC` entries",
-            "current public source-run JSON does not expose it as a visible `memoryChanges` row",
-            "Recent milestone detail in this file may be listed most-recent-first",
-            "Phase 68 adds parser metadata and a classifier that Phase 69 now uses for direct user-procedure `CALL`; future INVOKE phases may reuse the same target-classification foundation.",
-            "Phase 68 adds parser-owned metadata for user procedure target classification.",
-            "## Phase 69 - Direct CALL to User Procedures",
-            "## Phase 68B - EIP Pseudo-Code Address Display and Source-Operand Restrictions",
-            "## Phase 67A - Entry Procedure Runtime Boundary and END Entry Selection",
-            "Phase 67 adds validation harness coverage",
-            "Concise milestone ledger",
-            "Detailed milestone report references",
+            "Current status at Phase 70B:",
+            "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "Phase 70 - RET Execution and Return Address Validation",
+            "source-run output-contract version identifier for the current public source-run output contract",
+            "Current protocol/artifact compatibility policy:",
+            "Current expected protocol token in this revision",
+            "The token is a source-run output-contract version identifier",
+            "Next canonical guide phase:",
+            "Next runtime/source-run MASM behavior phase:",
+            "Runtime/source-run MASM behavior remains Phase 70 until Phase 71 or another later runtime/source-run behavior phase is completed",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
-            "Latest source-run output-contract phase:",
-            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
-            "Latest protocol/artifact compatibility cleanup phase:",
-            "Phase 70A - Runtime Metadata Exact-Match Compatibility Check",
-            "Next runtime implementation milestone:",
-            "Phase 71 - Root Procedure Termination Semantics",
-            "Phase 70 - RET Execution and Return Address Validation is complete as runtime/source-run behavior",
-            "## Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
-            "Final register display now separates general registers, index registers, stack/frame registers, and control/modeled flag state",
-            "startup-state-notice` first whenever execution begins",
+            "Phase 70B is documentation/static-test cleanup only",
+            "## Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "## Phase 70 - RET Execution and Return Address Validation",
+            "Recent milestone detail in this file may be listed most-recent-first",
+            "Concise milestone ledger",
+            "Detailed milestone report references",
+        ],
+    )
+
+    assert_all_text_contains(
+        "docs/history/HISTORY_README.md",
+        [
+            "Source-of-truth and historical report status",
+            "docs/FULL_IMPLEMENTATION_SPEC.md",
+            "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+            "Milestone reports, project audit/handoff reports, and other files under `docs/history/` are historical evidence",
+            "A project audit/handoff report may stop before the current repository/archive milestone",
+            "If a historical report conflicts with the current canonical spec or guide, treat the conflict as an audit finding",
         ],
     )
 
@@ -1654,16 +1625,22 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
             "`docs/SUPPORTED_SYNTAX.md` is not an independent override",
             "External/API calls are not a future CALL target category",
             "External/API CALL targets are different. They are permanent project-boundary non-goal forms",
-            "Final register display must group register and control-state rows into stable high-level educational groups",
-            "Final register display uses two display-only separator row types",
-            "The major divider row contains exactly 67 hyphen characters",
-            "If runtime execution begins, rendered Simulator Messages must use the stable group order below",
-            "The executable successor after `CALL` means the next lowered VM instruction",
             "Source-run Output-Contract and Wasm Artifact Compatibility",
-            "Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
-            "Phase 70A - Runtime Metadata Exact-Match Compatibility Check",
             "sourceRunOutputContract",
             "phase-69c-source-run-output-contract-v1",
+            "That example is a contract-version token, not phase-status prose",
+            "not a claim that Phase 69C is the current repository milestone",
+            "copying any earlier token as absolute truth",
+            "A later accepted phase that deliberately changes the public source-run JSON shape",
+            "The full specification owns stable product boundaries",
+            "The required dependency order is:",
+            "As of the source-of-truth revision after Phase 70B",
+            "Phase 70B is complete as documentation/static-test cleanup",
+            "The next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
+            "This specification must not duplicate the complete future phase list as phase-order authority",
+            "Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`",
+            "Do not renumber existing guide phases from this specification",
+            "native process execution, or native x86 execution",
             "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
             "Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts",
         ],
@@ -1674,41 +1651,37 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
             "As of the Phase 69 source-of-truth revision",
             "current Phase 69 public output contract",
             "current source-of-truth revision after Phase 69C",
+            "current Phase 69C source-run output-contract identifier",
+            "The current Phase 69C identifier is:",
+            "Phase 75 `PROC USES`; Phase 76 `LOCAL`; Phase 77 `PROTO`; Phase 78 `INVOKE`; Phase 79 `ADDR`; and Phase 80 Irvine32 callable routine dispatch",
+            "Phase 70A is protocol/artifact compatibility cleanup only and must not implement root `RET` or any other MASM runtime behavior. If the guide uses corrective non-renumbering phases",
         ],
     )
-    assert_all_text_not_contains(
-        "tests/core/test_wasm_source_run.c",
-        [
-            "current Phase 69 numeric phase metadata",
-        ],
-    )
-    assert_all_text_not_contains(
-        "tests/web/test_diagnostic_rendering.mjs",
-        [
-            "Current Phase 69 runtime metadata",
-        ],
-    )
+
     assert_all_text_contains(
         "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
         [
             "Phase identifier note",
             "## 73A. Phase 69A - Documentation and Static-Check Cleanup After Direct CALL",
-            "Phase 69A is an optional documentation/static-check corrective phase",
             "## 73B. Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
-            "Phase 69B is an output-cleanup and message-ordering corrective phase",
             "## 73C. Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
-            "Phase 69C is a non-runtime corrective phase",
-            "Phase 69C must choose and document one of these two strategies",
-            "Final register display uses two display-only separator row types",
-            "The major divider row contains exactly 67 hyphen characters",
-            "When runtime execution begins and `startup-state-notice` is enabled",
-            "Phase 70 only guarantees return to a pseudo-EIP value that maps to an executable lowered VM instruction",
-            "The implicit return-token access is a simulated DWORD memory read from `[ESP]`",
-            "Phase 70A must use the existing stale or mismatched artifact diagnostic channel",
-            "Planned-read and diagnostic-precedence tests",
-            "INCLUDE Irvine32.inc",
-            "This fixture deliberately includes `INCLUDE Irvine32.inc`",
-            "Phase 69 permitted limited source-run test scaffolding",
+            "## 74. Phase 70 - RET Execution and Return Address Validation",
+            "## 74A. Phase 70A - Runtime Metadata Exact-Match Compatibility Check",
+            "## 74B. Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "## 75. Phase 71 - Root Procedure Termination Semantics",
+            "Phase 70A is a UI/protocol/artifact compatibility corrective phase",
+            "Missing suffix metadata is invalid even when the expected suffix is the empty string",
+            "Malformed source-run output-contract metadata includes any present value that is not a string",
+            "source-run output-contract token naming rule",
+            "historical contract-version naming",
+            "not the current repository milestone, not the current runtime/source-run MASM behavior phase",
+            "Runtime/source-run behavior metadata problems must be reported before source-run output-contract metadata problems",
+            "Phase 70B is inserted after Phase 70A and before Phase 71",
+            "After Phase 70B is accepted, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics",
+            "Phase 70B must add or update static documentation tests only",
+            "Phase 70B does not require new runtime, parser, VM, source-run, or instruction behavior tests",
+            "change the source-run output-contract token solely because the repository/archive milestone or runtime/source-run MASM behavior phase advanced",
+            "token introduced during Phase 69C still passes while the public source-run output contract remains unchanged",
             "Visible current-status requirement",
             "The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push",
             "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
@@ -1716,11 +1689,27 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
     )
 
     assert_all_text_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "Current repository/archive status for this guide revision is Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "Current runtime/source-run MASM behavior remains Phase 70 - RET Execution and Return Address Validation",
+            "phase-69c-source-run-output-contract-v1",
+            "contract-version naming for an unchanged output contract",
+            "not the current repository milestone or runtime/source-run MASM behavior phase",
+            "Phase 70B changes documentation and static checks only",
+            "Phase 69C introduced source-run output-contract verification",
+            "token expected by the current UI/source pair",
+            "not current phase status and not a rule that future output-contract-changing phases must preserve the same token",
+        ],
+    )
+
+    assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 70A: runtime metadata exact-match compatibility",
-            "Repository status: Phase 70A: Runtime Metadata Exact-Match Compatibility Check.",
+            "Milestone 70B: documentation/static-check alignment",
+            "Repository status: Phase 70B: Canonical Documentation Alignment and Compatibility Test Matrix Cleanup.",
             "Runtime behavior: Phase 70 plain near RET returns through checked pseudo-EIP tokens.",
+            "Phase 70B changes documentation/static checks only.",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
@@ -1738,61 +1727,7 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
             "Final Registers still use parent-family spacer rows and major high-level divider rows",
             "direct user-procedure <code>CALL</code> is executable",
             "RET</code>, Irvine32 routine calls",
-        ],
-    )
-
-    assert_all_text_contains(
-        "tests/core/test_wasm_source_run.c",
-        [
-            "test_phase69_direct_call_source_run_behavior",
-            "successful direct CALL should not expose the implicit return-token stack write as a public source-run memoryChanges row",
-            "test_phase68a_source_run_observes_fixed_layout_esp_startup",
-            "test_phase68a_seeded_startup_preserves_stack_pointer_contract",
-            "test_phase68a_automatic_layout_esp_uses_selected_stack_metadata",
-            "test_phase67a_entry_procedure_runtime_boundary_source_run",
-            "test_phase67a_entry_boundary_error_and_transfer_regressions",
-            "helper before main must not execute by source order",
-            "helper after main must not execute by fallthrough",
-            "explicit JMP to procedure-entry label",
-            "test_phase67_arithmetic_branch_watchdog_source_run_harness",
-            "test_phase66_unsigned_relational_jumps_source_run_programs",
-        ],
-    )
-    assert_all_text_contains(
-        "tests/core/test_parser.c",
-        [
-            "test_phase69_direct_call_to_user_procedure_parses_to_ir",
-            "test_phase69_direct_call_target_rejections",
-            "test_phase67a_procedure_range_metadata",
-            "Phase 67A should record selected END entry procedure",
-            "test_phase68_call_target_classifier_metadata",
-            "test_phase68_call_target_classifier_casemap_policy",
-            "test_phase68_procedure_name_diagnostics",
-        ],
-    )
-    assert_all_text_contains(
-        "tests/core/test_vm_exec.c",
-        [
-            "test_phase69_direct_call_stack_write_and_transfer",
-            "test_phase69_direct_call_stack_write_failure_rolls_back",
-            "test_phase69_invalid_call_metadata",
-            "test_phase67_arithmetic_fault_no_partial_mutation_harness",
-            "test_phase67_conditional_branch_invalid_metadata_harness",
-        ],
-    )
-    assert_all_text_contains(
-        "tests/web/test_diagnostic_rendering.mjs",
-        [
-            "Phase 69 renders direct CALL invalid target diagnostic exactly",
-            "Phase 69 renders direct CALL checked stack write failure exactly",
-            "Phase 69C renders stale output-contract warning exactly",
-            "Phase 70A renders stale runtime artifact warning exactly",
-            "renders Phase 67 branch-target classifier diagnostic exactly",
-            "renders Phase 67 division runtime diagnostic exactly",
-            "renders Phase 67 branch-loop instruction-limit diagnostic exactly",
-            "Phase 68 renders duplicate procedure diagnostic exactly",
-            "Phase 68 renders reserved Irvine32 procedure-name diagnostic exactly",
-            "Phase 68 renders malformed procedure-name diagnostic exactly",
+            "Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.",
         ],
     )
 
@@ -1803,10 +1738,13 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
             "RUN_SOURCE accepts matching runtime and output-contract metadata",
             "RUN_SOURCE marks matching runtime phase with missing output-contract metadata",
             "RUN_SOURCE marks matching runtime phase with stale output-contract metadata",
+            "RUN_SOURCE treats non-string output-contract metadata as missing",
             "RUN_SOURCE reports stale runtime phase and stale output contract distinctly",
             "RUN_SOURCE rejects newer runtime phase metadata by default",
             "RUN_SOURCE rejects missing runtime phase metadata",
             "RUN_SOURCE rejects missing runtime phase suffix metadata",
+            "RUN_SOURCE rejects malformed runtime phase metadata",
+            "RUN_SOURCE rejects malformed runtime phase suffix metadata",
         ],
     )
     assert_all_text_contains(
@@ -1833,6 +1771,23 @@ Phase 70A - Runtime Metadata Exact-Match Compatibility Check""",
                 "unsupported by the current milestone",
                 "not implemented in this milestone",
                 "not supported in this milestone",
+                "current Phase 69C identifier",
+                "current Phase 69C source-run output-contract identifier",
+                "current source-run output-contract identifier value",
+                "current contract identifier value",
+            ],
+        )
+
+    for path in ["docs/FULL_IMPLEMENTATION_SPEC.md", "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md", "docs/TESTING_GUIDE.md"]:
+        assert_all_text_not_contains(
+            path,
+            [
+                "current Phase 69C identifier",
+                "current Phase 69C source-run output-contract identifier",
+                "current source-run output-contract identifier value",
+                "current contract identifier value",
+                "Phase 69C output-contract identifier unless the public source-run output contract actually changes",
+                "Phase 69C output-contract behavior still passes",
             ],
         )
 

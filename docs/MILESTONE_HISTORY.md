@@ -17,22 +17,29 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
-Current status at Phase 70A:
+Current status at Phase 70B:
 
 Repository/archive milestone:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
 
 Runtime/source-run MASM behavior phase:
 Phase 70 - RET Execution and Return Address Validation
 
-Latest output/message-ordering cleanup phase:
-Phase 69B - Register Display Grouping and Startup Diagnostic Ordering
+Source-run output-contract identifier naming:
+Current expected protocol token in this revision: `phase-69c-source-run-output-contract-v1`
 
-Latest source-run output-contract phase:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition
+The token is a source-run output-contract version identifier for the current public source-run output contract, not phase-status prose. The `69c` portion is historical naming from the phase that introduced the output-contract field; it is not the current repository milestone, not the current runtime/source-run MASM behavior phase, and not an immutable value for future output-contract-changing phases.
 
-Latest protocol/artifact compatibility cleanup phase:
+Current protocol/artifact compatibility policy:
 Phase 70A - Runtime Metadata Exact-Match Compatibility Check
+
+Next canonical guide phase:
+Phase 71 - Root Procedure Termination Semantics
+
+Next runtime/source-run MASM behavior phase:
+Phase 71 - Root Procedure Termination Semantics
+
+Current repository/archive status must be read together with the canonical spec and guide. This history file records completed milestones and audit evidence, but it does not replace `docs/FULL_IMPLEMENTATION_SPEC.md` or `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Repository/archive status may be newer than runtime/source-run MASM behavior status. Phase 70A is a protocol/artifact compatibility phase; Phase 70B is a documentation/static-test cleanup phase. Runtime/source-run MASM behavior remains Phase 70 until Phase 71 or another later runtime/source-run behavior phase is completed.
 
 Phase 69B was output/message-ordering cleanup only. At its completion it kept Phase 69 as the latest runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 70 has since advanced the runtime/source-run MASM behavior phase.
 
@@ -42,28 +49,19 @@ Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Succ
 
 Phase 70 implements plain near `RET` with no operands. Successful RET reads the DWORD pseudo-EIP return token from `[ESP]` through checked VM memory helpers, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4, preserves modeled flags and flag-validity metadata, and transfers control to the validated target. Invalid readable tokens stop with `invalid-return-address`; unreadable `[ESP]` keeps using the central checked-memory diagnostics. The implicit RET return-token read is internal VM control-flow state and is not exposed as a public source-run `memoryChanges` row.
 
+Phase 70A - Runtime Metadata Exact-Match Compatibility Check is complete as protocol/artifact compatibility cleanup. It does not change MASM source syntax, parser behavior, VM execution semantics, CALL behavior, RET behavior, Program Console output, or public `memoryChanges` rows. It makes newer-runtime and older-runtime Wasm metadata mismatches visible by default and leaves forward-compatible runtime acceptance to a later explicitly specified compatibility phase.
+
+Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup is complete as documentation/static-test cleanup. It updates the canonical spec and guide, active status docs, historical navigation, and static documentation checks so future assistants distinguish repository/archive status, runtime/source-run MASM behavior phase, source-run output-contract identifier, protocol/artifact compatibility policy, next canonical guide phase, and next runtime/source-run MASM behavior phase. It does not change accepted MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, source-run output shape, runtime/source-run MASM behavior metadata, Program Console output, or Simulator Messages behavior.
+
 Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM pseudo-code-address control state beginning at `00401000h` and advancing by 4 per lowered executable VM instruction. Source code cannot read, write, address through, use as an instruction operand, or define `EIP`; such forms produce `invalid-eip-operand`.
 
 Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, direct supported writes to `ESP` remain legal, and direct user-procedure `CALL` uses the active `ESP` value for its checked return-token stack write.
 
 Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. It does not implement root procedure termination, non-entry procedure fallthrough diagnostics, source-level PUSH/POP, procedure frames, Irvine32 routine dispatch, `INVOKE`, `PROTO`, `LOCAL`, `USES`, or `ADDR`.
 
-Current protocol/artifact compatibility phase:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
-
-Next runtime implementation milestone:
-Phase 71 - Root Procedure Termination Semantics
-
-Current source-of-truth roadmap note:
-Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition is complete as repository/archive artifact/test-infrastructure cleanup. It added the separate `sourceRunOutputContract` JSON field with value `phase-69c-source-run-output-contract-v1`, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. Phase 69C did not add runner subgroup flags because the existing focused broad groups remain the supported timeout-safe decomposition. It is not a MASM syntax or VM execution-semantics phase.
-
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check is complete as protocol/artifact compatibility cleanup. It does not change MASM source syntax, parser behavior, VM execution semantics, CALL behavior, RET behavior, Program Console output, or public `memoryChanges` rows. It makes newer-runtime and older-runtime Wasm metadata mismatches visible by default and leaves forward-compatible runtime acceptance to a later explicitly specified compatibility phase.
-
-Phase 70 - RET Execution and Return Address Validation is complete as runtime/source-run behavior. It consumes the pseudo-EIP return tokens written by Phase 69 direct user-procedure `CALL`. It still does not implement root `RET` termination, source-level PUSH/POP, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `RET imm16`, `LEAVE`, non-entry procedure fallthrough diagnostics, or Irvine32 callable routine dispatch.
-
-
 ## Concise milestone ledger
 
+- Phase 70B is documentation/static-test cleanup only. It aligns the canonical spec, guide, active status docs, historical navigation, and static documentation checks after Phase 70A while preserving Phase 70 runtime/source-run MASM behavior metadata and the existing source-run output-contract token for the unchanged public output contract.
 - Phase 70A is the current protocol/artifact compatibility corrective phase. It tightens runtime metadata mismatch checks by default and does not change MASM source behavior.
 - Phase 70 implements plain near `RET` with checked pseudo-EIP return-token reads, return-token validation, ESP pop-on-success, and `invalid-return-address` for readable invalid tokens while preserving root RET, RET imm16, source-level stack instructions, frames, and Irvine32 routine dispatch as future work.
 - Phase 69C is artifact/test-infrastructure cleanup only. It adds separate source-run output-contract metadata and protocol/rendering/static tests for stale browser/Wasm artifact detection while preserving Phase 69 runtime/source-run behavior metadata and existing broad runner groups.
@@ -157,6 +155,12 @@ Non-goals preserved:
 - no Irvine32 callable routine dispatch beyond the existing virtual `exit` terminator;
 - no new stack sizing UI, URL state, layout sizing behavior, heap sizing behavior, or randomized layout behavior.
 
+
+## Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup
+
+Phase 70B is a documentation/static-test cleanup phase inserted after Phase 70A and before Phase 71. It makes the Phase 70A compatibility matrix explicit, removes stale exact future phase-number wording from the full spec, clarifies active current-status blocks, and preserves the rule that historical reports are evidence rather than canonical source-of-truth. Runtime/source-run MASM behavior metadata remains Phase 70 - RET Execution and Return Address Validation. Phase 71 - Root Procedure Termination Semantics remains both the next canonical guide phase and the next runtime/source-run MASM behavior phase after Phase 70B.
+
+Phase 70B does not change accepted MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, source-run output shape, source-run output-contract token, Program Console output, or Simulator Messages behavior.
 
 ## Phase 70 - RET Execution and Return Address Validation
 

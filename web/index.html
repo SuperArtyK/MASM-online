@@ -3,10 +3,11 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Phase 70A: Runtime Metadata Exact-Match Compatibility Check.
+  Repository status: Phase 70B: Canonical Documentation Alignment and Compatibility Test Matrix Cleanup.
   Runtime behavior: Phase 70 plain near RET returns through checked pseudo-EIP tokens.
-  Protocol behavior: runtime metadata and output-contract metadata must exactly
-  match the UI expectations before artifact warnings are suppressed.
+  Protocol behavior: Phase 70A requires runtime metadata and output-contract
+  metadata to exactly match UI expectations before artifact warnings are suppressed.
+  Phase 70B changes documentation/static checks only.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -21,7 +22,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.</p>
+        <p class="muted">Milestone 70B: documentation/static-check alignment; MASM runtime behavior remains Phase 70 RET execution.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096

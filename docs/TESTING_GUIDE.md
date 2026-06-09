@@ -4,6 +4,8 @@ This document describes practical ways to build, run, and manually test the MASM
 
 The examples assume commands are run from the repository root.
 
+Current repository/archive status for this guide revision is Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup. Current runtime/source-run MASM behavior remains Phase 70 - RET Execution and Return Address Validation. The source-run output-contract token expected by this revision is `phase-69c-source-run-output-contract-v1`; that token is contract-version naming for an unchanged output contract, and the embedded `69c` label is not the current repository milestone or runtime/source-run MASM behavior phase. Phase 70B changes documentation and static checks only; it does not require runtime, parser, VM, source-run, or instruction behavior tests beyond preserving existing focused groups.
+
 ## 1. Prerequisites
 
 ### Required for native and Node tests
@@ -254,7 +256,7 @@ Diagnostic subgroups such as `--diagnostics=memory` are not currently implemente
 
 Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition and does not add subgroup flags. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any future subgroup split must preserve the existing broad group flags.
 
-Phase 69C also adds source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with value `phase-69c-source-run-output-contract-v1`. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
+Phase 69C introduced source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with the token expected by the current UI/source pair. In this source tree, that token remains `phase-69c-source-run-output-contract-v1` because later accepted phases have not changed the public source-run output contract. The embedded `69c` label is historical contract-version naming, not current phase status and not a rule that future output-contract-changing phases must preserve the same token. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
 
 Phase 70A tightens browser/Wasm runtime metadata checks. Protocol tests for that corrective phase must cover exact matching runtime phase and matching output contract, older runtime phase mismatch, newer runtime phase mismatch, missing runtime metadata, stale output-contract metadata, missing output-contract metadata, and combined runtime/output-contract mismatch diagnostics in deterministic order. Phase 70A tests must also prove that the correction does not change accepted MASM syntax, VM execution semantics, Program Console output, or public `memoryChanges` rows.
 
