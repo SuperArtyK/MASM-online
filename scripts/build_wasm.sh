@@ -37,6 +37,6 @@ emcc \
   -sMODULARIZE=1 \
   -sEXPORT_ES6=1 \
   -sENVIRONMENT=web,worker \
-  -sEXPORTED_FUNCTIONS='["_masm32_sim_wasm_test_value","_masm32_sim_wasm_milestone4_hardcoded_result","_masm32_sim_wasm_run_source_json","_masm32_sim_wasm_run_source_json_with_instruction_limit","_masm32_sim_wasm_run_source_json_with_ui_settings","_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings","_masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings","_masm32_sim_wasm_run_source_json_with_ui_startup_storage_and_instruction_limit_settings","_masm32_sim_wasm_copy_version"]' \
+  -sEXPORTED_FUNCTIONS='["_masm32_sim_wasm_test_value","_masm32_sim_wasm_milestone4_hardcoded_result","_masm32_sim_wasm_run_source_json","_masm32_sim_wasm_run_source_json_with_instruction_limit","_masm32_sim_wasm_run_source_json_with_ui_settings","_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings","_masm32_sim_wasm_run_source_json_with_ui_and_startup_storage_settings","_masm32_sim_wasm_run_source_json_with_ui_startup_storage_and_instruction_limit_settings","_masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings","_masm32_sim_wasm_copy_version"]' \
   -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap"]' \
   -o "${OUT_DIR}/masm32_sim_core.js"

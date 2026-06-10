@@ -93,7 +93,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_STARTUP_REGISTER_FLAG_MODE",
   "MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE",
   "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED",
-  "MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT"
+  "MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT",
+  "MASM32_DIAGNOSTIC_ROOT_RET_MODE"
 ];
 
 /**
@@ -174,13 +175,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71 - Root Procedure Termination Semantics. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71A - Optional Root RET Strictness Mode. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71 - Root Procedure Termination Semantics. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71A - Optional Root RET Strictness Mode. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2305,8 +2306,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2333,7 +2334,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2360,7 +2361,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2385,7 +2386,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2409,7 +2410,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2435,7 +2436,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2506,7 +2507,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2551,7 +2552,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2724,8 +2725,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2752,8 +2753,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2780,8 +2781,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2807,8 +2808,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -5070,8 +5071,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5131,8 +5132,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 5);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5190,8 +5191,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5227,8 +5228,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000000h");
@@ -5255,8 +5256,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.executedInstructionCount, 0);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
@@ -5288,8 +5289,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 71 - Root Procedure Termination Semantics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6283,7 +6284,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -6315,7 +6316,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -6399,7 +6400,7 @@ END main
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-procedure-name line 2, column 1, byte offset 6, span length 3: Procedure name must be an identifier before PROC.");
 });
 
-test("Phase 71 renders root RET completion, helper fallthrough, loop, and WinAPI diagnostics exactly", () => {
+test("Phase 71A renders root RET completion, strict-mode rejection, helper fallthrough, loop, and WinAPI diagnostics exactly", () => {
   const retName = "phase71RootRetCompletes";
   const retSource = fixtureSource(retName);
   const retResult = runFixture(retName, retSource);
@@ -6408,6 +6409,22 @@ test("Phase 71 renders root RET completion, helper fallthrough, loop, and WinAPI
   assert.equal(retResult.json.simulatorMessages.some((message) => message.code === "invalid-address"), false);
   assert.equal(retResult.json.simulatorMessages.some((message) => message.code === "invalid-return-address"), false);
   assertRenderedEquals(retName, retSource, retResult.rawJson, retResult.rendered, "[info] execution-complete: Execution completed successfully.");
+
+  const strictRootName = "phase71aStrictRootRetDiagnostic";
+  const strictRootSource = `.code
+main PROC
+    ret
+main ENDP
+END main
+`;
+  const strictRootResult = runFixture(strictRootName, strictRootSource, { MASM32_DIAGNOSTIC_ROOT_RET_MODE: "strict-call-frame" });
+  assertRunStatus(strictRootResult.json, false, "execution-error");
+  assert.equal(strictRootResult.json.rootRetMode, "strict-call-frame");
+  assert.deepEqual(strictRootResult.json.memoryChanges, []);
+  assertNoExecutionComplete(strictRootResult.json.simulatorMessages);
+  assertRenderedEquals(strictRootName, strictRootSource, strictRootResult.rawJson, strictRootResult.rendered, `${STARTUP_STATE_NOTICE_RENDERED}
+
+[runtime-error] root-ret-disallowed-by-mode line 3, column 5, byte offset 20, span length 3: RET cannot return from the selected entry procedure because no caller supplied a return address. Use the simulator's MASM32-compatible root RET mode, or terminate explicitly with the supported Irvine32 exit routine.`);
 
   const fallthroughName = "phase71HelperFallthroughDiagnostic";
   const fallthroughSource = `.code

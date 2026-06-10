@@ -18,6 +18,8 @@ import {
   MEMORY_RANGE_SECTION_CAPACITY_WARN,
   MEMORY_RANGE_SECTION_IMAGE_STRICT,
   MEMORY_RANGE_SECTION_IMAGE_WARN,
+  ROOT_RET_MODE_MASM32_COMPATIBLE,
+  ROOT_RET_MODE_STRICT_CALL_FRAME,
   TEACHING_DIAGNOSTIC_OFF,
   TEACHING_DIAGNOSTIC_STRICT,
   TEACHING_DIAGNOSTIC_WARN,
@@ -52,7 +54,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
   });
 
   const normalized = normalizeDiagnosticSettings(undefined);
@@ -66,7 +69,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: 0
   });
 });
 
@@ -85,7 +89,8 @@ test("partial settings fill missing values from defaults", () => {
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
   });
   assert.deepEqual(normalized.backendSettings, {
     memoryRange: 1,
@@ -95,7 +100,8 @@ test("partial settings fill missing values from defaults", () => {
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: 0
   });
 });
 
@@ -124,7 +130,8 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       startupRegisterFlagMode: 0,
       uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0,
-      instructionLimit: 1000000
+      instructionLimit: 1000000,
+      rootRetMode: 0
     });
   }
 });
@@ -150,7 +157,8 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       startupRegisterFlagMode: 0,
       uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0,
-      instructionLimit: 1000000
+      instructionLimit: 1000000,
+      rootRetMode: 0
     });
   }
 });
@@ -205,6 +213,21 @@ test("invalid Phase 59 instruction limit returns source-run ui-error diagnostic"
   }
 });
 
+
+test("Phase 71A root RET mode maps to backend enum values", () => {
+  const normalized = normalizeDiagnosticSettings({ rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME });
+
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.settings.rootRetMode, ROOT_RET_MODE_STRICT_CALL_FRAME);
+  assert.equal(normalized.backendSettings.rootRetMode, 1);
+
+  const invalid = normalizeDiagnosticSettings({ rootRetMode: "strict-root-ret" });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.diagnostic.kind, "ui-error");
+  assert.equal(invalid.diagnostic.code, "invalid-diagnostic-setting");
+  assert.equal(invalid.diagnostic.setting, "rootRetMode");
+});
+
 test("invalid memory range setting returns ui-error diagnostic", () => {
   const normalized = normalizeDiagnosticSettings({ memoryRange: "future-provenance-mode" });
   assert.equal(normalized.ok, false);
@@ -228,12 +251,14 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
   const uninitializedReadsControl = { value: TEACHING_DIAGNOSTIC_STRICT };
   const undefinedFlagUseControl = { value: TEACHING_DIAGNOSTIC_OFF };
   const compatibilityNoticesControl = { value: COMPATIBILITY_NOTICES_OFF };
+  const rootRetModeControl = { value: ROOT_RET_MODE_STRICT_CALL_FRAME };
 
   const settings = readDiagnosticSettingsFromControls(
     memoryRangeControl,
     uninitializedReadsControl,
     undefinedFlagUseControl,
-    compatibilityNoticesControl
+    compatibilityNoticesControl,
+    rootRetModeControl
   );
 
   assert.equal(hiddenBody.hidden, true);
@@ -245,7 +270,8 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
     memoryRange: 5,
@@ -255,6 +281,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     startupRegisterFlagMode: 0,
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
-    instructionLimit: 1000000
+    instructionLimit: 1000000,
+    rootRetMode: 1
   });
 });

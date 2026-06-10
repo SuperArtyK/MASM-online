@@ -3173,12 +3173,13 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     return VM_EXEC_STATUS_OK;
 }
 
-/// Executes one Phase 71 plain near RET root/helper operation.
+/// Executes one plain near RET root/helper operation.
 ///
-/// A selected-entry root RET with no helper return pending terminates
-/// successfully before reading `[ESP]`. Every other RET preserves the Phase 70
-/// checked DWORD pseudo-EIP token read, return-target validation, and ESP
-/// mutation ordering.
+/// A selected-entry root RET with no helper return pending uses the configured
+/// Phase 71A root RET mode: the default mode terminates successfully before
+/// reading `[ESP]`, while strict mode stops before stack access with a teaching
+/// diagnostic. Every ordinary helper RET preserves the Phase 70 checked DWORD
+/// pseudo-EIP token read, return-target validation, and ESP mutation ordering.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction RET instruction descriptor.
@@ -3200,6 +3201,9 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
         return VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE;
     }
     if (vm_exec_current_instruction_is_root_ret(vm)) {
+        if (vm->root_ret_mode == VM_ROOT_RET_MODE_STRICT_CALL_FRAME) {
+            return VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE;
+        }
         vm->halted = true;
         return VM_EXEC_STATUS_OK;
     }
@@ -3497,6 +3501,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     }
 
     memset(vm, 0, sizeof(*vm));
+    vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3530,6 +3535,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     }
 
     memset(vm, 0, sizeof(*vm));
+    vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init(&vm->memory, memory_config);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3588,6 +3594,20 @@ VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoun
     vm->has_selected_entry_procedure = has_selected;
     vm->selected_entry_procedure_index = selected_index;
     vm->active_helper_return_count = 0U;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
+}
+
+VmExecStatus vm_set_root_ret_mode(Vm *vm, VmRootRetMode mode) {
+    if (vm == NULL ||
+        (mode != VM_ROOT_RET_MODE_MASM32_COMPATIBLE && mode != VM_ROOT_RET_MODE_STRICT_CALL_FRAME)) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm->root_ret_mode = mode;
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
 }
@@ -3943,6 +3963,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-return-address";
         case VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH:
             return "non-root-procedure-fell-through";
+        case VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE:
+            return "root-ret-disallowed-by-mode";
         case VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE:
             return "invalid-root-termination-state";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:

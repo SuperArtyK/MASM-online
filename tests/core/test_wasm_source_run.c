@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71 root RET termination behavior.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71A root RET strictness behavior.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -17,7 +17,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71-source-run-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71a-source-run-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -8924,7 +8924,7 @@ static int test_phase58_label_source_run_behavior(void) {
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":71", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":2", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -9033,7 +9033,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9275,7 +9275,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -9622,7 +9622,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -9728,7 +9728,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "Helper ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71 runtime metadata");
+    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71A runtime metadata");
     failures += expect_json_contains(valid_copy, "\"ok\":false", "direct user-procedure CALL with helper fallthrough should now fail at the helper boundary");
     failures += expect_json_contains(valid_copy, "\"code\":\"non-root-procedure-fell-through\"", "CALL-reached helper fallthrough should use Phase 71 diagnostic");
     failures += expect_json_contains(valid_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "direct CALL should transfer to the helper procedure body before fallthrough diagnostic");
@@ -9829,8 +9829,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":71", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
-    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71 should report Phase 71 output-contract metadata");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71A should report Phase 71A output-contract metadata");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
@@ -9872,6 +9872,86 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     failures += expect_json_contains(empty_stack_copy, "\"memoryChanges\":[]", "root RET should not expose memoryChanges rows");
     failures += expect_json_not_contains(empty_stack_copy, "invalid-address", "root RET should not read empty-stack memory");
     failures += expect_json_not_contains(empty_stack_copy, "invalid-return-address", "root RET should not validate a return token");
+
+    {
+        char strict_root_copy[8192];
+        copy_source_run_json(strict_root_copy, sizeof(strict_root_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+            ".code\n"
+            "main PROC\n"
+            "    ret\n"
+            "main ENDP\n"
+            "END main\n",
+            MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+            0U,
+            1000000U,
+            MASM32_SIM_WASM_ROOT_RET_MODE_STRICT_CALL_FRAME
+        ));
+        failures += expect_json_contains(strict_root_copy, "\"ok\":false", "strict root RET mode should reject selected-entry root RET");
+        failures += expect_json_contains(strict_root_copy, "\"code\":\"root-ret-disallowed-by-mode\"", "strict root RET should use root-ret-disallowed-by-mode");
+        failures += expect_json_contains(strict_root_copy, "RET cannot return from the selected entry procedure because no caller supplied a return address", "strict root RET diagnostic should explain the source-level cause");
+        failures += expect_json_contains(strict_root_copy, "Use the simulator's MASM32-compatible root RET mode", "strict root RET diagnostic should suggest compatible mode without exposing the strict setting value");
+        failures += expect_json_contains(strict_root_copy, "terminate explicitly with the supported Irvine32 exit routine", "strict root RET diagnostic should suggest explicit supported termination");
+        failures += expect_json_not_contains(strict_root_copy, "rootRetMode = \"strict-call-frame\"", "strict root RET diagnostic should not repeat the configured strict-mode value");
+        failures += expect_json_not_contains(strict_root_copy, "helper return token", "strict root RET diagnostic should not expose helper return-token internals");
+        failures += expect_json_contains(strict_root_copy, "\"rootRetMode\":\"strict-call-frame\"", "strict root RET response should serialize active setting");
+        failures += expect_json_contains(strict_root_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "strict root RET should leave ESP unchanged");
+        failures += expect_json_contains(strict_root_copy, "\"memoryChanges\":[]", "strict root RET should not expose memoryChanges rows");
+        failures += expect_json_not_contains(strict_root_copy, "invalid-address", "strict root RET should not read empty-stack memory");
+        failures += expect_json_not_contains(strict_root_copy, "invalid-return-address", "strict root RET should not validate a return token");
+        failures += expect_json_not_contains(strict_root_copy, "execution-complete", "strict root RET should not emit successful completion");
+    }
+
+    {
+        char strict_root_uninitialized_copy[8192];
+        copy_source_run_json(strict_root_uninitialized_copy, sizeof(strict_root_uninitialized_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+            ".code\n"
+            "main PROC\n"
+            "    ret\n"
+            "main ENDP\n"
+            "END main\n",
+            MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+            0U,
+            1000000U,
+            MASM32_SIM_WASM_ROOT_RET_MODE_STRICT_CALL_FRAME
+        ));
+        failures += expect_json_contains(strict_root_uninitialized_copy, "\"code\":\"root-ret-disallowed-by-mode\"", "strict root RET should remain the first diagnostic even with strict uninitialized-read checks");
+        failures += expect_json_not_contains(strict_root_uninitialized_copy, "uninitialized-read", "strict root RET must not run planned [ESP] uninitialized-read checks");
+        failures += expect_json_not_contains(strict_root_uninitialized_copy, "invalid-address", "strict root RET must not probe stack memory before rejection");
+        failures += expect_json_not_contains(strict_root_uninitialized_copy, "invalid-return-address", "strict root RET must not validate return tokens before rejection");
+    }
+
+    {
+        char compatible_root_copy[8192];
+        copy_source_run_json(compatible_root_copy, sizeof(compatible_root_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+            ".code\n"
+            "main PROC\n"
+            "    RET\n"
+            "main ENDP\n"
+            "END main\n",
+            MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+            0U,
+            1000000U,
+            MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE
+        ));
+        failures += expect_json_contains(compatible_root_copy, "\"ok\":true", "explicit compatible root RET mode should preserve Phase 71 behavior");
+        failures += expect_json_contains(compatible_root_copy, "\"rootRetMode\":\"masm32-compatible\"", "compatible root RET response should serialize active setting");
+        failures += expect_json_contains(compatible_root_copy, "execution-complete", "compatible root RET should complete successfully");
+    }
 
     {
         char helper_fallthrough_copy[8192];
@@ -9935,13 +10015,37 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     failures += expect_json_contains(strict_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "strict declared-object CALL/RET fixture should restore ESP");
     failures += expect_json_not_contains(strict_copy, "object-bounds-violation", "RET return-token stack read must not be rejected as a declared-object violation");
 
+    {
+        char invalid_root_mode_copy[8192];
+        copy_source_run_json(invalid_root_mode_copy, sizeof(invalid_root_mode_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+            ".code\n"
+            "main PROC\n"
+            "    ret\n"
+            "main ENDP\n"
+            "END main\n",
+            MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+            MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+            MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+            MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+            0U,
+            1000000U,
+            (Masm32SimWasmRootRetMode)99
+        ));
+        failures += expect_json_contains(invalid_root_mode_copy, "\"ok\":false", "invalid root RET mode should fail before execution");
+        failures += expect_json_contains(invalid_root_mode_copy, "invalid-root-ret-mode-setting", "invalid root RET mode should use settings diagnostic");
+        failures += expect_json_contains(invalid_root_mode_copy, "\"setting\":\"rootRetMode\"", "invalid root RET mode should name the setting");
+        failures += expect_json_not_contains(invalid_root_mode_copy, "execution-complete", "invalid root RET mode should not run source");
+    }
+
     return failures;
 }
 
-/// Verifies Phase 71 runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies Phase 71A runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
-static int test_phase71_source_run_phase_metadata(void) {
+static int test_phase71a_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -9949,10 +10053,10 @@ static int test_phase71_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71 metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 71 should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "Phase 71 should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71 should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71A metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 71A should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71A should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71A should report separate source-run output-contract metadata");
 
     return failures;
 }
@@ -10148,7 +10252,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":71", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"\"", "Helper-before-entry source should report current suffix metadata");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"A\"", "Helper-before-entry source should report current suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":1", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
@@ -11205,7 +11309,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"\"", ".CONST ? fixture should report the current runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -11898,7 +12002,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"\"", ".code read should report the current runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -12081,7 +12185,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"\"", "segment diagnostics should report the current runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -12679,7 +12783,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":71", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71 - Root Procedure Termination Semantics\"", "Phase 71 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71A should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -13373,7 +13477,7 @@ int main(void) {
     failures += test_phase66_unsigned_relational_jump_error_paths();
     failures += test_phase69_direct_call_source_run_behavior();
     failures += test_phase71_call_ret_source_run_behavior();
-    failures += test_phase71_source_run_phase_metadata();
+    failures += test_phase71a_source_run_phase_metadata();
     failures += test_phase68b_eip_pseudo_display_and_rejections();
     failures += test_phase67a_entry_procedure_runtime_boundary_source_run();
     failures += test_phase68a_source_run_observes_fixed_layout_esp_startup();

@@ -296,6 +296,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_settings")
     assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings")
+    assert_text_contains("scripts/build_wasm.sh", "_masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings")
     assert_text_contains("scripts/windows/build_wasm.cmd", "EMSDK_ROOT")
     assert_text_contains("scripts/windows/build_wasm.cmd", "emsdk_env.bat")
     assert_text_contains("scripts/windows/build_wasm.cmd", "-std=c99")
@@ -318,6 +319,7 @@ def run_structure_tests() -> None:
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_settings")
     assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_and_startup_settings")
+    assert_text_contains("scripts/windows/build_wasm.cmd", "_masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings")
     assert_text_contains("scripts/windows/clean_wasm.cmd", "masm32_sim_core.wasm")
     assert_text_contains("scripts/windows/serve_web.cmd", "serve_web.ps1")
     assert_text_contains("scripts/windows/serve_web.ps1", "http.server")
@@ -473,7 +475,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 71 - Root Procedure Termination Semantics")
+    assert_text_contains("README.md", "Phase 71A - Optional Root RET Strictness Mode")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -553,8 +555,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 71")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 71 - Root Procedure Termination Semantics")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
+    assert_text_contains("web/src/protocol.js", "Phase 71A - Optional Root RET Strictness Mode")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1326,10 +1328,12 @@ def assert_timeout_policy_documented() -> None:
     assert_all_text_contains(
         "docs/TESTING_GUIDE.md",
         [
-            "If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure.",
-            "aggregate timed out in assistant/container environment, focused groups passed",
-            "An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed",
-            "group skipped because dependency unavailable, such as emcc",
+            "A timeout is not a pass. A timeout is also not by itself proof of a simulator regression.",
+            "### Official subgroup command ownership",
+            "Required diagnostic subgroups from Phase 71A1",
+            "Conditional source-run/native subgroups from Phase 71B1",
+            "### Required timeout-aware command reporting",
+            "Do not omit timed-out commands from the command list",
             "Preferred future subgroup families",
             "Runtime/source-run MASM behavior phase:",
             "Browser/Wasm rebuild status:",
@@ -1423,15 +1427,16 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         assert_all_text_contains(
             path,
             [
-                "Phase 71 - Root Procedure Termination Semantics",
-                "phase-71-source-run-output-contract-v1",
+                "Phase 71A - Optional Root RET Strictness Mode",
+                "phase-71a-source-run-output-contract-v1",
                 "Current expected protocol token in this revision",
                 "source-run output-contract version identifier",
                 "Phase 70A",
                 "Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
                 "Artifact compatibility failures are not MASM source diagnostics",
-                "Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior",
-                "After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode",
+                "Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default",
+                "After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+                "Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A",
             ],
         )
         assert_all_text_not_contains(
@@ -1465,7 +1470,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
             "plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
-            "selected-entry root `ret`/`RET` success without stack reads when no helper return is pending",
+            "selected-entry root `ret`/`RET` success by default without stack reads when no helper return is pending",
             "`non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`",
             "docs/SUPPORTED_SYNTAX.md",
             "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
@@ -1503,12 +1508,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
-            "Selected-entry root `RET` success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71",
+            "Selected-entry root `RET` default success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71",
             "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
             "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
             "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
-            "In the selected entry procedure, a no-operand root `RET` with no helper return pending terminates successfully without reading `[ESP]`",
+            "default `rootRetMode = \"masm32-compatible\"` lets a no-operand root `RET` with no helper return pending terminate successfully without reading `[ESP]`",
+            "Optional `rootRetMode = \"strict-call-frame\"` instead rejects that selected-entry root `RET` with `root-ret-disallowed-by-mode` before any stack read",
             "A called non-entry procedure that reaches its `ENDP` boundary without `RET` stops with `non-root-procedure-fell-through`",
             "Source-level stack instructions, `RET imm16`, and procedure frames remain deferred",
             "direct `jmp label`",
@@ -1554,11 +1560,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Phase 69C introduced the separate `sourceRunOutputContract` metadata field",
             "Phase 70 implements helper plain near RET return-token execution and validation",
             "Phase 70A is protocol/artifact compatibility cleanup only",
-            "Phase 71 is the current runtime/source-run behavior phase",
-            "selected-entry root `RET` terminates successfully without an `[ESP]` read",
+            "Phase 71A is the current runtime/source-run behavior phase",
+            "selected-entry root `RET` terminates successfully by default without an `[ESP]` read",
             "called non-entry procedure fallthrough emits `non-root-procedure-fell-through`",
             "browser/protocol code warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata",
-            "phase-71-source-run-output-contract-v1",
+            "phase-71a-source-run-output-contract-v1",
             "source-run output-contract version identifier",
             "A later accepted phase that changes the public source-run JSON shape",
             "stale-wasm-output-contract",
@@ -1595,19 +1601,19 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 71:",
-            "Phase 71 - Root Procedure Termination Semantics",
-            "phase-71-source-run-output-contract-v1",
+            "Current status at Phase 71A:",
+            "Phase 71A - Optional Root RET Strictness Mode",
+            "phase-71a-source-run-output-contract-v1",
             "Current protocol/artifact compatibility policy:",
             "Current expected protocol token in this revision",
             "The token is a source-run output-contract version identifier",
             "Next canonical guide phase:",
             "Next runtime/source-run MASM behavior phase:",
-            "Phase 71 is a runtime/source-run behavior phase and is the current repository/archive status",
+            "Phase 71A is a runtime/source-run behavior phase and is the current repository/archive status",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-            "## Phase 71 - Root Procedure Termination Semantics",
+            "## Phase 71A - Optional Root RET Strictness Mode",
             "## Phase 70 - RET Execution and Return Address Validation",
             "Recent milestone detail in this file may be listed most-recent-first",
             "Concise milestone ledger",
@@ -1643,9 +1649,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "A later accepted phase that deliberately changes the public source-run JSON shape",
             "The full specification owns stable product boundaries",
             "The required dependency order is:",
-            "As of the source-of-truth revision after Phase 71",
-            "Phase 71 is complete as root procedure termination behavior",
-            "The next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode",
+            "As of the source-of-truth revision after Phase 71A",
+            "Phase 71A is complete as optional root RET strictness behavior",
+            "The next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "This specification must not duplicate the complete future phase list as phase-order authority",
             "Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`",
             "Do not renumber existing guide phases from this specification",
@@ -1683,6 +1689,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "## 74B. Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
             "## 75. Phase 71 - Root Procedure Termination Semantics",
             "## 75A. Phase 71A - Optional Root RET Strictness Mode",
+            "## 75A1. Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "## 75B. Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "## 75B1. Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "## 75C. Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "## 75D. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "Phase 70A is a UI/protocol/artifact compatibility corrective phase",
             "Missing suffix metadata is invalid even when the expected suffix is the empty string",
             "Malformed source-run output-contract metadata includes any present value that is not a string",
@@ -1701,29 +1714,29 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/TESTING_GUIDE.md",
         [
-            "Current repository/archive status for this guide revision is Phase 71 - Root Procedure Termination Semantics",
-            "Current runtime/source-run MASM behavior is Phase 71 - Root Procedure Termination Semantics",
-            "phase-71-source-run-output-contract-v1",
-            "Phase 71 requires runtime, source-run, rendered Simulator Messages, protocol, and static documentation regression tests",
+            "Current repository/archive status for this guide revision is Phase 71A - Optional Root RET Strictness Mode",
+            "Current runtime/source-run MASM behavior is Phase 71A - Optional Root RET Strictness Mode",
+            "phase-71a-source-run-output-contract-v1",
+            "Phase 71A requires runtime, source-run, rendered Simulator Messages, protocol, web/settings, and static documentation regression tests",
             "Phase 69C introduced source-run output-contract verification",
             "token expected by the current UI/source pair",
             "tests must prove:",
-            "selected-entry root RET does not read `[ESP]`",
-            "static documentation checks assert selected-entry root RET and called non-entry procedure fallthrough are implemented after Phase 71 is accepted",
+            "selected-entry root RET default success does not read `[ESP]`",
+            "static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted",
         ],
     )
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71: selected-entry root RET completes successfully",
-            "Repository status: Phase 71: Root Procedure Termination Semantics.",
-            "Runtime behavior: Phase 71 selected-entry root RET terminates successfully",
+            "Milestone 71A: selected-entry root RET still completes by default; optional strict-call-frame mode reports a teaching diagnostic",
+            "Repository status: Phase 71A: Optional Root RET Strictness Mode.",
+            "Runtime behavior: Phase 71A keeps MASM32-compatible selected-entry root RET",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
             "Writes pseudo-EIP return token at ESP - 4",
-            "Root RET completes without reading ESP",
+            "Root RET completes by default; strict mode reports a teaching diagnostic",
             "final-registers",
             "Program Console",
         ],

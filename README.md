@@ -6,15 +6,15 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 Repository/archive milestone:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode
 
 Source-run output-contract identifier naming:
 
-- Current expected protocol token in this revision: `phase-71-source-run-output-contract-v1`
+- Current expected protocol token in this revision: `phase-71a-source-run-output-contract-v1`
 
 Treat the token as a source-run output-contract version identifier, not as phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
 
@@ -24,19 +24,39 @@ Protocol/artifact compatibility policy:
 - Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
 - Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
 - Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
-- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior.
+- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default.
 
 Canonical phase navigation:
 
 - The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
-- After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode.
-- Phase 71A is optional and must not be treated as required runtime behavior unless the project owner explicitly accepts the strict-mode setting.
-- After Phase 71A is deferred or completed, Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup is the next non-renumbering corrective guide phase. Phase 71B is diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
-- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase that changes call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata.
+- After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition.
+- Phase 71A has been accepted and completed as optional strictness-mode work.
+- Phase 71A1 is test-runner infrastructure only. It must not be treated as a VM semantics phase.
+- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup follows Phase 71A1 as diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
+- Phase 71B1 is conditional source-run/native control-flow test infrastructure only if broad source-run/native verification becomes timeout-prone before Phase 71C.
+- Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A. It owns baseline code-stream procedure fallthrough and `code-fell-off-end`.
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the later call-depth/call-trace resource-protection phase.
+
+Current repository/archive status is Phase 71A: optional root RET strictness mode is implemented. The latest runtime/source-run MASM behavior is still Phase 71A.
+
+Planned documentation/verification work before the next behavior changes:
+
+- Phase 71A1 will split timeout-prone rendered diagnostic test groups into official subgroups. This is test infrastructure only.
+- Phase 71B will clean user-facing diagnostic milestone wording. This is diagnostic-copy/output-contract cleanup only.
+- Phase 71B1 is conditional. It will split source-run/native control-flow groups only if those broad groups time out before Phase 71C.
+
+Planned fallthrough behavior corrections after that:
+
+- Phase 71C will replace selected-entry `ENDP` auto-success with MASM/x86-like VM code-stream fallthrough and `code-fell-off-end`.
+- Phase 71D will add configurable `procedure-fell-through` diagnostics.
+- Phase 71E will add an explicit entry-procedure auto-stop compatibility setting.
+- Phase 71F will migrate remaining fallthrough-sensitive fixtures if Phase 71C through Phase 71E do not finish that migration.
+
+Until those phases are accepted, do not describe `code-fell-off-end`, configurable procedure-fallthrough policy, entry-procedure auto-stop compatibility, source-run/native subgrouping from Phase 71B1, or Phase 71C through Phase 71F runtime behavior as implemented.
 
 Phase 69 implements direct near `call ProcedureName` when the target resolves to a user `PROC` entry. A successful direct user-procedure `CALL` writes the pseudo-EIP return token for the instruction after the call to `ESP - 4`, updates `ESP`, and transfers to the procedure entry. That return-token write is an implicit VM stack write: it is checked through the central memory helpers and tracked internally, but the current public source-run output contract does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop without committing the call transfer.
 
-Phase 70 implements helper plain near `ret`/`RET` with no operands for active user-procedure calls. Helper `RET` reads a DWORD pseudo-EIP return token from `[ESP]` through the central checked-memory path, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4 on success, and transfers to the validated target. Invalid readable return tokens emit `invalid-return-address`; unreadable `[ESP]` uses the existing checked-memory diagnostics. The implicit return-token read is internal VM control-flow machinery and is not exposed as a public source-run `memoryChanges` row. Phase 71 adds selected-entry root `RET` termination: when the selected entry procedure executes `ret` with no helper return pending, execution completes successfully without reading `[ESP]`, mutating `ESP`, or emitting return-token diagnostics. Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`.
+Phase 70 implements helper plain near `ret`/`RET` with no operands for active user-procedure calls. Helper `RET` reads a DWORD pseudo-EIP return token from `[ESP]` through the central checked-memory path, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4 on success, and transfers to the validated target. Invalid readable return tokens emit `invalid-return-address`; unreadable `[ESP]` uses the existing checked-memory diagnostics. The implicit return-token read is internal VM control-flow machinery and is not exposed as a public source-run `memoryChanges` row. Phase 71 adds selected-entry root `RET` termination: when the selected entry procedure executes `ret` with no helper return pending, execution completes successfully without reading `[ESP]`, mutating `ESP`, or emitting return-token diagnostics. Phase 71A preserves that MASM32-compatible default and adds optional `rootRetMode = "strict-call-frame"`; in strict mode, selected-entry root `RET` stops with `root-ret-disallowed-by-mode` before any stack read or mutation. Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`.
 
 Irvine32 routine calls such as `call WriteString`, source-level `PUSH`/`POP`, procedure frames, `LOCAL`, `USES`, `PROTO`, `INVOKE`, `ADDR`, `leave`, and `ret imm16` remain deferred.
 
@@ -62,7 +82,8 @@ At a high level, the current subset includes:
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
 - direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes;
 - plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer;
-- selected-entry root `ret`/`RET` success without stack reads when no helper return is pending;
+- selected-entry root `ret`/`RET` success by default without stack reads when no helper return is pending;
+- optional `rootRetMode = "strict-call-frame"` teaching mode, which rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`;
 - `non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`;
 - successful completion at the selected entry procedure's `ENDP` boundary;
 - procedure-entry and call-target classification metadata for parser/tests;
@@ -122,6 +143,8 @@ Run aggregate verification:
 ```sh
 python3 scripts/run_tests.py --all
 ```
+
+Testing note: if `python3 scripts/run_tests.py --all --quiet` times out in a hosted assistant/container environment, do not treat the timeout as a pass. Run the documented broad groups or official subgroups, report the aggregate timeout explicitly, and list which commands passed, failed, timed out, were skipped, or were not run. Rendered diagnostic tests must not be weakened to smoke tests to avoid timeouts.
 
 Build WebAssembly artifacts when Emscripten `emcc` is available:
 

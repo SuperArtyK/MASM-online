@@ -16,7 +16,8 @@
  * Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
- * selected-entry root RET as successful program termination.
+ * selected-entry root RET as successful program termination by default, and
+ * Phase 71A can optionally reject that root RET in strict teaching mode.
  */
 
 #ifndef MASM32_SIM_VM_EXEC_H
@@ -84,6 +85,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
     /// A CALL-reached non-entry procedure fell through its ENDP boundary without RET.
     VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH,
+    /// Optional Phase 71A strict root-RET mode rejected a selected-entry root RET.
+    VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE,
     /// The VM detected an impossible root/helper termination state.
     VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
@@ -102,6 +105,15 @@ typedef struct VmExecProcedureBoundary {
     /// Whether the procedure contains at least one executable instruction.
     bool has_executable_instruction;
 } VmExecProcedureBoundary;
+
+
+/// Selects how selected-entry root RET is handled when no helper return is pending.
+typedef enum VmRootRetMode {
+    /// Preserve Phase 71 MASM32 Educational Mode behavior: root RET terminates successfully.
+    VM_ROOT_RET_MODE_MASM32_COMPATIBLE = 0,
+    /// Reject root RET as an opt-in teaching check that requires an active helper call frame.
+    VM_ROOT_RET_MODE_STRICT_CALL_FRAME
+} VmRootRetMode;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.
 typedef enum VmUndefinedFlagUsePolicy {
@@ -244,6 +256,8 @@ typedef struct Vm {
     size_t selected_entry_procedure_index;
     /// Internal count of committed helper return tokens currently pending.
     size_t active_helper_return_count;
+    /// Selected Phase 71A root RET handling mode.
+    VmRootRetMode root_ret_mode;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
@@ -322,6 +336,17 @@ VmExecStatus vm_initialize_stack_pointer(Vm *vm);
 /// @param boundary_count Number of boundary records supplied.
 /// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
 VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoundary *boundaries, size_t boundary_count);
+
+/// Configures optional Phase 71A selected-entry root RET strictness.
+///
+/// The default is @ref VM_ROOT_RET_MODE_MASM32_COMPATIBLE. Strict mode only
+/// rejects selected-entry root RET with no helper return pending; ordinary
+/// helper RET behavior and Phase 70 token validation are unchanged.
+///
+/// @param vm VM instance to mutate.
+/// @param mode Root RET handling mode.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or mode.
+VmExecStatus vm_set_root_ret_mode(Vm *vm, VmRootRetMode mode);
 
 /// Releases resources owned by a VM instance.
 ///

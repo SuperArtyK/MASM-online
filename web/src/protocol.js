@@ -19,13 +19,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 71;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "";
+export const IMPLEMENTED_PHASE_SUFFIX = "A";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 71 - Root Procedure Termination Semantics";
+export const IMPLEMENTED_PHASE_NAME = "Phase 71A - Optional Root RET Strictness Mode";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71-source-run-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71a-source-run-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

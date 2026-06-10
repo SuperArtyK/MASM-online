@@ -4,9 +4,9 @@
  *
  * Phase 53E exposes already-implemented backend validation and teaching
  * diagnostic policies through structured browser settings. Phases 57F and 57G
- * add test/protocol-facing startup settings, and Phase 59 adds the
- * test/protocol-facing instructionLimit setting, without adding browser UI
- * controls.
+ * add test/protocol-facing startup settings, Phase 59 adds the
+ * instructionLimit setting, and Phase 71A adds the optional browser-visible
+ * rootRetMode teaching setting.
  * This module keeps the accepted string values, defaults, and
  * Wasm argument mapping in one place so the main thread, worker protocol,
  * and Node tests use the same rules.
@@ -49,13 +49,19 @@ export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO = "zero";
 /** Phase 57G deterministic seeded uninitialized-storage visible-byte startup option. */
 export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM = "seeded-random";
 
+
+/** Default Phase 71A selected-entry root RET compatibility mode. */
+export const ROOT_RET_MODE_MASM32_COMPATIBLE = "masm32-compatible";
+/** Phase 71A strict selected-entry root RET teaching mode. */
+export const ROOT_RET_MODE_STRICT_CALL_FRAME = "strict-call-frame";
+
 /** Default Phase 59 source-run instruction-count limit. */
 export const DEFAULT_INSTRUCTION_LIMIT = 1000000;
 /** Maximum accepted Phase 59 source-run instruction-count limit. */
 export const MAX_INSTRUCTION_LIMIT = 0xFFFFFFFF;
 
-/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number}} DiagnosticSettings */
-/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number}} BackendDiagnosticSettings */
+/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number, rootRetMode: string}} DiagnosticSettings */
+/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number, rootRetMode: number}} BackendDiagnosticSettings */
 
 /** Default browser diagnostic and Phase 57F/57G startup settings. */
 export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
@@ -66,7 +72,8 @@ export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
   startupRegisterFlagMode: STARTUP_REGISTER_FLAG_ZERO,
   uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
   startupStateSeed: 0,
-  instructionLimit: DEFAULT_INSTRUCTION_LIMIT
+  instructionLimit: DEFAULT_INSTRUCTION_LIMIT,
+  rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
 });
 
 /** Accepted memory range setting values. */
@@ -105,6 +112,12 @@ export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE_VALUES = Object.freeze([
   UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM
 ]);
 
+/** Accepted Phase 71A root RET mode values. */
+export const ROOT_RET_MODE_VALUES = Object.freeze([
+  ROOT_RET_MODE_MASM32_COMPATIBLE,
+  ROOT_RET_MODE_STRICT_CALL_FRAME
+]);
+
 /** Phase 53E backend enum values for memory range validation. */
 const BACKEND_MEMORY_RANGE = Object.freeze({
   [MEMORY_RANGE_REGION_ONLY]: 0,
@@ -139,6 +152,12 @@ const BACKEND_STARTUP_REGISTER_FLAG_MODE = Object.freeze({
 const BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE = Object.freeze({
   [UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO]: 0,
   [UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM]: 1
+});
+
+/** Phase 71A backend enum values for root RET strictness. */
+const BACKEND_ROOT_RET_MODE = Object.freeze({
+  [ROOT_RET_MODE_MASM32_COMPATIBLE]: 0,
+  [ROOT_RET_MODE_STRICT_CALL_FRAME]: 1
 });
 
 /**
@@ -280,13 +299,15 @@ function normalizeInstructionLimit(source) {
  * @param {{value?: string}} uninitializedReadsControl Uninitialized-read select control.
  * @param {{value?: string}} undefinedFlagUseControl Undefined-flag-use select control.
  * @param {{value?: string}} compatibilityNoticesControl Compatibility-notices select control.
+ * @param {{value?: string}=} rootRetModeControl Optional root RET mode select control.
  * @returns {DiagnosticSettings} Settings payload for RUN_SOURCE.
  */
 export function readDiagnosticSettingsFromControls(
   memoryRangeControl,
   uninitializedReadsControl,
   undefinedFlagUseControl,
-  compatibilityNoticesControl
+  compatibilityNoticesControl,
+  rootRetModeControl
 ) {
   const defaults = defaultDiagnosticSettings();
   return {
@@ -297,7 +318,8 @@ export function readDiagnosticSettingsFromControls(
     startupRegisterFlagMode: defaults.startupRegisterFlagMode,
     uninitializedStorageVisibleByteMode: defaults.uninitializedStorageVisibleByteMode,
     startupStateSeed: defaults.startupStateSeed,
-    instructionLimit: defaults.instructionLimit
+    instructionLimit: defaults.instructionLimit,
+    rootRetMode: rootRetModeControl && rootRetModeControl.value ? rootRetModeControl.value : defaults.rootRetMode
   };
 }
 
@@ -366,6 +388,11 @@ export function normalizeDiagnosticSettings(settings) {
     return instructionLimit;
   }
 
+  const rootRetMode = normalizeField(source, "rootRetMode", DEFAULT_DIAGNOSTIC_SETTINGS.rootRetMode, ROOT_RET_MODE_VALUES);
+  if (!rootRetMode.ok) {
+    return rootRetMode;
+  }
+
   const normalizedSettings = {
     memoryRange: memoryRange.value,
     uninitializedReads: uninitializedReads.value,
@@ -374,7 +401,8 @@ export function normalizeDiagnosticSettings(settings) {
     startupRegisterFlagMode: startupRegisterFlagMode.value,
     uninitializedStorageVisibleByteMode: uninitializedStorageVisibleByteMode.value,
     startupStateSeed: startupStateSeed.value,
-    instructionLimit: instructionLimit.value
+    instructionLimit: instructionLimit.value,
+    rootRetMode: rootRetMode.value
   };
 
   return {
@@ -385,7 +413,7 @@ export function normalizeDiagnosticSettings(settings) {
 }
 
 /**
- * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, and Phase 59 instruction-limit Wasm arguments.
+ * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, Phase 59 instruction-limit, and Phase 71A root RET Wasm arguments.
  *
  * @param {DiagnosticSettings} settings Normalized diagnostic settings.
  * @returns {BackendDiagnosticSettings} Integer enum values passed to the C/Wasm export.
@@ -404,6 +432,7 @@ export function diagnosticSettingsToBackendArguments(settings) {
     startupRegisterFlagMode: BACKEND_STARTUP_REGISTER_FLAG_MODE[normalized.startupRegisterFlagMode],
     uninitializedStorageVisibleByteMode: BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE[normalized.uninitializedStorageVisibleByteMode],
     startupStateSeed: normalized.startupStateSeed >>> 0,
-    instructionLimit: normalized.instructionLimit >>> 0
+    instructionLimit: normalized.instructionLimit >>> 0,
+    rootRetMode: BACKEND_ROOT_RET_MODE[normalized.rootRetMode]
   };
 }

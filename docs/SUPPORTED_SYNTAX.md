@@ -2,15 +2,15 @@
 
 Repository/archive milestone:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71 - Root Procedure Termination Semantics
+- Phase 71A - Optional Root RET Strictness Mode
 
 Source-run output-contract identifier naming:
 
-- Current expected protocol token in this revision: `phase-71-source-run-output-contract-v1`
+- Current expected protocol token in this revision: `phase-71a-source-run-output-contract-v1`
 
 Treat the token as a source-run output-contract version identifier, not as phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
 
@@ -20,15 +20,18 @@ Protocol/artifact compatibility policy:
 - Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
 - Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
 - Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
-- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior.
+- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default.
 
 Canonical phase navigation:
 
 - The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
-- After Phase 71, the next canonical guide phase is Phase 71A - Optional Root RET Strictness Mode.
-- Phase 71A is optional and must not be treated as required runtime behavior unless the project owner explicitly accepts the strict-mode setting.
-- After Phase 71A is deferred or completed, Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup is the next non-renumbering corrective guide phase. Phase 71B is diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
-- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the next major runtime/source-run MASM behavior phase that changes call-depth accounting, recursion resource diagnostics, call-depth settings, or call-trace metadata.
+- After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition.
+- Phase 71A has been accepted and completed as optional strictness-mode work.
+- Phase 71A1 is test-runner infrastructure only. It must not be treated as a VM semantics phase.
+- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup follows Phase 71A1 as diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
+- Phase 71B1 is conditional source-run/native control-flow test infrastructure only if broad source-run/native verification becomes timeout-prone before Phase 71C.
+- Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A. It owns baseline code-stream procedure fallthrough and `code-fell-off-end`.
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the later call-depth/call-trace resource-protection phase.
 
 This document describes implemented behavior only. Future roadmap items in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` are not supported syntax until their phases are completed and this file is updated.
 
@@ -36,9 +39,42 @@ This document describes the currently accepted MASM32 Educational Mode syntax, r
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
-Branch forms target executable code labels or procedure-entry labels according to each instruction family. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry. That successful CALL return-token stack write is an implicit simulator-owned stack write: it is checked and tracked internally by the VM, but the current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row. A successful helper plain near `RET` reads a DWORD pseudo-EIP return token from `[ESP]`, validates that the token maps to an executable lowered VM instruction, increments `ESP` by 4, and transfers to the validated target. A successful selected-entry root `RET` completes without reading `[ESP]` when no helper return is pending. The implicit helper RET return-token read is internal simulator-owned control-flow machinery and is not exposed as a user-visible `memoryChanges` row.
+Current procedure and termination behavior through Phase 71A:
 
-Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Selected-entry root `RET` success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
+- `END entryName` selects the source-run entry procedure.
+- Execution starts inside the selected entry procedure.
+- Direct near `CALL` to accepted user procedures is implemented for the supported direct form. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry through the checked VM control-flow path.
+- Plain near `RET` is implemented for helper returns through simulator pseudo-EIP return tokens.
+- Selected-entry root `RET` succeeds by default in MASM32-compatible root RET mode.
+- Optional strict root RET mode rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`.
+- Virtual Irvine32 `exit` is an explicit successful terminator where recognized.
+- Ordinary selected-entry `ENDP` fallthrough currently terminates successfully as an educational boundary simplification.
+- Called non-entry procedure fallthrough is diagnosed by the current CALL/RET termination rules. Selected-entry root `RET` default success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71.
+
+The selected-entry `ENDP` success rule is current behavior, but it is not MASM/x86-like code-stream behavior. `PROC`, `ENDP`, and `END` are source/module structure, not runtime stop instructions.
+
+Planned corrective phases will replace the default with code-stream fallthrough, add `code-fell-off-end`, add configurable `procedure-fell-through`, and add an explicit entry-procedure auto-stop compatibility setting. Do not describe any of those planned diagnostics or settings as implemented until their owning phases are accepted.
+
+Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
+
+Planned fallthrough diagnostics and settings, not current behavior until their owning phases are accepted:
+
+| Item | Planned phase | Planned default/status | Meaning |
+|---|---:|---|---|
+| `code-fell-off-end` | 71C | runtime error | Execution reached the end of the executable code stream without an explicit program terminator. |
+| `procedure-fell-through` | 71D | warning by default; configurable `off`/`warn`/`error` | Ordinary sequential execution crossed from one procedure range into another without explicit supported control transfer or termination. |
+| `entryProcedureEndMode` | 71E | default `code-stream`; opt-in `stop-at-entry-end` | Compatibility setting for selected-entry `ENDP` auto-stop behavior. |
+| `the-front-fell-off` | 71C, optional | notice, optional easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure's source spelling is exactly `front`, if the owning phase implements the easter egg. |
+
+The planned `code-fell-off-end` text is:
+
+```text
+Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?
+```
+
+The planned `code-fell-off-end` diagnostic is simulator-owned. It must not be described as a native MASM, x86 CPU, PE loader, Windows process, C runtime, or Irvine32 library diagnostic.
+
+After the owning phases are accepted, move these entries from planned/future wording into the implemented behavior table and remove any statement that says they are not current behavior.
 
 ### Future stack/procedure syntax not implemented yet
 
@@ -475,7 +511,7 @@ The executable successor after `CALL` means the next lowered VM instruction that
 
 A `CALL` whose successor is not an executable lowered VM instruction has no ordinary executable return target before the owning return-boundary phase defines one. The implementation must not invent a synthetic terminal pseudo-EIP, `ENDP` return target, source-boundary token, root-return sentinel, native-address-like value, or instruction-after-the-procedure placeholder for that edge.
 
-`ret`/`RET` with no operands is implemented as a plain near return. In a called helper procedure, it reads the DWORD return token at `[ESP]` through the central checked-memory path, validates that the token maps to a loaded executable pseudo-EIP, increments `ESP` by 4, and transfers to the target only after the read and token validation both succeed. If `[ESP]` is unreadable, the existing checked-memory diagnostic is emitted and no token validation is attempted. If the read succeeds but the token is not a valid executable pseudo-EIP, execution stops with `invalid-return-address` before changing `ESP` or transferring control. In the selected entry procedure, a no-operand root `RET` with no helper return pending terminates successfully without reading `[ESP]`, validating a pseudo-EIP token, changing `ESP`, or adding public `memoryChanges`. A called non-entry procedure that reaches its `ENDP` boundary without `RET` stops with `non-root-procedure-fell-through`. Source-level stack-frame support, argument handling, calling-convention behavior, and Irvine32 routine dispatch remain future-owned behavior.
+`ret`/`RET` with no operands is implemented as a plain near return. In a called helper procedure, it reads the DWORD return token at `[ESP]` through the central checked-memory path, validates that the token maps to a loaded executable pseudo-EIP, increments `ESP` by 4, and transfers to the target only after the read and token validation both succeed. If `[ESP]` is unreadable, the existing checked-memory diagnostic is emitted and no token validation is attempted. If the read succeeds but the token is not a valid executable pseudo-EIP, execution stops with `invalid-return-address` before changing `ESP` or transferring control. In the selected entry procedure, default `rootRetMode = "masm32-compatible"` lets a no-operand root `RET` with no helper return pending terminate successfully without reading `[ESP]`, validating a pseudo-EIP token, changing `ESP`, or adding public `memoryChanges`. Optional `rootRetMode = "strict-call-frame"` instead rejects that selected-entry root `RET` with `root-ret-disallowed-by-mode` before any stack read, stack mutation, pseudo-EIP validation, public `memoryChanges` row, or successful terminal status. A called non-entry procedure that reaches its `ENDP` boundary without `RET` stops with `non-root-procedure-fell-through`. Source-level stack-frame support, argument handling, calling-convention behavior, and Irvine32 routine dispatch remain future-owned behavior.
 
 Register, memory, indirect, immediate, `OFFSET`, ordinary-label, data-symbol, equate, unknown, malformed, external/API, and Irvine32 routine CALL targets are rejected or classified with structured diagnostics rather than dispatched. External/API calls and WinAPI behavior are non-goals, not deferred direct-CALL target forms.
 

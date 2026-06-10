@@ -3,9 +3,9 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Phase 71: Root Procedure Termination Semantics.
-  Runtime behavior: Phase 71 selected-entry root RET terminates successfully while
-  helper RET keeps checked pseudo-EIP token validation.
+  Repository status: Phase 71A: Optional Root RET Strictness Mode.
+  Runtime behavior: Phase 71A keeps MASM32-compatible selected-entry root RET
+  success by default and adds an opt-in strict root RET teaching diagnostic.
   Protocol behavior: Phase 70A and later require runtime metadata and output-contract
   metadata to exactly match UI expectations before artifact warnings are suppressed.
   The UI sends source to the worker/Wasm path and displays final registers,
@@ -22,7 +22,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 71: selected-entry root RET completes successfully; called helper fallthrough reports a structured diagnostic.</p>
+        <p class="muted">Milestone 71A: selected-entry root RET still completes by default; optional strict-call-frame mode reports a teaching diagnostic.</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -32,7 +32,7 @@ value DWORD 7
 main PROC
     call Helper       ; Writes pseudo-EIP return token at ESP - 4
     mov eax, ebx      ; Runs after Helper returns with RET
-    ret               ; Root RET completes without reading ESP
+    ret               ; Root RET completes by default; strict mode reports a teaching diagnostic
 main ENDP
 
 Helper PROC
@@ -110,6 +110,18 @@ END main</textarea>
                 <ul id="compatibility-notices-setting-help" class="setting-help muted">
                   <li>Notices explain accepted MASM compatibility directives that are no-ops, metadata-only, or limited.</li>
                   <li>Off hides these notices without changing execution behavior.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="root-ret-mode-setting">Root RET mode</label>
+                <select id="root-ret-mode-setting" aria-describedby="root-ret-mode-setting-help">
+                  <option value="masm32-compatible" selected>MASM32-compatible root RET (default)</option>
+                  <option value="strict-call-frame">Strict call-frame teaching check</option>
+                </select>
+                <ul id="root-ret-mode-setting-help" class="setting-help muted">
+                  <li><strong>MASM32-compatible root RET:</strong> selected-entry root <code>RET</code> completes successfully without reading <code>[ESP]</code>, preserving the simulator default.</li>
+                  <li><strong>Strict call-frame teaching check:</strong> selected-entry root <code>RET</code> stops with <code>root-ret-disallowed-by-mode</code> because no caller supplied a return address.</li>
+                  <li>Helper <code>CALL</code>/<code>RET</code> behavior and checked pseudo-EIP return-token validation are unchanged in both modes.</li>
                 </ul>
               </div>
             </div>

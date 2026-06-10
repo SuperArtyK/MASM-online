@@ -4,7 +4,7 @@ This document describes practical ways to build, run, and manually test the MASM
 
 The examples assume commands are run from the repository root.
 
-Current repository/archive status for this guide revision is Phase 71 - Root Procedure Termination Semantics. Current runtime/source-run MASM behavior is Phase 71 - Root Procedure Termination Semantics. The source-run output-contract token expected by this revision is `phase-71-source-run-output-contract-v1`; that token is contract-version naming for the current source-run output contract. Phase 71 requires runtime, source-run, rendered Simulator Messages, protocol, and static documentation regression tests for selected-entry root RET success, helper RET preservation, and called non-entry procedure fallthrough diagnostics.
+Current repository/archive status for this guide revision is Phase 71A - Optional Root RET Strictness Mode. Current runtime/source-run MASM behavior is Phase 71A - Optional Root RET Strictness Mode. The source-run output-contract token expected by this revision is `phase-71a-source-run-output-contract-v1`; that token is contract-version naming for the current source-run output contract and is the token expected by the current UI/source pair. Phase 69C introduced source-run output-contract verification. Phase 71A requires runtime, source-run, rendered Simulator Messages, protocol, web/settings, and static documentation regression tests for the default MASM32-compatible root RET behavior, opt-in strict root RET rejection, helper RET preservation, and called non-entry procedure fallthrough diagnostics.
 
 ## 1. Prerequisites
 
@@ -250,110 +250,89 @@ Rules:
 - Do not change runtime/source-run behavior metadata merely to align it with a documentation, output-ordering, artifact-compatibility, or test-infrastructure corrective phase.
 
 
-Source-run subgroups such as `--source-run=memory-layout` are not currently implemented because the preserved source-run binary runs independently as a focused group. If `--source-run` later becomes too large for hosted assistant/container verification, the future test-runner decomposition maintenance owner should split it by behavior family, preferably memory/layout, instruction smoke, diagnostic policies, settings, and regressions.
-
-Diagnostic subgroups such as `--diagnostics=memory` are not currently implemented because the diagnostic group runs independently after building only the native diagnostic JSON producer. If `--diagnostics` later risks timeout, the future test-runner decomposition maintenance owner should split rendered diagnostics by family, preferably memory, directives, compatibility, arithmetic, shift/rotate, and mul/div.
-
-Phase 69C keeps the existing broad focused groups as the supported timeout-safe decomposition and does not add subgroup flags. Documentation must not list a subgroup as available until `scripts/run_tests.py --help` actually exposes that flag or option. Any future subgroup split must preserve the existing broad group flags.
-
-Phase 69C introduced source-run output-contract verification. Native source-run JSON must include `sourceRunOutputContract` with the token expected by the current UI/source pair. In this source tree, that token is `phase-71-source-run-output-contract-v1`. A phase-looking prefix in a source-run output-contract token is contract-version naming, not a separate repository/runtime status field and not a rule that future output-contract-changing phases must preserve the same token. Browser/protocol tests must verify matching, missing, and stale output-contract metadata separately from runtime/source-run phase metadata. Rendered Simulator Messages tests must cover the `stale-wasm-output-contract` warning text. If a checked-in Wasm artifact is scanned for this string, report that result as checked-in artifact-content evidence, not as Emscripten rebuild evidence.
-
-Phase 70A tightens browser/Wasm runtime metadata checks. Protocol tests for that corrective phase must cover exact matching runtime phase and matching output contract, older runtime phase mismatch, newer runtime phase mismatch, missing runtime metadata, stale output-contract metadata, missing output-contract metadata, and combined runtime/output-contract mismatch diagnostics in deterministic order. Phase 70A tests must also prove that the correction does not change accepted MASM syntax, VM execution semantics, Program Console output, or public `memoryChanges` rows.
-
-Preferred future subgroup families are:
-
-```text
-native-parser
-native-exec
-native-memory-layout
-native-diagnostics-policy
-source-run-core
-source-run-diagnostics
-source-run-settings
-diagnostics-json
-diagnostics-rendered-memory
-diagnostics-rendered-directives
-diagnostics-rendered-compatibility
-diagnostics-rendered-runtime
-```
-
-Failure output must identify the failing group, failing command, subprocess exit code, stdout/stderr tail, and any available fixture context. Source-run fixture failures include the fixture name through the source-run test binary's assertion context.
-
-### Test-output current-coverage wording
-
-Test binaries and runner static checks may include short human-readable coverage summaries, but those summaries must not become stale milestone ledgers.
-
-When a test file begins covering a later implemented milestone, any success banner in that same test file must either:
-
-- use neutral wording that does not name a specific old phase; or
-- be updated to include the newest implemented behavior covered by that file.
-
-For example, a source-run test binary that contains stack-startup fixtures must not print a success line implying that source-run coverage stops at an older arithmetic or branch phase. The matching `scripts/run_tests.py --static` assertion must be updated at the same time as the success banner.
-
-Milestone history belongs in `docs/MILESTONE_HISTORY.md` and `docs/history/reports/`. Test success banners should communicate the current coverage surface of the binary, not preserve every historical milestone name.
-
 ### Timeout-safe verification policy
 
-If `python3 scripts/run_tests.py --all` times out or output is truncated in a hosted assistant/container environment, this is not automatically a project test failure. A timeout in a hosted environment is not proof of a simulator regression, but it is also not a passing test result.
+A timeout is not a pass. A timeout is also not by itself proof of a simulator regression. When a command times out, report it explicitly as `TIMED OUT` and continue with the smallest official runner groups that still preserve coverage for the changed surface.
 
-When a broad group times out, milestone reports must state exactly:
+The broad focused groups remain supported, but they are not guaranteed to complete in every hosted assistant/container environment. If `scripts/run_tests.py --all --quiet` times out, run the documented broad focused groups. If a broad focused group times out, use the official subgroup commands for that group.
 
-- which command timed out;
-- which smaller commands passed;
-- which smaller commands failed;
-- which smaller commands were not run;
-- whether aggregate success was claimed.
+Do not replace exact JSON assertions, exact rendered Simulator Messages assertions, parser assertions, or VM assertions with smoke-only checks to avoid timeout. Test decomposition must preserve coverage.
 
-The assistant must rerun focused groups individually where practical and report:
+Manual compile/run fallback is allowed only as a documented fallback when official commands cannot complete in the active environment. A milestone report that uses manual fallback must state:
 
-- which focused groups were run;
-- which focused groups passed;
-- which focused groups failed;
-- which focused groups were skipped and why;
-- whether any focused group required subgroup or fixture-level reruns;
-- whether `--all` completed in that environment;
-- whether the final local/user run produced `All implemented milestone tests passed.`
+- which official command timed out or could not run;
+- which manual command was used instead;
+- which fixture or fixture family the manual command covered;
+- which coverage remains unverified, if any.
 
-Milestone reports must distinguish:
+### Official subgroup command ownership
+
+The following subgroup names are reserved for timeout-safe verification. Do not document a subgroup as implemented until `scripts/run_tests.py --help` exposes it.
+
+Required diagnostic subgroups from Phase 71A1:
+
+| Command | Ownership |
+|---|---|
+| `--diagnostics-json` | Native diagnostic JSON producer build and structured diagnostic payload checks. |
+| `--diagnostics-rendered-call-ret` | Rendered Simulator Messages for CALL, RET, root RET, helper RET, procedure fallthrough, and code-end diagnostics. |
+| `--diagnostics-rendered-memory` | Rendered Simulator Messages for memory bounds, object bounds, uninitialized reads, `.CONST`, `.DATA?`, and checked memory helper diagnostics. |
+| `--diagnostics-rendered-directives` | Rendered Simulator Messages for directives, sections, `PROC`, `ENDP`, `END`, include/compatibility directives, and parser-level directive diagnostics. |
+| `--diagnostics-rendered-compatibility` | Rendered Simulator Messages for compatibility settings, unsupported-but-recognized MASM forms, and non-goal boundary diagnostics. |
+| `--diagnostics-rendered-arithmetic` | Rendered Simulator Messages for ADD/SUB/CMP/ADC/SBB/NEG and related arithmetic diagnostics. |
+| `--diagnostics-rendered-shift-rotate` | Rendered Simulator Messages for SHL/SHR/SAL/SAR/ROL/ROR/RCL/RCR diagnostics. |
+| `--diagnostics-rendered-mul-div` | Rendered Simulator Messages for MUL/IMUL/DIV/IDIV diagnostics. |
+| `--diagnostics-rendered-runtime` | Rendered Simulator Messages for runtime terminal diagnostics not better owned by a more specific family. |
+
+Conditional source-run/native subgroups from Phase 71B1, required only if that phase is triggered:
+
+| Command | Ownership |
+|---|---|
+| `--source-run-core` | Small successful programs, source-run setup, final-state basics, and the core source-run path. |
+| `--source-run-diagnostics` | Source-run structured diagnostics and terminal failure serialization. |
+| `--source-run-settings` | Source-run settings serialization, invalid settings, and settings-driven behavior. |
+| `--source-run-memory-layout` | Source-run memory-layout modes and memory metadata output. |
+| `--source-run-control-flow` | Source-run CALL/RET, fallthrough, terminator, branch/control-flow, and procedure execution behavior. |
+| `--native-parser` | Native parser and semantic-validation tests. |
+| `--native-exec` | Native VM executor behavior. |
+| `--native-memory-layout` | Native layout, object-map, and checked-memory integration. |
+| `--native-diagnostics-policy` | Native configurable diagnostic policy behavior. |
+| `--native-control-flow` | Native CALL/RET, procedure-boundary, code-stream, and terminator behavior. |
+
+A broad group may call subgroups internally, but it must not silently skip a subgroup. If a subgroup cannot run because of an unavailable dependency, the report must mark that subgroup as `SKIPPED - dependency unavailable` and name the dependency.
+
+Failure output for subgroup and broad-group execution must identify the failing group, the failing command, the subprocess exit code, and a bounded stdout/stderr tail. Source-run fixture failures include the fixture name whenever the failing path can identify it.
+
+Preferred future subgroup families are reserved in the official subgroup command ownership table above. Do not add a subgroup to runner help, implementation-guide acceptance criteria, or milestone-report requirements without documenting its fixture-family ownership here.
+
+### Required timeout-aware command reporting
+
+Milestone reports must separate command results into these categories:
+
+- aggregate command, if run;
+- broad focused group commands, if run;
+- official subgroup commands, if run;
+- manually compiled fallback commands, if any;
+- skipped dependency checks, such as unavailable `emcc`;
+- commands that timed out;
+- commands not run.
+
+Use explicit status words:
 
 ```text
-aggregate completed and passed
-aggregate timed out in assistant/container environment, focused groups passed
-aggregate failed with a real failing group
-focused group failed
-focused group timed out, subgroups or fixtures rerun
-group skipped because dependency unavailable, such as emcc
+PASS
+FAIL
+TIMED OUT
+SKIPPED - dependency unavailable
+NOT RUN
 ```
 
-An assistant must not claim that the full aggregate suite passed unless the aggregate command actually completed and returned the final success line in that environment.
+Do not replace `TIMED OUT` with `FAIL` unless the command returned an actual failure result. Do not replace `TIMED OUT` with `SKIPPED` unless the command was intentionally not run because of a documented unavailable dependency. Do not omit timed-out commands from the command list.
 
-An assistant may report focused verification only by naming the focused groups, subgroups, or fixtures that actually passed.
+### Rendered diagnostic coverage must not be weakened for timeout reasons
 
-If `emcc` is unavailable, report browser/Wasm rebuild smoke as skipped because `emcc` is unavailable. This is separate from native, source-run, Node, protocol, static, rendered diagnostic test failure, and any checked-in artifact-content scan that may still be possible.
+Rendered Simulator Messages tests are part of the diagnostic contract. If a rendered diagnostic suite becomes too large for one hosted command, split it by fixture family. Do not convert exact rendered-output checks into presence-only checks, smoke tests, or manual visual inspection unless the milestone report explicitly marks the affected coverage as unverified.
 
-Recommended milestone-report wording for hosted timeout cases:
-
-```text
-Aggregate command:
-- python3 scripts/run_tests.py --all --quiet
-- Result: timed out in this hosted environment
-
-Focused groups passed:
-- python3 scripts/run_tests.py --static --quiet
-- python3 scripts/run_tests.py --structure --quiet
-- python3 scripts/run_tests.py --web --quiet
-- python3 scripts/run_tests.py --protocol --quiet
-- python3 scripts/run_tests.py --source-run --quiet
-
-Focused groups timed out:
-- python3 scripts/run_tests.py --native --quiet
-- python3 scripts/run_tests.py --diagnostics --quiet
-
-Focused groups not run:
-- <none, or list explicitly>
-
-Aggregate success was not claimed.
-```
+For phases that change diagnostic text, severity, code, source location, span length, terminal status, or message ordering, the report must name the rendered diagnostic subgroup or exact rendered test command that verified the change.
 
 ### Source-run fixture inventory
 
@@ -1179,14 +1158,18 @@ For stack/procedure diagnostics, tests must prove:
 - current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
 
 
-For Phase 71 root RET and non-entry fallthrough specifically, tests must prove:
+For Phase 71A root RET mode and non-entry fallthrough specifically, tests must prove:
 
-- a source-run fixture where the selected entry procedure contains only `ret` completes successfully;
-- a source-run fixture where the selected entry procedure calls a helper, the helper returns, and the selected entry procedure then uses root `ret` completes successfully;
+- a source-run fixture where the selected entry procedure contains only `ret` completes successfully in default `rootRetMode = "masm32-compatible"`;
+- a source-run fixture where explicit `rootRetMode = "masm32-compatible"` preserves default root `RET` success;
+- a source-run fixture where `rootRetMode = "strict-call-frame"` rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`;
+- strict root `RET` rejection explains that selected-entry `RET` has no caller-supplied return address, suggests MASM32-compatible root RET mode or the supported Irvine32 `exit` routine, and does not repeat the literal strict-mode setting value;
+- strict root `RET` rejection does not read `[ESP]`, mutate `ESP`, validate a pseudo-EIP token, create public `memoryChanges`, or emit success;
+- a source-run fixture where the selected entry procedure calls a helper, the helper returns, and the selected entry procedure then uses root `ret` completes successfully in compatible mode;
 - selected-entry procedure fallthrough remains successful;
 - a called non-entry procedure that falls through without RET reports `non-root-procedure-fell-through`;
-- selected-entry root RET does not read `[ESP]`;
-- selected-entry root RET does not mutate `ESP`;
+- selected-entry root RET default success does not read `[ESP]`;
+- selected-entry root RET default success does not mutate `ESP`;
 - selected-entry root RET does not emit `invalid-address`;
 - selected-entry root RET does not emit `invalid-return-address`;
 - selected-entry root RET emits exactly one successful terminal status;
@@ -1194,7 +1177,7 @@ For Phase 71 root RET and non-entry fallthrough specifically, tests must prove:
 - ordinary helper RET still emits `invalid-return-address` for readable invalid tokens;
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `non-root-procedure-fell-through`;
-- static documentation checks assert selected-entry root RET and called non-entry procedure fallthrough are implemented after Phase 71 is accepted;
+- static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
 - static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
 
 

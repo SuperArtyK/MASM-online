@@ -21849,7 +21849,7 @@ This phase may add:
 rootRetMode = "strict-call-frame"
 ```
 
-In strict-call-frame mode, selected-entry root RET is rejected as a teaching option because no active helper return token is pending.
+In strict-call-frame mode, selected-entry root RET is rejected as a teaching option because the selected entry procedure has no caller-supplied return address.
 
 Strict-call-frame mode is not the default and must not be described as more MASM32-compatible than the default mode.
 
@@ -21895,8 +21895,9 @@ runtime-error
 Required behavior:
 
 - source location points at the RET instruction;
-- message names `rootRetMode = "strict-call-frame"`;
-- message states that default MASM32 Educational Mode accepts root RET;
+- message explains the source-level cause: selected-entry `RET` cannot return because no caller supplied a return address;
+- message does not repeat the literal strict-mode setting value;
+- message directs the user to MASM32-compatible root RET mode or the supported Irvine32 `exit` routine for explicit termination;
 - no `[ESP]` read occurs;
 - no `ESP` mutation occurs;
 - no pseudo-EIP token is validated;
@@ -21949,7 +21950,9 @@ Source-run tests:
 Rendered Simulator Messages tests:
 
 - strict-mode root RET rejection renders `root-ret-disallowed-by-mode`;
-- rendered message names the strict setting;
+- rendered message explains that selected-entry `RET` has no caller-supplied return address;
+- rendered message does not repeat the literal strict-mode setting value;
+- rendered message directs the user to MASM32-compatible root RET mode or supported Irvine32 `exit` termination;
 - rendered message does not imply that real MASM32 rejects root RET.
 
 Static documentation tests:
@@ -21971,6 +21974,134 @@ Phase 71A is accepted only when:
 
 ---
 
+## 75A1. Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
+
+### Goal
+
+Split timeout-prone diagnostic test execution into official fixture-family subgroup commands before any phase performs broad rendered Simulator Messages edits.
+
+This phase is test infrastructure only. It must not change accepted MASM syntax, parser behavior, VM execution behavior, memory behavior, Irvine32 behavior, Wasm API behavior, browser UI behavior, source-run JSON schema, diagnostic codes, diagnostic severity, diagnostic source spans, diagnostic text, rendered Simulator Messages output, Program Console output, runtime/source-run behavior metadata, or source-run output-contract metadata.
+
+### Rationale
+
+The aggregate `scripts/run_tests.py --all --quiet` command and the broad `scripts/run_tests.py --diagnostics --quiet` group can time out in hosted assistant/container environments. A timeout is not a pass. It also is not by itself proof of a simulator regression. The project needs official smaller diagnostic subgroup commands so future assistants can verify exact rendered diagnostic changes without manually bypassing the runner or weakening tests.
+
+This phase exists because Phase 71B will edit user-facing diagnostic wording and rendered Simulator Messages expectations. Phase 71B must not proceed with only ad hoc manual diagnostic checks unless the project owner explicitly accepts that verification risk and the milestone report documents the risk.
+
+### Scope
+
+Add official diagnostic subgroup commands while preserving all existing broad group flags.
+
+Existing commands must remain valid:
+
+```text
+--all
+--quick
+--structure
+--native
+--source-run
+--web
+--diagnostics
+--protocol
+--static
+```
+
+Add these required diagnostic subgroup commands:
+
+```text
+--diagnostics-json
+--diagnostics-rendered-call-ret
+--diagnostics-rendered-memory
+--diagnostics-rendered-directives
+--diagnostics-rendered-compatibility
+--diagnostics-rendered-arithmetic
+--diagnostics-rendered-shift-rotate
+--diagnostics-rendered-mul-div
+--diagnostics-rendered-runtime
+```
+
+This phase may also add source-run or native subgroups if doing so is trivial and does not weaken coverage, but those additional subgroups are not required for Phase 71A1 acceptance. If source-run or native broad groups later become timeout-prone before Phase 71C, use Phase 71B1 rather than expanding Phase 71A1 after the fact.
+
+### Required behavior
+
+- Each required diagnostic subgroup is listed in `scripts/run_tests.py --help`.
+- Each required diagnostic subgroup is documented in `docs/TESTING_GUIDE.md`.
+- `--diagnostics` still covers the complete diagnostic suite by invoking all diagnostic subgroups or an equivalent complete path.
+- `--all` still covers the diagnostic suite through `--diagnostics` or equivalent subgroup invocation.
+- Subgroups reuse the same exact assertions as the broad diagnostic suite.
+- No rendered Simulator Messages assertion is removed or weakened.
+- No exact diagnostic JSON assertion is removed or weakened.
+- Subgroups are split by stable fixture family, not by temporary line ranges.
+- Failure output identifies the subgroup and command that failed.
+- Where practical, failure output identifies the fixture family or fixture name.
+- Timeout, skipped dependency, not-run, pass, and fail statuses remain distinguishable in runner output and milestone reports.
+
+### Required diagnostic fixture-family ownership
+
+Use these initial ownership rules unless the implementation discovers a clearly better split and documents it in the milestone report:
+
+| Subgroup | Owns |
+|---|---|
+| `--diagnostics-json` | Native diagnostic JSON producer build and structured diagnostic payload checks. |
+| `--diagnostics-rendered-call-ret` | Rendered Simulator Messages for CALL, RET, root RET, helper RET, procedure fallthrough, and future code-end diagnostics. |
+| `--diagnostics-rendered-memory` | Rendered Simulator Messages for memory bounds, object bounds, uninitialized reads, `.CONST`, `.DATA?`, and checked memory helper diagnostics. |
+| `--diagnostics-rendered-directives` | Rendered Simulator Messages for directives, sections, `PROC`, `ENDP`, `END`, include/compatibility directives, and parser-level directive diagnostics. |
+| `--diagnostics-rendered-compatibility` | Rendered Simulator Messages for compatibility settings, unsupported-but-recognized MASM forms, and non-goal boundary diagnostics. |
+| `--diagnostics-rendered-arithmetic` | Rendered Simulator Messages for ADD/SUB/CMP/ADC/SBB/NEG and related arithmetic diagnostics. |
+| `--diagnostics-rendered-shift-rotate` | Rendered Simulator Messages for SHL/SHR/SAL/SAR/ROL/ROR/RCL/RCR diagnostics. |
+| `--diagnostics-rendered-mul-div` | Rendered Simulator Messages for MUL/IMUL/DIV/IDIV diagnostics. |
+| `--diagnostics-rendered-runtime` | Rendered Simulator Messages for runtime terminal diagnostics not better owned by a more specific family. |
+
+If one family remains too large, split it further by stable subfamily names. Do not create subgroup names that depend on source line numbers or temporary test-file layout.
+
+### Documentation updates
+
+Update `docs/TESTING_GUIDE.md` to describe:
+
+- the new subgroup commands;
+- when to use broad groups versus subgroups;
+- how to report aggregate timeout separately from subgroup results;
+- that subgrouping preserves exact rendered and JSON assertions;
+- that manual compile/run fallback is allowed only as a documented fallback, not as a replacement for official runner coverage.
+
+Update milestone-report guidance so future reports list:
+
+- aggregate command, if run;
+- broad focused groups, if run;
+- official subgroups, if run;
+- manually compiled fallback commands, if any;
+- skipped dependency checks;
+- timed-out commands;
+- commands not run.
+
+### Required tests
+
+- Runner help includes every required diagnostic subgroup.
+- `--static` verifies that every documented diagnostic subgroup appears in runner help.
+- `--static` verifies that every runner-help diagnostic subgroup appears in `docs/TESTING_GUIDE.md`.
+- The union of diagnostic subgroups covers the same diagnostic fixture inventory as the broad `--diagnostics` group.
+- At least one documented failure-path check proves subgroup failure output identifies the failing subgroup.
+- Existing broad groups still run through the same coverage where environment limits allow completion.
+
+### Acceptance criteria
+
+Phase 71A1 is accepted only when:
+
+- no simulator runtime behavior changes were made;
+- no parser-accepted syntax changes were made;
+- no VM instruction semantics changed;
+- no diagnostic text, severity, code, source span, or rendered Simulator Messages expectation changed except test-runner/status wording needed to describe subgroups;
+- every required diagnostic subgroup can be run independently;
+- `--diagnostics` still covers the full diagnostic suite;
+- `--static` verifies subgroup documentation/help consistency;
+- milestone reports can list aggregate, broad focused group, and subgroup results separately;
+- timeout, skipped dependency, not-run, pass, and fail states are distinguishable in the report;
+- Phase 71B diagnostic-copy work is not implemented early;
+- Phase 71C fallthrough behavior is not implemented early;
+- Phase 72 call-depth behavior is not implemented early.
+
+---
+
 ## 75B. Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
 
 ### Goal
@@ -21983,7 +22114,11 @@ This phase is diagnostic-copy cleanup only. It exists to make active Simulator M
 
 Phase 71 must already be complete. Phase 71B may be completed whether Phase 71A is deferred or accepted.
 
+Phase 71B should be completed after Phase 71A1. If the project owner explicitly chooses to skip Phase 71A1, the Phase 71B report must document that decision, must list the exact rendered Simulator Messages verification commands used, and must not claim aggregate or diagnostic-group success unless the corresponding commands actually completed successfully.
+
 Phase 71B must not renumber Phase 72 or any later phase.
+
+Phase 71B must not implement Phase 71C code-stream fallthrough, `code-fell-off-end`, configurable procedure-fallthrough policy, entry-procedure auto-stop compatibility, source-run/native control-flow subgrouping from Phase 71B1, call-depth limits, call-trace metadata, or Phase 72 recursion diagnostics.
 
 ### Scope
 
@@ -22175,6 +22310,564 @@ Phase 71B is accepted only when:
 
 ---
 
+## 75B1. Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
+
+### Goal
+
+Provide an official conditional phase for splitting source-run and native control-flow verification if those broad groups become too large or timeout-prone before Phase 71C.
+
+This phase is test infrastructure only. It must not change parser behavior, VM behavior, diagnostics, source-run JSON schema, Wasm API behavior, browser UI behavior, or runtime/source-run behavior metadata.
+
+### Trigger condition
+
+Before starting Phase 71C, run the currently documented broad control-flow-relevant groups, including at minimum:
+
+```text
+python3 scripts/run_tests.py --native --quiet
+python3 scripts/run_tests.py --source-run --quiet
+python3 scripts/run_tests.py --diagnostics --quiet
+python3 scripts/run_tests.py --static --quiet
+```
+
+If `--native` or `--source-run` times out in the active implementation environment, implement Phase 71B1 before Phase 71C.
+
+If `--native` and `--source-run` complete reliably, Phase 71B1 may be skipped. The Phase 71C report must then state that Phase 71B1 was skipped because broad source-run/native verification completed successfully in the active environment.
+
+A `--diagnostics` timeout is owned by Phase 71A1, not Phase 71B1.
+
+### Scope if triggered
+
+Add official source-run and native subgroup commands. Use these names unless implementation constraints require a different stable naming scheme documented in the milestone report:
+
+```text
+--source-run-core
+--source-run-diagnostics
+--source-run-settings
+--source-run-memory-layout
+--source-run-control-flow
+--native-parser
+--native-exec
+--native-memory-layout
+--native-diagnostics-policy
+--native-control-flow
+```
+
+### Required behavior if triggered
+
+- Existing `--source-run` and `--native` broad groups remain valid.
+- Broad groups continue to cover the same fixtures either directly or through subgroup invocation.
+- Subgroups are documented in `docs/TESTING_GUIDE.md`.
+- Subgroups are exposed in `scripts/run_tests.py --help`.
+- `--static` verifies subgroup documentation/help consistency.
+- No exact assertion is removed or weakened.
+- Failure output identifies the failing subgroup and command.
+
+### Acceptance criteria if triggered
+
+Phase 71B1 is accepted only when:
+
+- no simulator behavior changed;
+- every new source-run/native subgroup runs independently;
+- broad `--source-run` and `--native` still cover the same fixture inventory;
+- `--static` verifies runner help and documentation consistency;
+- Phase 71C fallthrough behavior is not implemented early;
+- Phase 71D, Phase 71E, Phase 71F, and Phase 72 behavior is not implemented early.
+
+---
+## 75C. Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
+
+### Goal
+
+Replace the selected-entry `ENDP` auto-success educational simplification with baseline MASM/x86-like VM code-stream fallthrough semantics.
+
+This phase makes `PROC`, `ENDP`, and `END` source/module structure only. They are not executable VM instructions and are not runtime stop instructions. Ordinary sequential execution proceeds through the lowered executable code stream until it reaches an explicit supported terminator/control-transfer path or the end of executable code.
+
+This phase must use wording such as **MASM/x86-like VM code-stream fallthrough**. It must not claim perfect native x86 emulation, PE loader behavior, Windows process behavior, C runtime startup behavior, or full MASM execution.
+
+### Dependency
+
+Phase 71A1 should be complete before this phase so rendered diagnostic updates can be verified through official subgroup commands.
+
+Phase 71B should be complete before this phase so new diagnostics do not copy milestone-relative user-facing wording patterns.
+
+Before starting Phase 71C, apply the Phase 71B1 trigger condition. If broad source-run or native verification times out, complete Phase 71B1 first. If it does not time out, record in the Phase 71C report that Phase 71B1 was skipped because it was not triggered.
+
+Phase 71C depends on Phase 71 root RET behavior and Phase 71A strict root RET setting if Phase 71A was accepted.
+
+### Behavior change
+
+Current behavior through Phase 71A treats ordinary selected-entry `ENDP` fallthrough as successful program completion. Phase 71C deliberately changes that default.
+
+After Phase 71C:
+
+- `PROC`, `ENDP`, and `END` remain non-executable source/module structure.
+- The selected entry procedure is still the procedure named by `END entryName`.
+- Execution starts at the selected entry procedure's first executable slot.
+- If the selected entry procedure contains executable instructions, its first executable slot is its first lowered executable instruction.
+- If the selected entry procedure is empty, its first executable slot is the source-order position immediately after the selected procedure range.
+- If another executable instruction exists after an empty selected entry procedure, that instruction is reachable by ordinary code-stream fallthrough.
+- If no executable instruction exists at or after the selected entry procedure's first executable slot, execution stops with runtime error diagnostic `code-fell-off-end`.
+- Ordinary sequential execution continues to the next lowered executable VM instruction, even when that instruction is physically in a later procedure.
+- If ordinary sequential execution reaches the end of the lowered executable code stream without an explicit supported terminator, execution stops with runtime error diagnostic `code-fell-off-end`.
+- Root `RET` behavior remains governed by the active `rootRetMode` setting.
+- Helper `CALL`/`RET` return-token behavior remains governed by the existing checked return-token rules.
+- Virtual Irvine32 `exit` remains a supported explicit terminator where it is already implemented.
+
+### Required diagnostic
+
+Add runtime error diagnostic code:
+
+```text
+code-fell-off-end
+```
+
+Required diagnostic text:
+
+```text
+Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?
+```
+
+Text constraints:
+
+- Do not mention the root-RET compatibility setting in this diagnostic.
+- Do not imply `ENDP` is a terminator.
+- Do not imply native x86 byte execution, PE-loader behavior, or Windows process behavior.
+- Do not say that MASM itself emits this exact diagnostic. This is a simulator-owned deterministic runtime error.
+
+### Responsible procedure rule
+
+When emitting `code-fell-off-end`, the runtime/source-run layer must identify the responsible procedure using this deterministic rule:
+
+1. If at least one lowered VM instruction executed before end falloff, the responsible procedure is the procedure range containing the last executed lowered VM instruction.
+2. If no lowered VM instruction executed because no executable instruction exists at or after the selected entry procedure's first executable slot, the responsible procedure is the selected entry procedure.
+3. If the last executed lowered VM instruction is not inside any procedure range because a future accepted phase allows executable top-level code, the responsible procedure field is absent or uses the project's existing no-procedure sentinel. Do not invent a fake procedure name.
+
+This responsible procedure is diagnostic metadata. It must not change control flow by itself.
+
+### Optional easter egg
+
+This phase may add one deliberately harmless notice-level diagnostic easter egg.
+
+If implemented, it must obey all of these rules:
+
+- Emit it only after `code-fell-off-end` has already been emitted.
+- Emit it only when the responsible procedure's source spelling is exactly `front`.
+- Matching is exact source spelling only. It is not affected by `OPTION CASEMAP`, user-symbol canonicalization, or case-insensitive lookup.
+- Use diagnostic code:
+
+  ```text
+  the-front-fell-off
+  ```
+
+- Use notice severity.
+- Use exactly this text:
+
+  ```text
+  that's not very typical, I'd like to make that point
+  ```
+
+- Append it after the `code-fell-off-end` runtime error.
+- Do not let it change `ok`, terminal status, halt reason, execution status, register state, memory state, instruction count, source-run schema, warning/error policy outcomes, or browser control flow.
+- Do not make `front` a reserved word, Irvine32 routine, special procedure, or special VM instruction target.
+
+The easter egg is optional. Failure to implement the easter egg must not block acceptance of the core Phase 71C fallthrough correction unless the project owner explicitly makes it required for this phase.
+
+### Non-goals
+
+Do not implement:
+
+- configurable `procedureFallthroughPolicy`; that is Phase 71D;
+- entry-procedure auto-stop compatibility; that is Phase 71E;
+- broad test migration beyond the minimum needed for Phase 71C; that is Phase 71F if split out;
+- Phase 72 call-depth limits or call-trace metadata;
+- source-level `PUSH` or `POP`;
+- `RET imm16`;
+- `RETF`;
+- `LEAVE`;
+- stack frames;
+- `PROC USES`;
+- `LOCAL`;
+- `PROTO`;
+- `INVOKE`;
+- `ADDR`;
+- additional Irvine32 callable routine dispatch beyond already implemented virtual terminators;
+- WinAPI simulation;
+- PE loading;
+- native x86 byte execution;
+- Windows process teardown.
+
+### Required tests
+
+Native/core tests:
+
+- Empty selected entry procedure with no executable successor emits `code-fell-off-end`.
+- Empty selected entry procedure with a later executable procedure continues to that later executable instruction under default code-stream behavior.
+- Selected entry procedure with executable instruction and no explicit terminator emits `code-fell-off-end` after the last reachable executable instruction.
+- Selected entry procedure with no `RET` but a later procedure containing executable instructions continues into the later procedure.
+- Selected entry procedure with root `RET` still succeeds when `rootRetMode = "masm32-compatible"`.
+- Selected entry procedure with root `RET` still fails with `root-ret-disallowed-by-mode` when `rootRetMode = "strict-call-frame"`.
+- Virtual Irvine32 `exit` still succeeds and does not emit `code-fell-off-end`.
+- Helper `CALL`/`RET` still returns through validated pseudo-EIP return tokens.
+- `PROC`, `ENDP`, and `END` do not appear as executable VM instructions or pseudo-EIP targets.
+
+Source-run JSON tests:
+
+- `code-fell-off-end` appears with runtime-error severity.
+- Source line, column, byte offset, and span length are deterministic.
+- Terminal status is failure/error, not execution-complete.
+- Final register/memory state reflects only instructions executed before the diagnostic.
+- Responsible procedure metadata follows the deterministic rule.
+- If the easter egg is implemented, `the-front-fell-off` appears after `code-fell-off-end` with notice severity and does not change terminal status.
+
+Rendered Simulator Messages tests:
+
+- Exact `code-fell-off-end` text renders once.
+- The rendered error does not mention the root-RET setting.
+- If the easter egg is implemented, exact `the-front-fell-off` text renders after the runtime error.
+- Negative easter egg fixtures prove `Front`, `FRONT`, `frontier`, and labels named `front` do not emit the notice.
+
+Documentation tests:
+
+- `docs/SUPPORTED_SYNTAX.md` distinguishes implemented Phase 71C fallthrough from older Phase 71A selected-entry `ENDP` auto-success behavior.
+- README/status surfaces update runtime/source-run behavior metadata only after Phase 71C is accepted.
+
+### Acceptance criteria
+
+Phase 71C is accepted only when:
+
+- selected-entry `ENDP` auto-success is no longer the default behavior;
+- reaching the end of executable code without explicit terminator emits `code-fell-off-end`;
+- exact JSON and rendered Simulator Messages tests cover the new diagnostic;
+- root RET behavior from Phase 71/71A is preserved;
+- helper CALL/RET behavior is preserved;
+- Irvine32 `exit` behavior is preserved;
+- the optional easter egg, if implemented, is diagnostic-only and fully tested;
+- source-run output-contract metadata is advanced if the public JSON/output contract changes;
+- runtime/source-run behavior metadata is advanced because this is a behavior phase;
+- Phase 71D, Phase 71E, Phase 71F, and Phase 72 behavior is not implemented early.
+
+---
+## 75D. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+
+### Goal
+
+Add a configurable diagnostic policy for ordinary sequential execution crossing a procedure boundary without an explicit supported control transfer or terminator.
+
+This phase does not change the Phase 71C baseline code-stream behavior that fallthrough can continue through the executable VM instruction stream. It adds a warning/error/suppression policy for the procedure-boundary code smell.
+
+### Dependency
+
+Phase 71C must be complete.
+
+Phase 71D should be completed before Phase 71E so the entry-procedure auto-stop compatibility toggle can explicitly state how it interacts with procedure-fallthrough diagnostics.
+
+### Setting
+
+Add setting:
+
+```text
+procedureFallthroughPolicy
+```
+
+Allowed values:
+
+```text
+off
+warn
+error
+```
+
+Default value:
+
+```text
+warn
+```
+
+User-facing labels must follow the style of existing configurable diagnostic settings:
+
+- `off`: suppress this warning / I know what I am doing;
+- `warn`: default educational warning;
+- `error`: strict stop.
+
+The UI wording may differ from those labels, but it must clearly communicate that `warn` is the default and `error` stops before executing the first instruction in the next procedure.
+
+### Diagnostic
+
+Add diagnostic code:
+
+```text
+procedure-fell-through
+```
+
+Recommended text:
+
+```text
+Execution fell through from procedure '<from>' into procedure '<to>' without RET, JMP, exit, or another explicit control-transfer or termination instruction.
+```
+
+The implementation may adjust placeholder formatting to match existing diagnostic style. It must preserve both procedure names when available.
+
+### Required behavior
+
+- `off`: suppress `procedure-fell-through` and continue ordinary code-stream execution.
+- `warn`: emit non-fatal warning `procedure-fell-through` and continue ordinary code-stream execution.
+- `error`: emit runtime error `procedure-fell-through` and stop before executing the first instruction in the next procedure.
+
+The policy applies only to procedure-boundary crossing. It must not suppress or downgrade:
+
+- `code-fell-off-end`;
+- invalid RET return-token diagnostics;
+- root RET diagnostics;
+- memory errors;
+- parser errors;
+- unsupported syntax diagnostics;
+- source-run schema errors;
+- internal invariant diagnostics.
+
+### Procedure-boundary crossing rule
+
+A procedure-boundary crossing occurs when ordinary sequential execution would move from an executable instruction slot associated with one procedure range to an executable instruction associated with another procedure range without an explicit supported control transfer or terminator.
+
+Examples of explicit supported paths that are not ordinary fallthrough:
+
+- direct user-procedure `CALL` after Phase 69;
+- helper `RET` returning through a validated pseudo-EIP return token;
+- selected-entry root `RET` when allowed by `rootRetMode`;
+- virtual Irvine32 `exit` where implemented;
+- supported jump/branch transfer after its owning phase has explicitly defined the transfer.
+
+### Interaction with existing non-entry fallthrough behavior
+
+Phase 71D must retire or map the older called non-entry procedure fallthrough diagnostic path into the new `procedure-fell-through` policy. The implementation must not leave two public diagnostics for the same boundary crossing unless the milestone report explicitly documents a temporary compatibility layer and the exact emitted output.
+
+The preferred final public diagnostic code for procedure-boundary fallthrough is:
+
+```text
+procedure-fell-through
+```
+
+### Required tests
+
+Native/core tests:
+
+- `warn` mode emits warning and continues into the next procedure.
+- `off` mode continues into the next procedure without warning.
+- `error` mode stops before executing the first instruction in the next procedure.
+- Error mode leaves registers and memory unchanged by the first instruction in the next procedure.
+- CALL into a helper procedure is not reported as procedure fallthrough.
+- RET through a validated pseudo-EIP return token is not reported as procedure fallthrough.
+- Root RET policy behavior remains unchanged.
+
+Source-run JSON tests:
+
+- All three policy modes serialize setting value and diagnostic behavior correctly.
+- `procedure-fell-through` includes stable source location/span metadata.
+- `procedure-fell-through` and `code-fell-off-end` remain distinct when both occur in the same run.
+
+Rendered Simulator Messages tests:
+
+- Exact warning rendering for default `warn` mode.
+- No warning rendering for `off` mode.
+- Exact error rendering for `error` mode.
+- Message order is deterministic when `procedure-fell-through` is followed by `code-fell-off-end`.
+
+UI/protocol tests:
+
+- Browser setting exists and maps to the source-run setting.
+- Invalid setting values are rejected or normalized according to existing settings policy.
+
+### Acceptance criteria
+
+Phase 71D is accepted only when:
+
+- default policy is `warn`;
+- `off`, `warn`, and `error` are all tested;
+- `error` stops before side effects from the next procedure instruction;
+- `code-fell-off-end` remains a runtime error independent of this policy;
+- older non-entry procedure fallthrough diagnostics are resolved or explicitly mapped;
+- docs and supported-syntax text describe the policy as implemented only after this phase;
+- Phase 71E and Phase 72 behavior is not implemented early.
+
+---
+## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+
+### Goal
+
+Add an explicit compatibility setting for users who want selected-entry `ENDP` boundary completion for beginner examples or empty selected-entry procedures.
+
+This setting restores the old educational convenience only when explicitly enabled. The default remains Phase 71C code-stream behavior.
+
+### Dependency
+
+Phase 71C must be complete.
+
+Phase 71D should be complete so this phase can define the interaction between entry auto-stop compatibility and procedure-fallthrough diagnostics.
+
+### Setting
+
+Add setting:
+
+```text
+entryProcedureEndMode
+```
+
+Allowed values:
+
+```text
+code-stream
+stop-at-entry-end
+```
+
+Default value:
+
+```text
+code-stream
+```
+
+### Behavior
+
+`code-stream` mode:
+
+- Use Phase 71C baseline MASM/x86-like VM code-stream fallthrough.
+- Do not stop at selected-entry `ENDP`.
+- Execution may continue into later executable instructions and later procedure ranges.
+- `procedureFallthroughPolicy` applies to procedure-boundary crossings.
+- `code-fell-off-end` applies when executable code ends without explicit terminator.
+
+`stop-at-entry-end` mode:
+
+- If ordinary sequential execution reaches the selected entry procedure's `ENDP` boundary, terminate successfully before executing any later procedure or later executable instruction.
+- If the selected entry procedure is empty, terminate successfully at the selected entry procedure boundary.
+- Do not emit `procedure-fell-through` for the selected-entry boundary that this setting stops.
+- Do not suppress `procedure-fell-through` after execution has already left the selected entry procedure through CALL/RET, future branch behavior, or any other explicit supported path.
+- Do not suppress `code-fell-off-end` after execution has already left the selected entry procedure.
+- Do not change root RET behavior.
+- Do not change helper RET behavior.
+- Do not make `ENDP` an executable VM instruction.
+- Do not hide parser or semantic errors inside the selected entry procedure.
+
+### UI behavior
+
+Expose this as an explicit compatibility/convenience setting, not as a correctness setting.
+
+The UI label should communicate that `code-stream` is the more realistic VM control-flow mode and `stop-at-entry-end` is a beginner-friendly compatibility mode.
+
+### Required tests
+
+Native/core tests:
+
+- Default `code-stream` mode falls through from selected entry procedure into a later procedure when the later procedure has executable instructions.
+- `stop-at-entry-end` mode does not fall through from selected entry procedure into a later procedure.
+- Default `code-stream` mode on empty selected entry procedure with no executable successor emits `code-fell-off-end`.
+- `stop-at-entry-end` mode on empty selected entry procedure succeeds.
+- `stop-at-entry-end` mode does not suppress parser/semantic errors.
+- `stop-at-entry-end` mode does not affect helper procedure fallthrough after execution has left the selected entry procedure.
+- Root RET behavior remains governed by `rootRetMode` in both entry end modes.
+
+Source-run JSON tests:
+
+- Setting value serializes correctly.
+- Terminal status differs correctly between `code-stream` and `stop-at-entry-end` for opposite fixtures.
+- `procedure-fell-through` is not emitted for a selected-entry boundary stopped by `stop-at-entry-end`.
+
+Rendered Simulator Messages tests:
+
+- Default mode renders fallthrough and/or code-end diagnostics where applicable.
+- Compatibility mode renders successful completion without fallthrough diagnostic for the stopped selected-entry boundary.
+
+UI/protocol tests:
+
+- Setting appears in the browser control surface.
+- Invalid setting values follow existing invalid-setting policy.
+
+### Acceptance criteria
+
+Phase 71E is accepted only when:
+
+- default remains `code-stream`;
+- compatibility mode is explicit and opt-in;
+- empty selected-entry procedure behavior is tested in both modes;
+- opposite fallthrough fixtures are tested;
+- root RET and helper RET behavior remain unchanged;
+- docs describe `stop-at-entry-end` as compatibility convenience, not MASM/x86-like behavior;
+- Phase 72 behavior is not implemented early.
+
+---
+## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures
+
+### Goal
+
+Migrate remaining fallthrough-sensitive fixtures and add opposite-mode tests if the required fixture updates are too large to complete safely inside Phase 71C through Phase 71E.
+
+This phase is test and documentation cleanup only unless the milestone report identifies a small bug fix required to make already accepted Phase 71C through Phase 71E behavior match the specification.
+
+### Trigger condition
+
+This phase is required if, after Phase 71E, any test fixture still silently depends on old default selected-entry `ENDP` auto-success behavior.
+
+This phase may be skipped only if Phase 71C through Phase 71E already migrated all such fixtures and the Phase 71E report explicitly states that no remaining old-auto-success fixtures exist.
+
+### Dependency
+
+Phase 71C must be complete.
+
+Phase 71E must be complete if migrated fixtures involve the entry-procedure auto-stop compatibility setting.
+
+Phase 71D must be complete if migrated fixtures involve procedure-boundary fallthrough diagnostics.
+
+### Required migration policy
+
+For each existing test fixture that relied on empty or unterminated selected-entry `ENDP` success, choose exactly one of these dispositions:
+
+1. Add an explicit `RET` and set or preserve root RET mode as needed.
+2. Add virtual Irvine32 `exit` where that is the intended educational terminator.
+3. Explicitly enable `entryProcedureEndMode = "stop-at-entry-end"` if the test is intentionally about compatibility convenience.
+4. Replace the old expected success with `code-fell-off-end` where the test should now cover correctness-first default behavior.
+5. Delete the fixture only if it is redundant and the milestone report names the replacement coverage.
+
+No fixture may remain silently dependent on implicit selected-entry `ENDP` success in default `code-stream` mode.
+
+### Required opposite fixtures
+
+Add opposite fixtures proving both sides of each behavior pair:
+
+- Default `code-stream` mode falls through from `main` into a later procedure.
+- `stop-at-entry-end` mode does not fall through from `main` into a later procedure.
+- Default `code-stream` mode on empty `main` with no executable successor emits `code-fell-off-end`.
+- `stop-at-entry-end` mode on empty `main` succeeds.
+- `procedureFallthroughPolicy = warn` emits warning and continues.
+- `procedureFallthroughPolicy = off` continues silently.
+- `procedureFallthroughPolicy = error` stops before the next procedure instruction.
+- Irvine32 `exit` terminates explicitly in both entry end modes.
+- Root `RET` behavior remains governed by `rootRetMode`, not by entry end mode.
+
+### Documentation updates
+
+- Update `docs/SUPPORTED_SYNTAX.md` so implemented behavior is no longer described as planned.
+- Update examples that intentionally rely on successful termination to use `RET`, Irvine32 `exit`, or the explicit compatibility setting.
+- Update troubleshooting text to recommend explicit terminators before compatibility settings.
+- Ensure README/status surfaces do not list Phase 71C through Phase 71E as planned after they are accepted.
+
+### Required tests
+
+- Static grep/check that old fixture descriptions do not call selected-entry `ENDP` default success the current default.
+- Fixture inventory or grep showing all old empty-entry-success fixtures were dispositioned.
+- Source-run tests for every opposite fixture listed above.
+- Rendered Simulator Messages tests for the diagnostic fixtures.
+- UI/protocol tests for examples or settings touched by migration.
+
+### Acceptance criteria
+
+Phase 71F is accepted only when:
+
+- all old selected-entry `ENDP` auto-success fixtures are migrated or explicitly justified;
+- default `code-stream` behavior has opposite fixtures against `stop-at-entry-end`;
+- no test uses implicit selected-entry `ENDP` success without naming the compatibility setting;
+- documentation recommends explicit terminators first;
+- no Phase 72 behavior is implemented early.
+
+---
+
 ## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
 ### Goal
@@ -22186,6 +22879,10 @@ This phase adds call-depth accounting, a configurable call-depth limit, settings
 This phase must not add new CALL target forms, new procedure syntax, source-level stack instructions, stack frames, Irvine32 routine dispatch, debugger stepping, Step Over behavior, breakpoint behavior, native call-stack behavior, PE behavior, WinAPI behavior, or full x86 emulation behavior.
 
 ### Dependencies
+
+Phase 72 remains the call-depth and call-trace resource-protection phase. It must not absorb Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure auto-stop compatibility, or Phase 71F fixture migration work.
+
+If Phase 71C through Phase 71F are inserted before Phase 72, do not renumber Phase 72 unless the project owner explicitly requests roadmap renumbering.
 
 Phase 72 depends on:
 

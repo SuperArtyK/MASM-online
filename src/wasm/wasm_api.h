@@ -59,6 +59,15 @@ typedef enum Masm32SimWasmTeachingDiagnosticSetting {
 
 
 
+
+/// Selects browser-facing Phase 71A selected-entry root RET handling.
+typedef enum Masm32SimWasmRootRetMode {
+    /// Preserve default MASM32 Educational Mode behavior: selected-entry root RET terminates successfully.
+    MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE = 0,
+    /// Reject selected-entry root RET when no caller-supplied return address exists.
+    MASM32_SIM_WASM_ROOT_RET_MODE_STRICT_CALL_FRAME
+} Masm32SimWasmRootRetMode;
+
 /// Selects the Phase 57F register and modeled-flag startup behavior.
 typedef enum Masm32SimWasmStartupRegisterFlagMode {
     /// Preserve deterministic zero startup for general-purpose registers and modeled flags.
@@ -184,6 +193,39 @@ const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_and_instruct
     Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
     uint32_t startup_state_seed,
     uint32_t instruction_limit
+);
+
+
+/// Parses and executes source using diagnostics, startup settings, instruction limit, and root RET mode.
+///
+/// This Phase 71A browser/test-facing export extends the Phase 59 settings
+/// export with the source-run option named `rootRetMode`. The default
+/// `masm32-compatible` mode preserves Phase 71 selected-entry root RET
+/// success; `strict-call-frame` rejects selected-entry root RET as an
+/// opt-in teaching diagnostic.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Phase 57G visible-byte startup mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param instruction_limit Positive maximum executed-VM-instruction count.
+/// @param root_ret_mode Phase 71A selected-entry root RET handling mode.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit,
+    Masm32SimWasmRootRetMode root_ret_mode
 );
 
 /// Parses and executes source using Phase 53E browser diagnostic settings.

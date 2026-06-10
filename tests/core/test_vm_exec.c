@@ -1,10 +1,10 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71 root RET termination behavior.
+ * @brief Unit tests for the VM executor through Phase 71A root RET strictness behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
- * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, arithmetic fault rollback, and
+ * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
  * last-step delta capture. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
@@ -4535,6 +4535,56 @@ static int test_phase71_root_ret_terminates_without_stack_read(void) {
     return failures;
 }
 
+
+/// Verifies Phase 71A strict root RET mode rejects selected-entry root RET before stack reads.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71a_strict_root_ret_rejects_without_stack_read(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    ret", 4U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71A strict root RET test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "strict root RET program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "strict root RET procedure boundary metadata should configure");
+    failures += expect_status(vm_set_root_ret_mode(&vm, VM_ROOT_RET_MODE_STRICT_CALL_FRAME), VM_EXEC_STATUS_OK, "strict root RET mode should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE, "strict selected-entry root RET should stop with root-ret-disallowed-by-mode");
+    failures += expect_size(vm.halted ? 1U : 0U, 0U, "strict root RET rejection should not mark execution halted successfully");
+    failures += expect_size(vm.instruction_pointer, 0U, "strict root RET rejection should not transfer control");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after strict root RET should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "strict root RET should leave ESP unchanged");
+
+    delta = vm_last_delta(&vm);
+    if (delta != NULL) {
+        failures += expect_size(delta->memory_access_count, 0U, "strict root RET should not read ESP memory");
+        failures += expect_size(delta->memory_change_count, 0U, "strict root RET should not report memory changes");
+        failures += expect_size(delta->register_change_count, 0U, "strict root RET should not report register changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("strict root RET should populate an error diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE, "strict root RET diagnostic should name root-ret-disallowed-by-mode");
+        failures += expect_size(diagnostic->has_instruction ? 1U : 0U, 1U, "strict root RET diagnostic should include the RET instruction");
+        failures += expect_u32(diagnostic->instruction.source_line, 3U, "strict root RET diagnostic should preserve source line");
+    }
+
+    failures += expect_status(vm_set_root_ret_mode(&vm, (VmRootRetMode)99), VM_EXEC_STATUS_INVALID_ARGUMENT, "invalid root RET mode should be rejected");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE), "root-ret-disallowed-by-mode") == 0 ? 1U : 0U, 1U, "executor status helper should name root-ret-disallowed-by-mode");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 71 reports internally inconsistent root metadata before stack reads.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5154,6 +5204,7 @@ int main(void) {
     failures += test_phase70_ret_empty_stack_checked_read_failure();
     failures += test_phase71_non_root_ret_with_valid_token_preserves_phase70_path();
     failures += test_phase71_root_ret_terminates_without_stack_read();
+    failures += test_phase71a_strict_root_ret_rejects_without_stack_read();
     failures += test_phase71_invalid_root_metadata_diagnostic();
     failures += test_phase71_called_helper_fallthrough_diagnostic();
     failures += test_phase61_invalid_jmp_metadata();
@@ -5166,6 +5217,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71 root RET termination coverage passed.");
+    puts("Executor tests through Phase 71A root RET strictness coverage passed.");
     return 0;
 }

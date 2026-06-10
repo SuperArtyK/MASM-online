@@ -12,6 +12,7 @@ import { formatMemoryChanges, formatRegisters, formatSimulatorMessages } from ".
 import {
   COMPATIBILITY_NOTICES_ON,
   MEMORY_RANGE_REGION_ONLY,
+  ROOT_RET_MODE_MASM32_COMPATIBLE,
   TEACHING_DIAGNOSTIC_WARN,
   readDiagnosticSettingsFromControls
 } from "./settings.js";
@@ -70,7 +71,7 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
 }
 
 /**
- * Reads the selected Phase 53E diagnostic settings from the browser controls.
+ * Reads the selected diagnostic and Phase 71A root RET settings from the browser controls.
  *
  * @returns {import("./settings.js").DiagnosticSettings} Settings payload for RUN_SOURCE.
  */
@@ -79,7 +80,8 @@ function readDiagnosticSettings() {
     memoryRangeSetting,
     uninitializedReadsSetting,
     undefinedFlagUseSetting,
-    compatibilityNoticesSetting
+    compatibilityNoticesSetting,
+    rootRetModeSetting
   );
 }
 
@@ -96,9 +98,10 @@ const memoryRangeSetting = document.getElementById("memory-range-setting");
 const uninitializedReadsSetting = document.getElementById("uninitialized-reads-setting");
 const undefinedFlagUseSetting = document.getElementById("undefined-flag-use-setting");
 const compatibilityNoticesSetting = document.getElementById("compatibility-notices-setting");
+const rootRetModeSetting = document.getElementById("root-ret-mode-setting");
 
 if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton ||
-    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting) {
+    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting || !rootRetModeSetting) {
   throw new Error("Required simulator UI elements are missing.");
 }
 
@@ -106,6 +109,7 @@ memoryRangeSetting.value = MEMORY_RANGE_REGION_ONLY;
 uninitializedReadsSetting.value = TEACHING_DIAGNOSTIC_WARN;
 undefinedFlagUseSetting.value = TEACHING_DIAGNOSTIC_WARN;
 compatibilityNoticesSetting.value = COMPATIBILITY_NOTICES_ON;
+rootRetModeSetting.value = ROOT_RET_MODE_MASM32_COMPATIBLE;
 initializeCollapsiblePanel(diagnosticSettingsToggle, diagnosticSettingsBody, false);
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
