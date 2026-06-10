@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71A root RET strictness behavior.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71B diagnostic wording cleanup.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -17,7 +17,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71a-source-run-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71b-source-run-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -7914,7 +7914,9 @@ static int test_phase55_imul_source_run_error_paths(void) {
         "END main\n"
     );
     failures += expect_json_contains(json, "\"code\":\"invalid-instruction-operands\"", "IMUL reg, imm should use invalid-instruction-operands");
-    failures += expect_json_contains(json, "not supported in Phase 55", "IMUL reg, imm diagnostic should explain rejected shape");
+    failures += expect_json_contains(json, "This IMUL form is not accepted", "IMUL reg, imm diagnostic should explain rejected shape");
+    failures += expect_json_not_contains(json, "not supported in Phase", "IMUL reg, imm diagnostic should not use milestone-relative wording");
+    failures += expect_json_not_contains(json, "Phase 55", "IMUL reg, imm diagnostic should not mention historical Phase 55 wording");
 
     json = masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -9830,7 +9832,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":71", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
     failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
-    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71A should report Phase 71A output-contract metadata");
+    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71B should report current output-contract metadata");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
@@ -10056,7 +10058,241 @@ static int test_phase71a_source_run_phase_metadata(void) {
     failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71A metadata");
     failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 71A should report the suffix field");
     failures += expect_json_contains(json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71A should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71A should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71B should report separate source-run output-contract metadata");
+
+    return failures;
+}
+
+
+/// Verifies Phase 71B source-run diagnostics use stable wording without milestone-number prose.
+///
+/// @return Number of failures.
+static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
+    int failures = 0;
+    char imul_copy[TEST_JSON_COPY_CAPACITY];
+    char call_label_copy[TEST_JSON_COPY_CAPACITY];
+    char call_data_copy[TEST_JSON_COPY_CAPACITY];
+    char call_reserved_copy[TEST_JSON_COPY_CAPACITY];
+    char call_distance_copy[TEST_JSON_COPY_CAPACITY];
+    char call_memory_copy[TEST_JSON_COPY_CAPACITY];
+    char call_register_copy[TEST_JSON_COPY_CAPACITY];
+    char call_immediate_copy[TEST_JSON_COPY_CAPACITY];
+    char call_directive_copy[TEST_JSON_COPY_CAPACITY];
+    char call_offset_copy[TEST_JSON_COPY_CAPACITY];
+    char ret_operand_copy[TEST_JSON_COPY_CAPACITY];
+    char retf_copy[TEST_JSON_COPY_CAPACITY];
+    const char *const diagnostics[] = {
+        imul_copy,
+        call_label_copy,
+        call_data_copy,
+        call_reserved_copy,
+        call_distance_copy,
+        call_memory_copy,
+        call_register_copy,
+        call_immediate_copy,
+        call_directive_copy,
+        call_offset_copy,
+        ret_operand_copy,
+        retf_copy,
+        NULL
+    };
+    size_t index = 0U;
+
+    copy_source_run_json(imul_copy, sizeof(imul_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    imul eax, 5\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_label_copy, sizeof(call_label_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "LabelOnly:\n"
+        "    call LabelOnly\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_data_copy, sizeof(call_data_copy), masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    call value\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_reserved_copy, sizeof(call_reserved_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_distance_copy, sizeof(call_distance_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call NEAR PTR Helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    ret\n"
+        "Helper ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_memory_copy, sizeof(call_memory_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call DWORD PTR [eax]\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_register_copy, sizeof(call_register_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call eax\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_immediate_copy, sizeof(call_immediate_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call 1234\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_directive_copy, sizeof(call_directive_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call .code\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(call_offset_copy, sizeof(call_offset_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    call OFFSET Helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    ret\n"
+        "Helper ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(ret_operand_copy, sizeof(ret_operand_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    ret 4\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(retf_copy, sizeof(retf_copy), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    retf\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(imul_copy, "\"code\":\"invalid-instruction-operands\"", "Phase 71B IMUL source-run diagnostic should preserve code");
+    failures += expect_json_contains(imul_copy, "This IMUL form is not accepted", "Phase 71B IMUL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(imul_copy, "\"line\":3", "Phase 71B IMUL diagnostic should preserve line");
+    failures += expect_json_contains(imul_copy, "\"column\":15", "Phase 71B IMUL diagnostic should preserve column");
+    failures += expect_json_contains(imul_copy, "\"byteOffset\":30", "Phase 71B IMUL diagnostic should preserve byte offset");
+    failures += expect_json_contains(imul_copy, "\"spanLength\":1", "Phase 71B IMUL diagnostic should preserve span");
+    failures += expect_json_contains(imul_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71B IMUL source-run diagnostic should report updated output contract");
+
+    failures += expect_json_contains(call_label_copy, "\"code\":\"invalid-call-target\"", "Phase 71B ordinary-label CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_label_copy, "This simulator accepts only user procedure entries", "Phase 71B ordinary-label CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_label_copy, "\"line\":4", "Phase 71B ordinary-label CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_label_copy, "\"column\":10", "Phase 71B ordinary-label CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_label_copy, "\"byteOffset\":36", "Phase 71B ordinary-label CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_label_copy, "\"spanLength\":9", "Phase 71B ordinary-label CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_data_copy, "\"code\":\"invalid-call-target\"", "Phase 71B data-symbol CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_data_copy, "CALL target cannot be a data symbol", "Phase 71B data-symbol CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_data_copy, "This simulator accepts only user procedure entries", "Phase 71B data-symbol CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_data_copy, "\"line\":5", "Phase 71B data-symbol CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_data_copy, "\"column\":10", "Phase 71B data-symbol CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_data_copy, "\"byteOffset\":45", "Phase 71B data-symbol CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_data_copy, "\"spanLength\":5", "Phase 71B data-symbol CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_reserved_copy, "\"code\":\"invalid-call-target\"", "Phase 71B reserved-word CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_reserved_copy, "CALL target cannot be a reserved MASM or simulator word", "Phase 71B reserved-word CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_reserved_copy, "This simulator accepts only user procedure entries", "Phase 71B reserved-word CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_reserved_copy, "\"line\":3", "Phase 71B reserved-word CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_reserved_copy, "\"column\":10", "Phase 71B reserved-word CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_reserved_copy, "\"byteOffset\":25", "Phase 71B reserved-word CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_reserved_copy, "\"spanLength\":3", "Phase 71B reserved-word CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_distance_copy, "\"code\":\"unsupported-call-form\"", "Phase 71B distance-override CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_distance_copy, "CALL distance and type overrides", "Phase 71B distance-override CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_distance_copy, "direct user-procedure CALL targets", "Phase 71B distance-override CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_distance_copy, "\"line\":3", "Phase 71B distance-override CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_distance_copy, "\"column\":10", "Phase 71B distance-override CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_distance_copy, "\"byteOffset\":25", "Phase 71B distance-override CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_distance_copy, "\"spanLength\":4", "Phase 71B distance-override CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_memory_copy, "\"code\":\"unsupported-call-form\"", "Phase 71B memory CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_memory_copy, "CALL memory targets are not implemented", "Phase 71B memory CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_memory_copy, "direct user-procedure CALL targets", "Phase 71B memory CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_memory_copy, "\"line\":3", "Phase 71B memory CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_memory_copy, "\"column\":10", "Phase 71B memory CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_memory_copy, "\"byteOffset\":25", "Phase 71B memory CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_memory_copy, "\"spanLength\":5", "Phase 71B memory CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_register_copy, "\"code\":\"unsupported-call-form\"", "Phase 71B register CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_register_copy, "direct user-procedure CALL targets", "Phase 71B register CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_register_copy, "\"line\":3", "Phase 71B register CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_register_copy, "\"column\":10", "Phase 71B register CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_register_copy, "\"byteOffset\":25", "Phase 71B register CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_register_copy, "\"spanLength\":3", "Phase 71B register CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_immediate_copy, "\"code\":\"unsupported-call-form\"", "Phase 71B immediate CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_immediate_copy, "CALL expression and immediate targets are not implemented", "Phase 71B immediate CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_immediate_copy, "direct user-procedure CALL targets", "Phase 71B immediate CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_immediate_copy, "\"line\":3", "Phase 71B immediate CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_immediate_copy, "\"column\":10", "Phase 71B immediate CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_immediate_copy, "\"byteOffset\":25", "Phase 71B immediate CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_immediate_copy, "\"spanLength\":4", "Phase 71B immediate CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_directive_copy, "\"code\":\"invalid-call-target\"", "Phase 71B directive CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_directive_copy, "CALL target cannot be a directive name", "Phase 71B directive CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_directive_copy, "This simulator accepts only user procedure entries", "Phase 71B directive CALL source-run diagnostic should describe the accepted subset");
+    failures += expect_json_contains(call_directive_copy, "\"line\":3", "Phase 71B directive CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_directive_copy, "\"column\":10", "Phase 71B directive CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_directive_copy, "\"byteOffset\":25", "Phase 71B directive CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_directive_copy, "\"spanLength\":5", "Phase 71B directive CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(call_offset_copy, "\"code\":\"unsupported-call-form\"", "Phase 71B OFFSET CALL source-run diagnostic should preserve code");
+    failures += expect_json_contains(call_offset_copy, "CALL OFFSET targets are not implemented", "Phase 71B OFFSET CALL source-run diagnostic should use stable wording");
+    failures += expect_json_contains(call_offset_copy, "\"line\":3", "Phase 71B OFFSET CALL diagnostic should preserve line");
+    failures += expect_json_contains(call_offset_copy, "\"column\":10", "Phase 71B OFFSET CALL diagnostic should preserve column");
+    failures += expect_json_contains(call_offset_copy, "\"byteOffset\":25", "Phase 71B OFFSET CALL diagnostic should preserve byte offset");
+    failures += expect_json_contains(call_offset_copy, "\"spanLength\":6", "Phase 71B OFFSET CALL diagnostic should preserve span");
+
+    failures += expect_json_contains(ret_operand_copy, "\"code\":\"unsupported-instruction-form\"", "Phase 71B RET operand source-run diagnostic should preserve code");
+    failures += expect_json_contains(ret_operand_copy, "RET operand forms are not implemented", "Phase 71B RET operand source-run diagnostic should use stable wording");
+    failures += expect_json_contains(ret_operand_copy, "\"line\":3", "Phase 71B RET operand diagnostic should preserve line");
+    failures += expect_json_contains(ret_operand_copy, "\"column\":9", "Phase 71B RET operand diagnostic should preserve column");
+    failures += expect_json_contains(ret_operand_copy, "\"byteOffset\":24", "Phase 71B RET operand diagnostic should preserve byte offset");
+    failures += expect_json_contains(ret_operand_copy, "\"spanLength\":1", "Phase 71B RET operand diagnostic should preserve span");
+    failures += expect_json_contains(ret_operand_copy, "\"status\":\"parse-error\"", "Phase 71B RET operand source-run diagnostic should preserve terminal status");
+
+    failures += expect_json_contains(retf_copy, "\"code\":\"unsupported-instruction-form\"", "Phase 71B RETF source-run diagnostic should preserve code");
+    failures += expect_json_contains(retf_copy, "Far RET forms are not implemented", "Phase 71B RETF source-run diagnostic should use stable wording");
+    failures += expect_json_contains(retf_copy, "\"line\":3", "Phase 71B RETF diagnostic should preserve line");
+    failures += expect_json_contains(retf_copy, "\"column\":5", "Phase 71B RETF diagnostic should preserve column");
+    failures += expect_json_contains(retf_copy, "\"byteOffset\":20", "Phase 71B RETF diagnostic should preserve byte offset");
+    failures += expect_json_contains(retf_copy, "\"spanLength\":4", "Phase 71B RETF diagnostic should preserve span");
+
+    for (index = 0U; diagnostics[index] != NULL; index += 1U) {
+        failures += expect_json_not_contains(diagnostics[index], "not supported in Phase", "Phase 71B source-run diagnostics must not use not-supported-in-Phase wording");
+        failures += expect_json_not_contains(diagnostics[index], "outside Phase", "Phase 71B source-run diagnostics must not use outside-Phase wording");
+        failures += expect_json_not_contains(diagnostics[index], "Phase 69 accepts only", "Phase 71B source-run diagnostics must not use Phase 69 accepts-only wording");
+        failures += expect_json_not_contains(diagnostics[index], "Phase 69 direct CALL accepts only", "Phase 71B source-run diagnostics must not use Phase 69 direct-CALL wording");
+        failures += expect_json_not_contains(diagnostics[index], "Phase 70 implements only", "Phase 71B source-run diagnostics must not use Phase 70 implements-only wording");
+        failures += expect_json_not_contains(diagnostics[index], "deferred to Phase", "Phase 71B source-run diagnostics must not use deferred-to-Phase wording");
+        failures += expect_json_not_contains(diagnostics[index], "execution-complete", "Phase 71B parser diagnostics must not execute source");
+    }
 
     return failures;
 }
@@ -13478,6 +13714,7 @@ int main(void) {
     failures += test_phase69_direct_call_source_run_behavior();
     failures += test_phase71_call_ret_source_run_behavior();
     failures += test_phase71a_source_run_phase_metadata();
+    failures += test_phase71b_source_run_diagnostic_wording_cleanup();
     failures += test_phase68b_eip_pseudo_display_and_rejections();
     failures += test_phase67a_entry_procedure_runtime_boundary_source_run();
     failures += test_phase68a_source_run_observes_fixed_layout_esp_startup();

@@ -34,7 +34,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 71);
   assert.equal(IMPLEMENTED_PHASE_SUFFIX, "A");
   assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-71a-source-run-output-contract-v1");
+  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-71b-source-run-output-contract-v1");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -47,7 +47,7 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       phase: 71,
       phaseSuffix: "A",
       phaseName: "Phase 71A - Optional Root RET Strictness Mode",
-      sourceRunOutputContract: "phase-71a-source-run-output-contract-v1"
+      sourceRunOutputContract: "phase-71b-source-run-output-contract-v1"
     }
   });
 });
@@ -66,7 +66,7 @@ test("ready message supports not-built wasm status", () => {
       phase: 71,
       phaseSuffix: "A",
       phaseName: "Phase 71A - Optional Root RET Strictness Mode",
-      sourceRunOutputContract: "phase-71a-source-run-output-contract-v1"
+      sourceRunOutputContract: "phase-71b-source-run-output-contract-v1"
     }
   });
 });

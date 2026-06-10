@@ -527,6 +527,43 @@ function assertRenderedEquals(name, source, rawJson, rendered, expected) {
 }
 
 /**
+ * Milestone-relative diagnostic fragments forbidden from active Phase 71B rendered-message fixtures.
+ *
+ * @type {Array<string>}
+ */
+const PHASE_71B_FORBIDDEN_DIAGNOSTIC_FRAGMENTS = [
+  "not supported in Phase",
+  "outside Phase",
+  "Phase 69 accepts only",
+  "Phase 69 direct CALL accepts only",
+  "Phase 70 implements only",
+  "deferred to Phase "
+];
+
+/**
+ * Asserts active rendered Simulator Messages and raw source-run JSON do not use milestone-relative wording.
+ *
+ * @param {string} name Fixture name.
+ * @param {string} rawJson Raw JSON emitted by the native producer.
+ * @param {string} rendered Rendered Simulator Messages text.
+ * @returns {void}
+ */
+function assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered) {
+  for (const fragment of PHASE_71B_FORBIDDEN_DIAGNOSTIC_FRAGMENTS) {
+    assert.equal(
+      rawJson.includes(fragment),
+      false,
+      `${name} raw JSON must not contain milestone-relative diagnostic wording: ${fragment}`
+    );
+    assert.equal(
+      rendered.includes(fragment),
+      false,
+      `${name} rendered Simulator Messages must not contain milestone-relative diagnostic wording: ${fragment}`
+    );
+  }
+}
+
+/**
  * Asserts no execution-complete message appears in an invalid fixture.
  *
  * @param {Array<object>} messages Simulator messages returned by source-run JSON.
@@ -4719,14 +4756,15 @@ test("renders IMUL reg-immediate rejection diagnostic exactly", () => {
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-instruction-operands",
-    message: "IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.",
+    message: "This IMUL form is not accepted. Use an implemented one-, two-, or three-operand IMUL form.",
     line: 3,
     column: 15,
     byteOffset: 30,
     spanLength: 1
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 15, byte offset 30, span length 1: IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-instruction-operands line 3, column 15, byte offset 30, span length 1: This IMUL form is not accepted. Use an implemented one-, two-, or three-operand IMUL form.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
 });
 
 test("renders IMUL immediate range diagnostic exactly", () => {
@@ -6507,7 +6545,7 @@ END main
     {
       kind: "assembly-error",
       code: "invalid-call-target",
-      message: "CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.",
+      message: "CALL target cannot be an ordinary code label. This simulator accepts only user procedure entries.",
       line: 4,
       column: 10,
       byteOffset: 36,
@@ -6515,7 +6553,256 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 4, column 10, byte offset 36, span length 9: CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 4, column 10, byte offset 36, span length 9: CALL target cannot be an ordinary code label. This simulator accepts only user procedure entries.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL data-symbol diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-data-symbol";
+  const source = `.data
+value DWORD 1
+.code
+main PROC
+    call value
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-call-target",
+    message: "CALL target cannot be a data symbol. This simulator accepts only user procedure entries.",
+    line: 5,
+    column: 10,
+    byteOffset: 45,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 5, column 10, byte offset 45, span length 5: CALL target cannot be a data symbol. This simulator accepts only user procedure entries.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL reserved-word diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-reserved-word";
+  const source = `.code
+main PROC
+    call ret
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-call-target",
+    message: "CALL target cannot be a reserved MASM or simulator word. This simulator accepts only user procedure entries.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 3, column 10, byte offset 25, span length 3: CALL target cannot be a reserved MASM or simulator word. This simulator accepts only user procedure entries.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL distance-override diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-distance-override";
+  const source = `.code
+main PROC
+    call NEAR PTR Helper
+main ENDP
+Helper PROC
+    ret
+Helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-call-form",
+    message: "CALL distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-call-form line 3, column 10, byte offset 25, span length 4: CALL distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL immediate diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-immediate-target";
+  const source = `.code
+main PROC
+    call 1234
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-call-form",
+    message: "CALL expression and immediate targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-call-form line 3, column 10, byte offset 25, span length 4: CALL expression and immediate targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL directive diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-directive-target";
+  const source = `.code
+main PROC
+    call .code
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-call-target",
+    message: "CALL target cannot be a directive name. This simulator accepts only user procedure entries.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 5
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-call-target line 3, column 10, byte offset 25, span length 5: CALL target cannot be a directive name. This simulator accepts only user procedure entries.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL register diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-register-target";
+  const source = `.code
+main PROC
+    call eax
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-call-form",
+    message: "CALL register targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-call-form line 3, column 10, byte offset 25, span length 3: CALL register targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL memory diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-memory-target";
+  const source = `.code
+main PROC
+    call [eax]
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-call-form",
+    message: "CALL memory targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-call-form line 3, column 10, byte offset 25, span length 1: CALL memory targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders direct CALL OFFSET diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-call-offset-target";
+  const source = `.code
+main PROC
+    call OFFSET Helper
+main ENDP
+Helper PROC
+    ret
+Helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-call-form",
+    message: "CALL OFFSET targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.",
+    line: 3,
+    column: 10,
+    byteOffset: 25,
+    spanLength: 6
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-call-form line 3, column 10, byte offset 25, span length 6: CALL OFFSET targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders RET operand diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-ret-operand";
+  const source = `.code
+main PROC
+    ret 4
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-instruction-form",
+    message: "RET operand forms are not implemented. This simulator accepts plain near RET with no operands.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction-form line 3, column 9, byte offset 24, span length 1: RET operand forms are not implemented. This simulator accepts plain near RET with no operands.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
+});
+
+test("Phase 71B renders RETF diagnostic without milestone-relative wording", () => {
+  const name = "phase71b-retf";
+  const source = `.code
+main PROC
+    retf
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-instruction-form",
+    message: "Far RET forms are not implemented. This simulator accepts plain near RET with no operands.",
+    line: 3,
+    column: 5,
+    byteOffset: 20,
+    spanLength: 4
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-instruction-form line 3, column 5, byte offset 20, span length 4: Far RET forms are not implemented. This simulator accepts plain near RET with no operands.");
+  assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
 });
 
 test("Phase 69 renders direct CALL checked stack write failure exactly", () => {

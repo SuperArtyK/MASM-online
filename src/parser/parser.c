@@ -7534,7 +7534,7 @@ static bool vm_parser_validate_explicit_imul_operands(
         return false;
     }
     if (source->kind == VM_IR_OPERAND_IMMEDIATE) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, has_immediate ? "IMUL three-operand form requires a register or memory second operand." : "IMUL reg, imm is not supported in Phase 55; use a register or memory source, or the three-operand reg, r/m, imm form.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, has_immediate ? "IMUL three-operand form requires a register or memory second operand." : "This IMUL form is not accepted. Use an implemented one-, two-, or three-operand IMUL form.");
         return false;
     }
     if (source->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(source)) {
@@ -8083,7 +8083,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_reject_call_form(
             state,
             target_token,
-            "CALL distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are deferred. Phase 69 accepts only a plain user procedure name."
+            "CALL distance and type overrides such as SHORT, NEAR PTR, and FAR PTR are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
     }
 
@@ -8092,7 +8092,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_reject_call_form(
             state,
             target_token,
-            "CALL memory targets are not supported. Indirect CALL behavior is deferred; Phase 69 accepts only a plain user procedure name."
+            "CALL memory targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
     }
 
@@ -8100,7 +8100,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_reject_call_form(
             state,
             target_token,
-            "CALL register targets are not supported. Indirect CALL behavior is deferred; Phase 69 accepts only a plain user procedure name."
+            "CALL register targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
     }
 
@@ -8110,12 +8110,12 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_reject_call_form(
             state,
             target_token,
-            "CALL expression and immediate targets are not supported. Phase 69 accepts only a plain user procedure name."
+            "CALL expression and immediate targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
     }
 
     if (target_token->kind == VM_LEXER_TOKEN_DIRECTIVE) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a directive name. Phase 69 accepts only a user procedure entry.");
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a directive name. This simulator accepts only user procedure entries.");
         return false;
     }
 
@@ -8128,7 +8128,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return vm_parser_reject_call_form(
             state,
             target_token,
-            "CALL OFFSET targets are not supported. Phase 69 accepts only a plain user procedure name."
+            "CALL OFFSET targets are not implemented. This simulator accepts only direct user-procedure CALL targets in MASM32 Educational Mode."
         );
     }
 
@@ -8456,7 +8456,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             opcode = VM_IR_OPCODE_EXIT;
         } else {
             if (vm_parser_token_equals(mnemonic_token, "retf")) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "RETF far returns are outside Phase 70; only plain near RET with no operands is implemented.");
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "Far RET forms are not implemented. This simulator accepts plain near RET with no operands.");
                 return false;
             }
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
@@ -8494,7 +8494,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             return false;
         }
         if (opcode == VM_IR_OPCODE_RET && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, vm_parser_current_token(state), "RET imm16, register, and memory operand forms are deferred; Phase 70 implements only plain near RET with no operands.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, vm_parser_current_token(state), "RET operand forms are not implemented. This simulator accepts plain near RET with no operands.");
             return false;
         }
         if ((opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&
@@ -8900,13 +8900,13 @@ static bool vm_parser_reject_classified_call_target(
 
     switch (target_class) {
         case VM_PARSER_CALL_TARGET_CODE_LABEL:
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be an ordinary code label. Phase 69 direct CALL accepts only user procedure entries.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be an ordinary code label. This simulator accepts only user procedure entries.");
             return false;
         case VM_PARSER_CALL_TARGET_DATA_SYMBOL:
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a data symbol. Phase 69 direct CALL accepts only user procedure entries.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a data symbol. This simulator accepts only user procedure entries.");
             return false;
         case VM_PARSER_CALL_TARGET_NUMERIC_EQUATE:
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a numeric equate. Phase 69 direct CALL accepts only user procedure entries.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a numeric equate. This simulator accepts only user procedure entries.");
             return false;
         case VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL:
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL, target_token, "CALL target names Windows/API, external, linker, import-library, or host-environment behavior outside MASM32 Educational Mode.");
@@ -8917,11 +8917,11 @@ static bool vm_parser_reject_classified_call_target(
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE, target_token, "Recognized Irvine32 routine or virtual terminator, but CALL dispatch for Irvine32 routine names is deferred to a later Irvine32 routine-dispatch phase.");
             return false;
         case VM_PARSER_CALL_TARGET_RESERVED_WORD:
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a reserved MASM or simulator word. Phase 69 direct CALL accepts only user procedure entries.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target cannot be a reserved MASM or simulator word. This simulator accepts only user procedure entries.");
             return false;
         case VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION:
         case VM_PARSER_CALL_TARGET_LOCAL_SYMBOL:
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, target_token, "CALL target form is not supported. Phase 69 direct CALL accepts only a plain user procedure name.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, target_token, "CALL target form is not implemented. This simulator accepts only a plain user procedure name.");
             return false;
         case VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL:
         default:

@@ -6,15 +6,29 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
+- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Phase 71A1 is test-runner infrastructure only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71A1 adds official diagnostic subgroup commands but does not change accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+Phase 71B is diagnostic-copy cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B changes active user-facing diagnostic wording without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
 
-When this section changes, replace the existing status lines in place. Do not append output-contract tokens, next-phase labels, milestone-report prose, phase history, or command transcripts.
+When this section changes, replace the existing status lines in place. Do not append output-contract tokens, next-phase labels, milestone-report prose, phase history, command transcripts, changed-files lists, assumptions, TODO disposition, skipped-dependency explanations, or artifact-policy detail.
+
+
+Static documentation checks for active source-of-truth text should reject stale milestone-context phrases unless they appear in historical reports, changelogs, quoted forbidden-pattern examples, or allowlist entries used by the check itself. The minimum phrases to scan are:
+
+- `As of the source-of-truth revision after Phase`
+- `next canonical guide phase is Phase`
+- `Current behavior through Phase`
+- `Current Phase <N> behavior`
+- `current behavior through Phase`
+- `as of Phase <N>`
+
+The check must not reject the active status field label `Current milestone:` when it appears in the compact active-status payload format defined by the implementation guide. The check must not reject historical milestone reports under `docs/history/`.
+
+When a guide phase describes behavior it will replace, the preferred wording is `pre-<phase> accepted behavior` or `behavior replaced by this phase`.
 
 ## 1. Prerequisites
 

@@ -2,17 +2,17 @@
 
 Current milestone:
 
-- Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
+- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71A1 is diagnostic test-runner infrastructure only; it does not add or remove accepted MASM syntax, rejected forms, runtime diagnostics, source-run behavior, Wasm API behavior, or browser behavior.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71B is diagnostic-copy cleanup only; it removes stale milestone-number wording from active user-facing diagnostics without adding or removing accepted MASM syntax, rejected forms, runtime diagnostics, source-run behavior, Wasm API behavior, or browser behavior.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
-Current procedure and termination behavior through Phase 71A:
+Implemented procedure and termination behavior for the active runtime/source-run MASM behavior phase:
 
 - `END entryName` selects the source-run entry procedure.
 - Execution starts inside the selected entry procedure.
@@ -24,13 +24,13 @@ Current procedure and termination behavior through Phase 71A:
 - Ordinary selected-entry `ENDP` fallthrough currently terminates successfully as an educational boundary simplification.
 - Called non-entry procedure fallthrough is diagnosed with `non-root-procedure-fell-through` by the current CALL/RET termination rules.
 
-The selected-entry `ENDP` success rule is current behavior, but it is not MASM/x86-like code-stream behavior. `PROC`, `ENDP`, and `END` are source/module structure, not runtime stop instructions.
+The selected-entry `ENDP` success rule is an implemented educational boundary simplification for the active runtime/source-run MASM behavior phase. It is not MASM/x86-like code-stream behavior, and it must not be described as a property of native MASM, a native x86 CPU, a PE loader, a C runtime, or Windows process termination. `PROC`, `ENDP`, and `END` are source/module structure, not executable VM instructions.
 
 Planned corrective phases will replace the default with code-stream fallthrough, add `code-fell-off-end`, add configurable `procedure-fell-through`, and add an explicit entry-procedure auto-stop compatibility setting. Do not describe any of those planned diagnostics or settings as implemented until their owning phases are accepted.
 
 Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
-Planned fallthrough diagnostics and settings, not current behavior until their owning phases are accepted:
+Planned fallthrough diagnostics and settings, not implemented until their owning phases are accepted:
 
 | Item | Planned phase | Planned default/status | Meaning |
 |---|---:|---|---|

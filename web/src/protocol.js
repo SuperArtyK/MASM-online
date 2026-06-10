@@ -25,7 +25,7 @@ export const IMPLEMENTED_PHASE_SUFFIX = "A";
 export const IMPLEMENTED_PHASE_NAME = "Phase 71A - Optional Root RET Strictness Mode";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71a-source-run-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71b-source-run-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

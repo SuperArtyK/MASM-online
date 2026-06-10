@@ -16,6 +16,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -1494,6 +1495,14 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         "future milestone",
         "will be added in a future milestone",
         "implemented through the current milestone",
+        "not supported in phase",
+        "outside phase",
+        "deferred to phase",
+    ]
+    forbidden_patterns = [
+        re.compile(r"phase\s+\d+[a-z0-9]*\s+accepts only", re.IGNORECASE),
+        re.compile(r"phase\s+\d+[a-z0-9]*\s+direct call accepts only", re.IGNORECASE),
+        re.compile(r"phase\s+\d+[a-z0-9]*\s+implements only", re.IGNORECASE),
     ]
     scanned_paths: list[pathlib.Path] = []
     for directory in [ROOT / "src", ROOT / "web" / "src", ROOT / "tests"]:
@@ -1509,13 +1518,34 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         except UnicodeDecodeError:
             continue
         relative_path = path.relative_to(ROOT)
+        in_allowed_forbidden_fragment_list = False
         for line_number, line in enumerate(lines, start=1):
             lowered = line.lower()
-            if "expect_json_not_contains" in line or "assert_text_not_contains" in line:
+            if "PHASE_71B_FORBIDDEN_DIAGNOSTIC_FRAGMENTS" in line:
+                in_allowed_forbidden_fragment_list = True
                 continue
+            if in_allowed_forbidden_fragment_list:
+                if line.strip() == "];":
+                    in_allowed_forbidden_fragment_list = False
+                continue
+            if (
+                "expect_json_not_contains" in line
+                or "expect_string_not_contains" in line
+                or "assert_text_not_contains" in line
+                or "assertNoPhase71bForbiddenDiagnosticWording" in line
+            ):
+                continue
+            matched_phrase = False
             for phrase in forbidden_phrases:
                 if phrase in lowered:
                     violations.append(f"{relative_path}:{line_number}: {phrase}")
+                    matched_phrase = True
+                    break
+            if matched_phrase:
+                continue
+            for pattern in forbidden_patterns:
+                if pattern.search(line):
+                    violations.append(f"{relative_path}:{line_number}: {pattern.pattern}")
                     break
 
     if violations:
@@ -1523,7 +1553,7 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71A1 status, concise status surfaces, and planned fallthrough wording."""
+    """Verify Phase 71B status, concise status surfaces, and planned fallthrough wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1543,11 +1573,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
             "Runtime/source-run MASM behavior phase",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71A1 is test-runner infrastructure only",
+            "Phase 71B is diagnostic-copy cleanup only",
             "implemented runtime features",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
@@ -1566,7 +1596,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         ],
     )
     for forbidden in [
-        "phase-71a-source-run-output-contract-v1",
+        "phase-71b-source-run-output-contract-v1",
         "output-contract tokens and browser/Wasm artifact compatibility details",
         "Wasm API behavior",
         "browser behavior",
@@ -1610,11 +1640,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71A1 is test-runner infrastructure only",
+            "Phase 71B is diagnostic-copy cleanup only",
             "implemented runtime features",
             "When this section changes, replace the existing status lines in place",
             "Artifact verification versus rebuild verification",
@@ -1662,7 +1692,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Current milestone:",
             "Runtime/source-run MASM behavior phase:",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
-            "Phase 71A1 is diagnostic test-runner infrastructure only",
+            "Phase 71B is diagnostic-copy cleanup only",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
@@ -1671,7 +1701,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Selected-entry root `RET` succeeds by default in MASM32-compatible root RET mode",
             "Optional strict root RET mode rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`",
             "Called non-entry procedure fallthrough is diagnosed with `non-root-procedure-fell-through`",
-            "The selected-entry `ENDP` success rule is current behavior, but it is not MASM/x86-like code-stream behavior",
+            "The selected-entry `ENDP` success rule is an implemented educational boundary simplification for the active runtime/source-run MASM behavior phase",
             "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
             "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
@@ -1707,16 +1737,16 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 71A1:",
-            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Latest recorded completed milestone in this history file:",
+            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Latest recorded runtime/source-run MASM behavior phase in this history file:",
             "Phase 71A - Optional Root RET Strictness Mode",
-            "phase-71a-source-run-output-contract-v1",
-            "Current protocol/artifact compatibility policy:",
-            "Current expected protocol token in this revision",
-            "The token is a source-run output-contract version identifier",
-            "Next canonical guide phase:",
-            "Next runtime/source-run MASM behavior phase:",
-            "Phase 71A is a runtime/source-run behavior phase. Phase 71A1 is the current repository/archive status",
+            "phase-71b-source-run-output-contract-v1",
+            "This history file records completed milestones and audit evidence.",
+            "It is not the phase-order authority",
+            "Forward-looking phase navigation is guide-owned.",
+            "Corrective artifact-evidence note for Phase 71B",
+            "archive's artifact-content scan as the stronger evidence",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
@@ -1744,19 +1774,21 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/FULL_IMPLEMENTATION_SPEC.md",
         [
-            "Current-status text is an orientation aid, not a changelog",
-            "Current milestone",
-            "not be labeled `Repository/archive milestone` in active status text",
-            "`Next canonical guide phase` and `Public output-contract token` are not active current-status fields",
-            "#### Required edit procedure",
-            "If an active current-status block exists, replace that block in place",
-            "Do not paste a new current-status block above or below the old one",
-            "Appending instead of replacing is a documentation defect",
-            "#### Required active-status payload",
-            "README-style current-status blocks must not include next-phase labels, output-contract tokens",
-            "The visible `web/index.html` top-page milestone banner is a file-specific compact banner",
+            "This specification owns final product behavior",
+            "It does not own phase numbering, latest-completed milestone status, next-phase selection",
+            "A behavior described here is not automatically implemented in the repository merely because it appears in the specification.",
+            "Implementation support status must be determined from implementation evidence, not from roadmap prose.",
+            "### 1.1 Specification, Guide, and Status Surface Authority",
+            "This specification is the product-behavior authority.",
+            "`INCREMENTAL_IMPLEMENTATION_GUIDE.md` is the implementation-sequence authority.",
+            "Short active status surfaces are orientation aids only.",
+            "The visible `web/index.html` top-page milestone banner is the compact browser landing-page status surface.",
             "Milestone <N or suffix>: <phase title>",
-            "do not include the `Current milestone` label, the `Runtime/source-run MASM behavior phase` label",
+            "All detailed active-status update workflow belongs in the implementation guide.",
+            "Historical milestone reports, historical audit notes, historical handoff reports, changelogs, and sections explicitly labeled as historical may retain wording that was true when they were written.",
+            "#### 8.1.1A Procedure Boundary Execution and Code-Stream Fallthrough",
+            "The final procedure-boundary execution model is code-stream based.",
+            "Procedure-boundary fallthrough diagnostics and optional beginner compatibility settings are assigned by the implementation guide.",
             "Required `the-front-fell-off` Diagnostic Easter Egg",
             "The future implementation phase that introduces `code-fell-off-end` must also add one deliberately harmless notice-level diagnostic easter egg",
             "Procedure names such as `front`, `Front`, `FRONT`, and `fRoNt` match",
@@ -1765,25 +1797,15 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "`docs/SUPPORTED_SYNTAX.md` is not an independent override",
             "External/API calls are not a future CALL target category",
             "External/API CALL targets are different. They are permanent project-boundary non-goal forms",
-            "Source-run Output-Contract and Wasm Artifact Compatibility",
-            "sourceRunOutputContract",
-            "phase-69c-source-run-output-contract-v1",
-            "That example is a contract-version token, not phase-status prose",
-            "not a claim that Phase 69C is the current repository milestone",
-            "copying any earlier token as absolute truth",
-            "A later accepted phase that deliberately changes the public source-run JSON shape",
-            "The full specification owns stable product boundaries",
-            "The required dependency order is:",
-            "As of the source-of-truth revision after Phase 71A1",
-            "Phase 71A is complete as optional root RET strictness behavior and Phase 71A1 is complete as diagnostic test-runner infrastructure",
-            "The next canonical guide phase is Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
-            "This specification must not duplicate the complete future phase list as phase-order authority",
-            "Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`",
-            "Do not renumber existing guide phases from this specification",
-            "native process execution, or native x86 execution",
+            "## 27. Implementation Guide Relationship",
+            "This specification does not define the current milestone, next milestone, latest completed phase, active phase order, or phase acceptance status.",
+            "Existing future phases must not be renumbered unless the project owner explicitly requests roadmap renumbering.",
+            "## 28. Future Roadmap",
+            "This roadmap names product capability areas.",
+            "Roadmap items must remain inside the simulator boundary.",
+            "native process execution, or full macro-system compatibility",
             "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
-            "Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts",
-            "current selected-entry root `RET` behavior",
+            "accepted MASM32-compatible root RET default behavior",
             "`RET imm16`, `RETF`, `LEAVE`, source-level stack instructions",
         ],
     )
@@ -1865,11 +1887,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71A1 adds official diagnostic subgroup commands",
+            "Phase 71B changes active user-facing diagnostic wording",
             "When this section changes, replace the existing status lines in place",
             "Do not append output-contract tokens, next-phase labels",
             "tests must prove:",
@@ -1881,7 +1903,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71A1: Diagnostic Test Runner Subgroup Decomposition",
+            "Milestone 71B: User-Facing Diagnostic Milestone-Wording Cleanup",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
@@ -1896,8 +1918,8 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         [
             "Runtime behavior remains Phase 69:",
             "Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.</p>",
-            "Repository status: Phase 71A1",
-            "Current milestone: Phase 71A1",
+            "Repository status: Phase 71B",
+            "Current milestone: Phase 71B",
             "Runtime/source-run MASM behavior remains Phase 71A",
             "Runtime/source-run MASM behavior phase:",
             "Protocol behavior: Phase 70A and later require runtime metadata and output-contract",

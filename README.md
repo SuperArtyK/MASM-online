@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition |
+| Current milestone | Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup |
 | Runtime/source-run MASM behavior phase | Phase 71A - Optional Root RET Strictness Mode |
 
-Phase 71A1 is test-runner infrastructure only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71A1 does not change accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+Phase 71B is diagnostic-copy cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B changes active user-facing diagnostic wording without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -109,7 +109,7 @@ For detailed setup, Windows command files, Visual Studio notes, missing-`emcc` t
 
 ## Documentation
 
-- [`docs/FULL_IMPLEMENTATION_SPEC.md`](docs/FULL_IMPLEMENTATION_SPEC.md) - product boundaries, stable behavior, cross-cutting rules, and current/future/non-goal distinctions.
+- [`docs/FULL_IMPLEMENTATION_SPEC.md`](docs/FULL_IMPLEMENTATION_SPEC.md) - final product behavior, product boundaries, stable cross-cutting rules, permanent non-goals, and user-visible behavior contracts.
 - [`docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`](docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md) - phase numbering, phase tasks, required tests, and acceptance criteria.
 - [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md) - current accepted MASM32 Educational Mode subset and diagnostics.
 - [`docs/TESTING_GUIDE.md`](docs/TESTING_GUIDE.md) - aggregate and focused test guidance.

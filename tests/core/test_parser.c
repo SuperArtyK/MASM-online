@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for the parser through Phase 70 plain near RET.
+ * @brief Unit and integration tests for parser behavior through Phase 71B diagnostic wording cleanup.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -246,6 +246,39 @@ static int expect_string_contains(const char *actual, const char *expected_fragm
     }
 
     return 0;
+}
+
+/// Verifies that a string does not contain an unexpected fragment.
+///
+/// @param actual Actual string pointer.
+/// @param unexpected_fragment Fragment that must be absent from @p actual.
+/// @param message Failure message when the fragment is present.
+/// @return Zero on success, otherwise one failure.
+static int expect_string_not_contains(const char *actual, const char *unexpected_fragment, const char *message) {
+    if (actual != NULL && unexpected_fragment != NULL && strstr(actual, unexpected_fragment) != NULL) {
+        fprintf(stderr, "FAIL: %s\nUnexpected fragment: %s\nActual: %s\n", message, unexpected_fragment, actual);
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Verifies that a diagnostic message avoids Phase 71B forbidden milestone wording.
+///
+/// @param actual Diagnostic message to inspect.
+/// @param message Failure context for the diagnostic under test.
+/// @return Zero on success, otherwise a positive failure count.
+static int expect_no_phase71b_forbidden_diagnostic_wording(const char *actual, const char *message) {
+    int failures = 0;
+
+    failures += expect_string_not_contains(actual, "not supported in Phase", message);
+    failures += expect_string_not_contains(actual, "outside Phase", message);
+    failures += expect_string_not_contains(actual, "Phase 69 accepts only", message);
+    failures += expect_string_not_contains(actual, "Phase 69 direct CALL accepts only", message);
+    failures += expect_string_not_contains(actual, "Phase 70 implements only", message);
+    failures += expect_string_not_contains(actual, "deferred to Phase", message);
+
+    return failures;
 }
 
 /// Initializes parser buffers and parses source text.
@@ -964,7 +997,10 @@ static int test_phase69_direct_call_target_rejections(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL ordinary label should use invalid-call-target");
     failures += expect_size(buffers.diagnostics[0].location.line, 4U, "ordinary-label CALL diagnostic should preserve target line");
     failures += expect_size(buffers.diagnostics[0].location.column, 10U, "ordinary-label CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 36U, "ordinary-label CALL diagnostic should preserve target byte offset");
     failures += expect_size(buffers.diagnostics[0].lexeme_length, 9U, "ordinary-label CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This simulator accepts only user procedure entries", "ordinary-label CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "ordinary-label CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".data\n"
@@ -978,6 +1014,12 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL data symbol should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL data symbol should use invalid-call-target");
+    failures += expect_size(buffers.diagnostics[0].location.line, 5U, "data-symbol CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "data-symbol CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 45U, "data-symbol CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 5U, "data-symbol CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This simulator accepts only user procedure entries", "data-symbol CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "data-symbol CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         "COUNT = 4\n"
@@ -990,6 +1032,83 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL numeric equate should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL numeric equate should use invalid-call-target");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "numeric-equate CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "numeric-equate CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 35U, "numeric-equate CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 5U, "numeric-equate CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This simulator accepts only user procedure entries", "numeric-equate CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "numeric-equate CALL diagnostic must not use milestone-relative wording");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL reserved-word target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL reserved-word target should use invalid-call-target");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "reserved-word CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "reserved-word CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "reserved-word CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "reserved-word CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This simulator accepts only user procedure entries", "reserved-word CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "reserved-word CALL diagnostic must not use milestone-relative wording");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call NEAR PTR Helper\n"
+        "main ENDP\n"
+        "Helper PROC\n"
+        "    ret\n"
+        "Helper ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL distance/type override target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL distance/type override target should use unsupported-call-form");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "distance-override CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "distance-override CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "distance-override CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "distance-override CALL diagnostic should span override token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "CALL distance and type overrides", "distance-override CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "distance-override CALL diagnostic must not use milestone-relative wording");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call 1234\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL immediate target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL immediate target should use unsupported-call-form");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "immediate CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "immediate CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "immediate CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "immediate CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "CALL expression and immediate targets", "immediate CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "immediate CALL diagnostic must not use milestone-relative wording");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    call .code\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL directive target should diagnose");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, "CALL directive target should use invalid-call-target");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "directive CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "directive CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "directive CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 5U, "directive CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This simulator accepts only user procedure entries", "directive CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "directive CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1001,6 +1120,12 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL register target should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL register target should use unsupported-call-form");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "register CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "register CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "register CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "register CALL diagnostic should span target token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "direct user-procedure CALL targets", "register CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "register CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1012,6 +1137,12 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL memory target should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL memory target should use unsupported-call-form");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "memory CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "memory CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "memory CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 1U, "memory CALL diagnostic should span opening bracket token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "direct user-procedure CALL targets", "memory CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "memory CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1026,6 +1157,12 @@ static int test_phase69_direct_call_target_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CALL OFFSET target should diagnose");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM, "CALL OFFSET target should use unsupported-call-form");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "OFFSET CALL diagnostic should preserve target line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 10U, "OFFSET CALL diagnostic should preserve target column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 25U, "OFFSET CALL diagnostic should preserve target byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 6U, "OFFSET CALL diagnostic should span OFFSET token");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "direct user-procedure CALL targets", "OFFSET CALL diagnostic should use stable simulator boundary wording");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "OFFSET CALL diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         "INCLUDE Irvine32.inc\n"
@@ -1122,7 +1259,12 @@ static int test_phase70_ret_form_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET imm16 should remain deferred");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET imm16 should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "Phase 70 implements only plain near RET", "RET imm16 diagnostic should preserve Phase 70 boundary");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET imm16 diagnostic should use stable simulator boundary wording");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET imm16 diagnostic should preserve operand line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET imm16 diagnostic should preserve operand column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET imm16 diagnostic should preserve operand byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 1U, "RET imm16 diagnostic should span immediate token");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET imm16 diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1134,6 +1276,12 @@ static int test_phase70_ret_form_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET register operand should remain unsupported");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET register operand should use unsupported-instruction-form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET register diagnostic should use stable simulator boundary wording");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET register diagnostic should preserve operand line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET register diagnostic should preserve operand column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET register diagnostic should preserve operand byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "RET register diagnostic should span register token");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET register diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1145,6 +1293,12 @@ static int test_phase70_ret_form_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET memory operand should remain unsupported");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET memory operand should use unsupported-instruction-form");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET memory diagnostic should use stable simulator boundary wording");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET memory diagnostic should preserve operand line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET memory diagnostic should preserve operand column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET memory diagnostic should preserve operand byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "RET memory diagnostic should span PTR width token");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET memory diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -1156,7 +1310,12 @@ static int test_phase70_ret_form_rejections(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RETF far return should remain unsupported");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RETF should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "far returns are outside Phase 70", "RETF diagnostic should state far-return boundary");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "Far RET forms are not implemented", "RETF diagnostic should use stable simulator boundary wording");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RETF diagnostic should preserve mnemonic line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "RETF diagnostic should preserve mnemonic column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 20U, "RETF diagnostic should preserve mnemonic byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "RETF diagnostic should span mnemonic token");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RETF diagnostic must not use milestone-relative wording");
 
     return failures;
 }
@@ -6012,7 +6171,12 @@ static int test_phase55_imul_parse_error_paths(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "IMUL reg, imm should produce parser diagnostics");
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "IMUL reg, imm should use invalid-instruction-operands");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "not supported in Phase 55", "IMUL reg, imm diagnostic should explain unsupported Phase 55 shape");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "This IMUL form is not accepted", "IMUL reg, imm diagnostic should use stable simulator boundary wording");
+    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "IMUL reg, imm diagnostic should preserve source line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 15U, "IMUL reg, imm diagnostic should preserve immediate column");
+    failures += expect_size(buffers.diagnostics[0].location.offset, 30U, "IMUL reg, imm diagnostic should preserve immediate byte offset");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 1U, "IMUL reg, imm diagnostic should span immediate token");
+    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "IMUL reg, imm diagnostic must not use milestone-relative wording");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"

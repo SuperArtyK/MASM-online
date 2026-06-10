@@ -1,6 +1,6 @@
 # Online MASM32 Educational Simulator - Full Implementation Specification
 
-> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Together they are the current reviewed source-of-truth revision. This specification owns product boundaries, stable behavior, stable cross-cutting rules, current/future/non-goal distinctions, and product-level diagnostic policy. It does not own phase numbering, per-phase task lists, required tests, or acceptance criteria; those remain in the paired implementation guide.
+> **Canonical source-of-truth note:** This file is paired with `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. This specification owns final product behavior, stable simulator boundaries, permanent non-goals, stable cross-cutting architecture rules, stable safety invariants, product-level diagnostic policy, and user-visible behavior contracts. It does not own phase numbering, latest-completed milestone status, next-phase selection, per-phase task lists, required per-phase tests, phase acceptance criteria, or milestone-report evidence. Those implementation-sequence and implementation-status topics belong to the paired implementation guide, milestone history, milestone reports, current repository state, supported-syntax reference, and tests.
 
 
 ## 1. Project Goal
@@ -11,132 +11,38 @@ The simulator is intended for learning, experimentation, debugging, and sharing 
 
 The core product is not a native MASM compiler and not a full Windows/x86 emulator. It is a MASM-like source parser plus an internal virtual machine.
 
-The current implementation supports only the MASM32 Educational Mode subset completed through the latest accepted implementation milestone. A feature is current behavior only when it has been implemented, tested, and documented by the canonical implementation guide and the corresponding repository state.
+This specification describes the intended simulator product, its stable boundaries, and the final behavior contracts for accepted features. A behavior described here is not automatically implemented in the repository merely because it appears in the specification.
 
-The intended complete v1 roadmap incrementally models registers, currently selected flags, memory, selected stack behavior, selected control flow, selected Irvine32 routines, resource limits, and educational diagnostics. Roadmap language in this specification must not be read as saying that stack behavior, control flow, Irvine32 routines, debugger behavior, URL sharing, input routines, or other future systems are already implemented.
+Implementation support status must be determined from implementation evidence, not from roadmap prose. Use the paired implementation guide, latest accepted milestone report, current repository/archive state, supported-syntax reference, and current test suite to decide whether a behavior is implemented.
 
-When describing current project status, future assistants must distinguish these three categories:
+When describing support status, future assistants must separate these categories:
 
-- implemented behavior: behavior completed by the latest accepted milestone and present in the current repository archive;
-- planned v1 behavior: behavior specified for a later implementation-guide phase but not yet implemented;
-- non-goal behavior: behavior outside the simulator boundary, such as native x86 execution, Windows API execution, PE loading, object linking, host filesystem access, or full MASM macro compatibility.
+- **implemented behavior:** behavior present in the current repository/archive state, accepted by applicable milestone evidence, and covered by tests where tests are required by the owning phase;
+- **specified future behavior:** behavior defined by this specification or assigned by the implementation guide but not yet implemented and accepted;
+- **non-goal behavior:** behavior outside the simulator boundary, including native x86 execution, Windows API execution, PE loading, object linking, host filesystem access, external library loading, full MASM macro compatibility, or full Windows process emulation.
 
-If the current repository, latest milestone report, and guide disagree about whether a feature is implemented, the assistant must treat the feature as not confirmed until it verifies the repository tests or explicitly reports the uncertainty.
+If repository code, tests, supported-syntax documentation, and milestone evidence disagree about whether a feature is implemented, treat the feature as unconfirmed. Report the uncertainty explicitly instead of assuming that roadmap text, future-phase text, historical milestone text, or archive filename text proves current support.
 
-### 1.1 Current-status Surface Hygiene
+### 1.1 Specification, Guide, and Status Surface Authority
 
-Current-status text is an orientation aid, not a changelog. It must tell the reader which accepted implementation milestone the project is currently at. It must not accumulate one paragraph per milestone, and it must not expose internal protocol tokens or next-phase guesses on user-facing landing pages.
+This specification is the product-behavior authority. It defines stable simulator behavior, boundaries, non-goals, diagnostic policy, memory-safety rules, source-run contracts, and user-visible behavior requirements.
 
-#### Status values
+`INCREMENTAL_IMPLEMENTATION_GUIDE.md` is the implementation-sequence authority. It defines phase numbering, phase titles, phase dependencies, phase tasks, conditional phases, required tests, acceptance criteria, and the workflow for updating active current-status text.
 
-Active current-status surfaces use these values:
+Short active status surfaces are orientation aids only. They may identify the latest accepted project milestone and, when needed, the latest runtime/source-run MASM behavior phase. They must not become changelogs, milestone ledgers, phase reports, test transcripts, output-contract summaries, artifact-policy summaries, or next-phase planning notes.
 
-1. **Current milestone** - the latest implemented and accepted milestone from `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` that is present in the current repository state. This is the project status value. It is not named after the ZIP archive filename, and it must not be labeled `Repository/archive milestone` in active status text.
-2. **Runtime/source-run MASM behavior phase** - the latest implemented and accepted phase that changed at least one runtime-visible MASM/source behavior category listed below. This value is shown only when it differs from the current milestone.
-
-A phase changes runtime/source-run MASM behavior when it changes accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features.
-
-A maintenance, documentation, display-only, output-ordering, diagnostic-copy, artifact-compatibility, test-runner-only, verification-ergonomics, or repository-cleanup phase may advance the current milestone without advancing the runtime/source-run MASM behavior phase. Future assistants must not infer a runtime behavior change from such a phase unless that phase explicitly owns one of the runtime-visible MASM/source behavior categories listed above.
-
-`Next canonical guide phase` and `Public output-contract token` are not active current-status fields. Do not include them in README-style status tables, supported-syntax opening status text, build-guide current-status blocks, browser landing-page milestone banners, or routine current-status summaries. Next-phase planning belongs in the implementation guide, milestone history, handoff notes, or milestone reports. Output-contract tokens belong only in protocol, artifact-verification, source-run JSON, worker/Wasm compatibility, rebuild-verification, and exact test documentation where that implementation detail is directly relevant.
-
-#### Required edit procedure
-
-When updating current-status text, perform this procedure exactly:
-
-1. Search the target document for existing active status headings and phrases before writing new status text. Search for at least `Current status`, `Current repository status`, `Current scope`, `Current milestone`, `Repository/archive milestone`, `Runtime/source-run MASM behavior phase`, `Next canonical guide phase`, `sourceRunOutputContract`, and `output-contract token`.
-2. If an active current-status block exists, replace that block in place. Delete the old block first, then insert the updated block at the same location.
-3. Do not paste a new current-status block above or below the old one.
-4. Do not keep an old current-status paragraph as a fallback, note, compatibility reminder, hidden comment, or historical explanation inside the active status section.
-5. After editing, search the document again. There must be exactly one active current-status/current-scope block per active surface unless the target phase explicitly defines multiple separately named user-visible status surfaces.
-6. If historical context is needed, move it to `docs/MILESTONE_HISTORY.md`, a milestone report, or a clearly labeled historical section. Do not leave it in the active status block.
-7. Update static checks that assert current-status text so they validate replacement, not accumulation.
-
-Appending instead of replacing is a documentation defect. Creating a second active `Current status`, `Current repository status`, `Current scope`, or similarly named milestone-status block is also a documentation defect unless the second block is inside a clearly historical file, milestone report, changelog, or quoted example that cannot be mistaken for current status.
-
-#### Required active-status payload
-
-README-style landing pages and other short user-facing orientation surfaces must use only this compact payload:
-
-```text
-Current milestone: Phase <N or suffix> - <phase title>
-Runtime/source-run MASM behavior phase: Phase <M> - <runtime behavior phase title>
-Status note: <one short sentence explaining why the runtime/source-run behavior phase differs from the current milestone>
-```
-
-The `Current milestone` line is always required. The `Runtime/source-run MASM behavior phase` and `Status note` lines are required only when the current milestone did not change accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features. When the current milestone is itself a runtime/source-run MASM behavior phase, omit the runtime/source-run line and omit the status note.
-
-README-style current-status blocks must not include next-phase labels, output-contract tokens, artifact-compatibility policy, full roadmap detail, changed-files lists, test-command transcripts, assumptions, TODO disposition, acceptance criteria, skipped-dependency explanations, or milestone-report prose.
-
-The visible `web/index.html` top-page milestone banner is a file-specific compact banner, not a README-style two-field current-status table. It must use exactly this form, with the phase title copied from the implementation guide:
+The visible `web/index.html` top-page milestone banner is the compact browser landing-page status surface. It must use this form:
 
 ```text
 Milestone <N or suffix>: <phase title>
 ```
 
-For this banner, do not include the `Current milestone` label, the `Runtime/source-run MASM behavior phase` label, a status note, a next-phase label, an output-contract token, or a runtime-behavior explanation. If the visible browser page needs a separate runtime/source-run distinction in a future phase, that phase must define a separately named browser status surface and tests; do not append that detail to the top-page milestone banner. The file-level status comment in `web/index.html` should mirror the same compact milestone text and must not become a hidden replacement for visible current-status wording.
+The milestone number and title must match the accepted phase title in the implementation guide. This banner must not include a `Current milestone` label, runtime/source-run behavior text, next-phase text, source-run output-contract tokens, artifact-policy prose, changed-file lists, test results, assumptions, TODO disposition, milestone-report prose, or compatibility explanations.
 
-Detailed status belongs here instead:
+All detailed active-status update workflow belongs in the implementation guide. If the implementation guide and this specification appear to disagree about the current milestone, next phase, phase acceptance status, or exact active-status update workflow, use the guide and latest accepted milestone evidence for implementation status. Use this specification only for product-behavior requirements and stable status-surface shape requirements.
 
-- next canonical phase and phase-order detail belong in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/MILESTONE_HISTORY.md`, milestone reports, or explicit handoff notes;
-- source-run JSON, worker protocol, and Wasm artifact compatibility details belong in protocol/build/development documentation and tests, not in short active status blocks;
-- accepted syntax, rejected syntax, diagnostics, and future/deferred syntax details belong in `docs/SUPPORTED_SYNTAX.md` detailed sections;
-- milestone chronology belongs in `docs/MILESTONE_HISTORY.md` or milestone reports;
-- assumptions, changed files, test commands, skipped dependencies, and TODO disposition belong in milestone reports.
+Historical milestone reports, historical audit notes, historical handoff reports, changelogs, and sections explicitly labeled as historical may retain wording that was true when they were written. Historical wording does not override the current canonical specification, current canonical guide, supported-syntax reference, repository state, or current tests.
 
-#### Surfaces covered by this rule
-
-Current-status surfaces include, at minimum:
-
-- `README.md` current-status and current-scope text;
-- `docs/SUPPORTED_SYNTAX.md` opening status text and expected-diagnostic summaries;
-- `docs/BUILDING_AND_DEVELOPMENT.md` current-status text;
-- browser-visible runtime/status text, except the visible `web/index.html` top-page milestone banner which follows the file-specific compact banner rule above;
-- worker/protocol status text;
-- source-run JSON phase/status fields and human-readable status strings;
-- Wasm/source-run status fields;
-- test assertions that describe current runtime/source-run metadata or user-facing current-status text;
-- user-facing diagnostics rendered in Simulator Messages;
-- worker-generated `ui-error` messages;
-- newly created milestone reports and current handoff/status summaries.
-
-Historical milestone reports, historical audit notes, historical handoff reports, and explicitly labeled changelog sections may retain wording that was true when they were written. They do not override the current canonical specification, current canonical guide, latest accepted current milestone, or current tests.
-
-#### Wording rules
-
-Current-status text must not use vague milestone-relative phrases as substitutes for named status values. Avoid phrases such as:
-
-```text
-this milestone
-implemented through the current milestone
-unsupported in this milestone
-not supported by the current milestone
-```
-
-Use named values instead. The label `Current milestone` is allowed only as the explicit status field defined above. Do not use `current milestone` as a vague substitute inside diagnostics, feature-support prose, or future-work wording.
-
-When the current milestone and runtime/source-run MASM behavior phase differ, visible user-facing current-status text must state both values unless the surface is the visible `web/index.html` top-page milestone banner. That banner intentionally states only `Milestone <N or suffix>: <phase title>`. For every other visible status surface that owns the runtime/source-run distinction, a distinction that appears only in an HTML comment, source-code comment, milestone report, historical note, or static-test helper string is not sufficient.
-
-Current-status text may mention a prior milestone only when that prior milestone is necessary to explain current behavior. Even then, use one compact behavior-specific sentence. Do not paste a milestone ledger such as `Phase 66 added...`, `Phase 65 added...`, or `Phase 64D added...` into an active current-status block.
-
-If a later runtime/source-run behavior phase is accepted, update the current milestone, visible status text, protocol/source-run metadata, and static assertions in the same milestone when those surfaces are affected. Do not leave user-facing status text frozen at an older behavior phase, and do not advance runtime/source-run behavior metadata merely because a non-runtime current milestone was accepted.
-
-For split feature families, current-status wording must identify which layer is implemented. Do not collapse parser acceptance, lowering metadata, VM execution, debugger/editor behavior, UI display, and documentation cleanup into a broad feature label.
-
-Use behavior-specific wording for partial features. For example, prefer:
-
-```text
-Direct `jmp label` parser/lowering is implemented. Direct `jmp label` runtime execution is implemented. Conditional jumps remain future work. Debugger breakpoint binding for branch target lines remains future work.
-```
-
-over vague statements such as:
-
-```text
-control flow is supported
-control flow is unsupported
-branches are implemented
-branches are not implemented
-```
 
 
 ### Historical handoff and audit-report status
@@ -561,61 +467,31 @@ This distinction is mandatory:
 - terminating at the selected entry procedure boundary does not implement `RET`;
 - recognizing an Irvine32 routine name does not insert that name into the ordinary user procedure namespace.
 
-#### 8.1.1A Entry Procedure, Procedure Boundary, and Code-Stream Contract
+#### 8.1.1A Procedure Boundary Execution and Code-Stream Fallthrough
 
-The selected entry procedure is the procedure named by the final accepted `END entryName` directive.
+The final procedure-boundary execution model is code-stream based. `PROC`, `ENDP`, and `END` are source/module structure only. They are not executable VM instructions, hidden return instructions, hidden stop instructions, implicit program terminators, or synthetic calls to a host runtime.
+
+The selected entry procedure is the procedure named by the final accepted `END entryName` directive. Execution starts at the selected entry procedure's first executable slot. If the selected entry procedure contains executable instructions, that slot is its first lowered executable instruction. If the selected entry procedure is empty, that slot is the source-order position immediately after the selected procedure range.
 
 The simulator must distinguish these concepts:
 
-- **procedure declaration**: a `name PROC` / `name ENDP` source range;
-- **entry procedure**: the accepted procedure selected by `END entryName`;
-- **ordinary code label**: a `label:` target inside executable code;
-- **call target metadata**: procedure-entry information used by direct user-procedure `CALL` and later explicit call-family phases;
-- **Irvine32 registry entry**: a recognized virtual routine or terminator name, not a user procedure;
-- **executable code stream**: the ordered lowered VM instruction stream after comments, blank lines, source-only labels, `PROC`, `ENDP`, `END`, and other non-executable directives have been removed from the executable instruction sequence;
-- **procedure fallthrough**: ordinary sequential execution crossing from one procedure range into another procedure range without an explicit supported control transfer or terminator such as `RET`, an implemented jump/branch transfer, or virtual Irvine32 `exit`;
-- **code-stream end falloff**: ordinary sequential execution reaching the end of the lowered executable code stream without an explicit supported program terminator.
+- **procedure declaration:** a `name PROC` / `name ENDP` source range;
+- **entry procedure:** the accepted procedure selected by `END entryName`;
+- **ordinary code label:** a `label:` target inside executable code;
+- **call target metadata:** procedure-entry information used by direct user-procedure `CALL` and later explicit call-family phases;
+- **Irvine32 registry entry:** a recognized virtual routine or terminator name, not a user procedure;
+- **executable code stream:** the ordered lowered VM instruction stream after comments, blank lines, source-only labels, `PROC`, `ENDP`, `END`, and other non-executable directives have been removed from the executable instruction sequence;
+- **procedure fallthrough:** ordinary sequential execution crossing from one procedure range into another procedure range without an explicit supported control transfer or terminator such as `RET`, an implemented jump/branch transfer, or virtual Irvine32 `exit`;
+- **code-stream end falloff:** ordinary sequential execution reaching the end of the lowered executable code stream without an explicit supported program terminator.
 
-`PROC`, `ENDP`, and `END` are source-structure and module-boundary directives in this simulator. They are not executable VM instructions. They must not be described or implemented as hidden `RET`, hidden `exit`, native x86 instructions, PE loader behavior, Windows process behavior, C runtime behavior, or Irvine32 library behavior.
+Ordinary sequential execution proceeds through the lowered executable code stream until it reaches an explicit supported terminator/control-transfer path or the end of executable code. Reaching the end of the executable code stream without an explicit supported program terminator is a simulator-owned runtime error. The owning implementation-guide phase for that behavior defines the diagnostic code, rendered message text, tests, and any compatibility notices required while the repository transitions from earlier educational selected-entry `ENDP` behavior.
 
-Current behavior through Phase 71A remains the implemented source-run behavior until a later accepted behavior phase changes it:
+Procedure-boundary fallthrough diagnostics and optional beginner compatibility settings are assigned by the implementation guide. The existence of procedure declarations, `ENDP`, `END`, direct `CALL`, helper `RET`, or root `RET` must not be used to infer hidden procedure stops, hidden native calls, hidden stack frames, native return-address behavior, PE loader behavior, Windows process teardown, C runtime startup behavior, or Irvine32 library behavior.
 
-1. The selected `END` target resolves to an accepted user procedure entry.
-2. Execution starts at the first executable instruction inside the selected entry procedure.
-3. If the entry procedure contains no executable instruction, the program completes successfully without executing any other procedure or code block.
-4. Executable instructions physically before the selected entry procedure do not run unless later reached through explicit supported control flow.
-5. Executable instructions physically after the selected entry procedure do not run merely because the selected entry procedure reached `ENDP`.
-6. Falling off the selected entry procedure at its `ENDP` boundary completes successfully exactly once.
-7. The implemented virtual Irvine32 `exit` terminator continues to terminate successfully from inside the selected entry procedure.
-8. A non-entry procedure must not execute by source-order fallthrough from the entry procedure.
-9. Called non-entry procedure fallthrough is diagnosed by the owning CALL/RET phase behavior and tests.
-10. Selected-entry root `RET` is governed by the active `rootRetMode` setting introduced by Phase 71A.
+A future or optional entry-procedure auto-stop compatibility setting may preserve or restore selected-entry `ENDP` auto-success for beginner examples only when an accepted implementation-guide phase explicitly defines that setting, its default, its exact scope, its diagnostics, and its tests. Such a compatibility setting must be limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-The current selected-entry `ENDP` success behavior is an educational boundary simplification. It must not be described as MASM-compatible procedure termination, x86 `RET`, Windows process exit, C runtime startup behavior, PE-loader behavior, or Irvine32 routine behavior.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack frames, `RET imm16`, `LEAVE`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, source-level `PUSH`/`POP`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
 
-A later accepted corrective behavior phase may replace this educational simplification with MASM/x86-like VM code-stream fallthrough. That future behavior must be specified and implemented explicitly. It must not be inferred from the existence of `PROC`, `ENDP`, `END`, direct `CALL`, or `RET` support.
-
-When the planned baseline code-stream fallthrough phase is accepted, the intended replacement behavior is:
-
-1. `PROC`, `ENDP`, and `END` remain non-executable source/module structure.
-2. Execution starts at the selected entry procedure's first executable slot. If the selected entry procedure contains executable instructions, that slot is its first lowered executable instruction. If the selected entry procedure is empty, that slot is the source-order position immediately after the selected procedure range.
-3. Ordinary sequential execution continues to the next executable lowered VM instruction even when that crosses a procedure boundary.
-4. If an empty selected entry procedure is followed by another procedure containing executable instructions, the first executable instruction in that later procedure is reachable by ordinary code-stream fallthrough unless an enabled compatibility setting stops at the selected entry boundary.
-5. If no executable instruction exists at or after the selected entry procedure's first executable slot, the simulator emits `code-fell-off-end`.
-6. If ordinary sequential execution crosses from one procedure range into another procedure range, the simulator emits the owning phase's `procedure-fell-through` diagnostic according to the active procedure-fallthrough diagnostic policy.
-7. If ordinary sequential execution reaches the end of the executable code stream without an explicit supported program terminator, the simulator emits `code-fell-off-end` as a runtime error.
-8. The future `code-fell-off-end` diagnostic must use this text unless the owning phase deliberately changes it:
-
-   ```text
-   Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?
-   ```
-
-9. The future `code-fell-off-end` diagnostic must not recommend the root-RET compatibility setting in its primary text. Code-stream end falloff may occur outside the selected entry procedure, and the root-RET setting does not legalize helper-procedure fallthrough.
-10. The future `procedure-fell-through` diagnostic is separate from `code-fell-off-end`. Procedure-boundary warnings/errors identify the procedure boundary crossed. Code-stream end falloff identifies that the lowered executable stream ended without a terminator.
-11. A future entry-procedure auto-stop compatibility setting may restore selected-entry `ENDP` auto-success for beginner examples. That compatibility setting must be explicit, must default to disabled unless the owning phase deliberately changes the default, and must be limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary.
-12. None of these future rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack frames, `RET imm16`, `LEAVE`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, source-level `PUSH`/`POP`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
-
-This contract protects current users from accidental execution of helper procedures while giving later phases a precise place to correct the selected-entry `ENDP` educational simplification without renumbering already accepted phases.
 #### 8.1.1B Planned Procedure-Fallthrough Diagnostic Policy
 
 A later accepted procedure-fallthrough behavior phase may introduce a configurable diagnostic policy for ordinary sequential execution crossing a procedure boundary without an explicit supported control transfer or terminator.
@@ -3716,11 +3592,11 @@ The simulator uses 32-bit VM return tokens for ordinary helper `CALL`/`RET` flow
 
 Ordinary helper return-token bytes may appear as modeled stack memory effects because the educational VM models the CALL return-token stack write. That visibility does not make the token encoding a stable external interface. Tests may assert behavior through documented simulator effects such as checked memory writes, checked memory reads, diagnostics, terminal status, register state, and rendered messages. Tests must not treat the private token encoding as a public ABI unless a later accepted phase explicitly promotes it to one.
 
-Selected-entry root `RET` is different from ordinary helper `RET`. Current Phase 71A behavior does not require, expose, read, write, or validate a root-return token. The accepted implementation model is VM-internal root/helper terminal-state metadata: selected-entry root `RET` succeeds by default before any `[ESP]` read when no helper-procedure return is pending. Phase 71A also provides the optional `rootRetMode = "strict-call-frame"` teaching mode, where selected-entry root `RET` is rejected before any `[ESP]` read, `ESP` mutation, pseudo-EIP token validation, public `memoryChanges` row, or successful terminal status.
+Selected-entry root `RET` is different from ordinary helper `RET`. The accepted selected-entry root RET terminal model does not require, expose, read, write, or validate a root-return token. The implementation model is VM-internal root/helper terminal-state metadata: selected-entry root `RET` succeeds by default before any `[ESP]` read when no helper-procedure return is pending. The optional `rootRetMode = "strict-call-frame"` teaching mode rejects selected-entry root `RET` before any `[ESP]` read, `ESP` mutation, pseudo-EIP token validation, public `memoryChanges` row, or successful terminal status.
 
 A future implementation must not introduce a root-return sentinel, synthetic terminal pseudo-EIP, `ENDP` return token, source-boundary token, native-address-like token, or instruction-after-procedure placeholder by implication. A numeric value such as `0xFFFFFFFFu` is not a valid or required root-return token unless a later accepted guide phase explicitly defines the sentinel, names the symbol, proves that the value cannot collide with ordinary pseudo-EIP return tokens, defines validation and diagnostic behavior, proves that it is never exposed as a user-authored memory value or as a documented public ABI value, and adds structured diagnostics tests plus rendered Simulator Messages tests.
 
-This rule preserves the current Phase 71A default behavior: selected-entry root `RET` is terminal VM state, not a hidden stack token. Ordinary helper `RET` remains checked pseudo-EIP return-token behavior in both root-ret modes.
+This rule preserves the accepted MASM32-compatible root RET default behavior: selected-entry root `RET` is terminal VM state, not a hidden stack token. Ordinary helper `RET` remains checked pseudo-EIP return-token behavior in both root-ret modes.
 
 The root terminal mechanism must not be exposed as:
 
@@ -6507,249 +6383,35 @@ CF = 1
 OF = 0
 ```
 
-## 27. Implementation Phasing Guidance
+## 27. Implementation Guide Relationship
 
-The incremental implementation guide intentionally splits large simulator/editor features into small numbered phases. This specification defines the final behavior; the guide defines the order and granularity of implementation.
+The implementation sequence is defined by `INCREMENTAL_IMPLEMENTATION_GUIDE.md`. That guide owns phase numbering, phase titles, phase dependencies, phase tasks, required tests, acceptance criteria, conditional phases, and rules for preserving or inserting non-renumbering corrective phases.
 
-Large multi-feature implementation passes should be avoided. Each implementation phase should remain independently testable and should preserve previous milestone behavior.
+This specification does not define the current milestone, next milestone, latest completed phase, active phase order, or phase acceptance status. When a future implementation phase is selected, use the implementation guide as the phase authority and this specification as the product-behavior authority.
 
-Important split areas:
+If a correction is needed between existing phases, the guide may insert a non-renumbering intermediate phase such as `35A`, `57B`, or another suffix phase. Existing future phases must not be renumbered unless the project owner explicitly requests roadmap renumbering.
 
-- Compatibility corrections should be implemented before new instruction groups when they affect already-implemented syntax. Signed `PTR` aliases, all-GPR base registers, and global memory-width resolution are corrections to existing memory-operand behavior.
-- Header directives should remain separate from memory/addressing corrections. `.386`, `.model`, `.stack`, `INCLUDE Irvine32.inc`, `OPTION CASEMAP:NONE`, `TITLE`, `SUBTITLE`, and `PAGE` are compatibility/header work, not instruction work.
-- Data compatibility should be staged: `.DATA?` and `.CONST`, then equates and simple constant expressions, then extended expressions, then nested `DUP` and initializer expressions.
-- Memory operand support should be implemented incrementally: constant symbol offsets, `PTR` width overrides, register-indirect operands, all-GPR bases, global width resolution, and later scaled-index addressing.
-- Data operators and literals should be implemented incrementally: `TYPE`, then `LENGTHOF`, then `SIZEOF` together with single-character and packed multi-character literals, then compatibility aliases such as `LENGTH` and `SIZE`.
-- Diagnostic quality should be implemented incrementally: first surface real lexer/parser diagnostics, then add conservative multi-diagnostic recovery for known unsupported constructs, then add feature-specific diagnostics for recognized planned compatibility features.
-- Native diagnostic rendering should be implemented immediately after nested `DUP` support. It is test infrastructure, not MASM syntax, and must make final Simulator Messages text testable without Emscripten by using the real C source-run JSON path plus the browser formatter in Node.
-- Control flow should be implemented incrementally: labels/`JMP`, then `CMP` and equality jumps, then signed/unsigned jumps, then anonymous labels, then `SETcc`, then `LOOP` and instruction limits.
-- Stack and procedure support should be implemented incrementally with explicit phase boundaries. The implementation guide owns exact phase numbering, phase titles, phase dependencies, phase tasks, required tests, and phase acceptance criteria. This specification owns stable product boundaries, non-goals, simulator behavior requirements, safety invariants, diagnostic expectations, and long-term architecture rules. When this specification and the guide both mention future stack/procedure work, the guide is authoritative for exact phase order and phase numbers.
-
-  As of the source-of-truth revision after Phase 71A1, Phase 71A is complete as optional root RET strictness behavior and Phase 71A1 is complete as diagnostic test-runner infrastructure. The next canonical guide phase is Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup.
-
-  The guide now includes a non-renumbering corrective sequence before Phase 72. Phase 71A1 is test infrastructure only. Phase 71B is diagnostic-copy, source-run output-contract metadata, and test cleanup only. Phase 71B1 is conditional source-run/native test infrastructure only. Phase 71C through Phase 71F define the planned fallthrough correction sequence. None of these phases may be treated as permission to implement Phase 72 behavior early.
-
-  The next planned runtime/source-run MASM behavior phase after Phase 71A is Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic, after Phase 71A1, Phase 71B, and any triggered Phase 71B1 work. Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the later call-depth/call-trace resource-protection phase. Future assistants must distinguish these concepts:
-
-  - the repository/archive milestone identifies the latest accepted repository state and may advance for documentation, static checks, test infrastructure, protocol compatibility, display cleanup, or other non-runtime work;
-  - the runtime/source-run MASM behavior phase identifies the latest accepted parser, VM, instruction, Irvine32, memory, source-run output-semantics, or rendered simulator behavior change;
-  - optional or corrective suffix phases do not grant permission to implement later runtime behavior early;
-  - Phase 71 implements selected-entry root `RET` success and called non-entry procedure fallthrough diagnostics while preserving ordinary helper `RET` checked return-token behavior;
-  - Phase 71A implements optional `rootRetMode = "strict-call-frame"` rejection for selected-entry root `RET` while preserving the MASM32-compatible default and ordinary helper `RET`;
-  - Phase 71A1 is defined to split diagnostic test runner groups and must not change parser acceptance, VM semantics, diagnostic wording, diagnostic codes, source spans, Program Console output, or runtime/source-run behavior metadata;
-  - Phase 71B is defined to change only active user-facing diagnostic wording, tests that assert that wording, and required source-run output-contract metadata. It must not change parser acceptance, VM semantics, Program Console output, diagnostic codes, severity, source spans, register behavior, flag behavior, or memory behavior;
-  - Phase 71B1 is conditional and, if triggered, is source-run/native test infrastructure only;
-  - Phase 71C through Phase 71F are the planned fallthrough correction phases and must remain separate from Phase 72 call-depth and call-trace work.
-
-  Later stack, procedure, LOCAL, PROC USES, PROTO, ADDR, INVOKE, Program Console, and Irvine32 routine work is intentionally split across smaller implementation-guide phases. This specification must not duplicate the complete future phase list as phase-order authority. The required dependency order is:
-
-  1. Preserve the C99 core, checked memory-helper policy, structured diagnostics policy, and Program Console versus Simulator Messages separation.
-  2. Preserve completed root procedure termination semantics before adding broader procedure-call behavior.
-  3. Complete call-stack return-address validation before adding higher-level procedure conveniences.
-  4. Complete procedure metadata and syntax validation before adding runtime save/restore behavior for procedure attributes such as `USES`.
-  5. Complete LOCAL parser and frame-layout metadata before adding runtime stack allocation, frame-relative addressing, or LOCAL operand execution.
-  6. Complete PROTO and ADDR semantics before implementing full INVOKE argument lowering.
-  7. Complete INVOKE parsing and argument lowering before implementing broad Irvine32 callable routine dispatch through INVOKE.
-  8. Treat Irvine32 callable routine dispatch as simulator runtime behavior only. It must not be described or implemented as WinAPI dispatch, PE import resolution, external library loading, host process calls, native process execution, or native x86 execution.
-
-  Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` before selecting, editing, testing, or implementing any future phase. Do not renumber existing guide phases from this specification. If a corrective milestone is needed, insert a non-renumbering intermediate phase, such as `70B`, `72A`, or another suffix phase, instead of shifting all later phase numbers.
-- Irvine32 support should be implemented incrementally: virtual include symbols and `exit`, console infrastructure, basic text output, numeric output, debug/utilities, input protocol, simple input, then string input and buffer safety.
-- Extended flags should be added before string instructions that depend on `DF`; logical/arithmetic/test helpers and debugger/Irvine displays should be updated together.
-- High-level MASM flow should be implemented only after low-level control flow and expression parsing are stable.
-- Structures and records should be implemented after data layout, expression support, and `TYPE`/`SIZEOF` behavior are stable.
-- Debugger support should be implemented incrementally: Step Into backend, current-state UI, last-step delta UI, execution stats, breakpoints, Continue, Step Over backend, and Step Over aggregate delta display.
-- CodeMirror editor support should be implemented incrementally: source editor replacement, MASM highlighting, indentation, dark/light local preferences, diagnostics integration, and debugger/breakpoint integration.
-
-Every guide phase should specify:
-
-- exact syntax accepted;
-- exact syntax rejected;
-- whether behavior is runtime, metadata-only, accepted no-op, or virtual built-in;
-- expected diagnostic codes and wording category;
-- acceptance programs;
-- regression tests for previously implemented behavior.
-
-
-### 27.1 Instruction Phase Contract Template
-
-Every future instruction phase must define the following before implementation. AI-assisted coding prompts should include this table explicitly.
-
-```text
-Instruction(s):
-Accepted operand forms:
-Rejected operand forms:
-Width resolution rules:
-Immediate range rules:
-Destination mutation:
-Source mutation:
-Memory read behavior:
-Memory write behavior:
-Flags read:
-Flags written:
-Modeled flags deliberately unchanged:
-Real x86 flags not yet modeled:
-Runtime errors:
-Assembly diagnostics:
-Source locations to report:
-Required parser tests:
-Required executor tests:
-Required source-run JSON tests:
-Required rendered Simulator Messages tests:
-Default browser/manual smoke program:
-Future behavior explicitly not implemented:
-```
-
-High-risk instruction groups such as `MUL`, `IMUL`, `DIV`, `IDIV`, `CALL`, `RET`, `INVOKE`, string instructions, and high-level MASM flow must not be implemented from informal descriptions. Their phase text must specify exact register operands, implicit operands, flags, overflow/divide errors, and memory behavior.
-
-### 27.2 Post-30 Release, Documentation, and Regression Gate
-
-The v1 release gate must run these required categories:
-
-- native C unit and integration tests;
-- parser tests;
-- source-run JSON tests;
-- Node diagnostic-rendering tests;
-- browser/worker smoke tests;
-- Wasm/Emscripten build and source-run validation;
-- static documentation and supported-syntax checks;
-- release artifact inventory and SHA-256 hash manifest.
-
-Environment-dependent suites may be skipped only with an explicit reason in the release report. Required suites failing or missing cause the release gate to fail.
-
-User-facing documentation must be generated from, or mechanically checked against, the implemented feature/test manifest. Examples referencing unsupported future features are permitted only in the known-unsupported/non-goal corpus.
-
-
-### 27.3 Source-run Output-Contract and Wasm Artifact Compatibility
-
-Native source-run tests exercise the C source-run path, but they do not prove that committed or served browser WebAssembly artifacts were rebuilt from the same C sources. This matters when a corrective phase changes C/Wasm-facing source-run output behavior but intentionally does not advance the runtime/source-run MASM behavior phase metadata.
-
-Runtime/source-run MASM behavior phase metadata must describe implemented MASM syntax and VM execution semantics. It must not be advanced solely to make stale-artifact detection easier after an output-only, documentation-only, formatting-only, ordering-only, serialization-only, or test-infrastructure-only corrective phase.
-
-When a phase changes any C/Wasm-facing output contract without advancing runtime/source-run behavior metadata, the project must use one of the following artifact compatibility protections:
-
-1. rebuild `web/dist` with Emscripten and record the command and result in the milestone report;
-2. add or update a separate output-contract, artifact-build, source-run-format, or Wasm-compatibility identifier that changes when source-run JSON ordering, diagnostic serialization, status serialization, final-state serialization, protocol-relevant formatting, or Wasm-facing output behavior changes;
-3. if Emscripten is unavailable in the implementation environment, explicitly report browser/Wasm rebuild validation as skipped and state that the served `web/dist` artifacts may require a manual rebuild before release or distribution.
-
-A stale-artifact warning based only on runtime/source-run MASM behavior phase metadata is not sufficient to detect output-only C/Wasm changes when the runtime behavior phase intentionally remains unchanged. The source-run output-contract field is `sourceRunOutputContract`, and its value is a version token for the public source-run JSON shape, ordering, serialization, and protocol interpretation.
-
-A token may include the milestone in which that output contract was introduced. For example, `phase-69c-source-run-output-contract-v1` names the output contract introduced during Phase 69C. That example is a contract-version token, not phase-status prose: the embedded `69c` label is not a claim that Phase 69C is the current repository milestone, current runtime/source-run MASM behavior phase, or an immutable value for future output-contract-changing phases.
-
-Browser/protocol code must treat missing, malformed, or mismatched values as stale artifact metadata distinct from stale runtime/source-run behavior phase metadata. A later accepted phase that deliberately changes the public source-run JSON shape, ordering, serialization, or protocol interpretation must define and test a new output-contract identifier token instead of copying any earlier token as absolute truth. If a later phase does not change the output contract, it may continue to use the existing token; that continuity is evidence that the output contract did not change, not evidence that the token's embedded historical phase label is current status.
-
-The implementation guide may assign a corrective compatibility phase to tighten runtime/source-run behavior phase checks. The intended compatibility rule after that corrective phase is exact match by default: a browser UI must warn when loaded Wasm runtime/source-run behavior metadata is older than, newer than, missing from, or otherwise different from the UI's expected runtime/source-run behavior phase metadata. A newer numeric runtime phase must not be silently accepted merely because it is newer unless a later accepted compatibility phase explicitly defines the compatible phase range, compatible output-contract identifiers, safe UI behavior, diagnostic rendering behavior, and test coverage. This exact-match rule is an artifact compatibility rule; it does not change accepted MASM syntax or VM execution semantics by itself.
-
-Milestone reports for output-only C/Wasm changes must distinguish:
-
-- native C source-run path verified;
-- Node/web formatter or protocol tests verified;
-- browser/Wasm artifacts rebuilt and smoke-tested;
-- browser/Wasm artifacts not rebuilt because `emcc` was unavailable;
-- served `web/dist` artifact compatibility verified by a separate output-contract identifier, if one exists.
-
-Checked-in browser/Wasm artifacts, local Emscripten rebuild capability, and browser/Wasm smoke verification are separate status facts.
-
-A repository archive may contain checked-in `web/dist` artifacts that carry the current output-contract identifier even when the current audit environment cannot rebuild those artifacts because `emcc` is unavailable. In that case, documentation and milestone reports must distinguish artifact-content evidence from rebuild verification.
-
-Do not infer that checked-in `web/dist` is stale solely because `emcc` is unavailable. Do not claim Emscripten rebuild verification unless the artifact was rebuilt in the current environment. Do not claim served browser/Wasm verification unless a browser/Wasm smoke test or equivalent served-artifact check actually ran.
 
 ## 28. Future Roadmap
 
-This section is a high-level product roadmap only. It does not override the canonical post-30 implementation sequence in the implementation guide or the integration status in Section 29.
+This roadmap names product capability areas. It is not an implementation phase ledger, not a current-support table, not a latest-completed milestone record, and not a next-phase authority. Current support is determined from repository code, tests, supported-syntax documentation, and latest accepted milestone evidence. Exact implementation order and phase ownership are defined by `INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
 
-The implementation guide assigns v1-relevant textbook MASM/Irvine32 features to concrete phases. The themes below are roadmap categories, not a current-support table. Some items in this list may already be implemented, some may be assigned to later v1 phases, some may be optional post-v1 work, and some may remain explicit non-goals. Current support must be determined from the canonical implementation guide, `SUPPORTED_SYNTAX.md`, the latest repository state, the latest accepted milestone report, and current tests.
+Roadmap capability areas include:
 
-Roadmap ownership and future stack/procedure sequencing:
+- additional source syntax and parser coverage within MASM32 Educational Mode;
+- additional control-flow forms that fit the simulator VM boundary;
+- procedure-boundary diagnostics and optional beginner compatibility settings;
+- call-depth and call-trace resource protection;
+- selected stack and frame features;
+- selected higher-level procedure syntax;
+- additional Irvine32-compatible educational routine dispatch;
+- debugger and trace improvements;
+- browser UI, editor, and sharing polish.
 
-The full specification owns stable product boundaries, non-goals, simulator behavior requirements, safety invariants, diagnostic expectations, and long-term architecture rules. The implementation guide owns exact phase numbering, phase titles, phase dependencies, phase tasks, required tests, and phase acceptance criteria. When this specification and the implementation guide both mention future work, the implementation guide is authoritative for exact phase order and phase numbers.
+Roadmap items must remain inside the simulator boundary. They must not be described as full MASM compilation, full x86 emulation, Windows API simulation, PE loading, linking, external library loading, host filesystem access, native process execution, or full macro-system compatibility.
 
-As of the source-of-truth revision after Phase 71A1, Phase 71A is complete as optional root RET strictness behavior and Phase 71A1 is complete as diagnostic test-runner infrastructure. The next canonical guide phase is Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup.
+A roadmap item becomes implemented only when its owning guide phase is accepted, the repository contains the implementation, required tests pass, and current support documentation reflects the accepted behavior. Until then, it remains specified future behavior or a product capability area, not current support.
 
-The guide now includes this non-renumbering corrective sequence after Phase 71A1:
-
-1. Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup.
-2. Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight, required only if broad source-run/native verification becomes timeout-prone before Phase 71C.
-3. Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic.
-4. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy.
-5. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting.
-6. Phase 71F - Fallthrough Test Migration and Opposite Fixtures, required only if fixture migration is too large to complete safely inside Phase 71C through Phase 71E.
-7. Phase 72 - Call Depth Limit and Call Trace Diagnostics.
-
-Do not renumber Phase 72 or later phases for this corrective sequence unless the project owner explicitly requests roadmap renumbering.
-
-Phase 71A1, Phase 71B, and Phase 71B1 are not runtime/source-run MASM behavior phases. The next planned runtime/source-run MASM behavior phase after Phase 71A is Phase 71C. Phase 72 remains the later call-depth/call-trace resource-protection phase, not the owner of procedure fallthrough semantics.
-
-Future assistants must distinguish these two concepts:
-
-- "next canonical guide phase" means the next phase that should be completed according to `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`;
-- "next runtime/source-run MASM behavior phase" means the next phase that changes accepted MASM syntax, parser behavior, VM behavior, instruction behavior, Irvine32 behavior, memory behavior, source-run output semantics, or rendered simulator behavior.
-
-A non-runtime corrective documentation phase may appear between runtime/source-run behavior phases without renumbering later phases. Such a phase does not change MASM behavior and must not be treated as permission to implement behavior from the next runtime/source-run phase early.
-
-Later stack, procedure, LOCAL, PROC USES, PROTO, ADDR, INVOKE, Program Console, and Irvine32 routine work is intentionally split across smaller implementation-guide phases. This specification must not duplicate the complete future phase list as phase-order authority.
-
-The required dependency order is:
-
-1. Preserve the C99 core, checked memory-helper policy, structured diagnostics policy, and Program Console versus Simulator Messages separation.
-2. Preserve completed root procedure termination semantics before adding broader procedure-call behavior.
-3. Complete call-stack return-address validation before adding higher-level procedure conveniences.
-4. Complete procedure metadata and syntax validation before adding runtime save/restore behavior for procedure attributes such as `USES`.
-5. Complete LOCAL parser and frame-layout metadata before adding runtime stack allocation, frame-relative addressing, or LOCAL operand execution.
-6. Complete PROTO and ADDR semantics before implementing full INVOKE argument lowering.
-7. Complete INVOKE parsing and argument lowering before implementing broad Irvine32 callable routine dispatch through INVOKE.
-8. Treat Irvine32 callable routine dispatch as simulator runtime behavior only. It must not be described or implemented as WinAPI dispatch, PE import resolution, external library loading, host process calls, native process execution, or native x86 execution.
-
-Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` before selecting, editing, testing, or implementing any future phase.
-
-Do not renumber existing guide phases from this specification. If a corrective milestone is needed, insert a non-renumbering intermediate phase, such as `70B`, `72A`, or another suffix phase, instead of shifting all later phase numbers.
-
-Concrete v1 roadmap themes:
-
-- MASM compatibility corrections for existing memory syntax.
-- MASM32 header directives.
-- `.DATA?` and `.CONST` data sections.
-- Numeric equates and constant expressions.
-- Nested `DUP` and initializer expressions.
-- Native diagnostic rendering harness for exact Simulator Messages text.
-- Virtual Irvine32 include symbols and `exit`.
-- Core instruction expansion.
-- Control flow, anonymous labels, and loop helpers.
-- Stack, calls, procedures, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`.
-- Program console and Irvine32 output/input/debug routines.
-- Extended flags and string instructions.
-- COMMENT/listing no-ops and compatibility operators.
-- High-level MASM flow lowering.
-- STRUCT/RECORD data modeling.
-- Selected Irvine/Macros.inc convenience macros.
-- Debugger and editor polish.
-
-Optional or post-v1 roadmap:
-
-- Full MASM macro language.
-- Full conditional assembly.
-- Full text substitution semantics for `TEXTEQU`.
-- Complete listing file generation.
-- Complete object/linkage model.
-- FPU support.
-- SSE/AVX subset.
-- Watch variables.
-- Data breakpoints/watchpoints.
-- Raw memory hex editor.
-- Multi-file project editor.
-- Simulator-owned virtual filesystem for explicitly specified educational file-routine behavior, if a future spec/guide revision approves it. This must not grant simulated programs direct browser filesystem access, host filesystem access, Windows file API behavior, PE loader behavior, or import-library behavior.
-- Download/upload project archives.
-- Backend snippet sharing with short URLs.
-- Optional UASM/JWasm investigation.
-
-Explicit non-goals unless the project definition changes:
-
-- native x86 binary execution;
-- PE loading;
-- real Windows API execution;
-- real host filesystem access from simulated programs;
-- object-file linking;
-- full Windows process or console emulation;
-- full x64/ml64 compatibility.
 
 ## 29. Canonical Post-30 Roadmap and Thematic Integration Status
 

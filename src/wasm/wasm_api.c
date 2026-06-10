@@ -88,8 +88,8 @@
 /// Full name of the current Phase 71A runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71A - Optional Root RET Strictness Mode"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 71A root RET settings.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71a-source-run-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 71B diagnostic wording.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71b-source-run-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U

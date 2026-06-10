@@ -6,7 +6,7 @@ The README is intentionally concise. This file carries the longer milestone hist
 
 Source-of-truth rule:
 
-- [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md) remains the canonical source for product boundaries, stable behavior, cross-cutting rules, and current/future/non-goal distinctions.
+- [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md) remains the canonical source for final product behavior, product boundaries, stable cross-cutting rules, permanent non-goals, and user-visible behavior contracts.
 - [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md) remains the canonical source for phase numbering, phase tasks, required tests, and acceptance criteria.
 - [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md) remains the current reference for accepted MASM32 Educational Mode syntax and diagnostics.
 - [`BUILDING_AND_DEVELOPMENT.md`](BUILDING_AND_DEVELOPMENT.md) owns detailed local serving, build, prerequisite, Visual Studio, and development workflow guidance.
@@ -17,35 +17,21 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
-Current status at Phase 71A1:
-
-Repository/archive milestone:
-Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
-
-Runtime/source-run MASM behavior phase:
-Phase 71A - Optional Root RET Strictness Mode
-
-Source-run output-contract identifier naming:
-Current expected protocol token in this revision: `phase-71a-source-run-output-contract-v1`
-
-The token is a source-run output-contract version identifier for the current public source-run output contract, not phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
-
-Current protocol/artifact compatibility policy:
-Phase 70A - Runtime Metadata Exact-Match Compatibility Check
-
-Next canonical guide phase:
+Latest recorded completed milestone in this history file:
 Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
 
-Next runtime/source-run MASM behavior phase:
-Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic, after Phase 71A1, Phase 71B, and any triggered Phase 71B1 work
+Latest recorded runtime/source-run MASM behavior phase in this history file:
+Phase 71A - Optional Root RET Strictness Mode
 
-Current repository/archive status must be read together with the canonical spec and guide. This history file records completed milestones and audit evidence, but it does not replace `docs/FULL_IMPLEMENTATION_SPEC.md` or `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Repository/archive status may be newer than runtime/source-run MASM behavior status. Phase 70A is a protocol/artifact compatibility phase; Phase 70B is a documentation/static-test cleanup phase. Phase 71A is a runtime/source-run behavior phase. Phase 71A1 is the current repository/archive status and is test-runner infrastructure only.
+This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Current forward-looking source-of-truth navigation after this documentation revision inserts Phase 71A1 before Phase 71B, optional Phase 71B1 before Phase 71C if source-run/native broad groups time out, and Phase 71C through Phase 71F before Phase 72. These inserted phases are active guide roadmap text only until implemented. Phase 71A1 is the latest completed repository/archive status. Phase 71A remains the latest runtime/source-run MASM behavior status.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, the guide kept optional Phase 71B1 before Phase 71C if source-run/native broad groups timed out, then Phase 71C through Phase 71F before Phase 72. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+
+Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
 
 Phase 69B was output/message-ordering cleanup only. At its completion it kept Phase 69 as the latest runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 70 has since advanced the runtime/source-run MASM behavior phase.
 
-Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The current Phase 71A source tree expects `phase-71a-source-run-output-contract-v1`. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The current Phase 71B source tree expects `phase-71b-source-run-output-contract-v1`. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
 
 Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token to the simulated stack through checked VM memory helpers, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. That stack write is internal VM execution state; current public source-run JSON does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
 
@@ -61,12 +47,17 @@ Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack 
 
 Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. Phase 71 adds selected-entry root RET termination and called non-entry procedure fallthrough diagnostics. Source-level PUSH/POP, procedure frames, Irvine32 routine dispatch beyond virtual `exit`, `INVOKE`, `PROTO`, `LOCAL`, `USES`, and `ADDR` remain future-owned.
 
+## Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
+
+Phase 71B is complete as diagnostic-copy cleanup only. It rewrites active IMUL, CALL, RET, and RETF user-facing diagnostics so they explain stable simulator boundaries rather than historical milestone numbers. It advances the source-run output-contract identifier because exact diagnostic wording is source-run-visible, updates parser, source-run, rendered Simulator Messages, protocol, and static regression tests, and preserves the Phase 71A runtime/source-run MASM behavior phase. It does not change accepted MASM syntax, rejected syntax categories, parser recovery behavior, VM execution behavior, memory/register/flag behavior, Program Console output, source-run JSON schema, diagnostic codes, diagnostic severities, diagnostic source spans, or terminal success/failure behavior.
+
 ## Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
 
 Phase 71A1 is complete as test-runner infrastructure only. It adds official diagnostic subgroup commands for native diagnostic JSON checks and rendered Simulator Messages fixture families, keeps the broad `--diagnostics` group as complete diagnostic coverage, and adds static runner/help/documentation and subgroup-inventory checks. It does not change accepted MASM syntax, parser behavior, VM execution behavior, memory behavior, Irvine32 behavior, Wasm API behavior, browser UI behavior, source-run JSON schema, diagnostic codes, diagnostic severity, diagnostic source spans, diagnostic text, rendered Simulator Messages output, Program Console output, runtime/source-run behavior metadata, or source-run output-contract metadata. Runtime/source-run MASM behavior remains Phase 71A - Optional Root RET Strictness Mode.
 
 ## Concise milestone ledger
 
+- Phase 71B removes stale milestone-number wording from active user-facing IMUL, CALL, RET, and RETF diagnostics, advances source-run output-contract metadata for the visible wording change, and preserves Phase 71A runtime/source-run MASM behavior.
 - Phase 71A1 adds official diagnostic subgroup runner commands and static consistency checks while preserving Phase 71A runtime/source-run MASM behavior and source-run output-contract metadata.
 - Phase 71A implements optional `rootRetMode = "strict-call-frame"` rejection for selected-entry root `RET` while preserving MASM32-compatible root `RET` default success, called non-entry procedure fallthrough diagnostics, and helper `RET` checked return-token behavior.
 - Phase 71 implements selected-entry root `RET` termination success and called non-entry procedure fallthrough diagnostics while preserving helper `RET` checked return-token behavior.
@@ -695,7 +686,7 @@ For canonical phase order, phase dependencies, required tests, and acceptance cr
 
 - `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`
 
-For current repository/archive status, read:
+For latest implementation-status evidence, read:
 
 - `README.md`
 - the latest accepted milestone report under `docs/history/reports/`

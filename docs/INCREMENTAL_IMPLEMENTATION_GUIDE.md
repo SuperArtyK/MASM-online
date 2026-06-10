@@ -149,7 +149,29 @@ The current milestone identifies the latest implemented and accepted project pha
 
 The runtime/source-run MASM behavior phase identifies the latest implemented MASM/source execution behavior. It is reported or displayed only where the specification, protocol, tests, or a current-status surface require that distinction. Short active current-status surfaces show this value only when it differs from the current milestone. It must advance only when the target phase changes accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, implemented runtime features, or when the target phase explicitly requires runtime metadata advancement.
 
-Use the current-status surface list in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. That list is mandatory for guide work and may be extended by a target phase when the phase introduces a new status-bearing surface. Do not maintain a second divergent copy of the complete surface list in this guide; if a new stable current-status surface is added, update the specification list and reference it from phase-local text.
+This guide owns the active-status update workflow. `FULL_IMPLEMENTATION_SPEC.md` owns the stable product-visible meaning and allowed shape of status surfaces. When a target phase introduces a new status-bearing surface, define the update workflow and required tests in this guide and keep the specification limited to stable product-facing requirements.
+
+Active current-status surfaces use these values:
+
+1. **Current milestone** - the latest implemented and accepted phase from this guide that is present in the current repository state. This is the project status value. It must not be inferred from the ZIP archive filename alone.
+2. **Runtime/source-run MASM behavior phase** - the latest implemented and accepted phase that changed accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features. Short active status surfaces show this value only when it differs from the current milestone.
+
+`Next canonical guide phase` and `Public output-contract token` are not short active-status fields. Do not include them in README-style status tables, supported-syntax opening status text, build-guide current-status blocks, browser landing-page milestone banners, or routine current-status summaries. Next-phase planning belongs in this guide, milestone history, handoff notes, or milestone reports. Output-contract tokens belong only in protocol, artifact-verification, source-run JSON, worker/Wasm compatibility, rebuild-verification, and exact test documentation where that implementation detail is directly relevant.
+
+When updating active current-status text, replace the old block in place. Do not append a new status block, keep an old block as a fallback, or add milestone-report prose to an active status surface. Search the target document for existing active status headings and phrases before writing new status text. Search for at least `Current status`, `Current repository status`, `Current scope`, `Current milestone`, `Repository/archive milestone`, `Runtime/source-run MASM behavior phase`, `Next canonical guide phase`, `sourceRunOutputContract`, and `output-contract token`.
+
+README-style landing pages and other short user-facing orientation surfaces must use only this compact payload:
+
+```text
+Current milestone: Phase <N or suffix> - <phase title>
+Runtime/source-run MASM behavior phase: Phase <M> - <runtime behavior phase title>
+Status note: <one short sentence explaining why the runtime/source-run behavior phase differs from the current milestone>
+```
+
+The `Current milestone` line is always required. The `Runtime/source-run MASM behavior phase` and `Status note` lines are required only when the current milestone did not change accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features. When the current milestone is itself a runtime/source-run MASM behavior phase, omit the runtime/source-run line and omit the status note.
+
+Short active-status blocks must not include next-phase labels, output-contract tokens, artifact-compatibility policy, full roadmap detail, changed-files lists, test-command transcripts, assumptions, TODO disposition, acceptance criteria, skipped-dependency explanations, or milestone-report prose.
+
 
 The visible `web/index.html` top-page milestone banner is a file-specific compact banner. Update it to the current accepted milestone even for maintenance or test-infrastructure milestones, using exactly `Milestone <N or suffix>: <phase title>`, with the title copied from this guide. Do not append runtime/source-run behavior text, next-phase text, output-contract tokens, or milestone-report prose to that banner. If a future phase needs browser-visible runtime/source-run status separate from the milestone banner, it must create a separately named browser status surface and corresponding tests.
 
@@ -212,7 +234,7 @@ This rule exists because current-status surfaces are user-facing orientation sur
 
 Current-status blocks should answer only which current milestone is implemented and, only when it differs, which runtime/source-run MASM behavior phase remains current and why. They must not include next canonical guide phase, output-contract tokens, full phase scope, non-goal lists, complete test history, artifact-compatibility policy, changed-files lists, TODO disposition, assumptions, or milestone-report prose.
 
-Current-status surfaces include the surfaces listed in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. Common examples are:
+Current-status surfaces include the stable status surfaces named by `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Specification, Guide, and Status Surface Authority. Common examples are:
 
 - `README.md`;
 - `docs/SUPPORTED_SYNTAX.md`;
@@ -225,7 +247,7 @@ Current-status surfaces include the surfaces listed in `FULL_IMPLEMENTATION_SPEC
 
 Current-status blocks contain only status values and one short interpretation sentence, not phase-scope or milestone-report prose.
 
-Do not maintain a second divergent complete list in this guide. If a new stable current-status surface is added, update the specification list and refer to it here.
+Do not maintain a second divergent complete list in this guide. If a new stable current-status surface is added, define the update workflow in this guide and update the specification only when the product-visible status-surface shape or meaning changes.
 
 Document ownership:
 
@@ -236,6 +258,31 @@ Document ownership:
 - Milestone reports are detailed records of one completed milestone.
 - Curated handoff/audit reports are historical navigation and stale-assumption prevention aids.
 
+
+#### Stable wording for phase-transition sections
+
+A future phase may describe behavior that it replaces. When doing so, the phase section must use stable historical-transition wording, not active `current behavior` wording that becomes false after the phase is accepted.
+
+Use this style:
+
+```text
+The pre-71C accepted behavior treats selected-entry ENDP fallthrough as successful program completion. Phase 71C replaces that default.
+```
+
+Do not use this style:
+
+```text
+Current behavior through Phase 71A treats selected-entry ENDP fallthrough as successful program completion. Phase 71C changes that default.
+```
+
+Preferred labels include:
+
+- `pre-<phase> accepted behavior`;
+- `behavior replaced by this phase`;
+- `behavior before this phase is accepted`;
+- `historical behavior preserved in milestone reports`.
+
+Do not use broad phrases such as `current behavior through Phase <N>`, `currently unsupported by Phase <N>`, `not supported by the current milestone`, or `as of the source-of-truth revision after Phase <N>` in active source-of-truth sections. Such phrases may appear in historical reports, quoted anti-pattern examples, or explicitly historical changelog text.
 
 ### Historical Report Archival Rule
 
@@ -21142,7 +21189,7 @@ Correct browser/Wasm runtime metadata compatibility checks so that the UI warns 
 
 Phase 70A is a UI/protocol/artifact compatibility corrective phase. It does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM execution semantics, memory layout, source-execution diagnostics, CALL behavior, RET behavior, Program Console output, Simulator Messages behavior beyond artifact compatibility reporting, or public source-run output shape.
 
-Phase 70A must not renumber Phase 71 or any later phase. After Phase 70A, the next runtime/source-run MASM behavior phase remains Phase 71 - Root Procedure Termination Semantics. If a non-runtime corrective phase such as Phase 70B is inserted after Phase 70A, that phase may become the next canonical guide phase while Phase 71 remains the next runtime/source-run MASM behavior phase.
+Phase 70A must not renumber Phase 71 or any later phase. In the guide sequence following Phase 70A, Phase 71 - Root Procedure Termination Semantics remains the following runtime/source-run MASM behavior phase. If a non-runtime corrective phase such as Phase 70B is inserted after Phase 70A, that insertion changes only the repository milestone sequence; it does not change Phase 71's runtime/source-run behavior ownership.
 
 ### Scope
 
@@ -21314,7 +21361,7 @@ Phase 70A is accepted only when:
 
 Align the canonical spec, implementation guide, active status documentation, historical navigation, and static documentation tests after Phase 70A.
 
-Phase 70B is inserted after Phase 70A and before Phase 71. After Phase 70B is accepted, the next canonical guide phase is Phase 71 - Root Procedure Termination Semantics. Phase 71 remains the next runtime/source-run MASM behavior phase and must not be renumbered.
+Phase 70B is inserted after Phase 70A and before Phase 71. Phase 71 - Root Procedure Termination Semantics remains the following runtime/source-run MASM behavior phase in the guide sequence and must not be renumbered.
 
 This phase is intentionally non-runtime and non-renumbering. It must not shift Phase 71 or any later phase number.
 
@@ -21371,7 +21418,8 @@ Phase 70B must add or update static documentation tests only. Existing Phase 70A
    - runtime/source-run MASM behavior phase;
    - source-run output-contract identifier;
    - protocol/artifact compatibility policy;
-   - next canonical guide phase and next runtime/source-run MASM behavior phase.
+   - the implementation-guide phase that follows this corrective phase;
+   - the runtime/source-run MASM behavior phase that follows this corrective phase.
 
 4. In `docs/MILESTONE_HISTORY.md` and `docs/history/HISTORY_README.md`, preserve or add notes that:
    - milestone reports and project audit/handoff reports are historical evidence;
@@ -21388,7 +21436,7 @@ Add or keep static tests that verify:
 - README and `docs/SUPPORTED_SYNTAX.md` do not imply that Phase 70A or Phase 70B changed MASM source-language behavior;
 - README and `docs/SUPPORTED_SYNTAX.md` identify the source-run output-contract token expected by this revision while explaining that a phase-looking token such as `phase-69c-source-run-output-contract-v1` is contract-version naming, not current phase status, and may change in a later accepted output-contract-changing phase;
 - historical reports are described as historical evidence, not canonical source-of-truth;
-- after Phase 70B is accepted, Phase 71 is described as the next canonical guide phase and the next runtime/source-run MASM behavior phase.
+- after Phase 70B is accepted, Phase 71 is described as the following guide phase and the following runtime/source-run MASM behavior phase in the guide sequence.
 - active documentation does not describe Phase 69C as the current phase when documenting the source-run output-contract identifier; historical Phase 69C naming may appear only as the origin of the identifier value or in historical reports.
 
 ### Acceptance criteria
@@ -21398,7 +21446,7 @@ Phase 70B is complete only when:
 - the canonical spec no longer contains a stale exact phase-number list that conflicts with the implementation guide;
 - the guide's Phase 70A compatibility test matrix is explicit enough that malformed, missing, suffix-mismatched, and output-contract-mismatched metadata cannot be mistaken for optional tests;
 - active documentation distinguishes repository/archive milestone status from runtime/source-run behavior status;
-- active documentation distinguishes the next canonical guide phase from the next runtime/source-run MASM behavior phase;
+- active documentation distinguishes the following guide phase from the following runtime/source-run MASM behavior phase when those concepts differ;
 - active documentation explains the source-run output-contract token naming rule and states that a phase-looking token such as `phase-69c-source-run-output-contract-v1` is contract-version naming, not current phase status or an immutable future value;
 - historical navigation documentation warns future assistants not to treat older handoff reports as current source-of-truth;
 - all changed documentation remains consistent with the project definition:
@@ -22354,6 +22402,100 @@ Phase 71B1 is accepted only when:
 - Phase 71D, Phase 71E, Phase 71F, and Phase 72 behavior is not implemented early.
 
 ---
+
+## 75B2. Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup
+
+### Goal
+
+Separate final product specification text from implementation-sequence guidance, current milestone status, and next-phase planning. Remove stale-prone active wording such as `current behavior through Phase ...`, `as of Phase ...`, and `next canonical guide phase ...` from active source-of-truth sections where that wording would become misleading after later milestones.
+
+This phase is documentation and static-check cleanup only. It does not implement parser behavior, VM behavior, runtime behavior, source syntax, source-run JSON schema changes, Wasm API changes, browser UI behavior changes, diagnostic code changes, diagnostic severity changes, diagnostic source-span changes, Program Console output changes, Simulator Messages rendering changes, or Irvine32 routine behavior.
+
+### Source-of-truth separation rule
+
+After this phase:
+
+- `docs/FULL_IMPLEMENTATION_SPEC.md` owns final product behavior, stable simulator boundaries, permanent non-goals, stable safety invariants, product-level diagnostic policy, and stable user-visible behavior contracts.
+- `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` owns phase numbering, phase titles, phase order, phase dependencies, phase tasks, required tests, acceptance criteria, conditional phases, status-surface update workflow, and static documentation-maintenance rules.
+- `docs/MILESTONE_HISTORY.md` records completed milestone chronology and navigation evidence. It is not the phase-order authority and not the final product specification.
+- milestone reports remain historical evidence for what was implemented and tested at the time. They do not automatically override the current canonical spec, current canonical guide, supported-syntax reference, repository code, or current tests.
+- supported-syntax documentation describes implemented user-facing support and planned/deferred items. It must not present future roadmap behavior as implemented.
+
+### Required documentation cleanup
+
+Update active documentation so that:
+
+- the full specification does not identify the latest completed milestone, next canonical guide phase, or current repository/archive status as active source-of-truth state;
+- the full specification does not duplicate phase ledgers from this guide;
+- the full specification does not contain detailed active-status update workflow;
+- the implementation guide contains the active-status update workflow and active status-surface inventory;
+- `web/index.html` status wording, where referenced by docs, remains the compact `Milestone <N or suffix>: <phase title>` browser banner shape;
+- guide phase-transition sections use stable wording such as `pre-<phase> accepted behavior` or `behavior replaced by this phase` instead of stale active-current phrasing;
+- README, build guide, testing guide, supported-syntax reference, and milestone history use compact active status wording and avoid duplicate current-status blocks.
+
+### Required static documentation checks
+
+Add or update static documentation checks so active source-of-truth text rejects stale milestone-context phrases unless they appear in historical reports, changelogs, quoted forbidden-pattern examples, or guard fixture lists.
+
+The minimum rejected active-source patterns are:
+
+```text
+As of the source-of-truth revision after Phase
+next canonical guide phase is Phase
+Current behavior through Phase
+Current Phase <N> behavior
+current behavior through Phase
+as of Phase <N>
+```
+
+The static check must ignore `docs/history/`, historical milestone reports, quoted anti-pattern examples, and explicit allowlist entries used by the check itself. It must not reject legitimate status-field labels such as `Current milestone:` when they are used in the active-status payload format defined by this guide.
+
+### Required tests
+
+Documentation/static tests:
+
+- Verify that `docs/FULL_IMPLEMENTATION_SPEC.md` contains no active current/next milestone ledger.
+- Verify that `docs/FULL_IMPLEMENTATION_SPEC.md` does not contain guide-owned active-status update workflow.
+- Verify that `docs/FULL_IMPLEMENTATION_SPEC.md` Section 27 redirects implementation phase order to this guide instead of duplicating phase order.
+- Verify that `docs/FULL_IMPLEMENTATION_SPEC.md` Section 28 is a capability-area roadmap rather than a phase-status ledger.
+- Verify that active status surfaces contain at most one active current-status block per surface unless a phase explicitly defines more than one separately named surface.
+- Verify that the visible `web/index.html` milestone banner uses the compact `Milestone <N or suffix>: <phase title>` form.
+- Verify that historical files under `docs/history/` are not rejected merely for preserving old phase-relative wording.
+
+No parser, executor, VM, memory, source-run behavior, Wasm ABI, browser UI behavior, or rendered Simulator Messages tests should be changed except where an existing static documentation test requires updated expected wording.
+
+### Non-goals
+
+Do not implement:
+
+- Phase 71C code-stream procedure fallthrough;
+- Phase 71D configurable procedure-fallthrough policy;
+- Phase 71E entry-procedure auto-stop compatibility;
+- Phase 71F fallthrough fixture-family migration;
+- Phase 72 call-depth or call-trace resource protection;
+- any new MASM syntax;
+- any new Irvine32 routine dispatch;
+- any diagnostic-code, severity, source-span, or terminal-status behavior change;
+- any source-run JSON schema change;
+- any Wasm API change;
+- any browser UI behavior change beyond preserving already accepted compact status text.
+
+### Acceptance criteria
+
+Phase 71B2 is accepted only when:
+
+- active source-of-truth documentation has a clear spec/guide responsibility split;
+- stale active current-milestone and next-phase context is removed from the specification;
+- the guide owns active-status workflow and static documentation-maintenance rules;
+- status surfaces remain compact and replacement-based rather than append-based;
+- supported-syntax wording distinguishes implemented behavior from planned/deferred behavior;
+- milestone history uses `latest recorded` or equivalent historical wording instead of implying permanent current repository status;
+- the Phase 71B Wasm artifact-token evidence drift is documented as a corrective history note without rewriting the historical milestone report unless explicitly requested by the project owner;
+- required static documentation tests pass;
+- no runtime/source-run MASM behavior metadata is advanced merely because of this documentation-only cleanup;
+- Phase 71C and later runtime behavior is not implemented early.
+
+---
 ## 75C. Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
 
 ### Goal
@@ -22370,13 +22512,13 @@ Phase 71A1 should be complete before this phase so rendered diagnostic updates c
 
 Phase 71B should be complete before this phase so new diagnostics do not copy milestone-relative user-facing wording patterns.
 
-Before starting Phase 71C, apply the Phase 71B1 trigger condition. If broad source-run or native verification times out, complete Phase 71B1 first. If it does not time out, record in the Phase 71C report that Phase 71B1 was skipped because it was not triggered.
+Before starting Phase 71C, apply any documentation/static-check cleanup phase that the project owner has selected, then apply the Phase 71B1 trigger condition. If broad source-run or native verification times out, complete Phase 71B1 first. If it does not time out, record in the Phase 71C report that Phase 71B1 was skipped because it was not triggered.
 
 Phase 71C depends on Phase 71 root RET behavior and Phase 71A strict root RET setting if Phase 71A was accepted.
 
 ### Behavior change
 
-Current behavior through Phase 71A treats ordinary selected-entry `ENDP` fallthrough as successful program completion. Phase 71C deliberately changes that default.
+The pre-71C accepted behavior treats ordinary selected-entry `ENDP` fallthrough as successful program completion. Phase 71C deliberately replaces that educational boundary simplification with baseline code-stream fallthrough behavior.
 
 After Phase 71C:
 
