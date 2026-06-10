@@ -143,16 +143,234 @@ function buildChildEnv(extraEnv = {}) {
 /** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} ExpectedMessage */
 /** @typedef {{source: string, reason: string}} DiagnosticFixture */
 
+/** Diagnostic rendering subgroup selector used when no subgroup is requested. */
+const DIAGNOSTIC_RENDERING_GROUP_ALL = "all";
+
+/** Diagnostic JSON producer and structured-payload subgroup selector. */
+const DIAGNOSTIC_RENDERING_GROUP_JSON = "json";
+
+/** Ordered rendered diagnostic subgroup selectors accepted by this harness. */
+const DIAGNOSTIC_RENDERING_GROUPS = [
+  DIAGNOSTIC_RENDERING_GROUP_JSON,
+  "rendered-call-ret",
+  "rendered-memory",
+  "rendered-directives",
+  "rendered-compatibility",
+  "rendered-arithmetic",
+  "rendered-shift-rotate",
+  "rendered-mul-div",
+  "rendered-runtime"
+];
+
+/** Set of rendered diagnostic subgroup selectors accepted by this harness. */
+const DIAGNOSTIC_RENDERING_GROUP_SET = new Set(DIAGNOSTIC_RENDERING_GROUPS);
+
+/** Whether this harness should list test/group ownership instead of executing tests. */
+const LIST_DIAGNOSTIC_RENDERING_TESTS = process.argv.includes("--list-diagnostic-tests");
+
+/** Requested fixture-family subgroup, or all diagnostic-rendering tests by default. */
+const REQUESTED_DIAGNOSTIC_RENDERING_GROUP = process.env.MASM32_DIAGNOSTIC_RENDERING_GROUP || DIAGNOSTIC_RENDERING_GROUP_ALL;
+
+/** Records diagnostic-rendering test inventory for the Phase 71A1 static coverage-union check. */
+const diagnosticRenderingInventory = [];
+
+/** Counts tests executed by this harness invocation. */
+let diagnosticRenderingExecutedCount = 0;
+
 /**
- * Runs one named diagnostic-rendering test.
+ * Returns whether any candidate fragment occurs in the provided text.
+ *
+ * @param {string} text Text to inspect.
+ * @param {string[]} fragments Lowercase text fragments to search for.
+ * @returns {boolean} True when any fragment is present.
+ */
+function includesAny(text, fragments) {
+  return fragments.some((fragment) => text.includes(fragment));
+}
+
+/**
+ * Classifies one diagnostic-rendering test into a stable Phase 71A1 fixture family.
+ *
+ * Classification is based on durable diagnostic families and fixture names, not
+ * on source line ranges or current file layout. The broad diagnostics group runs
+ * all families; official subgroup commands request one family at a time.
+ *
+ * @param {string} name Human-readable diagnostic test name.
+ * @returns {string} One diagnostic subgroup selector.
+ */
+function diagnosticRenderingGroupForTest(name) {
+  const lowered = name.toLowerCase();
+
+  if (includesAny(lowered, [
+    "native producer accepts stdin",
+    "native producer accepts fixture file"
+  ])) {
+    return DIAGNOSTIC_RENDERING_GROUP_JSON;
+  }
+
+  if (includesAny(lowered, [
+    "call",
+    " ret",
+    "root ret",
+    "invalid-return-address",
+    "selected-entry fallthrough",
+    "procedure",
+    "helper fallthrough"
+  ])) {
+    return "rendered-call-ret";
+  }
+
+  if (includesAny(lowered, [
+    "memory",
+    "const",
+    "uninitialized",
+    "unaligned",
+    "object",
+    "section-image",
+    "section-capacity",
+    "data section",
+    "capacity",
+    "negative displacement"
+  ])) {
+    return "rendered-memory";
+  }
+
+  if (includesAny(lowered, [
+    "include",
+    "includelib",
+    "section",
+    "directive",
+    "proc",
+    "endp",
+    "end ",
+    "string",
+    "symbol",
+    "equ",
+    "typeof",
+    "lengthof",
+    "sizeof",
+    "nop operand",
+    "unsupported instruction",
+    "reserved",
+    "label",
+    "casemap"
+  ])) {
+    return "rendered-directives";
+  }
+
+  if (includesAny(lowered, [
+    "compatibility",
+    "unsupported",
+    "windows api",
+    "winapi",
+    "crt",
+    "invoke",
+    "addr",
+    "masm32",
+    "startup-state",
+    "stale",
+    "segment",
+    "_text",
+    "_data",
+    "_bss",
+    "flat",
+    "dgroup"
+  ])) {
+    return "rendered-compatibility";
+  }
+
+  if (includesAny(lowered, [
+    "shl",
+    "shr",
+    "sal",
+    "sar",
+    "rol",
+    "ror",
+    "rcl",
+    "rcr",
+    "shift",
+    "rotate"
+  ])) {
+    return "rendered-shift-rotate";
+  }
+
+  if (includesAny(lowered, [
+    "mul",
+    "imul",
+    " div",
+    "idiv",
+    "divide",
+    "quotient-overflow"
+  ])) {
+    return "rendered-mul-div";
+  }
+
+  if (includesAny(lowered, [
+    "add",
+    "sub",
+    "cmp",
+    "adc",
+    "sbb",
+    "neg",
+    "inc",
+    "dec",
+    "and",
+    " or ",
+    "xor",
+    "not",
+    "test",
+    "lea",
+    "flag",
+    "signed",
+    "alias display",
+    "register signed",
+    "modeled flag"
+  ])) {
+    return "rendered-arithmetic";
+  }
+
+  return "rendered-runtime";
+}
+
+/**
+ * Validates the requested diagnostic-rendering subgroup selector.
+ *
+ * @returns {void}
+ */
+function validateRequestedDiagnosticRenderingGroup() {
+  if (REQUESTED_DIAGNOSTIC_RENDERING_GROUP === DIAGNOSTIC_RENDERING_GROUP_ALL) {
+    return;
+  }
+  assert.ok(
+    DIAGNOSTIC_RENDERING_GROUP_SET.has(REQUESTED_DIAGNOSTIC_RENDERING_GROUP),
+    `unsupported diagnostic rendering subgroup: ${REQUESTED_DIAGNOSTIC_RENDERING_GROUP}`
+  );
+}
+
+/**
+ * Runs or records one named diagnostic-rendering test.
  *
  * @param {string} name Human-readable test name.
  * @param {() => void} body Test body.
  * @returns {void}
  */
 function test(name, body) {
+  validateRequestedDiagnosticRenderingGroup();
+  const group = diagnosticRenderingGroupForTest(name);
+  assert.ok(DIAGNOSTIC_RENDERING_GROUP_SET.has(group), `test has unsupported diagnostic subgroup: ${name}`);
+  diagnosticRenderingInventory.push({ group, name });
+
+  if (LIST_DIAGNOSTIC_RENDERING_TESTS) {
+    return;
+  }
+
+  if (REQUESTED_DIAGNOSTIC_RENDERING_GROUP !== DIAGNOSTIC_RENDERING_GROUP_ALL && REQUESTED_DIAGNOSTIC_RENDERING_GROUP !== group) {
+    return;
+  }
+
   body();
-  console.log(`PASS ${name}`);
+  diagnosticRenderingExecutedCount += 1;
+  console.log(`PASS [${group}] ${name}`);
 }
 
 test("Current protocol renders stale output-contract warning exactly", () => {
@@ -7849,3 +8067,27 @@ END main
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals("phase57corr2-compact-negative-advanced-rejection", source, rawJson, rendered, "[unsupported-feature] unsupported-scaled-index line 6, column 30, byte offset 86, span length 1: Scaled-index memory operands are not supported yet.");
 });
+
+
+/**
+ * Prints inventory or validates that a selected subgroup executed at least one test.
+ *
+ * @returns {void}
+ */
+function finishDiagnosticRenderingHarness() {
+  if (LIST_DIAGNOSTIC_RENDERING_TESTS) {
+    console.log(JSON.stringify({ groups: DIAGNOSTIC_RENDERING_GROUPS, tests: diagnosticRenderingInventory }, null, 2));
+    return;
+  }
+
+  if (REQUESTED_DIAGNOSTIC_RENDERING_GROUP !== DIAGNOSTIC_RENDERING_GROUP_ALL) {
+    assert.ok(
+      diagnosticRenderingExecutedCount > 0,
+      `diagnostic rendering subgroup executed no tests: ${REQUESTED_DIAGNOSTIC_RENDERING_GROUP}`
+    );
+  }
+
+  console.log(`Diagnostic rendering tests executed: ${diagnosticRenderingExecutedCount}`);
+}
+
+finishDiagnosticRenderingHarness();

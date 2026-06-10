@@ -4,7 +4,17 @@ This document describes practical ways to build, run, and manually test the MASM
 
 The examples assume commands are run from the repository root.
 
-Current repository/archive status for this guide revision is Phase 71A - Optional Root RET Strictness Mode. Current runtime/source-run MASM behavior is Phase 71A - Optional Root RET Strictness Mode. The source-run output-contract token expected by this revision is `phase-71a-source-run-output-contract-v1`; that token is contract-version naming for the current source-run output contract and is the token expected by the current UI/source pair. Phase 69C introduced source-run output-contract verification. Phase 71A requires runtime, source-run, rendered Simulator Messages, protocol, web/settings, and static documentation regression tests for the default MASM32-compatible root RET behavior, opt-in strict root RET rejection, helper RET preservation, and called non-entry procedure fallthrough diagnostics.
+Current milestone:
+
+- Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
+
+Runtime/source-run MASM behavior phase:
+
+- Phase 71A - Optional Root RET Strictness Mode
+
+Phase 71A1 is test-runner infrastructure only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71A1 adds official diagnostic subgroup commands but does not change accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+
+When this section changes, replace the existing status lines in place. Do not append output-contract tokens, next-phase labels, milestone-report prose, phase history, or command transcripts.
 
 ## 1. Prerequisites
 
@@ -224,8 +234,8 @@ A milestone report that uses only `--quick` must say that full verification was 
 Milestone reports must distinguish these fields when applicable:
 
 ```text
+Current milestone:
 Runtime/source-run MASM behavior phase:
-Repository/archive phase:
 Output/message-ordering cleanup phase:
 Artifact/test-infrastructure cleanup phase:
 
@@ -269,7 +279,7 @@ Manual compile/run fallback is allowed only as a documented fallback when offici
 
 The following subgroup names are reserved for timeout-safe verification. Do not document a subgroup as implemented until `scripts/run_tests.py --help` exposes it.
 
-Required diagnostic subgroups from Phase 71A1:
+Required diagnostic subgroups from Phase 71A1, now implemented by `scripts/run_tests.py --help`:
 
 | Command | Ownership |
 |---|---|
@@ -298,7 +308,7 @@ Conditional source-run/native subgroups from Phase 71B1, required only if that p
 | `--native-diagnostics-policy` | Native configurable diagnostic policy behavior. |
 | `--native-control-flow` | Native CALL/RET, procedure-boundary, code-stream, and terminator behavior. |
 
-A broad group may call subgroups internally, but it must not silently skip a subgroup. If a subgroup cannot run because of an unavailable dependency, the report must mark that subgroup as `SKIPPED - dependency unavailable` and name the dependency.
+The broad `--diagnostics` group now calls the diagnostic JSON subgroup and each rendered diagnostic subgroup internally. A broad group may call subgroups internally, but it must not silently skip a subgroup. If a subgroup cannot run because of an unavailable dependency, the report must mark that subgroup as `SKIPPED - dependency unavailable` and name the dependency.
 
 Failure output for subgroup and broad-group execution must identify the failing group, the failing command, the subprocess exit code, and a bounded stdout/stderr tail. Source-run fixture failures include the fixture name whenever the failing path can identify it.
 
@@ -333,6 +343,22 @@ Do not replace `TIMED OUT` with `FAIL` unless the command returned an actual fai
 Rendered Simulator Messages tests are part of the diagnostic contract. If a rendered diagnostic suite becomes too large for one hosted command, split it by fixture family. Do not convert exact rendered-output checks into presence-only checks, smoke tests, or manual visual inspection unless the milestone report explicitly marks the affected coverage as unverified.
 
 For phases that change diagnostic text, severity, code, source location, span length, terminal status, or message ordering, the report must name the rendered diagnostic subgroup or exact rendered test command that verified the change.
+
+Official diagnostic subgroup examples:
+
+```sh
+python3 scripts/run_tests.py --diagnostics-json
+python3 scripts/run_tests.py --diagnostics-rendered-call-ret
+python3 scripts/run_tests.py --diagnostics-rendered-memory
+python3 scripts/run_tests.py --diagnostics-rendered-directives
+python3 scripts/run_tests.py --diagnostics-rendered-compatibility
+python3 scripts/run_tests.py --diagnostics-rendered-arithmetic
+python3 scripts/run_tests.py --diagnostics-rendered-shift-rotate
+python3 scripts/run_tests.py --diagnostics-rendered-mul-div
+python3 scripts/run_tests.py --diagnostics-rendered-runtime
+```
+
+These commands run exact assertions from the same diagnostic harness used by `--diagnostics`; they are not smoke tests and are not manual visual checks.
 
 ### Source-run fixture inventory
 
@@ -1195,7 +1221,7 @@ The checks should apply to active current-status/current-scope sections in:
 
 Recommended checks:
 
-1. README active current-status section must contain exactly one active `Repository/archive milestone:` label and one active `Runtime/source-run MASM behavior phase:` label.
+1. README active current-status section must contain exactly one active `Current milestone:` label. It must contain one active `Runtime/source-run MASM behavior phase:` label only when the current milestone does not change accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features.
 2. If README contains quoted examples or templates with additional status labels, those must be clearly outside the active current-status section and should be avoided unless necessary.
 3. README active current-status/current-scope text must not contain milestone-report headings such as:
    - `Exact requirements implemented`

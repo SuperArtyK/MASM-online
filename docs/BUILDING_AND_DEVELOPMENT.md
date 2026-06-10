@@ -11,48 +11,19 @@ Source-of-truth rule:
 
 ## Current status
 
-Current repository/archive milestone:
-
-- Phase 71A - Optional Root RET Strictness Mode
-
-Current runtime/source-run MASM behavior phase:
-
-- Phase 71A - Optional Root RET Strictness Mode
-
-Source-run output-contract identifier naming:
-
-- Current expected protocol token in this revision: `phase-71a-source-run-output-contract-v1`
-
-The token is a source-run output-contract version identifier, not phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
-
-Current protocol/artifact compatibility policy:
-
-- Phase 70A requires exact runtime/source-run behavior metadata and exact source-run output-contract metadata by default.
-- Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata produces a UI/Wasm artifact mismatch.
-- Missing, malformed, or mismatched source-run output-contract metadata produces a UI/Wasm artifact mismatch.
-- Artifact compatibility failures are not MASM source diagnostics; they are UI/Wasm artifact problems.
-
-Next canonical guide phase:
+Current milestone:
 
 - Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
 
-Next runtime/source-run MASM behavior phase:
+Runtime/source-run MASM behavior phase:
 
-- Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic, after Phase 71A1, Phase 71B, and any triggered Phase 71B1 work.
+- Phase 71A - Optional Root RET Strictness Mode
 
-After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition. Phase 71A is complete as optional strictness-mode work. Phase 71A1 is diagnostic test-runner infrastructure only. Phase 71B follows as diagnostic-copy, source-run output-contract metadata, and test cleanup only. Phase 71B1 is conditional source-run/native test-runner infrastructure only. Phase 71C through Phase 71F own the planned fallthrough correction sequence. These corrective suffix phases do not grant permission to implement Phase 72 call-depth accounting, call-depth settings, recursion diagnostics, or call-trace behavior early.
+Phase 71A1 is test-runner infrastructure only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71A1 adds official diagnostic subgroup commands but does not change accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
 
-Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default. Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A, but it remains planned until the guide phase is implemented and accepted.
+This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 
-Phase 69B was output/message-ordering cleanup only. Phase 69C introduced the separate `sourceRunOutputContract` metadata field so stale browser/Wasm artifacts can be detected without treating the output contract as a runtime/source-run behavior phase. Phase 70 implements helper plain near RET return-token execution and validation. Phase 70A is protocol/artifact compatibility cleanup only; browser/protocol code warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata unless a later accepted compatibility phase defines a safe range. Phase 70B changed documentation and static checks only. Phase 71A is the current runtime/source-run behavior phase: selected-entry root `RET` terminates successfully by default without an `[ESP]` read when no helper return is pending, optional `rootRetMode = "strict-call-frame"` rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`, helper `RET` still consumes checked pseudo-EIP return tokens, and called non-entry procedure fallthrough emits `non-root-procedure-fell-through`. Source-level PUSH/POP, Irvine32 routine dispatch beyond virtual `exit`, procedure frames, real x86 instruction encoding, executable code memory, and stack-pointer warning diagnostics remain outside the current behavior unless their own future phases explicitly say otherwise.
-
-This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.
-
-For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md).
-
-For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md).
-
-For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
+When this section changes, replace the existing status lines in place. Do not append milestone-report prose, next-phase roadmap detail, repeated artifact-policy prose, changed-files lists, assumptions, TODO disposition, output-contract token lines, or command transcripts here. Artifact compatibility details belong in the artifact-verification section below.
 
 ## Artifact verification versus rebuild verification
 
@@ -246,6 +217,22 @@ python3 scripts/run_tests.py --diagnostics
 python3 scripts/run_tests.py --protocol
 python3 scripts/run_tests.py --static
 ```
+
+Phase 71A1 also provides official diagnostic subgroups when the broad diagnostic group is too large for the active environment:
+
+```sh
+python3 scripts/run_tests.py --diagnostics-json
+python3 scripts/run_tests.py --diagnostics-rendered-call-ret
+python3 scripts/run_tests.py --diagnostics-rendered-memory
+python3 scripts/run_tests.py --diagnostics-rendered-directives
+python3 scripts/run_tests.py --diagnostics-rendered-compatibility
+python3 scripts/run_tests.py --diagnostics-rendered-arithmetic
+python3 scripts/run_tests.py --diagnostics-rendered-shift-rotate
+python3 scripts/run_tests.py --diagnostics-rendered-mul-div
+python3 scripts/run_tests.py --diagnostics-rendered-runtime
+```
+
+The diagnostic subgroups preserve exact structured diagnostic JSON and rendered Simulator Messages assertions from the broad diagnostic suite. They are not smoke tests.
 
 Quick smoke verification:
 

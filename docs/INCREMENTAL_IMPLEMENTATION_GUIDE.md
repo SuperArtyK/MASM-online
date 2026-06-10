@@ -141,110 +141,89 @@ Default successful output should be compact. Verbose fixture-level output must b
 
 Future milestone reports must document whether the aggregate runner completed, whether focused groups were run, whether any focused group required subgroup/fixture reruns, and whether browser/Wasm smoke testing was skipped because Emscripten was unavailable.
 
-### 2.4c Repository Milestone Status versus Runtime Phase Metadata
+### 2.4c Current Milestone Status versus Runtime Phase Metadata
 
-The repository/archive milestone and the runtime/source-run MASM behavior phase are related but not always identical.
+The current milestone and the runtime/source-run MASM behavior phase are related but not always identical.
 
-The repository/archive milestone identifies the latest accepted project state. It may advance because of any accepted project work, including:
+The current milestone identifies the latest implemented and accepted project phase from this guide that is present in the current repository state. It may advance because of any accepted project work, including runtime behavior, parser behavior, browser UI behavior, source-run or Wasm API behavior, diagnostic JSON shape or rendered message wording, documentation, supported-syntax reference updates, test-runner infrastructure, verification ergonomics, or repository maintenance.
 
-- runtime behavior;
-- parser behavior;
-- browser UI behavior;
-- source-run or Wasm API behavior;
-- diagnostic JSON shape or rendered message wording;
-- documentation;
-- supported-syntax reference updates;
-- test-runner infrastructure;
-- verification ergonomics;
-- repository maintenance.
-
-The runtime/source-run MASM behavior phase identifies the latest implemented MASM/source execution behavior that the runtime reports to tests, worker protocol results, browser status displays, source-run JSON payloads, Wasm/source-run status fields, supported-syntax current-status text, or other current-status surfaces. It must advance only when the target phase explicitly changes runtime-visible MASM/source behavior or explicitly requires metadata advancement.
+The runtime/source-run MASM behavior phase identifies the latest implemented MASM/source execution behavior. It is reported or displayed only where the specification, protocol, tests, or a current-status surface require that distinction. Short active current-status surfaces show this value only when it differs from the current milestone. It must advance only when the target phase changes accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, implemented runtime features, or when the target phase explicitly requires runtime metadata advancement.
 
 Use the current-status surface list in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. That list is mandatory for guide work and may be extended by a target phase when the phase introduces a new status-bearing surface. Do not maintain a second divergent copy of the complete surface list in this guide; if a new stable current-status surface is added, update the specification list and reference it from phase-local text.
+
+The visible `web/index.html` top-page milestone banner is a file-specific compact banner. Update it to the current accepted milestone even for maintenance or test-infrastructure milestones, using exactly `Milestone <N or suffix>: <phase title>`, with the title copied from this guide. Do not append runtime/source-run behavior text, next-phase text, output-contract tokens, or milestone-report prose to that banner. If a future phase needs browser-visible runtime/source-run status separate from the milestone banner, it must create a separately named browser status surface and corresponding tests.
+
+The older label `Repository/archive milestone` is historical wording. Do not use it in new active current-status blocks, new milestone-status summaries, or newly added future phase metadata. Use `Current milestone` instead. Historical completed phase text that already used the older label does not need to be rewritten unless the user explicitly requests historical cleanup.
 
 Future assistants must apply this rule:
 
 ```text
-Do not update source-run JSON phase fields, protocol phase values, browser runtime-status strings, supported-syntax runtime-status wording, README current-status wording, worker status wording, or tests that assert runtime phase values merely because a documentation-only, display-only, validation-only, diagnostic-wording, test-runner-only, verification-ergonomics, or repository-maintenance phase was completed.
+Do not update source-run JSON phase fields, protocol phase values, browser runtime/source-run behavior-status strings, supported-syntax runtime-status wording, README current-status wording, worker status wording, or tests that assert runtime phase values merely because a documentation-only, display-only, validation-only, diagnostic-wording, test-runner-only, verification-ergonomics, or repository-maintenance phase was completed. This does not prevent updating the visible `web/index.html` top-page milestone banner to the current accepted milestone, because that banner reports current project milestone only and must not report runtime/source-run behavior phase.
 ```
 
-A maintenance phase may advance the repository/archive milestone without changing runtime/source-run MASM behavior metadata.
+A maintenance phase may advance the current milestone without changing runtime/source-run MASM behavior metadata.
 
 Examples:
 
 - Phase 52A - Signed Register and Memory Value Display advanced display formatting behavior but did not add new MASM syntax.
-- Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics advanced repository/test-runner status after Phase 56 but did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording.
-- Phase 56B - User-Facing Diagnostic Wording Cleanup advances repository/archive status after Phase 56A when implemented, but it is diagnostic wording, current-status wording, and test-maintenance work only. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, new diagnostic codes, new diagnostic JSON fields, or new rendered Simulator Messages categories.
+- Phase 56A - Test Runner Decomposition and Assistant Verification Ergonomics advanced project/test-runner status after Phase 56 but did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording.
+- Phase 56B - User-Facing Diagnostic Wording Cleanup advances the current milestone after Phase 56A when implemented, but it is diagnostic wording, current-status wording, and test-maintenance work only. It does not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, new diagnostic codes, new diagnostic JSON fields, or new rendered Simulator Messages categories.
 - After Phase 56A and Phase 56B, the runtime/source-run MASM behavior phase remains Phase 56 - Unsigned DIV until Phase 57 - Signed IDIV or another runtime behavior phase is implemented and accepted.
 
-Every future milestone report must state both values when they differ. Use this exact label format:
+Every future milestone report must state both values when they differ. Use this minimum label format:
 
 ```text
-Repository/archive milestone:
+Current milestone:
 Runtime/source-run MASM behavior phase:
 ```
 
-For a runtime behavior milestone, the two values normally match. For a maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, or repository-maintenance milestone, the two values may differ.
+For a runtime behavior milestone, the two values normally match and the runtime/source-run behavior line may be omitted from short active status blocks. For a maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, or repository-maintenance milestone, the two values differ and both values must be shown.
 
-Required report wording when they differ:
+Minimum report wording when they differ:
 
 ```text
-Repository/archive milestone:
+Current milestone:
 Phase <N or suffix> - <phase title>
 
 Runtime/source-run MASM behavior phase:
 Phase <M> - <runtime behavior phase title>
 
 Status interpretation:
-The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this target phase did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording. Do not update runtime/source-run phase metadata, supported-syntax runtime wording, or tests that assert runtime phase values unless the current target phase explicitly owns that change.
+This phase advances the current milestone but does not advance runtime/source-run MASM behavior metadata because it does not change accepted source syntax, parsed operands, instruction semantics, VM execution behavior, procedure semantics, memory semantics, register semantics, source-run success/failure behavior, or implemented runtime features.
 ```
 
-A future assistant must not "fix" a perceived mismatch between repository/archive milestone and runtime/source-run MASM behavior phase unless the current target phase explicitly owns that metadata change.
+A future assistant must not "fix" a perceived mismatch between current milestone and runtime/source-run MASM behavior phase unless the current target phase explicitly owns that metadata change.
 
-If a test appears stale because it expects the previous runtime phase number after a maintenance phase, the assistant must first decide whether the target phase changed runtime-visible behavior. If it did not, the test is probably correct and must not be rewritten to match the repository/archive milestone.
+If a test appears stale because it expects the previous runtime phase number after a maintenance phase, the assistant must first decide whether the target phase changed runtime-visible behavior. If it did not, the test is probably correct and must not be rewritten to match the current milestone.
 
-If a supported-syntax document appears stale because it says syntax support is through an earlier runtime phase after a later maintenance phase, the assistant must first decide whether the later phase changed supported MASM syntax. If it did not, the supported-syntax document is probably correct. At most, add a short note explaining that the later repository/archive phase was maintenance-only.
+If a supported-syntax document appears stale because it says syntax support is through an earlier runtime phase after a later maintenance phase, the assistant must first decide whether the later phase changed supported MASM syntax. If it did not, the supported-syntax document is probably correct. At most, add a short note explaining that the later current milestone was maintenance-only.
 
-Static/reporting acceptance criterion:
-
-```text
-When a milestone report describes a target phase whose repository/archive milestone differs from runtime/source-run MASM behavior phase, the report must include this exact block:
-
-Repository/archive milestone:
-Phase <N or suffix> - <phase title>
-
-Runtime/source-run MASM behavior phase:
-Phase <M> - <runtime behavior phase title>
-
-Status interpretation:
-The repository/archive milestone is newer than the runtime/source-run MASM behavior phase because this target phase did not add MASM syntax, parser behavior, VM behavior, executor behavior, Wasm API behavior, browser controls, browser layout, browser interaction behavior, diagnostic codes, diagnostic JSON fields, or rendered Simulator Messages wording. Do not update runtime/source-run phase metadata, supported-syntax runtime wording, or tests that assert runtime phase values unless the current target phase explicitly owns that change.
-```
-
-This exact block is required for maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, and repository-maintenance phases when they do not advance runtime/source-run MASM behavior.
+This minimum block is required for maintenance, documentation, display-only, test-runner-only, verification-ergonomics, diagnostic-wording, and repository-maintenance phases when they do not advance runtime/source-run MASM behavior. A milestone may add one short phase-specific reason, but it must not paste long non-goal lists into active current-status surfaces or routine milestone-status summaries.
 
 Historical reports that predate this exact wording do not need to be rewritten unless the user explicitly asks for historical report cleanup. Future milestone reports must use the block.
 
-When a milestone is a runtime behavior milestone and the two values match, the report should still include both labels if the immediately preceding repository/archive milestone was maintenance-only. This prevents the assistant from losing the distinction at the point where runtime metadata intentionally advances again.
-
-
-
+When a milestone is a runtime behavior milestone and the two values match, the report should still include both labels if the immediately preceding milestone was maintenance-only. This prevents the assistant from losing the distinction at the point where runtime metadata intentionally advances again.
 
 ### 2.4c-2 Standing Rule: Current-Status Surfaces Must Be Replaced, Not Appended
 
 Every milestone that updates current-status documentation must replace prior active current-status detail instead of appending another milestone paragraph.
 
-This rule exists because current-status surfaces are user-facing orientation surfaces, not milestone reports.
+This rule exists because current-status surfaces are user-facing orientation surfaces, not milestone reports. A future assistant must search the target document for an existing current-status/current-scope block before writing new status text. If the block exists, the assistant must edit that block in place. Creating a second active current-status block, keeping the old block and adding a new one above it, or appending a new phase paragraph below the old block is a defect.
+
+Current-status blocks should answer only which current milestone is implemented and, only when it differs, which runtime/source-run MASM behavior phase remains current and why. They must not include next canonical guide phase, output-contract tokens, full phase scope, non-goal lists, complete test history, artifact-compatibility policy, changed-files lists, TODO disposition, assumptions, or milestone-report prose.
 
 Current-status surfaces include the surfaces listed in `FULL_IMPLEMENTATION_SPEC.md` Section 1.1 - Current-status Surface Hygiene. Common examples are:
 
 - `README.md`;
 - `docs/SUPPORTED_SYNTAX.md`;
 - `docs/BUILDING_AND_DEVELOPMENT.md`;
-- browser runtime-status text;
+- browser runtime-status text, except the visible `web/index.html` top-page milestone banner which uses only `Milestone <N or suffix>: <phase title>`;
 - worker/protocol status text;
 - source-run JSON status text;
 - Wasm/source-run status strings;
 - tests that assert current status wording.
+
+Current-status blocks contain only status values and one short interpretation sentence, not phase-scope or milestone-report prose.
 
 Do not maintain a second divergent complete list in this guide. If a new stable current-status surface is added, update the specification list and refer to it here.
 
@@ -256,6 +235,7 @@ Document ownership:
 - `docs/MILESTONE_HISTORY.md` is the accumulated milestone-history document.
 - Milestone reports are detailed records of one completed milestone.
 - Curated handoff/audit reports are historical navigation and stale-assumption prevention aids.
+
 
 ### Historical Report Archival Rule
 
@@ -22444,15 +22424,17 @@ When emitting `code-fell-off-end`, the runtime/source-run layer must identify th
 
 This responsible procedure is diagnostic metadata. It must not change control flow by itself.
 
-### Optional easter egg
+### Required easter egg
 
-This phase may add one deliberately harmless notice-level diagnostic easter egg.
+This phase must add one deliberately harmless notice-level diagnostic easter egg.
 
-If implemented, it must obey all of these rules:
+It must obey all of these rules:
 
 - Emit it only after `code-fell-off-end` has already been emitted.
-- Emit it only when the responsible procedure's source spelling is exactly `front`.
-- Matching is exact source spelling only. It is not affected by `OPTION CASEMAP`, user-symbol canonicalization, or case-insensitive lookup.
+- Emit it only when the responsible procedure name is `front` under an ASCII case-insensitive comparison.
+- Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches.
+- Do not treat longer names such as `frontier`, `myfront`, or `front_` as matches.
+- Do not let this easter-egg comparison change normal user-symbol lookup, `OPTION CASEMAP` behavior, procedure declaration rules, duplicate-symbol rules, display-name preservation, or diagnostic source attribution.
 - Use diagnostic code:
 
   ```text
@@ -22469,8 +22451,6 @@ If implemented, it must obey all of these rules:
 - Append it after the `code-fell-off-end` runtime error.
 - Do not let it change `ok`, terminal status, halt reason, execution status, register state, memory state, instruction count, source-run schema, warning/error policy outcomes, or browser control flow.
 - Do not make `front` a reserved word, Irvine32 routine, special procedure, or special VM instruction target.
-
-The easter egg is optional. Failure to implement the easter egg must not block acceptance of the core Phase 71C fallthrough correction unless the project owner explicitly makes it required for this phase.
 
 ### Non-goals
 
@@ -22517,14 +22497,15 @@ Source-run JSON tests:
 - Terminal status is failure/error, not execution-complete.
 - Final register/memory state reflects only instructions executed before the diagnostic.
 - Responsible procedure metadata follows the deterministic rule.
-- If the easter egg is implemented, `the-front-fell-off` appears after `code-fell-off-end` with notice severity and does not change terminal status.
+- `the-front-fell-off` appears after `code-fell-off-end` with notice severity when the responsible procedure name is `front` under ASCII case-insensitive comparison, and it does not change terminal status.
 
 Rendered Simulator Messages tests:
 
 - Exact `code-fell-off-end` text renders once.
 - The rendered error does not mention the root-RET setting.
-- If the easter egg is implemented, exact `the-front-fell-off` text renders after the runtime error.
-- Negative easter egg fixtures prove `Front`, `FRONT`, `frontier`, and labels named `front` do not emit the notice.
+- Exact `the-front-fell-off` text renders after the runtime error.
+- Positive easter egg fixtures prove `front`, `Front`, `FRONT`, and `fRoNt` emit the notice when they are the responsible procedure name.
+- Negative easter egg fixtures prove `frontier`, `myfront`, `front_`, and labels named `front` do not emit the notice.
 
 Documentation tests:
 
@@ -22541,7 +22522,7 @@ Phase 71C is accepted only when:
 - root RET behavior from Phase 71/71A is preserved;
 - helper CALL/RET behavior is preserved;
 - Irvine32 `exit` behavior is preserved;
-- the optional easter egg, if implemented, is diagnostic-only and fully tested;
+- the required `the-front-fell-off` easter egg is diagnostic-only, case-insensitive for the procedure name `front`, and fully tested;
 - source-run output-contract metadata is advanced if the public JSON/output contract changes;
 - runtime/source-run behavior metadata is advanced because this is a behavior phase;
 - Phase 71D, Phase 71E, Phase 71F, and Phase 72 behavior is not implemented early.

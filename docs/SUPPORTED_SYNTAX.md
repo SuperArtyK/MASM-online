@@ -1,41 +1,14 @@
 # Supported MASM32 Educational Simulator Syntax
 
-Repository/archive milestone:
+Current milestone:
 
-- Phase 71A - Optional Root RET Strictness Mode
+- Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Source-run output-contract identifier naming:
-
-- Current expected protocol token in this revision: `phase-71a-source-run-output-contract-v1`
-
-Treat the token as a source-run output-contract version identifier, not as phase-status prose. A phase-looking prefix in such a token identifies the phase that introduced that specific output contract, not a separate repository/runtime status field.
-
-Protocol/artifact compatibility policy:
-
-- The browser UI expects the loaded Wasm artifact to report the exact runtime/source-run behavior metadata and exact source-run output-contract metadata required by the current UI.
-- Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata is reported as a UI/Wasm artifact mismatch.
-- Missing, malformed, or mismatched source-run output-contract metadata is reported as a UI/Wasm artifact mismatch.
-- Artifact compatibility failures are not MASM source diagnostics. They indicate that the UI and loaded Wasm artifact are not a safe pair.
-- Phase 70A changed artifact compatibility only. Phase 70B changed documentation and static checks only. Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default.
-
-Canonical phase navigation:
-
-- The next canonical guide phase is determined by `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`.
-- After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition.
-- Phase 71A has been accepted and completed as optional strictness-mode work.
-- Phase 71A1 is test-runner infrastructure only. It must not be treated as a VM semantics phase.
-- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup follows Phase 71A1 as diagnostic-copy, source-run output-contract metadata, and test cleanup only. It must not be treated as a VM semantics phase.
-- Phase 71B1 is conditional source-run/native control-flow test infrastructure only if broad source-run/native verification becomes timeout-prone before Phase 71C.
-- Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A. It owns baseline code-stream procedure fallthrough and `code-fell-off-end`.
-- Phase 72 - Call Depth Limit and Call Trace Diagnostics remains the later call-depth/call-trace resource-protection phase.
-
-This document describes implemented behavior only. Future roadmap items in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md` are not supported syntax until their phases are completed and this file is updated.
-
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71A1 is diagnostic test-runner infrastructure only; it does not add or remove accepted MASM syntax, rejected forms, runtime diagnostics, source-run behavior, Wasm API behavior, or browser behavior.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
@@ -43,13 +16,13 @@ Current procedure and termination behavior through Phase 71A:
 
 - `END entryName` selects the source-run entry procedure.
 - Execution starts inside the selected entry procedure.
-- Direct near `CALL` to accepted user procedures is implemented for the supported direct form. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry through the checked VM control-flow path.
+- Direct near `CALL` to accepted user procedures is implemented for the supported direct form. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry through the checked VM control-flow path. The current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row.
 - Plain near `RET` is implemented for helper returns through simulator pseudo-EIP return tokens.
 - Selected-entry root `RET` succeeds by default in MASM32-compatible root RET mode.
 - Optional strict root RET mode rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`.
 - Virtual Irvine32 `exit` is an explicit successful terminator where recognized.
 - Ordinary selected-entry `ENDP` fallthrough currently terminates successfully as an educational boundary simplification.
-- Called non-entry procedure fallthrough is diagnosed by the current CALL/RET termination rules. Selected-entry root `RET` default success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71.
+- Called non-entry procedure fallthrough is diagnosed with `non-root-procedure-fell-through` by the current CALL/RET termination rules.
 
 The selected-entry `ENDP` success rule is current behavior, but it is not MASM/x86-like code-stream behavior. `PROC`, `ENDP`, and `END` are source/module structure, not runtime stop instructions.
 
@@ -64,7 +37,7 @@ Planned fallthrough diagnostics and settings, not current behavior until their o
 | `code-fell-off-end` | 71C | runtime error | Execution reached the end of the executable code stream without an explicit program terminator. |
 | `procedure-fell-through` | 71D | warning by default; configurable `off`/`warn`/`error` | Ordinary sequential execution crossed from one procedure range into another without explicit supported control transfer or termination. |
 | `entryProcedureEndMode` | 71E | default `code-stream`; opt-in `stop-at-entry-end` | Compatibility setting for selected-entry `ENDP` auto-stop behavior. |
-| `the-front-fell-off` | 71C, optional | notice, optional easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure's source spelling is exactly `front`, if the owning phase implements the easter egg. |
+| `the-front-fell-off` | 71C | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is `front` under ASCII case-insensitive comparison. |
 
 The planned `code-fell-off-end` text is:
 

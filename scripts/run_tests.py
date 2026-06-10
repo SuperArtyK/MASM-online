@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import os
 import pathlib
 import shutil
@@ -25,10 +26,33 @@ from typing import Callable, Iterable, Sequence
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "tests"
 REQUIRED_GROUPS = ["structure", "native", "source-run", "web", "diagnostics", "protocol", "static"]
+DIAGNOSTIC_SUBGROUPS = [
+    "diagnostics-json",
+    "diagnostics-rendered-call-ret",
+    "diagnostics-rendered-memory",
+    "diagnostics-rendered-directives",
+    "diagnostics-rendered-compatibility",
+    "diagnostics-rendered-arithmetic",
+    "diagnostics-rendered-shift-rotate",
+    "diagnostics-rendered-mul-div",
+    "diagnostics-rendered-runtime",
+]
+DIAGNOSTIC_RENDERING_GROUP_BY_SUBGROUP = {
+    "diagnostics-rendered-call-ret": "rendered-call-ret",
+    "diagnostics-rendered-memory": "rendered-memory",
+    "diagnostics-rendered-directives": "rendered-directives",
+    "diagnostics-rendered-compatibility": "rendered-compatibility",
+    "diagnostics-rendered-arithmetic": "rendered-arithmetic",
+    "diagnostics-rendered-shift-rotate": "rendered-shift-rotate",
+    "diagnostics-rendered-mul-div": "rendered-mul-div",
+    "diagnostics-rendered-runtime": "rendered-runtime",
+}
 MAX_FAILURE_TAIL_CHARS = 12000
 VERBOSE_OUTPUT = False
 QUIET_OUTPUT = False
 CURRENT_GROUP = "unknown"
+CURRENT_SUBGROUP = "n/a"
+DIAGNOSTIC_JSON_PRODUCER_BUILT = False
 
 
 class TestFailure(RuntimeError):
@@ -73,20 +97,29 @@ def format_command(command: Sequence[str]) -> str:
     return " ".join(str(part) for part in command)
 
 
-def run_command(command: list[str], *, cwd: pathlib.Path = ROOT, env: dict[str, str] | None = None) -> None:
+def run_command(
+    command: list[str],
+    *,
+    cwd: pathlib.Path = ROOT,
+    env: dict[str, str] | None = None,
+    subgroup: str | None = None,
+) -> None:
     """Run one command and raise TestFailure when it fails.
 
     Successful subprocess output is captured to keep default and quiet runs
     compact. Verbose mode prints commands and captured output. Failure output is
-    always shown with group, command, exit code, and bounded stdout/stderr tails.
+    always shown with group, subgroup, command, exit code, and bounded
+    stdout/stderr tails.
 
     Args:
         command: Command and arguments to execute.
         cwd: Working directory for the subprocess.
         env: Optional environment variables for the subprocess.
+        subgroup: Optional diagnostic subgroup name to report on failure.
     """
 
     command_text = format_command(command)
+    active_subgroup = subgroup if subgroup is not None else CURRENT_SUBGROUP
     if VERBOSE_OUTPUT:
         print("$ " + command_text)
 
@@ -109,7 +142,7 @@ def run_command(command: list[str], *, cwd: pathlib.Path = ROOT, env: dict[str, 
         details = [
             "Failure details:",
             f"- Group: {CURRENT_GROUP}",
-            "- Subgroup: n/a",
+            f"- Subgroup: {active_subgroup}",
             f"- Command: {command_text}",
             f"- Exit code: {completed.returncode}",
         ]
@@ -929,7 +962,11 @@ def run_source_run_tests() -> None:
     )
 
 def build_diagnostic_json_producer() -> None:
-    """Build the native source-run JSON producer used by Node rendering tests."""
+    """Build the native source-run JSON producer used by diagnostic tests."""
+
+    global DIAGNOSTIC_JSON_PRODUCER_BUILT
+    if DIAGNOSTIC_JSON_PRODUCER_BUILT:
+        return
 
     compile_c_binary(
         "diagnostic_json_producer",
@@ -949,6 +986,7 @@ def build_diagnostic_json_producer() -> None:
             "src/wasm/wasm_api.c",
         ],
     )
+    DIAGNOSTIC_JSON_PRODUCER_BUILT = True
 
 def require_node() -> None:
     """Require Node.js for JavaScript-based tests."""
@@ -1000,12 +1038,45 @@ def diagnostic_rendering_environment() -> dict[str, str]:
     return diagnostic_env
 
 
-def run_diagnostics_tests() -> None:
-    """Run native diagnostic JSON production plus rendered Simulator Messages tests."""
+def run_diagnostics_json_tests() -> None:
+    """Run the native diagnostic JSON producer and structured-payload checks."""
 
     require_node()
     build_diagnostic_json_producer()
-    run_command(["node", "tests/web/test_diagnostic_rendering.mjs"], env=diagnostic_rendering_environment())
+    diagnostic_env = diagnostic_rendering_environment()
+    diagnostic_env["MASM32_DIAGNOSTIC_RENDERING_GROUP"] = "json"
+    run_command(
+        ["node", "tests/web/test_diagnostic_rendering.mjs"],
+        env=diagnostic_env,
+        subgroup="diagnostics-json",
+    )
+
+
+def run_diagnostics_rendered_subgroup(subgroup_name: str) -> None:
+    """Run one exact rendered Simulator Messages diagnostic subgroup.
+
+    Args:
+        subgroup_name: Public runner subgroup name from DIAGNOSTIC_SUBGROUPS.
+    """
+
+    require_node()
+    build_diagnostic_json_producer()
+    rendering_group = DIAGNOSTIC_RENDERING_GROUP_BY_SUBGROUP[subgroup_name]
+    diagnostic_env = diagnostic_rendering_environment()
+    diagnostic_env["MASM32_DIAGNOSTIC_RENDERING_GROUP"] = rendering_group
+    run_command(
+        ["node", "tests/web/test_diagnostic_rendering.mjs"],
+        env=diagnostic_env,
+        subgroup=subgroup_name,
+    )
+
+
+def run_diagnostics_tests() -> None:
+    """Run complete diagnostic JSON and rendered Simulator Messages coverage."""
+
+    run_diagnostics_json_tests()
+    for subgroup_name in DIAGNOSTIC_RENDERING_GROUP_BY_SUBGROUP:
+        run_diagnostics_rendered_subgroup(subgroup_name)
 
 
 def run_quick_tests() -> None:
@@ -1087,6 +1158,17 @@ Focused groups:
   --protocol     worker/protocol schema tests
   --static       documentation, runner, group-name, and fixture-inventory consistency checks
 
+Official diagnostic subgroups:
+  --diagnostics-json                     native producer build and structured diagnostic payload checks
+  --diagnostics-rendered-call-ret        CALL, RET, root RET, helper RET, and procedure fallthrough messages
+  --diagnostics-rendered-memory          memory bounds, object bounds, uninitialized, CONST, DATA?, and checked-memory messages
+  --diagnostics-rendered-directives      directives, sections, PROC/ENDP/END, include directives, and parser directive messages
+  --diagnostics-rendered-compatibility   compatibility settings, unsupported MASM forms, and non-goal boundary messages
+  --diagnostics-rendered-arithmetic      ADD/SUB/CMP/ADC/SBB/NEG and related arithmetic/logical messages
+  --diagnostics-rendered-shift-rotate    SHL/SHR/SAL/SAR/ROL/ROR/RCL/RCR messages
+  --diagnostics-rendered-mul-div         MUL/IMUL/DIV/IDIV messages
+  --diagnostics-rendered-runtime         runtime terminal messages not owned by a more specific family
+
 Output modes:
   default         compact group status and final summary
   --quiet         group start/status lines, final summary, and failure details only
@@ -1094,8 +1176,10 @@ Output modes:
 
 Notes:
   --quick is a smoke subset, not full verification.
-  The existing broad focused groups remain the supported timeout-safe decomposition;
-  rerun --source-run or --diagnostics independently when --all times out.
+  The broad focused groups remain the first timeout-safe decomposition.
+  If --diagnostics is too large, rerun the official diagnostic subgroups
+  independently and report aggregate, broad-group, subgroup, skipped, timed-out,
+  and not-run commands separately.
 
 Windows examples:
   py scripts\\run_tests.py --all
@@ -1109,6 +1193,15 @@ Windows examples:
     parser.add_argument("--source-run", action="store_true", help="run native source-run JSON/integration tests independently")
     parser.add_argument("--web", action="store_true", help="run browser-side Node tests that do not need native diagnostics")
     parser.add_argument("--diagnostics", action="store_true", help="run native diagnostic JSON plus exact rendered Simulator Messages tests")
+    parser.add_argument("--diagnostics-json", action="store_true", help="run native diagnostic producer and structured diagnostic payload checks")
+    parser.add_argument("--diagnostics-rendered-call-ret", action="store_true", help="run CALL/RET rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-memory", action="store_true", help="run memory rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-directives", action="store_true", help="run directive rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-compatibility", action="store_true", help="run compatibility rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-arithmetic", action="store_true", help="run arithmetic/logical rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-shift-rotate", action="store_true", help="run shift/rotate rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-mul-div", action="store_true", help="run MUL/IMUL/DIV/IDIV rendered Simulator Messages diagnostics")
+    parser.add_argument("--diagnostics-rendered-runtime", action="store_true", help="run runtime rendered Simulator Messages diagnostics not owned by a narrower subgroup")
     parser.add_argument("--protocol", action="store_true", help="run worker/protocol schema tests independently")
     parser.add_argument("--static", action="store_true", help="run documentation and runner consistency checks")
     output_group = parser.add_mutually_exclusive_group()
@@ -1132,6 +1225,7 @@ def supported_help_flags() -> list[str]:
         "--source-run",
         "--web",
         "--diagnostics",
+        *["--" + subgroup for subgroup in DIAGNOSTIC_SUBGROUPS],
         "--protocol",
         "--static",
         "--quiet",
@@ -1152,7 +1246,8 @@ def select_groups(args: argparse.Namespace) -> tuple[list[str], bool]:
     if args.quick:
         return ["quick"], False
 
-    selected = [group for group in REQUIRED_GROUPS if getattr(args, group.replace("-", "_"))]
+    selectable_groups = [*REQUIRED_GROUPS, *DIAGNOSTIC_SUBGROUPS]
+    selected = [group for group in selectable_groups if getattr(args, group.replace("-", "_"))]
     if args.all or not selected:
         return list(REQUIRED_GROUPS), True
     return selected, False
@@ -1202,7 +1297,16 @@ def group_success_detail(name: str) -> str:
         "native": "native C non-source-run tests passed",
         "source-run": "source-run integration binary passed independently",
         "web": "browser-side Node module tests passed",
-        "diagnostics": "native diagnostic producer and rendered messages passed",
+        "diagnostics": "native diagnostic producer and all diagnostic subgroups passed",
+        "diagnostics-json": "native diagnostic JSON and structured-payload checks passed",
+        "diagnostics-rendered-call-ret": "CALL/RET rendered diagnostics passed",
+        "diagnostics-rendered-memory": "memory rendered diagnostics passed",
+        "diagnostics-rendered-directives": "directive rendered diagnostics passed",
+        "diagnostics-rendered-compatibility": "compatibility rendered diagnostics passed",
+        "diagnostics-rendered-arithmetic": "arithmetic/logical rendered diagnostics passed",
+        "diagnostics-rendered-shift-rotate": "shift/rotate rendered diagnostics passed",
+        "diagnostics-rendered-mul-div": "MUL/IMUL/DIV/IDIV rendered diagnostics passed",
+        "diagnostics-rendered-runtime": "runtime rendered diagnostics passed",
         "protocol": "protocol tests passed independently",
         "static": "runner/documentation consistency checks passed",
     }
@@ -1219,6 +1323,9 @@ def print_summary(results: list[GroupResult], selected_groups: Sequence[str]) ->
 
     result_by_name = {result.name: result for result in results}
     table_groups = list(REQUIRED_GROUPS)
+    for group in selected_groups:
+        if group not in table_groups:
+            table_groups.append(group)
     if "quick" in selected_groups:
         table_groups = ["quick", *table_groups]
 
@@ -1243,8 +1350,8 @@ def assert_help_lists_supported_flags() -> None:
     missing = [flag for flag in supported_help_flags() if flag not in help_text]
     if missing:
         raise TestFailure("help output is missing runner flags: " + ", ".join(missing))
-    if "The existing broad focused groups remain the supported timeout-safe decomposition" not in help_text:
-        raise TestFailure("help output is missing broad-group decomposition guidance")
+    if "Official diagnostic subgroups:" not in help_text:
+        raise TestFailure("help output is missing official diagnostic subgroup guidance")
     if "Source-run and diagnostic subgroups are intentionally not split in Phase 56A" in help_text:
         raise TestFailure("help output still contains stale Phase 56A subgroup guidance")
 
@@ -1257,7 +1364,8 @@ def assert_parser_accepts_required_flags() -> None:
     parser.parse_args(["--quick"])
     parser.parse_args(["--quiet", "--structure"])
     parser.parse_args(["--verbose", "--diagnostics"])
-    for group in REQUIRED_GROUPS:
+    parser.parse_args(["--quiet", "--diagnostics-rendered-memory"])
+    for group in [*REQUIRED_GROUPS, *DIAGNOSTIC_SUBGROUPS]:
         parser.parse_args(["--" + group])
 
 
@@ -1378,7 +1486,6 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
     """
 
     forbidden_phrases = [
-        "current milestone",
         "this milestone",
         "unsupported by the current milestone",
         "not implemented in this milestone",
@@ -1387,7 +1494,6 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         "future milestone",
         "will be added in a future milestone",
         "implemented through the current milestone",
-        "current milestone metadata",
     ]
     scanned_paths: list[pathlib.Path] = []
     for directory in [ROOT / "src", ROOT / "web" / "src", ROOT / "tests"]:
@@ -1417,64 +1523,41 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71 status, root RET semantics, and artifact/protocol coverage."""
+    """Verify Phase 71A1 status, concise status surfaces, and planned fallthrough wording."""
 
-    for path in [
-        "README.md",
-        "docs/SUPPORTED_SYNTAX.md",
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-    ]:
-        assert_all_text_contains(
-            path,
-            [
-                "Phase 71A - Optional Root RET Strictness Mode",
-                "phase-71a-source-run-output-contract-v1",
-                "Current expected protocol token in this revision",
-                "source-run output-contract version identifier",
-                "Phase 70A",
-                "Older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
-                "Artifact compatibility failures are not MASM source diagnostics",
-                "Phase 71 changes root RET termination and non-entry procedure fallthrough runtime behavior. Phase 71A adds the optional `rootRetMode` strictness setting while preserving the MASM32-compatible default",
-                "After Phase 71A, the next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
-                "Phase 71C is the next planned runtime/source-run MASM behavior phase after Phase 71A",
-            ],
-        )
-        assert_all_text_not_contains(
-            path,
-            [
-                "Latest output/message-ordering cleanup phase:",
-                "Latest source-run output-contract phase:",
-                "Latest protocol/artifact compatibility cleanup phase:",
-                "Next recommended implementation work",
-                "unsupported `call` forms including Irvine32 routine calls, external/API calls",
-                "root `RET` termination, non-entry procedure fallthrough diagnostics",
-                "root procedure termination through `ret`",
-                "non-entry procedure fallthrough diagnostics after CALL/RET are available",
-            ],
-        )
+    def read_repo_text(path: str) -> str:
+        return (ROOT / path).read_text(encoding="utf-8")
 
+    def section_text(path: str, start_marker: str, end_marker: str) -> str:
+        full_text = read_repo_text(path)
+        start = full_text.index(start_marker)
+        end = full_text.index(end_marker, start)
+        return full_text[start:end]
+
+    readme_current_status = section_text("README.md", "## Current status", "## Current simulator scope")
+    if read_repo_text("README.md").count("## Current status") != 1:
+        raise TestFailure("README must contain exactly one active current status section")
+    if "## Current repository status" in read_repo_text("README.md"):
+        raise TestFailure("README active status heading must use Current status, not Current repository status")
     assert_all_text_contains(
         "README.md",
         [
-            "Phase 69 implements direct near `call ProcedureName`",
-            "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
-            "That return-token write is an implicit VM stack write",
-            "current public source-run output contract does not expose it as a visible `memoryChanges` row",
-            "Failed internal stack writes use the central checked-memory diagnostic path",
-            "Phase 70 implements helper plain near `ret`/`RET` with no operands",
-            "Phase 71 adds selected-entry root `RET` termination",
-            "execution completes successfully without reading `[ESP]`",
-            "Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`",
-            "displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol",
+            "Current milestone",
+            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Runtime/source-run MASM behavior phase",
+            "Phase 71A - Optional Root RET Strictness Mode",
+            "latest runtime/source-run MASM behavior remains Phase 71A",
+            "Phase 71A1 is test-runner infrastructure only",
+            "implemented runtime features",
+            "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
+            "For build and artifact verification details",
+            "When this section changes, replace this table and short note in place",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
             "plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
             "selected-entry root `ret`/`RET` success by default without stack reads when no helper return is pending",
             "`non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`",
-            "docs/SUPPORTED_SYNTAX.md",
-            "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
-            "docs/MILESTONE_HISTORY.md",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
             "direct `jmp`",
             "equality conditional jumps",
@@ -1482,45 +1565,119 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "unsigned relational conditional jumps",
         ],
     )
+    for forbidden in [
+        "phase-71a-source-run-output-contract-v1",
+        "output-contract tokens and browser/Wasm artifact compatibility details",
+        "Wasm API behavior",
+        "browser behavior",
+        "Source-run output-contract token",
+        "source-run output-contract version identifier",
+        "Next planned runtime/source-run behavior phase",
+        "Repository/archive milestone",
+        "Next canonical guide phase",
+        "Phase 71B1",
+        "Phase 71C through Phase 71F are planned",
+        "Artifact compatibility is intentionally strict",
+        "older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
+        "Exact requirements implemented",
+        "Assumptions used",
+        "TODO-style note disposition",
+        "Files changed",
+        "Tests added",
+        "Commands used to test",
+    ]:
+        if forbidden in readme_current_status:
+            raise TestFailure(f"README current-status section contains excessive status detail: {forbidden}")
     assert_all_text_not_contains(
         "README.md",
         [
+            "Phase 69 implements direct near `call ProcedureName`",
+            "A successful direct user-procedure `CALL` writes the pseudo-EIP return token",
+            "That return-token write is an implicit VM stack write",
+            "Failed internal stack writes use the central checked-memory diagnostic path",
+            "Phase 70 implements helper plain near `ret`/`RET` with no operands",
+            "Phase 71 adds selected-entry root `RET` termination",
+            "Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`",
             "Phase 66 remains the latest runtime/source-run MASM behavior phase",
             "current source-run execution can still follow linear lowered-instruction order",
             "corrected `END entryName` source-run entry behavior",
-            "Exact requirements implemented",
-            "Assumptions used",
-            "TODO-style note disposition",
-            "Files changed",
-            "Tests added",
-            "Commands used to test",
             "Milestone 70A: runtime metadata exact-match compatibility; MASM runtime behavior remains Phase 70 RET execution.",
         ],
     )
 
+    building_status = section_text("docs/BUILDING_AND_DEVELOPMENT.md", "## Current status", "## Artifact verification versus rebuild verification")
+    assert_all_text_contains(
+        "docs/BUILDING_AND_DEVELOPMENT.md",
+        [
+            "Current milestone:",
+            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Runtime/source-run MASM behavior phase:",
+            "Phase 71A - Optional Root RET Strictness Mode",
+            "latest runtime/source-run MASM behavior remains Phase 71A",
+            "Phase 71A1 is test-runner infrastructure only",
+            "implemented runtime features",
+            "When this section changes, replace the existing status lines in place",
+            "Artifact verification versus rebuild verification",
+            "Checked-in artifact-content verification",
+            "stale-wasm-output-contract",
+            "Do not infer that checked-in `web/dist` is stale solely from missing `emcc`",
+            "python3 -m http.server 8000 --directory web",
+            "./scripts/build_wasm.sh",
+            "scripts\\windows\\build_wasm.cmd",
+            "python3 scripts/run_tests.py --all",
+            "python3 scripts/run_tests.py --source-run",
+            "python3 scripts/run_tests.py --diagnostics",
+            "Browser/Wasm smoke guidance",
+            "Output-contract changes and browser/Wasm artifact status",
+            "Browser/Wasm artifact compatibility verified through the documented output-contract identifier.",
+        ],
+    )
+    for forbidden in [
+        "Next canonical guide phase:",
+        "Next runtime/source-run MASM behavior phase:",
+        "Repository/archive milestone:",
+        "Current source-run output-contract token:",
+        "source-run output-contract metadata",
+        "Wasm API behavior",
+        "browser behavior",
+        "Phase 69C introduced the separate `sourceRunOutputContract` metadata field",
+        "Phase 70 implements helper plain near RET return-token execution and validation",
+        "Phase 70A is protocol/artifact compatibility cleanup only",
+        "Phase 71B follows Phase 71A1 as diagnostic-copy",
+        "selected-entry root `RET` terminates successfully by default without an `[ESP]` read",
+        "called non-entry procedure fallthrough emits `non-root-procedure-fell-through`",
+        "Exact requirements implemented",
+        "Assumptions used",
+        "TODO-style note disposition",
+        "Files changed",
+        "Tests added",
+        "Commands used to test",
+    ]:
+        if forbidden in building_status:
+            raise TestFailure(f"BUILDING current-status section contains excessive status detail: {forbidden}")
+
     assert_all_text_contains(
         "docs/SUPPORTED_SYNTAX.md",
         [
-            "This document describes implemented behavior only",
+            "Current milestone:",
+            "Runtime/source-run MASM behavior phase:",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
+            "Phase 71A1 is diagnostic test-runner infrastructure only",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
-            "Selected-entry root `RET` default success and called non-entry procedure fallthrough diagnostics are implemented by Phase 71",
+            "Selected-entry root `RET` succeeds by default in MASM32-compatible root RET mode",
+            "Optional strict root RET mode rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`",
+            "Called non-entry procedure fallthrough is diagnosed with `non-root-procedure-fell-through`",
+            "The selected-entry `ENDP` success rule is current behavior, but it is not MASM/x86-like code-stream behavior",
             "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
             "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
+            "| `the-front-fell-off` | 71C | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is `front` under ASCII case-insensitive comparison. |",
+            "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?",
             "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
-            "default `rootRetMode = \"masm32-compatible\"` lets a no-operand root `RET` with no helper return pending terminate successfully without reading `[ESP]`",
-            "Optional `rootRetMode = \"strict-call-frame\"` instead rejects that selected-entry root `RET` with `root-ret-disallowed-by-mode` before any stack read",
-            "A called non-entry procedure that reaches its `ENDP` boundary without `RET` stops with `non-root-procedure-fell-through`",
-            "Source-level stack instructions, `RET imm16`, and procedure frames remain deferred",
-            "direct `jmp label`",
-            "equality conditional jumps",
-            "signed relational conditional jumps",
-            "unsigned relational conditional jumps",
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
@@ -1541,67 +1698,17 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Latest source-run output-contract phase:",
             "Latest protocol/artifact compatibility cleanup phase:",
             "Root `RET`, non-entry procedure fallthrough diagnostics",
-            "root RET termination, RET imm16",
-            "root RET termination, RET imm16",
-        ],
-    )
-
-    assert_all_text_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        [
-            "Current repository/archive milestone:",
-            "Current runtime/source-run MASM behavior phase:",
-            "Source-run output-contract identifier naming:",
-            "Current protocol/artifact compatibility policy:",
-            "Current expected protocol token in this revision",
-            "The token is a source-run output-contract version identifier",
-            "Next canonical guide phase:",
-            "Next runtime/source-run MASM behavior phase:",
-            "Phase 69C introduced the separate `sourceRunOutputContract` metadata field",
-            "Phase 70 implements helper plain near RET return-token execution and validation",
-            "Phase 70A is protocol/artifact compatibility cleanup only",
-            "Phase 71A is the current runtime/source-run behavior phase",
-            "selected-entry root `RET` terminates successfully by default without an `[ESP]` read",
-            "called non-entry procedure fallthrough emits `non-root-procedure-fell-through`",
-            "browser/protocol code warns for older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior phase metadata",
-            "phase-71a-source-run-output-contract-v1",
-            "source-run output-contract version identifier",
-            "A later accepted phase that changes the public source-run JSON shape",
-            "stale-wasm-output-contract",
-            "Artifact verification versus rebuild verification",
-            "Checked-in artifact-content verification",
-            "Do not infer that checked-in `web/dist` is stale solely from missing `emcc`",
-            "This file is a build and development reference. It does not define supported MASM syntax or runtime behavior.",
-            "python3 -m http.server 8000 --directory web",
-            "./scripts/build_wasm.sh",
-            "scripts\\windows\\build_wasm.cmd",
-            "python3 scripts/run_tests.py --all",
-            "python3 scripts/run_tests.py --source-run",
-            "python3 scripts/run_tests.py --diagnostics",
-            "missing `emcc`",
-            "Browser/Wasm smoke guidance",
-            "Output-contract changes and browser/Wasm artifact status",
-            "Browser/Wasm artifact compatibility verified through the documented output-contract identifier.",
-        ],
-    )
-    assert_all_text_not_contains(
-        "docs/BUILDING_AND_DEVELOPMENT.md",
-        [
-            "Exact requirements implemented",
-            "Assumptions used",
-            "TODO-style note disposition",
-            "Files changed",
-            "Tests added",
-            "Commands used to test",
-            "Phase 69 remains the latest completed runtime/source-run MASM behavior phase",
-            "Neither cleanup phase changes parser behavior",
+            "the-front-fell-off` | 71C, optional",
+            "optional easter egg",
+            "source spelling is exactly `front`",
         ],
     )
 
     assert_all_text_contains(
         "docs/MILESTONE_HISTORY.md",
         [
-            "Current status at Phase 71A:",
+            "Current status at Phase 71A1:",
+            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "Phase 71A - Optional Root RET Strictness Mode",
             "phase-71a-source-run-output-contract-v1",
             "Current protocol/artifact compatibility policy:",
@@ -1609,10 +1716,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "The token is a source-run output-contract version identifier",
             "Next canonical guide phase:",
             "Next runtime/source-run MASM behavior phase:",
-            "Phase 71A is a runtime/source-run behavior phase and is the current repository/archive status",
+            "Phase 71A is a runtime/source-run behavior phase. Phase 71A1 is the current repository/archive status",
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "## Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "## Phase 71A - Optional Root RET Strictness Mode",
             "## Phase 70 - RET Execution and Return Address Validation",
             "Recent milestone detail in this file may be listed most-recent-first",
@@ -1636,6 +1744,23 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "docs/FULL_IMPLEMENTATION_SPEC.md",
         [
+            "Current-status text is an orientation aid, not a changelog",
+            "Current milestone",
+            "not be labeled `Repository/archive milestone` in active status text",
+            "`Next canonical guide phase` and `Public output-contract token` are not active current-status fields",
+            "#### Required edit procedure",
+            "If an active current-status block exists, replace that block in place",
+            "Do not paste a new current-status block above or below the old one",
+            "Appending instead of replacing is a documentation defect",
+            "#### Required active-status payload",
+            "README-style current-status blocks must not include next-phase labels, output-contract tokens",
+            "The visible `web/index.html` top-page milestone banner is a file-specific compact banner",
+            "Milestone <N or suffix>: <phase title>",
+            "do not include the `Current milestone` label, the `Runtime/source-run MASM behavior phase` label",
+            "Required `the-front-fell-off` Diagnostic Easter Egg",
+            "The future implementation phase that introduces `code-fell-off-end` must also add one deliberately harmless notice-level diagnostic easter egg",
+            "Procedure names such as `front`, `Front`, `FRONT`, and `fRoNt` match",
+            "Matching is case-insensitive for this easter egg only",
             "current `docs/SUPPORTED_SYNTAX.md` as a tested current-reference document",
             "`docs/SUPPORTED_SYNTAX.md` is not an independent override",
             "External/API calls are not a future CALL target category",
@@ -1649,9 +1774,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "A later accepted phase that deliberately changes the public source-run JSON shape",
             "The full specification owns stable product boundaries",
             "The required dependency order is:",
-            "As of the source-of-truth revision after Phase 71A",
-            "Phase 71A is complete as optional root RET strictness behavior",
-            "The next canonical guide phase is Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "As of the source-of-truth revision after Phase 71A1",
+            "Phase 71A is complete as optional root RET strictness behavior and Phase 71A1 is complete as diagnostic test-runner infrastructure",
+            "The next canonical guide phase is Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
             "This specification must not duplicate the complete future phase list as phase-order authority",
             "Future assistants must consult `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`",
             "Do not renumber existing guide phases from this specification",
@@ -1674,6 +1799,8 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Phase 70A is protocol/artifact compatibility cleanup only and must not implement root `RET` or any other MASM runtime behavior. If the guide uses corrective non-renumbering phases",
             "root `RET` termination, `RET imm16`, `RETF`, `LEAVE",
             "root `RET`, Irvine32 routine dispatch, and other CALL/RET forms remain future-owned",
+            "Optional `the-front-fell-off` Diagnostic Easter Egg",
+            "It is optional unless the owning phase explicitly makes it required",
         ],
     )
 
@@ -1681,6 +1808,15 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
         [
             "Phase identifier note",
+            "Every future milestone report must state both values when they differ. Use this minimum label format",
+            "Current milestone:",
+            "Minimum report wording when they differ",
+            "This minimum block is required for maintenance, documentation, display-only, test-runner-only",
+            "Creating a second active current-status block, keeping the old block and adding a new one above it, or appending a new phase paragraph below the old block is a defect",
+            "Current-status blocks should answer only which current milestone is implemented",
+            "The visible `web/index.html` top-page milestone banner is a file-specific compact banner",
+            "Update it to the current accepted milestone even for maintenance or test-infrastructure milestones",
+            "Current-status blocks contain only status values and one short interpretation sentence",
             "## 73A. Phase 69A - Documentation and Static-Check Cleanup After Direct CALL",
             "## 73B. Phase 69B - Register Display Grouping and Startup Diagnostic Ordering",
             "## 73C. Phase 69C - Wasm Output-Contract Compatibility and Test Runner Decomposition",
@@ -1696,6 +1832,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "## 75D. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "### Required easter egg",
+            "This phase must add one deliberately harmless notice-level diagnostic easter egg",
+            "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
+            "Do not treat longer names such as `frontier`, `myfront`, or `front_` as matches",
+            "the required `the-front-fell-off` easter egg is diagnostic-only, case-insensitive for the procedure name `front`, and fully tested",
             "Phase 70A is a UI/protocol/artifact compatibility corrective phase",
             "Missing suffix metadata is invalid even when the expected suffix is the empty string",
             "Malformed source-run output-contract metadata includes any present value that is not a string",
@@ -1710,16 +1851,27 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
         ],
     )
+    assert_all_text_not_contains(
+        "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        [
+            "### Optional easter egg",
+            "The easter egg is optional",
+            "If the easter egg is implemented",
+            "source spelling is exactly `front`",
+        ],
+    )
 
     assert_all_text_contains(
         "docs/TESTING_GUIDE.md",
         [
-            "Current repository/archive status for this guide revision is Phase 71A - Optional Root RET Strictness Mode",
-            "Current runtime/source-run MASM behavior is Phase 71A - Optional Root RET Strictness Mode",
-            "phase-71a-source-run-output-contract-v1",
-            "Phase 71A requires runtime, source-run, rendered Simulator Messages, protocol, web/settings, and static documentation regression tests",
-            "Phase 69C introduced source-run output-contract verification",
-            "token expected by the current UI/source pair",
+            "Current milestone:",
+            "Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
+            "Runtime/source-run MASM behavior phase:",
+            "Phase 71A - Optional Root RET Strictness Mode",
+            "latest runtime/source-run MASM behavior remains Phase 71A",
+            "Phase 71A1 adds official diagnostic subgroup commands",
+            "When this section changes, replace the existing status lines in place",
+            "Do not append output-contract tokens, next-phase labels",
             "tests must prove:",
             "selected-entry root RET default success does not read `[ESP]`",
             "static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted",
@@ -1729,9 +1881,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71A: selected-entry root RET still completes by default; optional strict-call-frame mode reports a teaching diagnostic",
-            "Repository status: Phase 71A: Optional Root RET Strictness Mode.",
-            "Runtime behavior: Phase 71A keeps MASM32-compatible selected-entry root RET",
+            "Milestone 71A1: Diagnostic Test Runner Subgroup Decomposition",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
@@ -1746,6 +1896,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         [
             "Runtime behavior remains Phase 69:",
             "Milestone 69C: Wasm Output-Contract Compatibility and Test Runner Decomposition.</p>",
+            "Repository status: Phase 71A1",
+            "Current milestone: Phase 71A1",
+            "Runtime/source-run MASM behavior remains Phase 71A",
+            "Runtime/source-run MASM behavior phase:",
+            "Protocol behavior: Phase 70A and later require runtime metadata and output-contract",
             "Source-run JSON now carries a separate output-contract identifier",
             "Final Registers still use parent-family spacer rows and major high-level divider rows",
             "direct user-procedure <code>CALL</code> is executable",
@@ -2088,6 +2243,149 @@ def report_phase51_smoke_harness_status() -> None:
     else:
         print("Phase 51 browser manual smoke after rebuilding Wasm: not run by the aggregate native/Node test command.")
 
+def documented_diagnostic_subgroup_commands() -> list[str]:
+    """Return diagnostic subgroup commands documented by TESTING_GUIDE.
+
+    Returns:
+        Ordered unique command names without leading dashes.
+    """
+
+    docs = read_file("docs/TESTING_GUIDE.md")
+    commands: list[str] = []
+    for raw_token in docs.replace("`", " ").replace("\n", " ").split():
+        if not raw_token.startswith("--diagnostics-"):
+            continue
+        subgroup = raw_token[2:].rstrip(".,;:)")
+        if subgroup in commands:
+            continue
+        commands.append(subgroup)
+    return commands
+
+
+def assert_diagnostic_subgroup_help_and_docs_match() -> None:
+    """Verify every diagnostic subgroup is present in both runner help and docs."""
+
+    help_text = create_arg_parser().format_help()
+    docs = read_file("docs/TESTING_GUIDE.md")
+    missing_from_help = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if "--" + subgroup not in help_text]
+    missing_from_docs = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if "--" + subgroup not in docs]
+    if missing_from_help:
+        raise TestFailure("diagnostic subgroups missing from runner help: " + ", ".join(missing_from_help))
+    if missing_from_docs:
+        raise TestFailure("diagnostic subgroups missing from docs/TESTING_GUIDE.md: " + ", ".join(missing_from_docs))
+
+    documented = documented_diagnostic_subgroup_commands()
+    extra_in_docs = [subgroup for subgroup in documented if subgroup not in DIAGNOSTIC_SUBGROUPS]
+    if extra_in_docs:
+        raise TestFailure("docs/TESTING_GUIDE.md documents unknown diagnostic subgroups: " + ", ".join(extra_in_docs))
+    missing_documented = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if subgroup not in documented]
+    if missing_documented:
+        raise TestFailure("docs/TESTING_GUIDE.md omits diagnostic subgroups: " + ", ".join(missing_documented))
+
+
+def diagnostic_rendering_inventory() -> dict[str, object]:
+    """Read diagnostic-rendering subgroup inventory from the Node harness.
+
+    Returns:
+        Parsed JSON object with group names and test inventory.
+    """
+
+    require_node()
+    completed = subprocess.run(
+        ["node", "tests/web/test_diagnostic_rendering.mjs", "--list-diagnostic-tests"],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise TestFailure(
+            "could not list diagnostic rendering inventory:\n"
+            + tail_text(completed.stdout)
+            + tail_text(completed.stderr)
+        )
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise TestFailure("diagnostic rendering inventory is not JSON: " + str(error)) from error
+
+
+def assert_diagnostic_subgroup_inventory_union() -> None:
+    """Verify diagnostic subgroup inventory covers the same tests as broad diagnostics."""
+
+    inventory = diagnostic_rendering_inventory()
+    groups = inventory.get("groups")
+    tests = inventory.get("tests")
+    expected_groups = ["json", *DIAGNOSTIC_RENDERING_GROUP_BY_SUBGROUP.values()]
+    if groups != expected_groups:
+        raise TestFailure("diagnostic rendering group inventory does not match runner subgroups")
+    if not isinstance(tests, list) or not tests:
+        raise TestFailure("diagnostic rendering inventory is empty")
+
+    all_names: set[str] = set()
+    names_by_group: dict[str, set[str]] = {group: set() for group in expected_groups}
+    for item in tests:
+        if not isinstance(item, dict):
+            raise TestFailure("diagnostic rendering inventory contains a non-object item")
+        group = item.get("group")
+        name = item.get("name")
+        if not isinstance(group, str) or not isinstance(name, str):
+            raise TestFailure("diagnostic rendering inventory item lacks group/name strings")
+        if group not in names_by_group:
+            raise TestFailure(f"diagnostic test has unsupported subgroup {group}: {name}")
+        if name in all_names:
+            raise TestFailure("diagnostic rendering inventory contains duplicate test name: " + name)
+        all_names.add(name)
+        names_by_group[group].add(name)
+
+    empty_groups = [group for group, names in names_by_group.items() if not names]
+    if empty_groups:
+        raise TestFailure("diagnostic subgroups have no test inventory: " + ", ".join(empty_groups))
+
+    subgroup_union: set[str] = set()
+    for names in names_by_group.values():
+        subgroup_union.update(names)
+    if subgroup_union != all_names:
+        raise TestFailure("diagnostic subgroup union does not match broad diagnostic inventory")
+
+
+def assert_subgroup_failure_reporting_contract() -> None:
+    """Verify subgroup subprocess failures identify the group, subgroup, and command."""
+
+    global CURRENT_GROUP
+    previous_group = CURRENT_GROUP
+    CURRENT_GROUP = "diagnostics"
+    try:
+        try:
+            run_command(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('synthetic stdout'); print('synthetic stderr', file=sys.stderr); sys.exit(3)",
+                ],
+                subgroup="diagnostics-rendered-memory",
+            )
+        except TestFailure as error:
+            text = str(error)
+            for fragment in [
+                "- Group: diagnostics",
+                "- Subgroup: diagnostics-rendered-memory",
+                "- Command:",
+                "- Exit code: 3",
+                "- Stdout tail:",
+                "synthetic stdout",
+                "- Stderr tail:",
+                "synthetic stderr",
+            ]:
+                if fragment not in text:
+                    raise TestFailure("synthetic subgroup failure output missing: " + fragment)
+            return
+        raise TestFailure("synthetic subgroup failure command unexpectedly passed")
+    finally:
+        CURRENT_GROUP = previous_group
+
+
 def run_static_tests() -> None:
     """Run runner, documentation, and fixture-inventory consistency checks."""
 
@@ -2098,6 +2396,9 @@ def run_static_tests() -> None:
     assert_fixture_inventory_documented()
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
+    assert_diagnostic_subgroup_help_and_docs_match()
+    assert_diagnostic_subgroup_inventory_union()
+    assert_subgroup_failure_reporting_contract()
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase71_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
@@ -2125,6 +2426,15 @@ def group_function(name: str) -> Callable[[], None]:
         "source-run": run_source_run_tests,
         "web": run_web_tests,
         "diagnostics": run_diagnostics_tests,
+        "diagnostics-json": run_diagnostics_json_tests,
+        "diagnostics-rendered-call-ret": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-call-ret"),
+        "diagnostics-rendered-memory": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-memory"),
+        "diagnostics-rendered-directives": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-directives"),
+        "diagnostics-rendered-compatibility": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-compatibility"),
+        "diagnostics-rendered-arithmetic": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-arithmetic"),
+        "diagnostics-rendered-shift-rotate": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-shift-rotate"),
+        "diagnostics-rendered-mul-div": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-mul-div"),
+        "diagnostics-rendered-runtime": lambda: run_diagnostics_rendered_subgroup("diagnostics-rendered-runtime"),
         "protocol": run_protocol_tests,
         "static": run_static_tests,
     }

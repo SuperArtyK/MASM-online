@@ -3,11 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Repository status: Phase 71A: Optional Root RET Strictness Mode.
-  Runtime behavior: Phase 71A keeps MASM32-compatible selected-entry root RET
-  success by default and adds an opt-in strict root RET teaching diagnostic.
-  Protocol behavior: Phase 70A and later require runtime metadata and output-contract
-  metadata to exactly match UI expectations before artifact warnings are suppressed.
+  Milestone 71A1: Diagnostic Test Runner Subgroup Decomposition.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -22,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 71A: selected-entry root RET still completes by default; optional strict-call-frame mode reports a teaching diagnostic.</p>
+        <p class="muted">Milestone 71A1: Diagnostic Test Runner Subgroup Decomposition</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
