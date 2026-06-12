@@ -2,13 +2,13 @@
 
 Current milestone:
 
-- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
+- Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71B is diagnostic-copy cleanup only; it removes stale milestone-number wording from active user-facing diagnostics without adding or removing accepted MASM syntax, rejected forms, runtime diagnostics, source-run behavior, Wasm API behavior, or browser behavior.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71B1 is test-runner subgroup cleanup only; it adds official source-run and native control-flow preflight subgroups without adding or removing accepted MASM syntax, rejected forms, runtime diagnostics, source-run behavior, Wasm API behavior, or browser behavior.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 

@@ -6,15 +6,14 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
+- Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Phase 71B is diagnostic-copy cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B changes active user-facing diagnostic wording without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
-When this section changes, replace the existing status lines in place. Do not append output-contract tokens, next-phase labels, milestone-report prose, phase history, command transcripts, changed-files lists, assumptions, TODO disposition, skipped-dependency explanations, or artifact-policy detail.
 
 
 Static documentation checks for active source-of-truth text should reject stale milestone-context phrases unless they appear in historical reports, changelogs, quoted forbidden-pattern examples, or allowlist entries used by the check itself. The minimum phrases to scan are:
@@ -199,6 +198,21 @@ python3 scripts/run_tests.py --protocol
 python3 scripts/run_tests.py --static
 ```
 
+Official native and source-run subgroups are available when a broad native or source-run group is too large:
+
+```sh
+python3 scripts/run_tests.py --native-parser
+python3 scripts/run_tests.py --native-exec
+python3 scripts/run_tests.py --native-memory-layout
+python3 scripts/run_tests.py --native-diagnostics-policy
+python3 scripts/run_tests.py --native-control-flow
+python3 scripts/run_tests.py --source-run-core
+python3 scripts/run_tests.py --source-run-diagnostics
+python3 scripts/run_tests.py --source-run-settings
+python3 scripts/run_tests.py --source-run-memory-layout
+python3 scripts/run_tests.py --source-run-control-flow
+```
+
 Group ownership:
 
 - `structure`: repository structure, expected files, public header comments, Doxygen/static source-shape checks, and milestone metadata checks.
@@ -291,9 +305,29 @@ Manual compile/run fallback is allowed only as a documented fallback when offici
 
 ### Official subgroup command ownership
 
-The following subgroup names are reserved for timeout-safe verification. Do not document a subgroup as implemented until `scripts/run_tests.py --help` exposes it.
+The following subgroup names are implemented public runner commands. Each subgroup must appear in `scripts/run_tests.py --help`, must be documented here, and must preserve the same exact assertions as the broad group that owns it. Run source-run/native subgroups when a broad source-run or native command is too large for the active environment.
 
-Required diagnostic subgroups from Phase 71A1, now implemented by `scripts/run_tests.py --help`:
+Required native subgroups from Phase 71B1:
+
+| Command | Ownership |
+|---|---|
+| `--native-parser` | Native lexer, parser, symbol, and parser-level semantic-validation tests. |
+| `--native-exec` | Native CPU, flag, and API smoke tests that are not better owned by memory/layout or control-flow subgroups. |
+| `--native-memory-layout` | Native memory, layout, data-section, object-map, checked-memory, and data-image tests. |
+| `--native-diagnostics-policy` | Native configurable diagnostic-policy registry and lookup behavior. |
+| `--native-control-flow` | Native executor regression tests that own VM control-flow risk for future control-transfer phases. |
+
+Required source-run subgroups from Phase 71B1:
+
+| Command | Ownership |
+|---|---|
+| `--source-run-core` | Small successful programs, source-run setup, final-state basics, API result-buffer behavior, and core source-run parser/runtime integration not better owned by another source-run subgroup. |
+| `--source-run-diagnostics` | Source-run structured diagnostics, parser/runtime error paths, unsupported forms, capacity diagnostics, terminal failure serialization, and exact diagnostic-preservation fixtures. |
+| `--source-run-settings` | Source-run settings serialization, invalid settings, CASEMAP behavior, compatibility-policy behavior, startup-mode behavior, seeded-startup behavior, and policy-driven behavior. |
+| `--source-run-memory-layout` | Source-run data declarations, symbol offsets, pointer widths, memory operands, layout modes, object/section validation, `.CONST`, `.DATA?`, uninitialized-origin metadata, planned-read checks, and memory-change attribution. |
+| `--source-run-control-flow` | Source-run labels, direct branches, conditional branches, instruction-limit/watchdog paths, selected-entry startup, direct user-procedure `CALL`, helper `RET`, selected-entry root `RET`, procedure-boundary regressions, and pseudo-EIP display/rejection fixtures. |
+
+Required diagnostic subgroups from Phase 71A1:
 
 | Command | Ownership |
 |---|---|
@@ -307,26 +341,15 @@ Required diagnostic subgroups from Phase 71A1, now implemented by `scripts/run_t
 | `--diagnostics-rendered-mul-div` | Rendered Simulator Messages for MUL/IMUL/DIV/IDIV diagnostics. |
 | `--diagnostics-rendered-runtime` | Rendered Simulator Messages for runtime terminal diagnostics not better owned by a more specific family. |
 
-Conditional source-run/native subgroups from Phase 71B1, required only if that phase is triggered:
+Implemented source-run/native subgroups from Phase 71B1 preserve the broad groups:
 
-| Command | Ownership |
-|---|---|
-| `--source-run-core` | Small successful programs, source-run setup, final-state basics, and the core source-run path. |
-| `--source-run-diagnostics` | Source-run structured diagnostics and terminal failure serialization. |
-| `--source-run-settings` | Source-run settings serialization, invalid settings, and settings-driven behavior. |
-| `--source-run-memory-layout` | Source-run memory-layout modes and memory metadata output. |
-| `--source-run-control-flow` | Source-run CALL/RET, fallthrough, terminator, branch/control-flow, and procedure execution behavior. |
-| `--native-parser` | Native parser and semantic-validation tests. |
-| `--native-exec` | Native VM executor behavior. |
-| `--native-memory-layout` | Native layout, object-map, and checked-memory integration. |
-| `--native-diagnostics-policy` | Native configurable diagnostic policy behavior. |
-| `--native-control-flow` | Native CALL/RET, procedure-boundary, code-stream, and terminator behavior. |
+- `--native` runs every native subgroup internally.
+- `--source-run` runs every source-run subgroup internally.
+- `--all` runs the broad groups, and the broad groups preserve complete subgroup coverage.
 
-The broad `--diagnostics` group now calls the diagnostic JSON subgroup and each rendered diagnostic subgroup internally. A broad group may call subgroups internally, but it must not silently skip a subgroup. If a subgroup cannot run because of an unavailable dependency, the report must mark that subgroup as `SKIPPED - dependency unavailable` and name the dependency.
+The broad `--diagnostics` group calls the diagnostic JSON subgroup and each rendered diagnostic subgroup internally. A broad group may call subgroups internally, but it must not silently skip a subgroup. If a subgroup cannot run because of an unavailable dependency, the report must mark that subgroup as `SKIPPED - dependency unavailable` and name the dependency.
 
-Failure output for subgroup and broad-group execution must identify the failing group, the failing command, the subprocess exit code, and a bounded stdout/stderr tail. Source-run fixture failures include the fixture name whenever the failing path can identify it.
-
-Preferred future subgroup families are reserved in the official subgroup command ownership table above. Do not add a subgroup to runner help, implementation-guide acceptance criteria, or milestone-report requirements without documenting its fixture-family ownership here.
+Failure output for subgroup and broad-group execution must identify the failing group, the failing subgroup where applicable, the failing command, the subprocess exit code, and a bounded stdout/stderr tail. Source-run fixture failures include the fixture name whenever the failing path can identify it.
 
 ### Required timeout-aware command reporting
 
@@ -376,23 +399,25 @@ These commands run exact assertions from the same diagnostic harness used by `--
 
 ### Source-run fixture inventory
 
-The source-run fixture inventory is intentionally a navigation aid. It does not duplicate every assertion in `tests/core/test_wasm_source_run.c`. It records the major fixture families kept in the focused `source-run` group so future assistants do not split, weaken, or remove them without an explicit test-runner maintenance phase.
+The source-run fixture inventory is intentionally a navigation aid. It does not duplicate every assertion in `tests/core/test_wasm_source_run.c`. It records the major fixture families owned by the broad `--source-run` group and by the official Phase 71B1 source-run subgroups so future assistants do not split, weaken, or remove them without an explicit test-runner maintenance phase.
 
 | Fixture or family | Focused group | Category | Current disposition |
 | --- | --- | --- | --- |
-| minimal source execution sample | `source-run` | focused success fixture | kept in the focused source-run group |
-| lexer/parser diagnostic source-run failures | `source-run` | focused error fixture | kept in the focused source-run group |
-| memory/layout and automatic layout programs | `source-run` | regression fixture | kept in the focused source-run group |
-| uninitialized-read and memory-validation policy programs | `source-run` | warning/notice fixture | kept in the focused source-run group |
-| phase51-layout-fixed-automatic-equivalence | `source-run` | integration smoke fixture | kept in the focused source-run group |
-| phase51-const-permission-precedence | `source-run` | integration smoke fixture | kept in the focused source-run group |
-| phase51-uninitialized-rmw-warning | `source-run` | integration smoke fixture | kept in the focused source-run group |
-| phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run` | integration smoke fixture | kept in the focused source-run group |
-| phase53e-ui-settings-policy-routing | `source-run` | focused settings fixture | kept in the focused source-run group |
-| phase56-div-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept in the focused source-run group |
-| phase57-idiv-source-run-coverage | `source-run` | focused success/error/regression fixture family | kept in the focused source-run group |
+| minimal source execution sample | `source-run`, `source-run-core` | focused success fixture | preserved in the broad source-run group and owned by the core subgroup |
+| lexer/parser diagnostic source-run failures | `source-run`, `source-run-diagnostics` | focused error fixture | preserved in the broad source-run group and owned by the diagnostics subgroup |
+| memory/layout and automatic layout programs | `source-run`, `source-run-memory-layout` | regression fixture | preserved in the broad source-run group and owned by the memory-layout subgroup |
+| uninitialized-read and memory-validation policy programs | `source-run`, `source-run-memory-layout` | warning/notice fixture | preserved in the broad source-run group and owned by the memory-layout subgroup unless the fixture is primarily settings-policy coverage |
+| phase51-layout-fixed-automatic-equivalence | `source-run`, `source-run-memory-layout` | integration smoke fixture | preserved in the broad source-run group and owned by the memory-layout subgroup |
+| phase51-const-permission-precedence | `source-run`, `source-run-memory-layout` | integration smoke fixture | preserved in the broad source-run group and owned by the memory-layout subgroup |
+| phase51-uninitialized-rmw-warning | `source-run`, `source-run-memory-layout` | integration smoke fixture | preserved in the broad source-run group and owned by the memory-layout subgroup |
+| phase51-inc-dec-source-smoke through phase51-ror-source-smoke | `source-run`, `source-run-core` | integration smoke fixture | preserved in the broad source-run group and owned by the core subgroup unless a narrower diagnostic, memory-layout, settings, or control-flow concern owns the fixture |
+| phase53e-ui-settings-policy-routing | `source-run`, `source-run-settings` | focused settings fixture | preserved in the broad source-run group and owned by the settings subgroup |
+| phase56-div-source-run-coverage | `source-run`, `source-run-core`, `source-run-diagnostics` | focused success/error/regression fixture family | preserved in the broad source-run group and split by exact fixture owner between core and diagnostics subgroups |
+| phase57-idiv-source-run-coverage | `source-run`, `source-run-core`, `source-run-diagnostics` | focused success/error/regression fixture family | preserved in the broad source-run group and split by exact fixture owner between core and diagnostics subgroups |
+| direct branch, conditional jump, label, CALL, RET, selected-entry, and watchdog fixtures | `source-run`, `source-run-control-flow` | control-flow regression fixture family | preserved in the broad source-run group and owned by the control-flow subgroup |
+| startup mode, seeded startup, compatibility-notice, CASEMAP, and policy-setting fixtures | `source-run`, `source-run-settings` | settings and policy fixture family | preserved in the broad source-run group and owned by the settings subgroup |
 
-Large individual MASM source fixtures remain intentionally grouped under `--source-run`. The Phase 51 instruction-family programs are intentionally labeled integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as focused success, error, warning/notice, edge-case, or regression fixtures. No fixture should be moved, renamed, split, or weakened unless a future test-runner maintenance phase explicitly owns that change and updates this inventory.
+Large individual MASM source fixtures remain intentionally grouped under `--source-run` and are now also reachable through one official source-run subgroup. The Phase 51 instruction-family programs remain integration smoke fixtures. The remaining embedded source strings in `tests/core/test_wasm_source_run.c` are preserved as success, error, warning/notice, edge-case, settings, memory-layout, control-flow, or regression fixtures. No fixture should be moved, renamed, split, or weakened unless a future test-runner maintenance phase explicitly owns that change and updates this inventory.
 
 The test runner writes native test binaries under:
 
@@ -1170,7 +1195,6 @@ MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION=off|warn|strict
 
 `warn` emits `section-capacity-violation` or `section-image-violation` as a simulator warning and continues when Level 1 memory validation succeeds. `strict` emits the same code as a runtime error before mutation. Milestone 53B added these controls to the test/source-run path. Phase 53E exposes the same existing section-capacity and section-image policies in the browser Memory range validation setting. Defaults still leave section-capacity and section-image validation off unless the user selects one of those modes.
 
-
 ## Stack, CALL, RET, and procedure milestone verification note
 
 Future stack/procedure milestones must separate focused executor tests from complete source-run programs.
@@ -1219,7 +1243,6 @@ For Phase 71A root RET mode and non-entry fallthrough specifically, tests must p
 - rendered Simulator Messages for non-entry fallthrough include `non-root-procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
 - static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
-
 
 ## Current-status documentation clutter checks
 

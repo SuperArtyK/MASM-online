@@ -13,17 +13,15 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup
+- Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Phase 71B is diagnostic-copy cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B changes active user-facing diagnostic wording without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
-
-When this section changes, replace the existing status lines in place. Do not append milestone-report prose, next-phase roadmap detail, repeated artifact-policy prose, changed-files lists, assumptions, TODO disposition, output-contract token lines, skipped-dependency explanations, or command transcripts here. Artifact compatibility, rebuild verification, and browser/Wasm smoke verification belong in the artifact-verification section below, not in the short active status block.
 
 ## Artifact verification versus rebuild verification
 
@@ -218,6 +216,21 @@ python3 scripts/run_tests.py --protocol
 python3 scripts/run_tests.py --static
 ```
 
+Phase 71B1 provides official native and source-run subgroups when a broad native or source-run group is too large for the active environment:
+
+```sh
+python3 scripts/run_tests.py --native-parser
+python3 scripts/run_tests.py --native-exec
+python3 scripts/run_tests.py --native-memory-layout
+python3 scripts/run_tests.py --native-diagnostics-policy
+python3 scripts/run_tests.py --native-control-flow
+python3 scripts/run_tests.py --source-run-core
+python3 scripts/run_tests.py --source-run-diagnostics
+python3 scripts/run_tests.py --source-run-settings
+python3 scripts/run_tests.py --source-run-memory-layout
+python3 scripts/run_tests.py --source-run-control-flow
+```
+
 Phase 71A1 also provides official diagnostic subgroups when the broad diagnostic group is too large for the active environment:
 
 ```sh
@@ -232,7 +245,7 @@ python3 scripts/run_tests.py --diagnostics-rendered-mul-div
 python3 scripts/run_tests.py --diagnostics-rendered-runtime
 ```
 
-The diagnostic subgroups preserve exact structured diagnostic JSON and rendered Simulator Messages assertions from the broad diagnostic suite. They are not smoke tests.
+The source-run, native, and diagnostic subgroups preserve exact assertions from their broad suites. They are not smoke tests.
 
 Quick smoke verification:
 

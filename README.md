@@ -6,14 +6,12 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup |
+| Current milestone | Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight |
 | Runtime/source-run MASM behavior phase | Phase 71A - Optional Root RET Strictness Mode |
 
-Phase 71B is diagnostic-copy cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B changes active user-facing diagnostic wording without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, or implemented runtime features.
+Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
-
-When this section changes, replace this table and short note in place. Do not append a second current-status block, milestone ledger, output-contract explanation, phase roadmap, command transcript, changed-files list, or milestone-report prose here.
 
 ## Current simulator scope
 
@@ -74,8 +72,6 @@ Permanent non-goals remain outside the simulator unless the canonical full speci
 - Windows process, DLL, handle, or kernel behavior.
 
 This README is intentionally concise. Exact accepted forms, rejected forms, diagnostic codes, examples, and future/deferred syntax belong in [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md), not in this README.
-
-When this section changes, revise existing feature categories in place instead of adding changelog bullets.
 
 ## Quick start
 

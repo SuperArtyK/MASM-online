@@ -158,7 +158,7 @@ Active current-status surfaces use these values:
 
 `Next canonical guide phase` and `Public output-contract token` are not short active-status fields. Do not include them in README-style status tables, supported-syntax opening status text, build-guide current-status blocks, browser landing-page milestone banners, or routine current-status summaries. Next-phase planning belongs in this guide, milestone history, handoff notes, or milestone reports. Output-contract tokens belong only in protocol, artifact-verification, source-run JSON, worker/Wasm compatibility, rebuild-verification, and exact test documentation where that implementation detail is directly relevant.
 
-When updating active current-status text, replace the old block in place. Do not append a new status block, keep an old block as a fallback, or add milestone-report prose to an active status surface. Search the target document for existing active status headings and phrases before writing new status text. Search for at least `Current status`, `Current repository status`, `Current scope`, `Current milestone`, `Repository/archive milestone`, `Runtime/source-run MASM behavior phase`, `Next canonical guide phase`, `sourceRunOutputContract`, and `output-contract token`.
+When updating active current-status text, replace the old block in place. Do not append a new status block, keep an old block as a fallback, or add milestone-report prose to an active status surface. Do not copy this maintainer-facing rule into README-style landing pages, supported-syntax opening status text, build-guide current-status blocks, testing-guide current-status blocks, browser landing-page banners, or other user-facing orientation surfaces. Search the target document for existing active status headings and phrases before writing new status text. Search for at least `Current status`, `Current repository status`, `Current scope`, `Current milestone`, `Repository/archive milestone`, `Runtime/source-run MASM behavior phase`, `Next canonical guide phase`, `sourceRunOutputContract`, and `output-contract token`.
 
 README-style landing pages and other short user-facing orientation surfaces must use only this compact payload:
 
@@ -245,7 +245,9 @@ Current-status surfaces include the stable status surfaces named by `FULL_IMPLEM
 - Wasm/source-run status strings;
 - tests that assert current status wording.
 
-Current-status blocks contain only status values and one short interpretation sentence, not phase-scope or milestone-report prose.
+Current-status blocks contain only status values and one short interpretation sentence, not phase-scope prose, milestone-report prose, or maintainer-facing editing instructions. The instruction to replace an existing table or block in place is a guide rule; it must not be rendered inside the README current-status section or similar user-facing status sections.
+
+README-level scope summaries, quick-start landing pages, and other concise orientation sections must also avoid embedded maintainer instructions such as `When this section changes...`. If their content becomes stale, update the existing text in place under this guide rule instead of adding changelog bullets or visible editing instructions.
 
 Do not maintain a second divergent complete list in this guide. If a new stable current-status surface is added, define the update workflow in this guide and update the specification only when the product-visible status-surface shape or meaning changes.
 

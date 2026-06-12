@@ -29,7 +29,7 @@ This specification is the product-behavior authority. It defines stable simulato
 
 `INCREMENTAL_IMPLEMENTATION_GUIDE.md` is the implementation-sequence authority. It defines phase numbering, phase titles, phase dependencies, phase tasks, conditional phases, required tests, acceptance criteria, and the workflow for updating active current-status text.
 
-Short active status surfaces are orientation aids only. They may identify the latest accepted project milestone and, when needed, the latest runtime/source-run MASM behavior phase. They must not become changelogs, milestone ledgers, phase reports, test transcripts, output-contract summaries, artifact-policy summaries, or next-phase planning notes.
+Short active status surfaces are orientation aids only. They may identify the latest accepted project milestone and, when needed, the latest runtime/source-run MASM behavior phase. They must not become changelogs, milestone ledgers, phase reports, test transcripts, output-contract summaries, artifact-policy summaries, next-phase planning notes, or maintainer instructions. User-facing orientation documents must not display process text such as instructions to replace a status table, avoid appending a second status block, avoid adding command transcripts, or avoid adding changed-file lists. Those editing rules belong in the implementation guide, not in the visible status surface.
 
 The visible `web/index.html` top-page milestone banner is the compact browser landing-page status surface. It must use this form:
 

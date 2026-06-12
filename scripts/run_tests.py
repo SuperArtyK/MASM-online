@@ -27,6 +27,20 @@ from typing import Callable, Iterable, Sequence
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BUILD_DIR = ROOT / "build" / "tests"
 REQUIRED_GROUPS = ["structure", "native", "source-run", "web", "diagnostics", "protocol", "static"]
+NATIVE_SUBGROUPS = [
+    "native-parser",
+    "native-exec",
+    "native-memory-layout",
+    "native-diagnostics-policy",
+    "native-control-flow",
+]
+SOURCE_RUN_SUBGROUPS = [
+    "source-run-core",
+    "source-run-diagnostics",
+    "source-run-settings",
+    "source-run-memory-layout",
+    "source-run-control-flow",
+]
 DIAGNOSTIC_SUBGROUPS = [
     "diagnostics-json",
     "diagnostics-rendered-call-ret",
@@ -748,12 +762,13 @@ def executable_output_path(output_name: str) -> pathlib.Path:
     return BUILD_DIR / executable_name
 
 
-def compile_c_binary(output_name: str, sources: list[str]) -> pathlib.Path:
+def compile_c_binary(output_name: str, sources: list[str], *, subgroup: str | None = None) -> pathlib.Path:
     """Compile one C test-support binary.
 
     Args:
         output_name: File name for the compiled executable.
         sources: Repository-relative C source files to compile.
+        subgroup: Optional runner subgroup to report if compilation fails.
 
     Returns:
         Path to the compiled executable.
@@ -762,37 +777,74 @@ def compile_c_binary(output_name: str, sources: list[str]) -> pathlib.Path:
     compiler = os.environ.get("CC", "cc")
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     output = executable_output_path(output_name)
-    run_command([
-        compiler,
-        "-std=c99",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-        "-pedantic",
-        "-Isrc/core",
-        "-Isrc/parser",
-        *sources,
-        "-o",
-        str(output),
-    ])
+    run_command(
+        [
+            compiler,
+            "-std=c99",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-Isrc/core",
+            "-Isrc/parser",
+            *sources,
+            "-o",
+            str(output),
+        ],
+        subgroup=subgroup,
+    )
     return output
 
 
-def compile_and_run_c_test(output_name: str, sources: list[str]) -> None:
+def compile_and_run_c_test(output_name: str, sources: list[str], *, subgroup: str | None = None) -> None:
     """Compile and run one C unit test binary.
 
     Args:
         output_name: File name for the compiled test executable.
         sources: Repository-relative C source files to compile.
+        subgroup: Optional runner subgroup to report if compilation or execution fails.
     """
 
-    output = compile_c_binary(output_name, sources)
-    run_command([str(output)])
+    output = compile_c_binary(output_name, sources, subgroup=subgroup)
+    run_command([str(output)], subgroup=subgroup)
 
 
-def run_native_tests() -> None:
-    """Compile and run native C tests except source-run integration tests."""
+def run_native_parser_tests() -> None:
+    """Compile and run native lexer/parser coverage."""
 
+    subgroup = "native-parser"
+    compile_and_run_c_test(
+        "test_lexer",
+        [
+            "tests/core/test_lexer.c",
+            "src/core/vm_cpu.c",
+            "src/parser/lexer.c",
+        ],
+        subgroup=subgroup,
+    )
+    compile_and_run_c_test(
+        "test_parser",
+        [
+            "tests/core/test_parser.c",
+            "src/core/vm_cpu.c",
+            "src/core/vm_memory.c",
+            "src/core/vm_layout.c",
+            "src/core/vm_ir.c",
+            "src/core/vm_exec.c",
+            "src/core/vm_diagnostic_policy.c",
+            "src/parser/lexer.c",
+            "src/parser/parser.c",
+            "src/parser/symbols.c",
+            "src/parser/object_map.c",
+        ],
+        subgroup=subgroup,
+    )
+
+
+def run_native_exec_tests() -> None:
+    """Compile and run native CPU, flag, and API smoke coverage."""
+
+    subgroup = "native-exec"
     compile_and_run_c_test(
         "test_milestone_zero",
         [
@@ -810,6 +862,7 @@ def run_native_tests() -> None:
             "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
+        subgroup=subgroup,
     )
     compile_and_run_c_test(
         "test_vm_cpu",
@@ -817,6 +870,7 @@ def run_native_tests() -> None:
             "tests/core/test_vm_cpu.c",
             "src/core/vm_cpu.c",
         ],
+        subgroup=subgroup,
     )
     compile_and_run_c_test(
         "test_vm_flags",
@@ -824,14 +878,14 @@ def run_native_tests() -> None:
             "tests/core/test_vm_flags.c",
             "src/core/vm_cpu.c",
         ],
+        subgroup=subgroup,
     )
-    compile_and_run_c_test(
-        "test_diagnostic_policy",
-        [
-            "tests/core/test_diagnostic_policy.c",
-            "src/core/vm_diagnostic_policy.c",
-        ],
-    )
+
+
+def run_native_memory_layout_tests() -> None:
+    """Compile and run native memory, layout, data-section, and object-map coverage."""
+
+    subgroup = "native-memory-layout"
     compile_and_run_c_test(
         "test_vm_memory",
         [
@@ -839,8 +893,8 @@ def run_native_tests() -> None:
             "src/core/vm_memory.c",
             "src/core/vm_layout.c",
         ],
+        subgroup=subgroup,
     )
-
     compile_and_run_c_test(
         "test_vm_layout",
         [
@@ -851,54 +905,8 @@ def run_native_tests() -> None:
             "src/core/vm_ir.c",
             "src/core/vm_exec.c",
         ],
+        subgroup=subgroup,
     )
-
-    compile_and_run_c_test(
-        "test_vm_exec",
-        [
-            "tests/core/test_vm_exec.c",
-            "src/core/masm32_sim_api.c",
-            "src/core/vm_cpu.c",
-            "src/core/vm_memory.c",
-            "src/core/vm_layout.c",
-            "src/core/vm_ir.c",
-            "src/core/vm_exec.c",
-            "src/core/vm_diagnostic_policy.c",
-            "src/parser/lexer.c",
-            "src/parser/parser.c",
-            "src/parser/symbols.c",
-            "src/parser/object_map.c",
-            "src/wasm/wasm_api.c",
-        ],
-    )
-
-    compile_and_run_c_test(
-        "test_lexer",
-        [
-            "tests/core/test_lexer.c",
-            "src/core/vm_cpu.c",
-            "src/parser/lexer.c",
-        ],
-    )
-
-    compile_and_run_c_test(
-        "test_parser",
-        [
-            "tests/core/test_parser.c",
-            "src/core/vm_cpu.c",
-            "src/core/vm_memory.c",
-            "src/core/vm_layout.c",
-            "src/core/vm_ir.c",
-            "src/core/vm_exec.c",
-            "src/core/vm_diagnostic_policy.c",
-            "src/parser/lexer.c",
-            "src/parser/parser.c",
-            "src/parser/symbols.c",
-            "src/parser/object_map.c",
-        ],
-    )
-
-
     compile_and_run_c_test(
         "test_data_section",
         [
@@ -916,9 +924,8 @@ def run_native_tests() -> None:
             "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
+        subgroup=subgroup,
     )
-
-
     compile_and_run_c_test(
         "test_object_map",
         [
@@ -936,17 +943,32 @@ def run_native_tests() -> None:
             "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
+        subgroup=subgroup,
     )
 
 
+def run_native_diagnostics_policy_tests() -> None:
+    """Compile and run native diagnostic-policy registry coverage."""
 
-def run_source_run_tests() -> None:
-    """Compile and run native source-run integration coverage."""
-
+    subgroup = "native-diagnostics-policy"
     compile_and_run_c_test(
-        "test_wasm_source_run",
+        "test_diagnostic_policy",
         [
-            "tests/core/test_wasm_source_run.c",
+            "tests/core/test_diagnostic_policy.c",
+            "src/core/vm_diagnostic_policy.c",
+        ],
+        subgroup=subgroup,
+    )
+
+
+def run_native_control_flow_tests() -> None:
+    """Compile and run native executor coverage that owns control-flow regression risk."""
+
+    subgroup = "native-control-flow"
+    compile_and_run_c_test(
+        "test_vm_exec",
+        [
+            "tests/core/test_vm_exec.c",
             "src/core/masm32_sim_api.c",
             "src/core/vm_cpu.c",
             "src/core/vm_memory.c",
@@ -960,7 +982,73 @@ def run_source_run_tests() -> None:
             "src/parser/object_map.c",
             "src/wasm/wasm_api.c",
         ],
+        subgroup=subgroup,
     )
+
+
+def run_native_tests() -> None:
+    """Compile and run complete native C tests except source-run integration tests."""
+
+    run_native_parser_tests()
+    run_native_exec_tests()
+    run_native_memory_layout_tests()
+    run_native_diagnostics_policy_tests()
+    run_native_control_flow_tests()
+
+
+def source_run_test_sources() -> list[str]:
+    """Return source files used by the source-run integration test binary."""
+
+    return [
+        "tests/core/test_wasm_source_run.c",
+        "src/core/masm32_sim_api.c",
+        "src/core/vm_cpu.c",
+        "src/core/vm_memory.c",
+        "src/core/vm_layout.c",
+        "src/core/vm_ir.c",
+        "src/core/vm_exec.c",
+        "src/core/vm_diagnostic_policy.c",
+        "src/parser/lexer.c",
+        "src/parser/parser.c",
+        "src/parser/symbols.c",
+        "src/parser/object_map.c",
+        "src/wasm/wasm_api.c",
+    ]
+
+
+def compile_source_run_test_binary(subgroup: str | None = None) -> pathlib.Path:
+    """Compile the source-run integration test binary.
+
+    Args:
+        subgroup: Optional runner subgroup to report if compilation fails.
+
+    Returns:
+        Path to the compiled source-run test executable.
+    """
+
+    return compile_c_binary("test_wasm_source_run", source_run_test_sources(), subgroup=subgroup)
+
+
+def run_source_run_subgroup_tests(subgroup_name: str) -> None:
+    """Compile and run one source-run fixture-family subgroup.
+
+    Args:
+        subgroup_name: Public runner subgroup name from SOURCE_RUN_SUBGROUPS.
+    """
+
+    output = compile_source_run_test_binary(subgroup=subgroup_name)
+    family_name = subgroup_name[len("source-run-"):]
+    run_command([str(output), "--group", family_name], subgroup=subgroup_name)
+
+
+def run_source_run_tests() -> None:
+    """Compile and run complete native source-run integration coverage."""
+
+    output = compile_source_run_test_binary(subgroup="source-run")
+    for subgroup_name in SOURCE_RUN_SUBGROUPS:
+        family_name = subgroup_name[len("source-run-"):]
+        run_command([str(output), "--group", family_name], subgroup=subgroup_name)
+
 
 def build_diagnostic_json_producer() -> None:
     """Build the native source-run JSON producer used by diagnostic tests."""
@@ -1153,11 +1241,25 @@ def create_arg_parser() -> argparse.ArgumentParser:
 Focused groups:
   --structure    repository structure, file/header, metadata, and shape checks
   --native       native C unit/parser/executor/helper tests excluding source-run integration
-  --source-run   native source-run JSON/integration tests (currently one preserved binary)
+  --source-run   native source-run JSON/integration tests through all source-run subgroups
   --web          browser-side Node formatter/settings tests that do not need native diagnostics
   --diagnostics  build native diagnostic JSON producer and run exact rendered Simulator Messages tests
   --protocol     worker/protocol schema tests
   --static       documentation, runner, group-name, and fixture-inventory consistency checks
+
+Official native subgroups:
+  --native-parser                 lexer and parser tests
+  --native-exec                   CPU, flag, and API smoke tests
+  --native-memory-layout          memory, layout, data-section, and object-map tests
+  --native-diagnostics-policy     diagnostic-policy registry tests
+  --native-control-flow           executor control-flow regression tests
+
+Official source-run subgroups:
+  --source-run-core               core source-run parser/runtime integration fixtures
+  --source-run-diagnostics        source-run diagnostic and error-path fixtures
+  --source-run-settings           settings, policy, CASEMAP, and startup-mode fixtures
+  --source-run-memory-layout      memory-layout, object, section, and uninitialized-storage fixtures
+  --source-run-control-flow       source-run label, branch, CALL, RET, entry, and watchdog fixtures
 
 Official diagnostic subgroups:
   --diagnostics-json                     native producer build and structured diagnostic payload checks
@@ -1178,6 +1280,8 @@ Output modes:
 Notes:
   --quick is a smoke subset, not full verification.
   The broad focused groups remain the first timeout-safe decomposition.
+  If --native or --source-run is too large, rerun the official subgroups for
+  that broad group independently and report those subgroup results separately.
   If --diagnostics is too large, rerun the official diagnostic subgroups
   independently and report aggregate, broad-group, subgroup, skipped, timed-out,
   and not-run commands separately.
@@ -1191,7 +1295,17 @@ Windows examples:
     parser.add_argument("--quick", action="store_true", help="run a smoke subset only; not sufficient for full milestone acceptance")
     parser.add_argument("--structure", action="store_true", help="run repository structure and static shape checks")
     parser.add_argument("--native", action="store_true", help="run native C tests excluding source-run integration")
-    parser.add_argument("--source-run", action="store_true", help="run native source-run JSON/integration tests independently")
+    parser.add_argument("--native-parser", action="store_true", help="run native lexer and parser tests")
+    parser.add_argument("--native-exec", action="store_true", help="run native CPU, flag, and API smoke tests")
+    parser.add_argument("--native-memory-layout", action="store_true", help="run native memory, layout, data-section, and object-map tests")
+    parser.add_argument("--native-diagnostics-policy", action="store_true", help="run native diagnostic-policy registry tests")
+    parser.add_argument("--native-control-flow", action="store_true", help="run native executor control-flow regression tests")
+    parser.add_argument("--source-run", action="store_true", help="run native source-run JSON/integration tests through all official subgroups")
+    parser.add_argument("--source-run-core", action="store_true", help="run core source-run parser/runtime integration fixtures")
+    parser.add_argument("--source-run-diagnostics", action="store_true", help="run source-run diagnostic and error-path fixtures")
+    parser.add_argument("--source-run-settings", action="store_true", help="run source-run settings, policy, CASEMAP, and startup-mode fixtures")
+    parser.add_argument("--source-run-memory-layout", action="store_true", help="run source-run memory-layout, object, section, and uninitialized-storage fixtures")
+    parser.add_argument("--source-run-control-flow", action="store_true", help="run source-run label, branch, CALL, RET, entry, and watchdog fixtures")
     parser.add_argument("--web", action="store_true", help="run browser-side Node tests that do not need native diagnostics")
     parser.add_argument("--diagnostics", action="store_true", help="run native diagnostic JSON plus exact rendered Simulator Messages tests")
     parser.add_argument("--diagnostics-json", action="store_true", help="run native diagnostic producer and structured diagnostic payload checks")
@@ -1223,7 +1337,9 @@ def supported_help_flags() -> list[str]:
         "--quick",
         "--structure",
         "--native",
+        *["--" + subgroup for subgroup in NATIVE_SUBGROUPS],
         "--source-run",
+        *["--" + subgroup for subgroup in SOURCE_RUN_SUBGROUPS],
         "--web",
         "--diagnostics",
         *["--" + subgroup for subgroup in DIAGNOSTIC_SUBGROUPS],
@@ -1247,7 +1363,7 @@ def select_groups(args: argparse.Namespace) -> tuple[list[str], bool]:
     if args.quick:
         return ["quick"], False
 
-    selectable_groups = [*REQUIRED_GROUPS, *DIAGNOSTIC_SUBGROUPS]
+    selectable_groups = [*REQUIRED_GROUPS, *NATIVE_SUBGROUPS, *SOURCE_RUN_SUBGROUPS, *DIAGNOSTIC_SUBGROUPS]
     selected = [group for group in selectable_groups if getattr(args, group.replace("-", "_"))]
     if args.all or not selected:
         return list(REQUIRED_GROUPS), True
@@ -1296,7 +1412,17 @@ def group_success_detail(name: str) -> str:
         "quick": "smoke subset passed; full verification not performed",
         "structure": "repository structure and metadata checks passed",
         "native": "native C non-source-run tests passed",
-        "source-run": "source-run integration binary passed independently",
+        "native-parser": "native lexer and parser tests passed",
+        "native-exec": "native CPU, flag, and API smoke tests passed",
+        "native-memory-layout": "native memory and layout tests passed",
+        "native-diagnostics-policy": "native diagnostic-policy tests passed",
+        "native-control-flow": "native executor control-flow tests passed",
+        "source-run": "all source-run subgroups passed independently",
+        "source-run-core": "core source-run fixtures passed",
+        "source-run-diagnostics": "source-run diagnostic fixtures passed",
+        "source-run-settings": "source-run settings fixtures passed",
+        "source-run-memory-layout": "source-run memory-layout fixtures passed",
+        "source-run-control-flow": "source-run control-flow fixtures passed",
         "web": "browser-side Node module tests passed",
         "diagnostics": "native diagnostic producer and all diagnostic subgroups passed",
         "diagnostics-json": "native diagnostic JSON and structured-payload checks passed",
@@ -1330,13 +1456,14 @@ def print_summary(results: list[GroupResult], selected_groups: Sequence[str]) ->
     if "quick" in selected_groups:
         table_groups = ["quick", *table_groups]
 
-    print("\nGroup        Status    Details")
+    name_width = max(12, max((len(group) for group in table_groups), default=12))
+    print(f"\n{'Group':<{name_width}} Status    Details")
     for group in table_groups:
         result = result_by_name.get(group)
         if result is None:
-            print(f"{group:<12} NOT-RUN   not selected")
+            print(f"{group:<{name_width}} NOT-RUN   not selected")
         else:
-            print(f"{group:<12} {result.status:<8} {result.details}")
+            print(f"{group:<{name_width}} {result.status:<8} {result.details}")
 
     if shutil.which("emcc") is None:
         print("Browser/Wasm rebuild smoke: SKIP - emcc unavailable in this environment.")
@@ -1365,8 +1492,10 @@ def assert_parser_accepts_required_flags() -> None:
     parser.parse_args(["--quick"])
     parser.parse_args(["--quiet", "--structure"])
     parser.parse_args(["--verbose", "--diagnostics"])
+    parser.parse_args(["--quiet", "--native-control-flow"])
+    parser.parse_args(["--quiet", "--source-run-control-flow"])
     parser.parse_args(["--quiet", "--diagnostics-rendered-memory"])
-    for group in [*REQUIRED_GROUPS, *DIAGNOSTIC_SUBGROUPS]:
+    for group in [*REQUIRED_GROUPS, *NATIVE_SUBGROUPS, *SOURCE_RUN_SUBGROUPS, *DIAGNOSTIC_SUBGROUPS]:
         parser.parse_args(["--" + group])
 
 
@@ -1423,10 +1552,13 @@ def assert_fixture_inventory_documented() -> None:
             "Source-run fixture inventory",
             "tests/core/test_wasm_source_run.c",
             "phase51-layout-fixed-automatic-equivalence",
+            "source-run-memory-layout",
             "phase53e-ui-settings-policy-routing",
+            "source-run-settings",
             "phase56-div-source-run-coverage",
             "phase57-idiv-source-run-coverage",
-            "kept in the focused source-run group",
+            "source-run-control-flow",
+            "preserved in the broad source-run group",
         ],
     )
 
@@ -1440,10 +1572,10 @@ def assert_timeout_policy_documented() -> None:
             "A timeout is not a pass. A timeout is also not by itself proof of a simulator regression.",
             "### Official subgroup command ownership",
             "Required diagnostic subgroups from Phase 71A1",
-            "Conditional source-run/native subgroups from Phase 71B1",
+            "Implemented source-run/native subgroups from Phase 71B1",
             "### Required timeout-aware command reporting",
             "Do not omit timed-out commands from the command list",
-            "Preferred future subgroup families",
+            "Run source-run/native subgroups when a broad source-run or native command is too large",
             "Runtime/source-run MASM behavior phase:",
             "Browser/Wasm rebuild status:",
             "Whether aggregate success was claimed:",
@@ -1553,7 +1685,7 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71B status, concise status surfaces, and planned fallthrough wording."""
+    """Verify Phase 71B1 status, concise status surfaces, and planned fallthrough wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1573,15 +1705,14 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "Runtime/source-run MASM behavior phase",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B is diagnostic-copy cleanup only",
+            "Phase 71B1 is test-runner subgroup cleanup only",
             "implemented runtime features",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
-            "When this section changes, replace this table and short note in place",
             "selected-entry source-run startup from `END entryName`",
             "successful completion at the selected entry procedure's `ENDP` boundary",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
@@ -1605,7 +1736,6 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Next planned runtime/source-run behavior phase",
         "Repository/archive milestone",
         "Next canonical guide phase",
-        "Phase 71B1",
         "Phase 71C through Phase 71F are planned",
         "Artifact compatibility is intentionally strict",
         "older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
@@ -1615,6 +1745,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Files changed",
         "Tests added",
         "Commands used to test",
+        "When this section changes",
+        "replace this table",
+        "Do not append a second current-status block",
     ]:
         if forbidden in readme_current_status:
             raise TestFailure(f"README current-status section contains excessive status detail: {forbidden}")
@@ -1640,13 +1773,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B is diagnostic-copy cleanup only",
+            "Phase 71B1 is test-runner subgroup cleanup only",
             "implemented runtime features",
-            "When this section changes, replace the existing status lines in place",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1663,6 +1795,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         ],
     )
     for forbidden in [
+        "When this section changes",
+        "replace the existing status lines in place",
+        "Do not append milestone-report prose",
         "Next canonical guide phase:",
         "Next runtime/source-run MASM behavior phase:",
         "Repository/archive milestone:",
@@ -1692,7 +1827,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Current milestone:",
             "Runtime/source-run MASM behavior phase:",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
-            "Phase 71B is diagnostic-copy cleanup only",
+            "Phase 71B1 is test-runner subgroup cleanup only",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
@@ -1738,7 +1873,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "phase-71b-source-run-output-contract-v1",
@@ -1887,23 +2022,29 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B changes active user-facing diagnostic wording",
-            "When this section changes, replace the existing status lines in place",
-            "Do not append output-contract tokens, next-phase labels",
+            "Phase 71B1 adds official source-run and native test subgroups",
             "tests must prove:",
             "selected-entry root RET default success does not read `[ESP]`",
             "static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted",
         ],
     )
+    testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
+    for forbidden in [
+        "When this section changes",
+        "replace the existing status lines in place",
+        "Do not append output-contract tokens",
+    ]:
+        if forbidden in testing_status:
+            raise TestFailure(f"TESTING_GUIDE opening status text contains maintainer-facing update guidance: {forbidden}")
 
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71B: User-Facing Diagnostic Milestone-Wording Cleanup",
+            "Milestone 71B1: Source-Run and Native Control-Flow Subgroup Preflight",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
@@ -2265,8 +2406,11 @@ def report_phase51_smoke_harness_status() -> None:
     else:
         print("Phase 51 browser manual smoke after rebuilding Wasm: not run by the aggregate native/Node test command.")
 
-def documented_diagnostic_subgroup_commands() -> list[str]:
-    """Return diagnostic subgroup commands documented by TESTING_GUIDE.
+def documented_prefixed_subgroup_commands(prefix: str) -> list[str]:
+    """Return documented subgroup commands that begin with a public prefix.
+
+    Args:
+        prefix: Public subgroup flag prefix without leading dashes.
 
     Returns:
         Ordered unique command names without leading dashes.
@@ -2275,7 +2419,7 @@ def documented_diagnostic_subgroup_commands() -> list[str]:
     docs = read_file("docs/TESTING_GUIDE.md")
     commands: list[str] = []
     for raw_token in docs.replace("`", " ").replace("\n", " ").split():
-        if not raw_token.startswith("--diagnostics-"):
+        if not raw_token.startswith("--" + prefix):
             continue
         subgroup = raw_token[2:].rstrip(".,;:)")
         if subgroup in commands:
@@ -2284,25 +2428,117 @@ def documented_diagnostic_subgroup_commands() -> list[str]:
     return commands
 
 
-def assert_diagnostic_subgroup_help_and_docs_match() -> None:
-    """Verify every diagnostic subgroup is present in both runner help and docs."""
+def documented_diagnostic_subgroup_commands() -> list[str]:
+    """Return diagnostic subgroup commands documented by TESTING_GUIDE.
+
+    Returns:
+        Ordered unique command names without leading dashes.
+    """
+
+    return documented_prefixed_subgroup_commands("diagnostics-")
+
+
+def documented_native_subgroup_commands() -> list[str]:
+    """Return native subgroup commands documented by TESTING_GUIDE.
+
+    Returns:
+        Ordered unique command names without leading dashes.
+    """
+
+    return documented_prefixed_subgroup_commands("native-")
+
+
+def documented_source_run_subgroup_commands() -> list[str]:
+    """Return source-run subgroup commands documented by TESTING_GUIDE.
+
+    Returns:
+        Ordered unique command names without leading dashes.
+    """
+
+    return documented_prefixed_subgroup_commands("source-run-")
+
+
+def assert_subgroup_family_help_and_docs_match(
+    family_name: str,
+    subgroup_names: Sequence[str],
+    documented_commands: Sequence[str],
+) -> None:
+    """Verify one subgroup family is present in both runner help and docs.
+
+    Args:
+        family_name: Human-readable subgroup family name for failure output.
+        subgroup_names: Runner-owned subgroup command names without leading dashes.
+        documented_commands: Documented subgroup command names without leading dashes.
+    """
 
     help_text = create_arg_parser().format_help()
     docs = read_file("docs/TESTING_GUIDE.md")
-    missing_from_help = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if "--" + subgroup not in help_text]
-    missing_from_docs = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if "--" + subgroup not in docs]
+    missing_from_help = [subgroup for subgroup in subgroup_names if "--" + subgroup not in help_text]
+    missing_from_docs = [subgroup for subgroup in subgroup_names if "--" + subgroup not in docs]
     if missing_from_help:
-        raise TestFailure("diagnostic subgroups missing from runner help: " + ", ".join(missing_from_help))
+        raise TestFailure(f"{family_name} subgroups missing from runner help: " + ", ".join(missing_from_help))
     if missing_from_docs:
-        raise TestFailure("diagnostic subgroups missing from docs/TESTING_GUIDE.md: " + ", ".join(missing_from_docs))
+        raise TestFailure(f"{family_name} subgroups missing from docs/TESTING_GUIDE.md: " + ", ".join(missing_from_docs))
 
-    documented = documented_diagnostic_subgroup_commands()
-    extra_in_docs = [subgroup for subgroup in documented if subgroup not in DIAGNOSTIC_SUBGROUPS]
+    extra_in_docs = [subgroup for subgroup in documented_commands if subgroup not in subgroup_names]
     if extra_in_docs:
-        raise TestFailure("docs/TESTING_GUIDE.md documents unknown diagnostic subgroups: " + ", ".join(extra_in_docs))
-    missing_documented = [subgroup for subgroup in DIAGNOSTIC_SUBGROUPS if subgroup not in documented]
+        raise TestFailure(f"docs/TESTING_GUIDE.md documents unknown {family_name} subgroups: " + ", ".join(extra_in_docs))
+    missing_documented = [subgroup for subgroup in subgroup_names if subgroup not in documented_commands]
     if missing_documented:
-        raise TestFailure("docs/TESTING_GUIDE.md omits diagnostic subgroups: " + ", ".join(missing_documented))
+        raise TestFailure(f"docs/TESTING_GUIDE.md omits {family_name} subgroups: " + ", ".join(missing_documented))
+
+
+def assert_diagnostic_subgroup_help_and_docs_match() -> None:
+    """Verify every diagnostic subgroup is present in both runner help and docs."""
+
+    assert_subgroup_family_help_and_docs_match(
+        "diagnostic",
+        DIAGNOSTIC_SUBGROUPS,
+        documented_diagnostic_subgroup_commands(),
+    )
+
+
+def assert_native_and_source_run_subgroup_help_and_docs_match() -> None:
+    """Verify Phase 71B1 native and source-run subgroups match runner help and docs."""
+
+    assert_subgroup_family_help_and_docs_match(
+        "native",
+        NATIVE_SUBGROUPS,
+        documented_native_subgroup_commands(),
+    )
+    assert_subgroup_family_help_and_docs_match(
+        "source-run",
+        SOURCE_RUN_SUBGROUPS,
+        documented_source_run_subgroup_commands(),
+    )
+    assert_all_text_not_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "Conditional source-run/native subgroups from Phase 71B1",
+            "Preferred future subgroup families",
+            "do not document any of these commands as implemented until `scripts/run_tests.py --help` exposes them",
+        ],
+    )
+
+
+def assert_source_run_subgroup_inventory_table_present() -> None:
+    """Verify the source-run C harness exposes all Phase 71B1 fixture families."""
+
+    assert_all_text_contains(
+        "tests/core/test_wasm_source_run.c",
+        [
+            "SourceRunTestFamily",
+            "SourceRunTestCase",
+            "SOURCE_RUN_TEST_CORE",
+            "SOURCE_RUN_TEST_DIAGNOSTICS",
+            "SOURCE_RUN_TEST_SETTINGS",
+            "SOURCE_RUN_TEST_MEMORY_LAYOUT",
+            "SOURCE_RUN_TEST_CONTROL_FLOW",
+            "--group core|diagnostics|settings|memory-layout|control-flow",
+            "--list-groups",
+            "Source-run %s fixture-family tests passed",
+        ],
+    )
 
 
 def diagnostic_rendering_inventory() -> dict[str, object]:
@@ -2418,6 +2654,8 @@ def run_static_tests() -> None:
     assert_fixture_inventory_documented()
     assert_timeout_policy_documented()
     assert_failure_reporting_contract_present()
+    assert_native_and_source_run_subgroup_help_and_docs_match()
+    assert_source_run_subgroup_inventory_table_present()
     assert_diagnostic_subgroup_help_and_docs_match()
     assert_diagnostic_subgroup_inventory_union()
     assert_subgroup_failure_reporting_contract()
@@ -2445,7 +2683,17 @@ def group_function(name: str) -> Callable[[], None]:
         "quick": run_quick_tests,
         "structure": run_structure_tests,
         "native": run_native_tests,
+        "native-parser": run_native_parser_tests,
+        "native-exec": run_native_exec_tests,
+        "native-memory-layout": run_native_memory_layout_tests,
+        "native-diagnostics-policy": run_native_diagnostics_policy_tests,
+        "native-control-flow": run_native_control_flow_tests,
         "source-run": run_source_run_tests,
+        "source-run-core": lambda: run_source_run_subgroup_tests("source-run-core"),
+        "source-run-diagnostics": lambda: run_source_run_subgroup_tests("source-run-diagnostics"),
+        "source-run-settings": lambda: run_source_run_subgroup_tests("source-run-settings"),
+        "source-run-memory-layout": lambda: run_source_run_subgroup_tests("source-run-memory-layout"),
+        "source-run-control-flow": lambda: run_source_run_subgroup_tests("source-run-control-flow"),
         "web": run_web_tests,
         "diagnostics": run_diagnostics_tests,
         "diagnostics-json": run_diagnostics_json_tests,

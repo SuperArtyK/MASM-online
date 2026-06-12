@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71B diagnostic wording cleanup.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71B1 source-run subgroup preflight.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -13474,307 +13474,463 @@ static int test_phase64d_memory_change_source_attribution(void) {
     return failures;
 }
 
-int main(void) {
-    int failures = 0;
+/// Identifies the stable source-run fixture family that owns one source-run test case.
+typedef enum SourceRunTestFamily {
+    /// Core parser/runtime source-run integration fixtures not owned by a narrower family.
+    SOURCE_RUN_TEST_CORE,
+    /// Source-run diagnostic and error-path fixtures.
+    SOURCE_RUN_TEST_DIAGNOSTICS,
+    /// Source-run settings, policy, CASEMAP, and startup-mode fixtures.
+    SOURCE_RUN_TEST_SETTINGS,
+    /// Source-run memory-layout, object, section, and uninitialized-storage fixtures.
+    SOURCE_RUN_TEST_MEMORY_LAYOUT,
+    /// Source-run label, branch, CALL, RET, entry, and watchdog fixtures.
+    SOURCE_RUN_TEST_CONTROL_FLOW
+} SourceRunTestFamily;
 
-    failures += test_minimal_source_runs_to_eax_42();
-    failures += test_zero_instruction_program_succeeds();
-    failures += test_parse_error_returns_structured_message();
-    failures += test_source_run_invalid_hex_reports_specific_lexer_diagnostic();
-    failures += test_source_run_unterminated_string_reports_specific_lexer_diagnostic();
-    failures += test_source_run_other_lexer_diagnostics_are_specific();
-    failures += test_narrow_register_immediate_overflow_returns_parse_error();
-    failures += test_negative_immediate_source_run_succeeds();
-    failures += test_negative_immediate_overflow_returns_parse_error();
-    failures += test_register_indirect_source_run_succeeds();
-    failures += test_phase24_eax_base_acceptance_program();
-    failures += test_all_gpr_register_indirect_source_run_succeeds();
-    failures += test_type_operator_source_run_acceptance_program();
-    failures += test_type_operator_source_run_element_sizes();
-    failures += test_lengthof_operator_source_run_acceptance_program();
-    failures += test_lengthof_operator_source_run_element_counts();
-    failures += test_sizeof_operator_source_run_acceptance_program();
-    failures += test_sizeof_operator_source_run_byte_sizes();
-    failures += test_sizeof_operator_source_run_rejects_expression_tail();
-    failures += test_character_literal_source_run_rejects_width_overflow();
-    failures += test_character_literal_source_run_accepts_narrower_packed_immediates();
-    failures += test_lengthof_operator_source_run_rejects_expression_tail();
-    failures += test_type_operator_source_run_rejects_expression_tail();
-    failures += test_scaled_index_source_run_returns_unsupported_feature();
-    failures += test_constant_symbol_offset_source_run_succeeds();
-    failures += test_unaligned_constant_symbol_offset_reports_warning();
-    failures += test_negative_symbol_offset_inside_data_image_succeeds();
-    failures += test_offset_zero_bracketed_symbol_operands_execute();
-    failures += test_constant_symbol_offset_crossing_section_image_is_not_parse_error();
-    failures += test_textbook_unsupported_features_return_unsupported_feature_messages();
-    failures += test_multi_diagnostic_unsupported_feature_source_run_reports_all();
-    failures += test_signed_integer_source_run_acceptance_program();
-    failures += test_unary_plus_source_run_acceptance_program();
-    failures += test_signed_integer_source_run_error_paths();
-    failures += test_signed_ptr_alias_source_run_acceptance_program();
-    failures += test_signed_ptr_alias_source_run_write_program();
-    failures += test_signed_ptr_alias_source_run_error_paths();
-    failures += test_extension_source_run_acceptance_program();
-    failures += test_accumulator_extension_source_run_program();
-    failures += test_extension_source_run_edge_cases();
-    failures += test_extension_register_indirect_memory_source_run_program();
-    failures += test_plain_mov_from_signed_memory_rejects_implicit_widening();
-    failures += test_extension_source_run_error_paths();
-    failures += test_phase20_source_run_acceptance_program();
-    failures += test_phase20_memory_source_run_program();
-    failures += test_phase20_source_run_error_paths();
-    failures += test_phase57n_nop_source_run_hardening();
-    failures += test_phase57o_nop_encoding_operand_source_run();
-    failures += test_phase57o_nop_source_run_rejections();
-    failures += test_phase21_source_run_acceptance_program();
-    failures += test_phase21_memory_and_borrow_source_run_program();
-    failures += test_phase21_source_run_error_paths();
-    failures += test_phase22_source_run_acceptance_program();
-    failures += test_phase22_memory_immediate_source_run_program();
-    failures += test_phase22_source_run_error_paths();
-    failures += test_phase25_register_supplied_memory_width_source_run_program();
-    failures += test_phase25_register_supplied_source_memory_width_source_run_program();
-    failures += test_phase25_browser_observed_regressions();
-    failures += test_phase25_explicit_ptr_symbol_register_override_source_run_program();
-    failures += test_phase25_ambiguous_memory_width_source_run_error_paths();
-    failures += test_phase26_header_source_run_acceptance_program();
-    failures += test_phase26_header_source_run_error_paths();
-    failures += test_phase57p_host_include_path_source_run_diagnostics();
-    failures += test_phase57q_includelib_source_run_diagnostics();
-    failures += test_phase57r_invoke_addr_external_routine_source_run_diagnostics();
-    failures += test_phase57s_high_level_flow_source_run_diagnostics();
-    failures += test_phase57t_playground_diagnostic_recovery_smoke_fixtures();
-    failures += test_phase58_label_source_run_behavior();
-    failures += test_phase28_additional_data_sections_source_run_programs();
-    failures += test_phase30_dup_initializer_list_source_run_program();
-    failures += test_phase30_dup_repeat_count_diagnostic_source_run_program();
-    failures += test_phase30_large_dup_count_capacity_diagnostic_source_run_program();
-    failures += test_phase61d_token_capacity_diagnostic_source_run_program();
-    failures += test_phase61d_source_text_capacity_diagnostic_source_run_program();
-    failures += test_phase61d_code_label_capacity_diagnostic_source_run_program();
-    failures += test_phase32_fixed_layout_source_run_regression_program();
-    failures += test_phase33_automatic_layout_source_run_program();
-    failures += test_phase33_automatic_layout_const_write_rejected();
-    failures += test_phase33_automatic_layout_invalid_access_does_not_grow();
-    failures += test_phase33_automatic_layout_resource_limit_json();
-    failures += test_phase34_automatic_layout_uses_stack_size_metadata();
-    failures += test_phase34_automatic_layout_stack_without_operand_uses_default();
-    failures += test_phase34_automatic_layout_stack_expression_metadata();
-    failures += test_phase34_automatic_layout_excessive_stack_size_json();
-    failures += test_phase34_automatic_layout_uses_configured_heap_size();
-    failures += test_phase34_automatic_layout_excessive_heap_size_json();
-    failures += test_phase35_seeded_randomized_layout_offset_program_succeeds();
-    failures += test_phase35_seeded_randomized_layout_hardcoded_data_address_fails();
-    failures += test_phase35_seeded_randomized_layout_const_write_stays_read_only();
-    failures += test_phase35_seeded_randomized_layout_data_question_writable();
-    failures += test_phase35_randomized_layout_unavailable_source_run_json();
-    failures += test_phase35_fresh_randomized_layout_returns_seed_metadata();
-    failures += test_phase37_default_region_only_has_no_object_warning();
-    failures += test_phase37_allocated_object_warning_mode_warns_and_continues();
-    failures += test_phase37_access_into_another_object_has_no_warning();
-    failures += test_phase37_partial_overlap_starting_inside_object_warns();
-    failures += test_phase37_write_to_region_gap_warns_and_continues();
-    failures += test_phase37_invalid_address_error_precedes_object_warning();
-    failures += test_phase37_spanning_adjacent_objects_warns();
-    failures += test_phase37_unaligned_inside_object_has_no_object_warning();
-    failures += test_phase37_const_permission_error_precedes_object_warning();
-    failures += test_phase38_strict_gap_access_fails();
-    failures += test_phase38_strict_access_into_another_object_succeeds();
-    failures += test_phase38_strict_partial_overlap_starting_inside_object_fails();
-    failures += test_phase38_strict_spanning_adjacent_objects_fails();
-    failures += test_phase38_strict_unaligned_inside_object_succeeds();
-    failures += test_phase38_strict_invalid_address_precedes_object_violation();
-    failures += test_phase38_strict_const_permission_error_precedes_object_violation();
-    failures += test_phase39_explicit_region_only_uninitialized_read_has_no_warning();
-    failures += test_phase39_initial_uninitialized_origin_metadata();
-    failures += test_phase39_partial_and_full_writes_mark_initialized_bytes();
-    failures += test_phase39_failed_writes_do_not_mark_initialized();
-    failures += test_phase40_uninitialized_read_warning_mode_warns_and_continues();
-    failures += test_phase40_uninitialized_read_strict_mode_stops();
-    failures += test_phase40_full_write_suppresses_uninitialized_read_diagnostic();
-    failures += test_phase40_partial_write_then_multibyte_read_warns();
-    failures += test_phase40_mixed_initializer_multibyte_read_warns_for_whole_range();
-    failures += test_phase40_data_question_section_warns();
-    failures += test_phase40_repeated_uninitialized_reads_emit_distinct_warnings();
-    failures += test_phase40_rmw_warning_then_writeback_marks_initialized();
-    failures += test_phase40_rmw_strict_stops_before_writeback();
-    failures += test_phase64a_rmw_planned_read_policy_for_existing_families();
-    failures += test_phase64a_memory_source_planned_read_regression();
-    failures += test_phase40_invalid_address_precedes_uninitialized_read();
-    failures += test_phase40_object_strict_regression_precedes_uninitialized_read_feature();
-    failures += test_phase39_register_copy_marks_destination_initialized();
-    failures += test_phase35a_casemap_all_source_run_programs();
-    failures += test_phase35a_casemap_none_source_run_programs();
-    failures += test_phase35a_casemap_equate_source_run_programs();
-    failures += test_phase35a_casemap_diagnostic_source_run_programs();
-    failures += test_phase41_irvine32_virtual_include_metadata_source_run();
-    failures += test_phase41_macros_include_does_not_populate_irvine32_registry();
-    failures += test_phase41_irvine32_unsupported_routine_source_run_diagnostic();
-    failures += test_phase42_irvine32_exit_terminator_source_run();
-    failures += test_phase42_irvine32_exit_terminator_error_paths();
-    failures += test_phase43_inc_dec_register_source_run_program();
-    failures += test_phase43_inc_dec_memory_source_run_program();
-    failures += test_phase43_inc_dec_source_run_error_paths();
-    failures += test_phase44_logical_binary_source_run_program();
-    failures += test_phase44_logical_binary_memory_source_run_program();
-    failures += test_phase44_logical_binary_source_run_error_paths();
-    failures += test_phase45_not_source_run_program();
-    failures += test_phase45_not_memory_source_run_program();
-    failures += test_phase45_not_source_run_error_paths();
-    failures += test_phase46_shift_left_source_run_program();
-    failures += test_phase46_shift_left_memory_source_run_program();
-    failures += test_phase46_shift_left_source_run_error_paths();
-    failures += test_phase47_shr_source_run_program();
-    failures += test_phase47_shr_memory_source_run_program();
-    failures += test_phase47_shr_source_run_error_paths();
-    failures += test_phase48_sar_source_run_program();
-    failures += test_phase48_sar_memory_source_run_program();
-    failures += test_phase48_sar_source_run_error_paths();
-    failures += test_phase49_rol_source_run_program();
-    failures += test_phase49_rol_memory_source_run_program();
-    failures += test_phase49_rol_source_run_error_paths();
-    failures += test_phase50_ror_source_run_program();
-    failures += test_phase50_ror_memory_source_run_program();
-    failures += test_phase50_ror_source_run_error_paths();
-    failures += test_phase52_lea_source_run_program();
-    failures += test_phase52_lea_no_memory_diagnostics_source_run();
-    failures += test_phase52_lea_source_run_error_paths();
-    failures += test_phase57corr2_compact_negative_displacement_write_source_run();
-    failures += test_phase57corr2_compact_negative_displacement_read_source_run();
-    failures += test_phase57corr2_compact_negative_displacement_lea_source_run();
-    failures += test_phase57corr2_compact_negative_displacement_advanced_rejection_source_run();
-    failures += test_phase53_mul_source_run_program();
-    failures += test_phase53_mul_memory_source_run_program();
-    failures += test_phase53_mul_uninitialized_memory_source_warning();
-    failures += test_phase53_mul_source_run_error_paths();
-    failures += test_phase54_imul_source_run_program();
-    failures += test_phase54_imul_memory_source_run_program();
-    failures += test_phase54_imul_uninitialized_memory_source_warning();
-    failures += test_phase54_imul_source_run_error_paths();
-    failures += test_phase55_imul_source_run_programs();
-    failures += test_phase55_imul_source_run_error_paths();
-    failures += test_phase56_div_source_run_programs();
-    failures += test_phase56_div_source_run_error_paths();
-    failures += test_phase57_idiv_source_run_programs();
-    failures += test_phase57_idiv_source_run_error_paths();
-    failures += test_phase57l_code_memory_access_diagnostics_source_run();
-    failures += test_phase57m_segment_symbol_source_run();
-    failures += test_phase57corr1_const_cross_region_write_diagnostic_context();
-    failures += test_phase57corr1_direct_const_write_still_permission_denied();
-    failures += test_phase57corr1_const_cross_region_read_remains_region_failure();
-    failures += test_non_protected_cross_region_write_remains_ordinary_region_failure();
-    failures += test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled();
-    failures += test_phase53a_default_object_spanning_read_has_no_object_diagnostic();
-    failures += test_phase53a_object_spanning_read_warning_mode_continues();
-    failures += test_phase53a_object_spanning_read_strict_mode_stops_before_mutation();
-    failures += test_phase53a_invalid_region_still_precedes_object_validation();
-    failures += test_phase53a_const_write_precedes_object_validation();
-    failures += test_phase53a_uninitialized_read_modes_on_symbol_offset();
-    failures += test_phase53b_default_section_validation_off();
-    failures += test_phase53b_section_image_warning_mode_continues();
-    failures += test_phase53b_section_image_strict_mode_stops_before_mutation();
-    failures += test_phase53b_data_section_capacity_warning_mode_continues();
-    failures += test_phase53b_data_section_capacity_strict_mode_stops_before_mutation();
-    failures += test_phase53b_section_capacity_warning_mode_continues();
-    failures += test_phase53b_section_capacity_strict_mode_stops_before_mutation();
-    failures += test_phase53b_invalid_region_precedes_section_validation();
-    failures += test_phase53b_const_write_precedes_section_validation();
-    failures += test_phase53b_section_image_warning_precedes_object_warning();
-    failures += test_phase53c_default_uninitialized_read_warns_and_continues();
-    failures += test_phase53c_uninitialized_read_explicit_off_preserves_silent_behavior();
-    failures += test_phase53c_default_indirect_uninitialized_read_warns_for_tracked_overlap();
-    failures += test_phase53c_default_uninitialized_mul_symbol_offset_warns();
-    failures += test_phase53c_default_undefined_flag_use_warns_and_continues();
-    failures += test_phase53c_undefined_flag_use_explicit_off_preserves_silent_behavior();
-    failures += test_phase53d_default_compatibility_notices_continue_execution();
-    failures += test_phase53d_active_semantics_do_not_emit_compatibility_notices();
-    failures += test_phase53d_notice_plus_error_still_blocks_execution();
-    failures += test_phase53e_ui_settings_route_to_existing_policies();
-    failures += test_phase57d_ui_policy_families_remain_independent();
-    failures += test_phase57e_default_startup_state_notice_source_run();
-    failures += test_phase57e_startup_state_notice_opt_out_source_run();
-    failures += test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics();
-    failures += test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata();
-    failures += test_phase57e_invalid_startup_state_notice_setting();
-    failures += test_phase69b_source_run_message_ordering_contract();
-    failures += test_phase64d_memory_change_source_attribution();
-    failures += test_phase57h_register_write_metadata_no_register_writes();
-    failures += test_phase57h_register_write_metadata_same_value_parent_write();
-    failures += test_phase57h_register_write_metadata_alias_writes();
-    failures += test_phase57h_seeded_startup_not_counted_as_program_write();
-    failures += test_phase64_equality_jumps_source_run_programs();
-    failures += test_phase64_equality_jump_instruction_limit();
-    failures += test_phase64_equality_jump_source_run_diagnostics();
-    failures += test_phase65_signed_relational_jumps_source_run_programs();
-    failures += test_phase65_signed_relational_jump_source_run_diagnostics();
-    failures += test_phase65_signed_relational_jump_instruction_limit();
-    failures += test_phase65_signed_relational_undefined_flag_use_policy();
-    failures += test_phase66_unsigned_relational_jumps_source_run_programs();
-    failures += test_phase66_unsigned_relational_jump_error_paths();
-    failures += test_phase69_direct_call_source_run_behavior();
-    failures += test_phase71_call_ret_source_run_behavior();
-    failures += test_phase71a_source_run_phase_metadata();
-    failures += test_phase71b_source_run_diagnostic_wording_cleanup();
-    failures += test_phase68b_eip_pseudo_display_and_rejections();
-    failures += test_phase67a_entry_procedure_runtime_boundary_source_run();
-    failures += test_phase68a_source_run_observes_fixed_layout_esp_startup();
-    failures += test_phase68a_seeded_startup_preserves_stack_pointer_contract();
-    failures += test_phase68a_automatic_layout_esp_uses_selected_stack_metadata();
-    failures += test_phase67a_entry_boundary_error_and_transfer_regressions();
-    failures += test_phase67_arithmetic_branch_watchdog_source_run_harness();
-    failures += test_phase63_cmp_memory_source_run_programs();
-    failures += test_phase63_cmp_uninitialized_read_policy();
-    failures += test_phase63_cmp_section_and_object_planned_read_policy();
-    failures += test_phase63_cmp_invalid_level1_read_preserves_flags();
-    failures += test_phase59_instruction_limit_source_run();
-    failures += test_phase61_jmp_executes_after_prior_instruction();
-    failures += test_phase61_jmp_executes_first_instruction();
-    failures += test_phase61_jmp_to_immediately_following_instruction();
-    failures += test_phase61_jmp_to_procedure_entry_executes_as_direct_branch();
-    failures += test_phase61_backward_jmp_reaches_instruction_limit();
-    failures += test_phase61e_reserved_loop_label_source_run_diagnostic();
-    failures += test_phase61_jmp_respects_instruction_limit_precedence();
-    failures += test_phase61a_jmp_skips_memory_write_and_keeps_console_empty();
-    failures += test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation();
-    failures += test_phase57f_zero_mode_seed_does_not_randomize();
-    failures += test_phase57f_seeded_startup_is_deterministic();
-    failures += test_phase57f_different_seeds_change_startup_state();
-    failures += test_phase57f_seeded_startup_notice_source_run();
-    failures += test_phase57f_invalid_startup_register_flag_mode();
-    failures += test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin();
-    failures += test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes();
-    failures += test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitialized_bytes();
-    failures += test_phase57g_seeded_uninitialized_storage_is_deterministic();
-    failures += test_phase57g_different_seeds_change_uninitialized_storage();
-    failures += test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class();
-    failures += test_phase57i_const_uninitialized_storage_acceptance_source_run();
-    failures += test_phase57j_const_uninitialized_storage_policy_source_run();
-    failures += test_phase57g_startup_axes_are_orthogonal();
-    failures += test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage();
-    failures += test_phase57g_seeded_uninitialized_storage_strict_read_stops();
-    failures += test_phase57g_seeded_uninitialized_storage_notice_source_run();
-    failures += test_phase57g_combined_seeded_startup_notice_source_run();
-    failures += test_phase57g_invalid_uninitialized_storage_mode();
-    failures += test_phase53e_invalid_ui_settings_return_invalid_argument();
-    failures += test_phase50b_undefined_flag_use_warn_policy_source_run();
-    failures += test_phase50b_undefined_flag_use_error_policy_source_run();
-    failures += test_phase50b_undefined_flag_use_sbb_warn_policy_source_run();
-    failures += test_phase50b_undefined_flag_use_explicit_off_source_run();
-    failures += test_phase50b_undefined_flag_use_cmc_error_source_run();
-    failures += test_phase50b_undefined_flag_use_memory_destination_error_source_run();
-    failures += test_phase51_fixed_and_automatic_layout_smoke_harness();
-    failures += test_phase51_const_write_precedes_object_diagnostics();
-    failures += test_phase51_uninitialized_rmw_smoke_harness();
-    failures += test_phase51_irvine_exit_and_casemap_smoke_harness();
-    failures += test_phase51_instruction_family_source_run_smoke_harness();
-    failures += test_null_source_returns_invalid_argument_json();
-    failures += test_empty_source_returns_parse_error_json();
-    failures += test_subsequent_calls_return_latest_result();
+/// Describes one source-run test case and its official Phase 71B1 fixture-family owner.
+typedef struct SourceRunTestCase {
+    /// Stable C function name for failure and inventory output.
+    const char *name;
+    /// Official source-run fixture-family owner for subgroup selection.
+    SourceRunTestFamily family;
+    /// Test function that returns zero on success or a failure count on failure.
+    int (*run)(void);
+} SourceRunTestCase;
+
+/// Maps one source-run fixture family to its public command-line selector.
+///
+/// @param family Fixture family identifier.
+/// @return Public selector name without the `source-run-` runner prefix.
+static const char *source_run_family_name(SourceRunTestFamily family) {
+    switch (family) {
+        case SOURCE_RUN_TEST_CORE:
+            return "core";
+        case SOURCE_RUN_TEST_DIAGNOSTICS:
+            return "diagnostics";
+        case SOURCE_RUN_TEST_SETTINGS:
+            return "settings";
+        case SOURCE_RUN_TEST_MEMORY_LAYOUT:
+            return "memory-layout";
+        case SOURCE_RUN_TEST_CONTROL_FLOW:
+            return "control-flow";
+        default:
+            return "unknown";
+    }
+}
+
+/// Parses a public source-run fixture-family selector.
+///
+/// @param text Selector text, such as `core` or `control-flow`.
+/// @param family Receives the parsed fixture family on success.
+/// @return Nonzero on success, or zero when the selector is unknown.
+static int parse_source_run_family(const char *text, SourceRunTestFamily *family) {
+    if (text == NULL || family == NULL) {
+        return 0;
+    }
+    if (strcmp(text, "core") == 0) {
+        *family = SOURCE_RUN_TEST_CORE;
+        return 1;
+    }
+    if (strcmp(text, "diagnostics") == 0) {
+        *family = SOURCE_RUN_TEST_DIAGNOSTICS;
+        return 1;
+    }
+    if (strcmp(text, "settings") == 0) {
+        *family = SOURCE_RUN_TEST_SETTINGS;
+        return 1;
+    }
+    if (strcmp(text, "memory-layout") == 0) {
+        *family = SOURCE_RUN_TEST_MEMORY_LAYOUT;
+        return 1;
+    }
+    if (strcmp(text, "control-flow") == 0) {
+        *family = SOURCE_RUN_TEST_CONTROL_FLOW;
+        return 1;
+    }
+    return 0;
+}
+
+/// Reports accepted source-run fixture-family selectors for invalid harness usage.
+///
+/// @param executable_name Name of the current executable, as supplied by argv[0].
+static void print_source_run_group_usage(const char *executable_name) {
+    fprintf(stderr, "usage: %s [--group core|diagnostics|settings|memory-layout|control-flow] [--list-groups]\n", executable_name != NULL ? executable_name : "test_wasm_source_run");
+}
+
+/// Returns whether one test case should run under the requested family filter.
+///
+/// @param test_case Test case metadata.
+/// @param has_filter Nonzero when a specific family was requested.
+/// @param requested_family Requested family when has_filter is nonzero.
+/// @return Nonzero when the test should run.
+static int source_run_test_matches_filter(const SourceRunTestCase *test_case, int has_filter, SourceRunTestFamily requested_family) {
+    if (test_case == NULL) {
+        return 0;
+    }
+    return !has_filter || test_case->family == requested_family;
+}
+
+/// Prints the source-run fixture-family inventory as JSON for runner/static checks.
+///
+/// @param test_cases Test-case metadata table.
+/// @param test_case_count Number of entries in test_cases.
+static void print_source_run_group_inventory(const SourceRunTestCase *test_cases, size_t test_case_count) {
+    size_t index = 0U;
+
+    printf("{\"groups\":[\"core\",\"diagnostics\",\"settings\",\"memory-layout\",\"control-flow\"],\"tests\":[");
+    for (index = 0U; index < test_case_count; index += 1U) {
+        if (index != 0U) {
+            printf(",");
+        }
+        printf("{\"group\":\"%s\",\"name\":\"%s\"}", source_run_family_name(test_cases[index].family), test_cases[index].name);
+    }
+    printf("]}\n");
+}
+
+/// Official Phase 71B1 source-run fixture-family inventory.
+static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
+    {"test_minimal_source_runs_to_eax_42", SOURCE_RUN_TEST_CORE, test_minimal_source_runs_to_eax_42},
+    {"test_zero_instruction_program_succeeds", SOURCE_RUN_TEST_CORE, test_zero_instruction_program_succeeds},
+    {"test_parse_error_returns_structured_message", SOURCE_RUN_TEST_DIAGNOSTICS, test_parse_error_returns_structured_message},
+    {"test_source_run_invalid_hex_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_invalid_hex_reports_specific_lexer_diagnostic},
+    {"test_source_run_unterminated_string_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_unterminated_string_reports_specific_lexer_diagnostic},
+    {"test_source_run_other_lexer_diagnostics_are_specific", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_other_lexer_diagnostics_are_specific},
+    {"test_narrow_register_immediate_overflow_returns_parse_error", SOURCE_RUN_TEST_DIAGNOSTICS, test_narrow_register_immediate_overflow_returns_parse_error},
+    {"test_negative_immediate_source_run_succeeds", SOURCE_RUN_TEST_CORE, test_negative_immediate_source_run_succeeds},
+    {"test_negative_immediate_overflow_returns_parse_error", SOURCE_RUN_TEST_DIAGNOSTICS, test_negative_immediate_overflow_returns_parse_error},
+    {"test_register_indirect_source_run_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_register_indirect_source_run_succeeds},
+    {"test_phase24_eax_base_acceptance_program", SOURCE_RUN_TEST_CORE, test_phase24_eax_base_acceptance_program},
+    {"test_all_gpr_register_indirect_source_run_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_all_gpr_register_indirect_source_run_succeeds},
+    {"test_type_operator_source_run_acceptance_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_type_operator_source_run_acceptance_program},
+    {"test_type_operator_source_run_element_sizes", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_type_operator_source_run_element_sizes},
+    {"test_lengthof_operator_source_run_acceptance_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_lengthof_operator_source_run_acceptance_program},
+    {"test_lengthof_operator_source_run_element_counts", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_lengthof_operator_source_run_element_counts},
+    {"test_sizeof_operator_source_run_acceptance_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_sizeof_operator_source_run_acceptance_program},
+    {"test_sizeof_operator_source_run_byte_sizes", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_sizeof_operator_source_run_byte_sizes},
+    {"test_sizeof_operator_source_run_rejects_expression_tail", SOURCE_RUN_TEST_DIAGNOSTICS, test_sizeof_operator_source_run_rejects_expression_tail},
+    {"test_character_literal_source_run_rejects_width_overflow", SOURCE_RUN_TEST_DIAGNOSTICS, test_character_literal_source_run_rejects_width_overflow},
+    {"test_character_literal_source_run_accepts_narrower_packed_immediates", SOURCE_RUN_TEST_CORE, test_character_literal_source_run_accepts_narrower_packed_immediates},
+    {"test_lengthof_operator_source_run_rejects_expression_tail", SOURCE_RUN_TEST_DIAGNOSTICS, test_lengthof_operator_source_run_rejects_expression_tail},
+    {"test_type_operator_source_run_rejects_expression_tail", SOURCE_RUN_TEST_DIAGNOSTICS, test_type_operator_source_run_rejects_expression_tail},
+    {"test_scaled_index_source_run_returns_unsupported_feature", SOURCE_RUN_TEST_DIAGNOSTICS, test_scaled_index_source_run_returns_unsupported_feature},
+    {"test_constant_symbol_offset_source_run_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_constant_symbol_offset_source_run_succeeds},
+    {"test_unaligned_constant_symbol_offset_reports_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_unaligned_constant_symbol_offset_reports_warning},
+    {"test_negative_symbol_offset_inside_data_image_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_negative_symbol_offset_inside_data_image_succeeds},
+    {"test_offset_zero_bracketed_symbol_operands_execute", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_offset_zero_bracketed_symbol_operands_execute},
+    {"test_constant_symbol_offset_crossing_section_image_is_not_parse_error", SOURCE_RUN_TEST_DIAGNOSTICS, test_constant_symbol_offset_crossing_section_image_is_not_parse_error},
+    {"test_textbook_unsupported_features_return_unsupported_feature_messages", SOURCE_RUN_TEST_DIAGNOSTICS, test_textbook_unsupported_features_return_unsupported_feature_messages},
+    {"test_multi_diagnostic_unsupported_feature_source_run_reports_all", SOURCE_RUN_TEST_DIAGNOSTICS, test_multi_diagnostic_unsupported_feature_source_run_reports_all},
+    {"test_signed_integer_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_signed_integer_source_run_acceptance_program},
+    {"test_unary_plus_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_unary_plus_source_run_acceptance_program},
+    {"test_signed_integer_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_signed_integer_source_run_error_paths},
+    {"test_signed_ptr_alias_source_run_acceptance_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_signed_ptr_alias_source_run_acceptance_program},
+    {"test_signed_ptr_alias_source_run_write_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_signed_ptr_alias_source_run_write_program},
+    {"test_signed_ptr_alias_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_signed_ptr_alias_source_run_error_paths},
+    {"test_extension_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_extension_source_run_acceptance_program},
+    {"test_accumulator_extension_source_run_program", SOURCE_RUN_TEST_CORE, test_accumulator_extension_source_run_program},
+    {"test_extension_source_run_edge_cases", SOURCE_RUN_TEST_CORE, test_extension_source_run_edge_cases},
+    {"test_extension_register_indirect_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_extension_register_indirect_memory_source_run_program},
+    {"test_plain_mov_from_signed_memory_rejects_implicit_widening", SOURCE_RUN_TEST_DIAGNOSTICS, test_plain_mov_from_signed_memory_rejects_implicit_widening},
+    {"test_extension_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_extension_source_run_error_paths},
+    {"test_phase20_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_phase20_source_run_acceptance_program},
+    {"test_phase20_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase20_memory_source_run_program},
+    {"test_phase20_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase20_source_run_error_paths},
+    {"test_phase57n_nop_source_run_hardening", SOURCE_RUN_TEST_CORE, test_phase57n_nop_source_run_hardening},
+    {"test_phase57o_nop_encoding_operand_source_run", SOURCE_RUN_TEST_CORE, test_phase57o_nop_encoding_operand_source_run},
+    {"test_phase57o_nop_source_run_rejections", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57o_nop_source_run_rejections},
+    {"test_phase21_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_phase21_source_run_acceptance_program},
+    {"test_phase21_memory_and_borrow_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase21_memory_and_borrow_source_run_program},
+    {"test_phase21_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase21_source_run_error_paths},
+    {"test_phase22_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_phase22_source_run_acceptance_program},
+    {"test_phase22_memory_immediate_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase22_memory_immediate_source_run_program},
+    {"test_phase22_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase22_source_run_error_paths},
+    {"test_phase25_register_supplied_memory_width_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase25_register_supplied_memory_width_source_run_program},
+    {"test_phase25_register_supplied_source_memory_width_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase25_register_supplied_source_memory_width_source_run_program},
+    {"test_phase25_browser_observed_regressions", SOURCE_RUN_TEST_CORE, test_phase25_browser_observed_regressions},
+    {"test_phase25_explicit_ptr_symbol_register_override_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase25_explicit_ptr_symbol_register_override_source_run_program},
+    {"test_phase25_ambiguous_memory_width_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase25_ambiguous_memory_width_source_run_error_paths},
+    {"test_phase26_header_source_run_acceptance_program", SOURCE_RUN_TEST_CORE, test_phase26_header_source_run_acceptance_program},
+    {"test_phase26_header_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase26_header_source_run_error_paths},
+    {"test_phase57p_host_include_path_source_run_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57p_host_include_path_source_run_diagnostics},
+    {"test_phase57q_includelib_source_run_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57q_includelib_source_run_diagnostics},
+    {"test_phase57r_invoke_addr_external_routine_source_run_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57r_invoke_addr_external_routine_source_run_diagnostics},
+    {"test_phase57s_high_level_flow_source_run_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57s_high_level_flow_source_run_diagnostics},
+    {"test_phase57t_playground_diagnostic_recovery_smoke_fixtures", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57t_playground_diagnostic_recovery_smoke_fixtures},
+    {"test_phase58_label_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase58_label_source_run_behavior},
+    {"test_phase28_additional_data_sections_source_run_programs", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase28_additional_data_sections_source_run_programs},
+    {"test_phase30_dup_initializer_list_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase30_dup_initializer_list_source_run_program},
+    {"test_phase30_dup_repeat_count_diagnostic_source_run_program", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase30_dup_repeat_count_diagnostic_source_run_program},
+    {"test_phase30_large_dup_count_capacity_diagnostic_source_run_program", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase30_large_dup_count_capacity_diagnostic_source_run_program},
+    {"test_phase61d_token_capacity_diagnostic_source_run_program", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase61d_token_capacity_diagnostic_source_run_program},
+    {"test_phase61d_source_text_capacity_diagnostic_source_run_program", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase61d_source_text_capacity_diagnostic_source_run_program},
+    {"test_phase61d_code_label_capacity_diagnostic_source_run_program", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase61d_code_label_capacity_diagnostic_source_run_program},
+    {"test_phase32_fixed_layout_source_run_regression_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase32_fixed_layout_source_run_regression_program},
+    {"test_phase33_automatic_layout_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase33_automatic_layout_source_run_program},
+    {"test_phase33_automatic_layout_const_write_rejected", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase33_automatic_layout_const_write_rejected},
+    {"test_phase33_automatic_layout_invalid_access_does_not_grow", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase33_automatic_layout_invalid_access_does_not_grow},
+    {"test_phase33_automatic_layout_resource_limit_json", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase33_automatic_layout_resource_limit_json},
+    {"test_phase34_automatic_layout_uses_stack_size_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_uses_stack_size_metadata},
+    {"test_phase34_automatic_layout_stack_without_operand_uses_default", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_stack_without_operand_uses_default},
+    {"test_phase34_automatic_layout_stack_expression_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_stack_expression_metadata},
+    {"test_phase34_automatic_layout_excessive_stack_size_json", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_excessive_stack_size_json},
+    {"test_phase34_automatic_layout_uses_configured_heap_size", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_uses_configured_heap_size},
+    {"test_phase34_automatic_layout_excessive_heap_size_json", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase34_automatic_layout_excessive_heap_size_json},
+    {"test_phase35_seeded_randomized_layout_offset_program_succeeds", SOURCE_RUN_TEST_SETTINGS, test_phase35_seeded_randomized_layout_offset_program_succeeds},
+    {"test_phase35_seeded_randomized_layout_hardcoded_data_address_fails", SOURCE_RUN_TEST_SETTINGS, test_phase35_seeded_randomized_layout_hardcoded_data_address_fails},
+    {"test_phase35_seeded_randomized_layout_const_write_stays_read_only", SOURCE_RUN_TEST_SETTINGS, test_phase35_seeded_randomized_layout_const_write_stays_read_only},
+    {"test_phase35_seeded_randomized_layout_data_question_writable", SOURCE_RUN_TEST_SETTINGS, test_phase35_seeded_randomized_layout_data_question_writable},
+    {"test_phase35_randomized_layout_unavailable_source_run_json", SOURCE_RUN_TEST_SETTINGS, test_phase35_randomized_layout_unavailable_source_run_json},
+    {"test_phase35_fresh_randomized_layout_returns_seed_metadata", SOURCE_RUN_TEST_SETTINGS, test_phase35_fresh_randomized_layout_returns_seed_metadata},
+    {"test_phase37_default_region_only_has_no_object_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_default_region_only_has_no_object_warning},
+    {"test_phase37_allocated_object_warning_mode_warns_and_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase37_allocated_object_warning_mode_warns_and_continues},
+    {"test_phase37_access_into_another_object_has_no_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_access_into_another_object_has_no_warning},
+    {"test_phase37_partial_overlap_starting_inside_object_warns", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_partial_overlap_starting_inside_object_warns},
+    {"test_phase37_write_to_region_gap_warns_and_continues", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_write_to_region_gap_warns_and_continues},
+    {"test_phase37_invalid_address_error_precedes_object_warning", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase37_invalid_address_error_precedes_object_warning},
+    {"test_phase37_spanning_adjacent_objects_warns", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_spanning_adjacent_objects_warns},
+    {"test_phase37_unaligned_inside_object_has_no_object_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_unaligned_inside_object_has_no_object_warning},
+    {"test_phase37_const_permission_error_precedes_object_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase37_const_permission_error_precedes_object_warning},
+    {"test_phase38_strict_gap_access_fails", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_gap_access_fails},
+    {"test_phase38_strict_access_into_another_object_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_access_into_another_object_succeeds},
+    {"test_phase38_strict_partial_overlap_starting_inside_object_fails", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_partial_overlap_starting_inside_object_fails},
+    {"test_phase38_strict_spanning_adjacent_objects_fails", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_spanning_adjacent_objects_fails},
+    {"test_phase38_strict_unaligned_inside_object_succeeds", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_unaligned_inside_object_succeeds},
+    {"test_phase38_strict_invalid_address_precedes_object_violation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase38_strict_invalid_address_precedes_object_violation},
+    {"test_phase38_strict_const_permission_error_precedes_object_violation", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase38_strict_const_permission_error_precedes_object_violation},
+    {"test_phase39_explicit_region_only_uninitialized_read_has_no_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase39_explicit_region_only_uninitialized_read_has_no_warning},
+    {"test_phase39_initial_uninitialized_origin_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase39_initial_uninitialized_origin_metadata},
+    {"test_phase39_partial_and_full_writes_mark_initialized_bytes", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase39_partial_and_full_writes_mark_initialized_bytes},
+    {"test_phase39_failed_writes_do_not_mark_initialized", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase39_failed_writes_do_not_mark_initialized},
+    {"test_phase40_uninitialized_read_warning_mode_warns_and_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase40_uninitialized_read_warning_mode_warns_and_continues},
+    {"test_phase40_uninitialized_read_strict_mode_stops", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase40_uninitialized_read_strict_mode_stops},
+    {"test_phase40_full_write_suppresses_uninitialized_read_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase40_full_write_suppresses_uninitialized_read_diagnostic},
+    {"test_phase40_partial_write_then_multibyte_read_warns", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_partial_write_then_multibyte_read_warns},
+    {"test_phase40_mixed_initializer_multibyte_read_warns_for_whole_range", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_mixed_initializer_multibyte_read_warns_for_whole_range},
+    {"test_phase40_data_question_section_warns", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_data_question_section_warns},
+    {"test_phase40_repeated_uninitialized_reads_emit_distinct_warnings", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_repeated_uninitialized_reads_emit_distinct_warnings},
+    {"test_phase40_rmw_warning_then_writeback_marks_initialized", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_rmw_warning_then_writeback_marks_initialized},
+    {"test_phase40_rmw_strict_stops_before_writeback", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_rmw_strict_stops_before_writeback},
+    {"test_phase64a_rmw_planned_read_policy_for_existing_families", SOURCE_RUN_TEST_SETTINGS, test_phase64a_rmw_planned_read_policy_for_existing_families},
+    {"test_phase64a_memory_source_planned_read_regression", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase64a_memory_source_planned_read_regression},
+    {"test_phase40_invalid_address_precedes_uninitialized_read", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase40_invalid_address_precedes_uninitialized_read},
+    {"test_phase40_object_strict_regression_precedes_uninitialized_read_feature", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase40_object_strict_regression_precedes_uninitialized_read_feature},
+    {"test_phase39_register_copy_marks_destination_initialized", SOURCE_RUN_TEST_CORE, test_phase39_register_copy_marks_destination_initialized},
+    {"test_phase35a_casemap_all_source_run_programs", SOURCE_RUN_TEST_SETTINGS, test_phase35a_casemap_all_source_run_programs},
+    {"test_phase35a_casemap_none_source_run_programs", SOURCE_RUN_TEST_SETTINGS, test_phase35a_casemap_none_source_run_programs},
+    {"test_phase35a_casemap_equate_source_run_programs", SOURCE_RUN_TEST_SETTINGS, test_phase35a_casemap_equate_source_run_programs},
+    {"test_phase35a_casemap_diagnostic_source_run_programs", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase35a_casemap_diagnostic_source_run_programs},
+    {"test_phase41_irvine32_virtual_include_metadata_source_run", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase41_irvine32_virtual_include_metadata_source_run},
+    {"test_phase41_macros_include_does_not_populate_irvine32_registry", SOURCE_RUN_TEST_CORE, test_phase41_macros_include_does_not_populate_irvine32_registry},
+    {"test_phase41_irvine32_unsupported_routine_source_run_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase41_irvine32_unsupported_routine_source_run_diagnostic},
+    {"test_phase42_irvine32_exit_terminator_source_run", SOURCE_RUN_TEST_CORE, test_phase42_irvine32_exit_terminator_source_run},
+    {"test_phase42_irvine32_exit_terminator_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase42_irvine32_exit_terminator_error_paths},
+    {"test_phase43_inc_dec_register_source_run_program", SOURCE_RUN_TEST_CORE, test_phase43_inc_dec_register_source_run_program},
+    {"test_phase43_inc_dec_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase43_inc_dec_memory_source_run_program},
+    {"test_phase43_inc_dec_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase43_inc_dec_source_run_error_paths},
+    {"test_phase44_logical_binary_source_run_program", SOURCE_RUN_TEST_CORE, test_phase44_logical_binary_source_run_program},
+    {"test_phase44_logical_binary_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase44_logical_binary_memory_source_run_program},
+    {"test_phase44_logical_binary_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase44_logical_binary_source_run_error_paths},
+    {"test_phase45_not_source_run_program", SOURCE_RUN_TEST_CORE, test_phase45_not_source_run_program},
+    {"test_phase45_not_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase45_not_memory_source_run_program},
+    {"test_phase45_not_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase45_not_source_run_error_paths},
+    {"test_phase46_shift_left_source_run_program", SOURCE_RUN_TEST_CORE, test_phase46_shift_left_source_run_program},
+    {"test_phase46_shift_left_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase46_shift_left_memory_source_run_program},
+    {"test_phase46_shift_left_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase46_shift_left_source_run_error_paths},
+    {"test_phase47_shr_source_run_program", SOURCE_RUN_TEST_CORE, test_phase47_shr_source_run_program},
+    {"test_phase47_shr_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase47_shr_memory_source_run_program},
+    {"test_phase47_shr_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase47_shr_source_run_error_paths},
+    {"test_phase48_sar_source_run_program", SOURCE_RUN_TEST_CORE, test_phase48_sar_source_run_program},
+    {"test_phase48_sar_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase48_sar_memory_source_run_program},
+    {"test_phase48_sar_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase48_sar_source_run_error_paths},
+    {"test_phase49_rol_source_run_program", SOURCE_RUN_TEST_CORE, test_phase49_rol_source_run_program},
+    {"test_phase49_rol_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase49_rol_memory_source_run_program},
+    {"test_phase49_rol_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase49_rol_source_run_error_paths},
+    {"test_phase50_ror_source_run_program", SOURCE_RUN_TEST_CORE, test_phase50_ror_source_run_program},
+    {"test_phase50_ror_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase50_ror_memory_source_run_program},
+    {"test_phase50_ror_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase50_ror_source_run_error_paths},
+    {"test_phase52_lea_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase52_lea_source_run_program},
+    {"test_phase52_lea_no_memory_diagnostics_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase52_lea_no_memory_diagnostics_source_run},
+    {"test_phase52_lea_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase52_lea_source_run_error_paths},
+    {"test_phase57corr2_compact_negative_displacement_write_source_run", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57corr2_compact_negative_displacement_write_source_run},
+    {"test_phase57corr2_compact_negative_displacement_read_source_run", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57corr2_compact_negative_displacement_read_source_run},
+    {"test_phase57corr2_compact_negative_displacement_lea_source_run", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57corr2_compact_negative_displacement_lea_source_run},
+    {"test_phase57corr2_compact_negative_displacement_advanced_rejection_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57corr2_compact_negative_displacement_advanced_rejection_source_run},
+    {"test_phase53_mul_source_run_program", SOURCE_RUN_TEST_CORE, test_phase53_mul_source_run_program},
+    {"test_phase53_mul_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53_mul_memory_source_run_program},
+    {"test_phase53_mul_uninitialized_memory_source_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53_mul_uninitialized_memory_source_warning},
+    {"test_phase53_mul_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53_mul_source_run_error_paths},
+    {"test_phase54_imul_source_run_program", SOURCE_RUN_TEST_CORE, test_phase54_imul_source_run_program},
+    {"test_phase54_imul_memory_source_run_program", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase54_imul_memory_source_run_program},
+    {"test_phase54_imul_uninitialized_memory_source_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase54_imul_uninitialized_memory_source_warning},
+    {"test_phase54_imul_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase54_imul_source_run_error_paths},
+    {"test_phase55_imul_source_run_programs", SOURCE_RUN_TEST_CORE, test_phase55_imul_source_run_programs},
+    {"test_phase55_imul_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase55_imul_source_run_error_paths},
+    {"test_phase56_div_source_run_programs", SOURCE_RUN_TEST_CORE, test_phase56_div_source_run_programs},
+    {"test_phase56_div_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase56_div_source_run_error_paths},
+    {"test_phase57_idiv_source_run_programs", SOURCE_RUN_TEST_CORE, test_phase57_idiv_source_run_programs},
+    {"test_phase57_idiv_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57_idiv_source_run_error_paths},
+    {"test_phase57l_code_memory_access_diagnostics_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57l_code_memory_access_diagnostics_source_run},
+    {"test_phase57m_segment_symbol_source_run", SOURCE_RUN_TEST_CORE, test_phase57m_segment_symbol_source_run},
+    {"test_phase57corr1_const_cross_region_write_diagnostic_context", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57corr1_const_cross_region_write_diagnostic_context},
+    {"test_phase57corr1_direct_const_write_still_permission_denied", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57corr1_direct_const_write_still_permission_denied},
+    {"test_phase57corr1_const_cross_region_read_remains_region_failure", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57corr1_const_cross_region_read_remains_region_failure},
+    {"test_non_protected_cross_region_write_remains_ordinary_region_failure", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_non_protected_cross_region_write_remains_ordinary_region_failure},
+    {"test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled},
+    {"test_phase53a_default_object_spanning_read_has_no_object_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53a_default_object_spanning_read_has_no_object_diagnostic},
+    {"test_phase53a_object_spanning_read_warning_mode_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53a_object_spanning_read_warning_mode_continues},
+    {"test_phase53a_object_spanning_read_strict_mode_stops_before_mutation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53a_object_spanning_read_strict_mode_stops_before_mutation},
+    {"test_phase53a_invalid_region_still_precedes_object_validation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53a_invalid_region_still_precedes_object_validation},
+    {"test_phase53a_const_write_precedes_object_validation", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53a_const_write_precedes_object_validation},
+    {"test_phase53a_uninitialized_read_modes_on_symbol_offset", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53a_uninitialized_read_modes_on_symbol_offset},
+    {"test_phase53b_default_section_validation_off", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53b_default_section_validation_off},
+    {"test_phase53b_section_image_warning_mode_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_section_image_warning_mode_continues},
+    {"test_phase53b_section_image_strict_mode_stops_before_mutation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_section_image_strict_mode_stops_before_mutation},
+    {"test_phase53b_data_section_capacity_warning_mode_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_data_section_capacity_warning_mode_continues},
+    {"test_phase53b_data_section_capacity_strict_mode_stops_before_mutation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_data_section_capacity_strict_mode_stops_before_mutation},
+    {"test_phase53b_section_capacity_warning_mode_continues", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_section_capacity_warning_mode_continues},
+    {"test_phase53b_section_capacity_strict_mode_stops_before_mutation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_section_capacity_strict_mode_stops_before_mutation},
+    {"test_phase53b_invalid_region_precedes_section_validation", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53b_invalid_region_precedes_section_validation},
+    {"test_phase53b_const_write_precedes_section_validation", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53b_const_write_precedes_section_validation},
+    {"test_phase53b_section_image_warning_precedes_object_warning", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53b_section_image_warning_precedes_object_warning},
+    {"test_phase53c_default_uninitialized_read_warns_and_continues", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53c_default_uninitialized_read_warns_and_continues},
+    {"test_phase53c_uninitialized_read_explicit_off_preserves_silent_behavior", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53c_uninitialized_read_explicit_off_preserves_silent_behavior},
+    {"test_phase53c_default_indirect_uninitialized_read_warns_for_tracked_overlap", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53c_default_indirect_uninitialized_read_warns_for_tracked_overlap},
+    {"test_phase53c_default_uninitialized_mul_symbol_offset_warns", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase53c_default_uninitialized_mul_symbol_offset_warns},
+    {"test_phase53c_default_undefined_flag_use_warns_and_continues", SOURCE_RUN_TEST_SETTINGS, test_phase53c_default_undefined_flag_use_warns_and_continues},
+    {"test_phase53c_undefined_flag_use_explicit_off_preserves_silent_behavior", SOURCE_RUN_TEST_SETTINGS, test_phase53c_undefined_flag_use_explicit_off_preserves_silent_behavior},
+    {"test_phase53d_default_compatibility_notices_continue_execution", SOURCE_RUN_TEST_SETTINGS, test_phase53d_default_compatibility_notices_continue_execution},
+    {"test_phase53d_active_semantics_do_not_emit_compatibility_notices", SOURCE_RUN_TEST_SETTINGS, test_phase53d_active_semantics_do_not_emit_compatibility_notices},
+    {"test_phase53d_notice_plus_error_still_blocks_execution", SOURCE_RUN_TEST_SETTINGS, test_phase53d_notice_plus_error_still_blocks_execution},
+    {"test_phase53e_ui_settings_route_to_existing_policies", SOURCE_RUN_TEST_SETTINGS, test_phase53e_ui_settings_route_to_existing_policies},
+    {"test_phase57d_ui_policy_families_remain_independent", SOURCE_RUN_TEST_SETTINGS, test_phase57d_ui_policy_families_remain_independent},
+    {"test_phase57e_default_startup_state_notice_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57e_default_startup_state_notice_source_run},
+    {"test_phase57e_startup_state_notice_opt_out_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57e_startup_state_notice_opt_out_source_run},
+    {"test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics},
+    {"test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata", SOURCE_RUN_TEST_SETTINGS, test_phase57e_startup_state_notice_preserves_uninitialized_origin_metadata},
+    {"test_phase57e_invalid_startup_state_notice_setting", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57e_invalid_startup_state_notice_setting},
+    {"test_phase69b_source_run_message_ordering_contract", SOURCE_RUN_TEST_CORE, test_phase69b_source_run_message_ordering_contract},
+    {"test_phase64d_memory_change_source_attribution", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase64d_memory_change_source_attribution},
+    {"test_phase57h_register_write_metadata_no_register_writes", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57h_register_write_metadata_no_register_writes},
+    {"test_phase57h_register_write_metadata_same_value_parent_write", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57h_register_write_metadata_same_value_parent_write},
+    {"test_phase57h_register_write_metadata_alias_writes", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57h_register_write_metadata_alias_writes},
+    {"test_phase57h_seeded_startup_not_counted_as_program_write", SOURCE_RUN_TEST_SETTINGS, test_phase57h_seeded_startup_not_counted_as_program_write},
+    {"test_phase64_equality_jumps_source_run_programs", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase64_equality_jumps_source_run_programs},
+    {"test_phase64_equality_jump_instruction_limit", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase64_equality_jump_instruction_limit},
+    {"test_phase64_equality_jump_source_run_diagnostics", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase64_equality_jump_source_run_diagnostics},
+    {"test_phase65_signed_relational_jumps_source_run_programs", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase65_signed_relational_jumps_source_run_programs},
+    {"test_phase65_signed_relational_jump_source_run_diagnostics", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase65_signed_relational_jump_source_run_diagnostics},
+    {"test_phase65_signed_relational_jump_instruction_limit", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase65_signed_relational_jump_instruction_limit},
+    {"test_phase65_signed_relational_undefined_flag_use_policy", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase65_signed_relational_undefined_flag_use_policy},
+    {"test_phase66_unsigned_relational_jumps_source_run_programs", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase66_unsigned_relational_jumps_source_run_programs},
+    {"test_phase66_unsigned_relational_jump_error_paths", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase66_unsigned_relational_jump_error_paths},
+    {"test_phase69_direct_call_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase69_direct_call_source_run_behavior},
+    {"test_phase71_call_ret_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71_call_ret_source_run_behavior},
+    {"test_phase71a_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71a_source_run_phase_metadata},
+    {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
+    {"test_phase68b_eip_pseudo_display_and_rejections", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68b_eip_pseudo_display_and_rejections},
+    {"test_phase67a_entry_procedure_runtime_boundary_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67a_entry_procedure_runtime_boundary_source_run},
+    {"test_phase68a_source_run_observes_fixed_layout_esp_startup", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68a_source_run_observes_fixed_layout_esp_startup},
+    {"test_phase68a_seeded_startup_preserves_stack_pointer_contract", SOURCE_RUN_TEST_SETTINGS, test_phase68a_seeded_startup_preserves_stack_pointer_contract},
+    {"test_phase68a_automatic_layout_esp_uses_selected_stack_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase68a_automatic_layout_esp_uses_selected_stack_metadata},
+    {"test_phase67a_entry_boundary_error_and_transfer_regressions", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67a_entry_boundary_error_and_transfer_regressions},
+    {"test_phase67_arithmetic_branch_watchdog_source_run_harness", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67_arithmetic_branch_watchdog_source_run_harness},
+    {"test_phase63_cmp_memory_source_run_programs", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase63_cmp_memory_source_run_programs},
+    {"test_phase63_cmp_uninitialized_read_policy", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase63_cmp_uninitialized_read_policy},
+    {"test_phase63_cmp_section_and_object_planned_read_policy", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase63_cmp_section_and_object_planned_read_policy},
+    {"test_phase63_cmp_invalid_level1_read_preserves_flags", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase63_cmp_invalid_level1_read_preserves_flags},
+    {"test_phase59_instruction_limit_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase59_instruction_limit_source_run},
+    {"test_phase61_jmp_executes_after_prior_instruction", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_jmp_executes_after_prior_instruction},
+    {"test_phase61_jmp_executes_first_instruction", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_jmp_executes_first_instruction},
+    {"test_phase61_jmp_to_immediately_following_instruction", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_jmp_to_immediately_following_instruction},
+    {"test_phase61_jmp_to_procedure_entry_executes_as_direct_branch", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_jmp_to_procedure_entry_executes_as_direct_branch},
+    {"test_phase61_backward_jmp_reaches_instruction_limit", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_backward_jmp_reaches_instruction_limit},
+    {"test_phase61e_reserved_loop_label_source_run_diagnostic", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61e_reserved_loop_label_source_run_diagnostic},
+    {"test_phase61_jmp_respects_instruction_limit_precedence", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61_jmp_respects_instruction_limit_precedence},
+    {"test_phase61a_jmp_skips_memory_write_and_keeps_console_empty", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61a_jmp_skips_memory_write_and_keeps_console_empty},
+    {"test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation},
+    {"test_phase57f_zero_mode_seed_does_not_randomize", SOURCE_RUN_TEST_SETTINGS, test_phase57f_zero_mode_seed_does_not_randomize},
+    {"test_phase57f_seeded_startup_is_deterministic", SOURCE_RUN_TEST_SETTINGS, test_phase57f_seeded_startup_is_deterministic},
+    {"test_phase57f_different_seeds_change_startup_state", SOURCE_RUN_TEST_SETTINGS, test_phase57f_different_seeds_change_startup_state},
+    {"test_phase57f_seeded_startup_notice_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57f_seeded_startup_notice_source_run},
+    {"test_phase57f_invalid_startup_register_flag_mode", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57f_invalid_startup_register_flag_mode},
+    {"test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin", SOURCE_RUN_TEST_SETTINGS, test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origin},
+    {"test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes", SOURCE_RUN_TEST_SETTINGS, test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes},
+    {"test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitialized_bytes", SOURCE_RUN_TEST_SETTINGS, test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitialized_bytes},
+    {"test_phase57g_seeded_uninitialized_storage_is_deterministic", SOURCE_RUN_TEST_SETTINGS, test_phase57g_seeded_uninitialized_storage_is_deterministic},
+    {"test_phase57g_different_seeds_change_uninitialized_storage", SOURCE_RUN_TEST_SETTINGS, test_phase57g_different_seeds_change_uninitialized_storage},
+    {"test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class", SOURCE_RUN_TEST_SETTINGS, test_phase57g_seeded_uninitialized_storage_preserves_each_origin_class},
+    {"test_phase57i_const_uninitialized_storage_acceptance_source_run", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase57i_const_uninitialized_storage_acceptance_source_run},
+    {"test_phase57j_const_uninitialized_storage_policy_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57j_const_uninitialized_storage_policy_source_run},
+    {"test_phase57g_startup_axes_are_orthogonal", SOURCE_RUN_TEST_SETTINGS, test_phase57g_startup_axes_are_orthogonal},
+    {"test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage", SOURCE_RUN_TEST_SETTINGS, test_phase57g_combined_seeded_startup_axes_affect_registers_and_storage},
+    {"test_phase57g_seeded_uninitialized_storage_strict_read_stops", SOURCE_RUN_TEST_SETTINGS, test_phase57g_seeded_uninitialized_storage_strict_read_stops},
+    {"test_phase57g_seeded_uninitialized_storage_notice_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57g_seeded_uninitialized_storage_notice_source_run},
+    {"test_phase57g_combined_seeded_startup_notice_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase57g_combined_seeded_startup_notice_source_run},
+    {"test_phase57g_invalid_uninitialized_storage_mode", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase57g_invalid_uninitialized_storage_mode},
+    {"test_phase53e_invalid_ui_settings_return_invalid_argument", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase53e_invalid_ui_settings_return_invalid_argument},
+    {"test_phase50b_undefined_flag_use_warn_policy_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_warn_policy_source_run},
+    {"test_phase50b_undefined_flag_use_error_policy_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_error_policy_source_run},
+    {"test_phase50b_undefined_flag_use_sbb_warn_policy_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_sbb_warn_policy_source_run},
+    {"test_phase50b_undefined_flag_use_explicit_off_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_explicit_off_source_run},
+    {"test_phase50b_undefined_flag_use_cmc_error_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_cmc_error_source_run},
+    {"test_phase50b_undefined_flag_use_memory_destination_error_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase50b_undefined_flag_use_memory_destination_error_source_run},
+    {"test_phase51_fixed_and_automatic_layout_smoke_harness", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase51_fixed_and_automatic_layout_smoke_harness},
+    {"test_phase51_const_write_precedes_object_diagnostics", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase51_const_write_precedes_object_diagnostics},
+    {"test_phase51_uninitialized_rmw_smoke_harness", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase51_uninitialized_rmw_smoke_harness},
+    {"test_phase51_irvine_exit_and_casemap_smoke_harness", SOURCE_RUN_TEST_SETTINGS, test_phase51_irvine_exit_and_casemap_smoke_harness},
+    {"test_phase51_instruction_family_source_run_smoke_harness", SOURCE_RUN_TEST_CORE, test_phase51_instruction_family_source_run_smoke_harness},
+    {"test_null_source_returns_invalid_argument_json", SOURCE_RUN_TEST_DIAGNOSTICS, test_null_source_returns_invalid_argument_json},
+    {"test_empty_source_returns_parse_error_json", SOURCE_RUN_TEST_DIAGNOSTICS, test_empty_source_returns_parse_error_json},
+    {"test_subsequent_calls_return_latest_result", SOURCE_RUN_TEST_CORE, test_subsequent_calls_return_latest_result},
+};
+
+int main(int argc, char **argv) {
+    int failures = 0;
+    int has_filter = 0;
+    SourceRunTestFamily requested_family = SOURCE_RUN_TEST_CORE;
+    size_t index = 0U;
+    size_t selected_count = 0U;
+    const size_t test_case_count = sizeof(SOURCE_RUN_TEST_CASES) / sizeof(SOURCE_RUN_TEST_CASES[0]);
+
+    if (argc == 2 && strcmp(argv[1], "--list-groups") == 0) {
+        print_source_run_group_inventory(SOURCE_RUN_TEST_CASES, test_case_count);
+        return 0;
+    }
+    if (argc == 3 && strcmp(argv[1], "--group") == 0) {
+        if (!parse_source_run_family(argv[2], &requested_family)) {
+            fprintf(stderr, "FAIL: unknown source-run test group: %s\n", argv[2]);
+            print_source_run_group_usage(argv[0]);
+            return 2;
+        }
+        has_filter = 1;
+    } else if (argc != 1) {
+        print_source_run_group_usage(argv[0]);
+        return 2;
+    }
+
+    for (index = 0U; index < test_case_count; index += 1U) {
+        const SourceRunTestCase *test_case = &SOURCE_RUN_TEST_CASES[index];
+        if (!source_run_test_matches_filter(test_case, has_filter, requested_family)) {
+            continue;
+        }
+        selected_count += 1U;
+        failures += test_case->run();
+    }
+
+    if (selected_count == 0U) {
+        fprintf(stderr, "FAIL: source-run test group contains no fixtures: %s\n", source_run_family_name(requested_family));
+        return 1;
+    }
 
     if (failures != 0) {
         return 1;
     }
 
-    puts("Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, stack-startup, and pseudo-EIP behavior passed.");
+    if (has_filter) {
+        printf("Source-run %s fixture-family tests passed (%lu fixtures).\n", source_run_family_name(requested_family), (unsigned long)selected_count);
+    } else {
+        puts("Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, stack-startup, and pseudo-EIP behavior passed.");
+    }
     return 0;
 }
