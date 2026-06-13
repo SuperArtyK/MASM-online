@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71A root RET strictness behavior.
+ * @brief Unit tests for the VM executor through Phase 71C code-stream falloff behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture. They intentionally avoid
+ * last-step delta capture, and Phase 71C code-end falloff. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -270,7 +270,7 @@ static int test_step_mov_add_register_delta(void) {
         failures += expect_u32(eax_change->old_value, 20U, "add delta EAX old value should be 20");
         failures += expect_u32(eax_change->new_value, 42U, "add delta EAX new value should be 42");
     }
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "third step should report halted");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "third step should report Phase 71C code-end falloff");
 
     vm_deinit(&vm);
     return failures;
@@ -447,7 +447,7 @@ static int test_zero_length_program_halts(void) {
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for zero-length test");
     failures += expect_status(vm_load_program(&vm, NULL, 0U), VM_EXEC_STATUS_OK, "zero-length program should load");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "zero-length program should halt on first step");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "zero-length program should report Phase 71C code-end falloff on first step");
     failures += expect_size(vm_last_delta(&vm) != NULL ? vm_last_delta(&vm)->register_change_count : 1U, 0U, "halt should not retain register delta");
 
     vm_deinit(&vm);
@@ -553,9 +553,10 @@ static int test_movsx_movzx_register_and_memory_sources(void) {
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for extension tests");
     failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "extension program should load");
-    while (!vm.halted) {
+    for (size_t step_index = 0U; step_index < sizeof(program) / sizeof(program[0]); step_index += 1U) {
         failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "extension step should execute");
     }
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "extension program should report Phase 71C code-end falloff after its last instruction");
 
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after movsx"));
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after movzx"));
@@ -593,9 +594,10 @@ static int test_accumulator_extension_instructions(void) {
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for accumulator tests");
     failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "accumulator program should load");
-    while (!vm.halted) {
+    for (size_t step_index = 0U; step_index < sizeof(program) / sizeof(program[0]); step_index += 1U) {
         failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "accumulator step should execute");
     }
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "accumulator program should report Phase 71C code-end falloff after its last instruction");
 
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after cdq"));
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EDX, &edx) ? 0 : record_failure("EDX read should succeed after cdq"));
@@ -634,9 +636,10 @@ static int test_extension_instruction_edge_cases(void) {
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for extension edge-case tests");
     failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "extension edge-case program should load");
-    while (!vm.halted) {
+    for (size_t step_index = 0U; step_index < sizeof(program) / sizeof(program[0]); step_index += 1U) {
         failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "extension edge-case step should execute");
     }
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "extension edge-case program should report Phase 71C code-end falloff after its last instruction");
 
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after positive cdq"));
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ECX, &ecx) ? 0 : record_failure("ECX read should succeed after movzx cx, bl"));
@@ -810,7 +813,7 @@ static int test_phase57n_nop_preserves_state_and_counts(void) {
     failures += expect_flag(&vm.cpu, VM_FLAG_ZF, true, "NOP should preserve ZF bit");
     failures += expect_flag(&vm.cpu, VM_FLAG_SF, false, "NOP should preserve SF bit");
     failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "NOP should preserve OF validity metadata");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "NOP-only program should halt after one step");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "NOP-only program should report Phase 71C code-end falloff after one step");
 
     vm_deinit(&vm);
     return failures;
@@ -1511,6 +1514,9 @@ static int test_logical_binary_alias_and_memory_destinations(void) {
     failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "logical memory program should load");
     while (!vm.halted) {
         VmExecStatus status = vm_step(&vm);
+        if (status == VM_EXEC_STATUS_CODE_FELL_OFF_END) {
+            break;
+        }
         if (status != VM_EXEC_STATUS_OK && status != VM_EXEC_STATUS_HALTED) {
             failures += expect_status(status, VM_EXEC_STATUS_OK, "logical memory program should execute without runtime errors");
             break;
@@ -1688,6 +1694,9 @@ static int test_not_memory_destinations_and_errors(void) {
     failures += expect_status(vm_load_program(&vm, memory_program, sizeof(memory_program) / sizeof(memory_program[0])), VM_EXEC_STATUS_OK, "NOT memory program should load");
     while (!vm.halted) {
         status = vm_step(&vm);
+        if (status == VM_EXEC_STATUS_CODE_FELL_OFF_END) {
+            break;
+        }
         if (status != VM_EXEC_STATUS_OK && status != VM_EXEC_STATUS_HALTED) {
             failures += expect_status(status, VM_EXEC_STATUS_OK, "NOT memory program should execute without runtime errors");
             break;
@@ -1856,7 +1865,7 @@ static int test_shift_left_memory_destinations_and_errors(void) {
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory word instruction should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory dword initializer should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "shift memory dword instruction should execute");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "shift memory program should halt after all instructions");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "shift memory program should report Phase 71C code-end falloff after all instructions");
     failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after SHL");
     failures += expect_u32((uint32_t)memory_byte, 0x00U, "SHL byte memory should store 00h");
     failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after SAL");
@@ -2025,7 +2034,7 @@ static int test_shift_right_memory_destinations_and_errors(void) {
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHR memory word instruction should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHR memory dword initializer should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SHR memory dword instruction should execute");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "SHR memory program should halt after all instructions");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "SHR memory program should report Phase 71C code-end falloff after all instructions");
     failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after SHR");
     failures += expect_u32((uint32_t)memory_byte, 0x40U, "SHR byte memory should store 40h");
     failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after SHR");
@@ -2195,7 +2204,7 @@ static int test_shift_arithmetic_right_memory_destinations_and_errors(void) {
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SAR memory word instruction should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SAR memory dword initializer should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "SAR memory dword instruction should execute");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "SAR memory program should halt after all instructions");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "SAR memory program should report Phase 71C code-end falloff after all instructions");
     failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after SAR");
     failures += expect_u32((uint32_t)memory_byte, 0xC0U, "SAR byte memory should store C0h");
     failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after SAR");
@@ -2363,7 +2372,7 @@ static int test_rotate_left_memory_destinations_and_errors(void) {
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL memory word instruction should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL memory dword initializer should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROL memory dword instruction should execute");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "ROL memory program should halt after all instructions");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "ROL memory program should report Phase 71C code-end falloff after all instructions");
     failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after ROL");
     failures += expect_u32((uint32_t)memory_byte, 0x03U, "ROL byte memory should store 03h");
     failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after ROL");
@@ -2529,7 +2538,7 @@ static int test_rotate_right_memory_destinations_and_errors(void) {
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory word instruction should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory dword initializer should execute");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "ROR memory dword instruction should execute");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "ROR memory program should halt after all instructions");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "ROR memory program should report Phase 71C code-end falloff after all instructions");
     failures += vm_memory_read_u8(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE, &memory_byte, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory byte read should succeed after ROR");
     failures += expect_u32((uint32_t)memory_byte, 0xC0U, "ROR byte memory should store C0h");
     failures += vm_memory_read_u16(&vm.memory, VM_MEMORY_DEFAULT_DATA_BASE + 2U, &memory_word, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("memory word read should succeed after ROR");
@@ -4688,6 +4697,140 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
     return failures;
 }
 
+/// Verifies Phase 71C reports code-end falloff for an empty selected entry with no executable successor.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71c_empty_selected_entry_falls_off_code_end(void) {
+    int failures = 0;
+    Vm vm;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 0U, true, false}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for empty selected-entry falloff test");
+    failures += expect_status(vm_load_program(&vm, NULL, 0U), VM_EXEC_STATUS_OK, "empty selected-entry program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "empty selected-entry boundary metadata should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "empty selected-entry code stream should emit code-fell-off-end");
+    failures += expect_size(vm.halted ? 1U : 0U, 0U, "code-fell-off-end should be an error status, not successful halt");
+    failures += expect_size((size_t)vm.instruction_count, 0U, "empty selected-entry falloff should execute zero instructions");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL) {
+        failures += record_failure("empty selected-entry falloff should expose a cleared delta");
+    } else {
+        failures += expect_size(delta->has_instruction ? 1U : 0U, 0U, "empty selected-entry falloff should not fabricate an instruction delta");
+        failures += expect_size(delta->register_change_count, 0U, "empty selected-entry falloff should not report register changes");
+        failures += expect_size(delta->memory_change_count, 0U, "empty selected-entry falloff should not report memory changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("empty selected-entry falloff should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_CODE_FELL_OFF_END, "empty selected-entry diagnostic should name code-fell-off-end");
+        failures += expect_size(diagnostic->has_instruction ? 1U : 0U, 0U, "empty selected-entry diagnostic should not fabricate an instruction");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71C no longer treats selected-entry ENDP as a successful terminator.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71c_selected_entry_falloff_reports_code_end(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    mov eax, 1", 0U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry code-end falloff test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "selected-entry falloff program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "selected-entry falloff boundary metadata should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "selected-entry instruction should execute before Phase 71C code-end falloff");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "falling off selected entry should emit code-fell-off-end");
+    failures += expect_size(vm.halted ? 1U : 0U, 0U, "falling off selected entry should not be successful halt");
+    failures += expect_size(vm.instruction_pointer, 1U, "falloff should leave IP at the end of executable code");
+    failures += expect_size((size_t)vm.instruction_count, 1U, "falloff should count the committed instruction");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after selected-entry falloff should succeed"));
+    failures += expect_u32(eax, 1U, "selected-entry falloff should preserve committed register mutation");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("selected-entry falloff should expose the committed instruction delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_MOV, "falloff delta should record MOV opcode");
+        failures += expect_size(delta->register_change_count, 1U, "falloff delta should keep committed register change");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("selected-entry falloff should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_CODE_FELL_OFF_END, "selected-entry falloff diagnostic should name code-fell-off-end");
+        failures += expect_size(diagnostic->has_instruction ? 1U : 0U, 1U, "selected-entry falloff diagnostic should include last executed instruction");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "selected-entry falloff diagnostic should point at last executed instruction index");
+        failures += expect_u32(diagnostic->instruction.source_line, 3U, "selected-entry falloff diagnostic should preserve source line");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_CODE_FELL_OFF_END), "code-fell-off-end") == 0 ? 1U : 0U, 1U, "executor status helper should name code-fell-off-end");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71C ordinary code-stream fallthrough reaches a later procedure.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71c_selected_entry_falls_through_to_later_procedure(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    mov eax, 1", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "    mov ebx, 2", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry fallthrough test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "selected-entry fallthrough program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "selected-entry fallthrough boundary metadata should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "selected-entry boundary should no longer halt successfully");
+    failures += expect_size(vm.instruction_pointer, 1U, "ordinary fallthrough should advance to the later procedure instruction");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "later procedure instruction should execute before Phase 71C code-end falloff");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "later procedure code-end should emit code-fell-off-end");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after procedure fallthrough should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after procedure fallthrough should succeed"));
+    failures += expect_u32(eax, 1U, "selected-entry instruction should commit before procedure fallthrough");
+    failures += expect_u32(ebx, 2U, "later procedure instruction should execute by code-stream fallthrough");
+    failures += expect_size((size_t)vm.instruction_count, 2U, "code-stream fallthrough should count both instructions");
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("later procedure falloff should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_CODE_FELL_OFF_END, "later procedure falloff diagnostic should be code-fell-off-end");
+        failures += expect_u32(diagnostic->instruction_index, 1U, "later procedure falloff diagnostic should identify the later instruction");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5207,6 +5350,9 @@ int main(void) {
     failures += test_phase71a_strict_root_ret_rejects_without_stack_read();
     failures += test_phase71_invalid_root_metadata_diagnostic();
     failures += test_phase71_called_helper_fallthrough_diagnostic();
+    failures += test_phase71c_empty_selected_entry_falls_off_code_end();
+    failures += test_phase71c_selected_entry_falloff_reports_code_end();
+    failures += test_phase71c_selected_entry_falls_through_to_later_procedure();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -5217,6 +5363,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71A root RET strictness coverage passed.");
+    puts("Executor tests through Phase 71C code-stream falloff coverage passed.");
     return 0;
 }

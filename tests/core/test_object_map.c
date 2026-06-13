@@ -672,6 +672,7 @@ static int test_runtime_behavior_is_unchanged(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR nums[1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     static const char *const_write_source =
@@ -681,6 +682,7 @@ static int test_runtime_behavior_is_unchanged(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     char unaligned_copy[TEST_JSON_COPY_CAPACITY];

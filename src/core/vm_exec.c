@@ -9,7 +9,8 @@
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
  * Phase 70 helper plain near RET, Phase 71 selected-entry root RET termination,
- * Phase 71 called non-entry procedure fallthrough diagnostics, and Irvine32 exit
+ * Phase 71 called non-entry procedure fallthrough diagnostics, Phase 71C
+ * code-stream end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
@@ -222,7 +223,7 @@ static void vm_exec_set_memory_diagnostic(
     }
 }
 
-/// Clears Phase 71 procedure-boundary and helper-return metadata.
+/// Clears root, helper-fallthrough, and code-falloff procedure metadata.
 ///
 /// @param vm VM instance to mutate. NULL is ignored.
 static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
@@ -262,7 +263,7 @@ static bool vm_exec_index_is_inside_procedure_boundary(const VmExecProcedureBoun
            instruction_index < boundary->end_instruction_index;
 }
 
-/// Returns whether Phase 71 root metadata is internally inconsistent.
+/// Returns whether selected-entry root metadata is internally inconsistent.
 ///
 /// @param vm VM instance containing selected-entry metadata.
 /// @return true when the selected-entry fields cannot identify one valid root boundary.
@@ -337,12 +338,16 @@ static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, siz
     return true;
 }
 
-/// Applies Phase 71 procedure-boundary fallthrough semantics after one committed step.
+/// Applies procedure-boundary fallthrough diagnostics after one committed step.
+///
+/// Phase 71C deliberately does not stop ordinary fallthrough at the selected
+/// entry procedure boundary. A CALL-reached helper procedure with a pending
+/// return token still reports the pre-existing helper fallthrough diagnostic.
 ///
 /// @param vm VM instance to inspect and possibly halt.
 /// @param instruction Instruction that just executed.
 /// @param before_ip Instruction pointer before execution.
-/// @return OK for normal continuation/successful root fallthrough, or a terminal diagnostic status.
+/// @return OK for normal continuation, or a terminal diagnostic status.
 static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstruction *instruction, size_t before_ip) {
     const VmExecProcedureBoundary *boundary = NULL;
 
@@ -356,7 +361,6 @@ static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstru
     }
 
     if (boundary->is_selected_entry) {
-        vm->halted = true;
         return VM_EXEC_STATUS_OK;
     }
     if (vm->active_helper_return_count > 0U) {
@@ -3861,19 +3865,23 @@ VmExecStatus vm_step(Vm *vm) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
-    vm_exec_clear_delta(&vm->last_delta);
-    vm_memory_clear_changes(&vm->memory);
     if (!vm_sync_display_eip(vm)) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
-    if (vm->halted || vm->instruction_pointer >= vm->program_count) {
-        vm->halted = true;
+    if (vm->halted) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_HALTED, NULL);
         return VM_EXEC_STATUS_HALTED;
     }
+    if (vm->instruction_pointer >= vm->program_count) {
+        const VmIrInstruction *falloff_instruction = vm->last_delta.has_instruction ? &vm->last_delta.instruction : NULL;
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_CODE_FELL_OFF_END, falloff_instruction);
+        return VM_EXEC_STATUS_CODE_FELL_OFF_END;
+    }
 
+    vm_exec_clear_delta(&vm->last_delta);
+    vm_memory_clear_changes(&vm->memory);
     instruction_pointer_before_step = vm->instruction_pointer;
     instruction = &vm->program[vm->instruction_pointer];
     before_cpu = vm->cpu;
@@ -3905,9 +3913,7 @@ VmExecStatus vm_step(Vm *vm) {
         vm_exec_set_diagnostic(vm, status, instruction);
         return status;
     }
-    if (vm->instruction_pointer >= vm->program_count) {
-        vm->halted = true;
-    } else if (!vm_sync_display_eip(vm)) {
+    if (vm->instruction_pointer < vm->program_count && !vm_sync_display_eip(vm)) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, instruction);
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
@@ -3963,6 +3969,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-return-address";
         case VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH:
             return "non-root-procedure-fell-through";
+        case VM_EXEC_STATUS_CODE_FELL_OFF_END:
+            return "code-fell-off-end";
         case VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE:
             return "root-ret-disallowed-by-mode";
         case VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE:
@@ -3996,7 +4004,19 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
             2U,
             "add eax, 22",
             1U
+        },
+        {
+            VM_IR_OPCODE_RET,
+            {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+            {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+            "milestone4.asm",
+            3U,
+            "ret",
+            2U
         }
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 3U, true, true}
     };
 
     if (out_eax == NULL) {
@@ -4009,6 +4029,9 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
     }
 
     status = vm_load_program(&vm, program, sizeof(program) / sizeof(program[0]));
+    if (status == VM_EXEC_STATUS_OK) {
+        status = vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0]));
+    }
     if (status == VM_EXEC_STATUS_OK) {
         while (!vm.halted && status == VM_EXEC_STATUS_OK) {
             status = vm_step(&vm);

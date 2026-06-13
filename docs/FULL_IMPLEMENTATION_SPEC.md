@@ -452,11 +452,11 @@ These directives affect source structure, symbol layout, procedure boundaries, a
 - a first executable instruction inside the procedure, if any;
 - an exclusive end boundary at the matching `ENDP`.
 
-`END entryName` selects the source-run entry procedure. After the corrective entry-boundary phase is implemented, source-run execution must start inside the procedure named by `END entryName`, not at the first lowered instruction in source order.
+`END entryName` selects the source-run entry procedure. Source-run execution starts inside the procedure named by `END entryName`, not at the first lowered instruction in source order. Once execution has started at the selected entry procedure's first executable slot, ordinary sequential execution follows the lowered VM code stream unless an explicit supported terminator or control transfer changes it.
 
-The simulator must not execute instructions that appear before the selected entry procedure merely because they are physically earlier in the file. It also must not fall through from the selected entry procedure into a later procedure merely because that later procedure is physically adjacent in the lowered IR stream.
+The simulator must not execute instructions that appear before the selected entry procedure merely because they are physically earlier in the file. It may execute later lowered instructions, including instructions in later procedure ranges, only when ordinary sequential VM code-stream fallthrough or an implemented explicit control-transfer path reaches those instructions.
 
-Multiple procedures may be accepted as structural declarations without implying automatic execution. Accepting multiple procedure declarations does not mean those procedures execute automatically. A non-entry procedure executes only when reached by an explicitly supported control-transfer feature, such as direct user-procedure CALL after Phase 69.
+Multiple procedures may be accepted as structural declarations without implying automatic execution before the selected entry point. Accepting multiple procedure declarations does not itself call them, return from them, create stack frames, or create hidden stops. A non-entry procedure executes when reached by ordinary VM code-stream fallthrough after the selected entry point or by an explicitly supported control-transfer feature, such as direct user-procedure CALL after Phase 69.
 
 `PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, parameters, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, stack-frame behavior, and calling-convention metadata.
 
@@ -464,7 +464,7 @@ This distinction is mandatory:
 
 - accepting a procedure declaration does not implement procedure calls;
 - selecting an entry procedure with `END entryName` does not implement `CALL`;
-- terminating at the selected entry procedure boundary does not implement `RET`;
+- crossing or reaching an `ENDP` boundary does not implement `RET` or an implicit program stop;
 - recognizing an Irvine32 routine name does not insert that name into the ordinary user procedure namespace.
 
 #### 8.1.1A Procedure Boundary Execution and Code-Stream Fallthrough
@@ -484,7 +484,7 @@ The simulator must distinguish these concepts:
 - **procedure fallthrough:** ordinary sequential execution crossing from one procedure range into another procedure range without an explicit supported control transfer or terminator such as `RET`, an implemented jump/branch transfer, or virtual Irvine32 `exit`;
 - **code-stream end falloff:** ordinary sequential execution reaching the end of the lowered executable code stream without an explicit supported program terminator.
 
-Ordinary sequential execution proceeds through the lowered executable code stream until it reaches an explicit supported terminator/control-transfer path or the end of executable code. Reaching the end of the executable code stream without an explicit supported program terminator is a simulator-owned runtime error. The owning implementation-guide phase for that behavior defines the diagnostic code, rendered message text, tests, and any compatibility notices required while the repository transitions from earlier educational selected-entry `ENDP` behavior.
+Ordinary sequential execution proceeds through the lowered executable code stream until it reaches an explicit supported terminator/control-transfer path or the end of executable code. Reaching the end of the executable code stream without an explicit supported program terminator is a simulator-owned runtime error reported as `code-fell-off-end`. Its rendered message is `Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?` The diagnostic is owned by the simulator and must not be described as a native MASM diagnostic, x86 CPU exception, PE-loader result, C-runtime behavior, Windows process behavior, or Irvine32 library diagnostic.
 
 Procedure-boundary fallthrough diagnostics and optional beginner compatibility settings are assigned by the implementation guide. The existence of procedure declarations, `ENDP`, `END`, direct `CALL`, helper `RET`, or root `RET` must not be used to infer hidden procedure stops, hidden native calls, hidden stack frames, native return-address behavior, PE loader behavior, Windows process teardown, C runtime startup behavior, or Irvine32 library behavior.
 
@@ -583,7 +583,7 @@ This setting is a compatibility convenience. It is not MASM/x86-like code-stream
 
 #### 8.1.1D Required `the-front-fell-off` Diagnostic Easter Egg
 
-The future implementation phase that introduces `code-fell-off-end` must also add one deliberately harmless notice-level diagnostic easter egg.
+The implementation phase that introduces `code-fell-off-end` also adds one deliberately harmless notice-level diagnostic easter egg.
 
 It must obey all of these rules:
 
@@ -3534,7 +3534,7 @@ CALL, RET, USES, LOCAL, LEAVE, RET imm16, PROTO, INVOKE, ADDR, Irvine32 routine 
 
 The required staging is:
 
-1. **Entry procedure boundary correction.** `END entryName` selects the source-run entry procedure, execution starts inside that selected procedure, and ordinary fallthrough at that selected procedure's `ENDP` terminates successfully. Helper procedures before or after the selected entry procedure must not execute merely because they appear earlier or later in source order.
+1. **Entry procedure boundary and code-stream correction.** `END entryName` selects the source-run entry procedure, execution starts inside that selected procedure, ordinary VM code-stream fallthrough may continue across later procedure boundaries, and reaching the end of the executable code stream without an explicit supported terminator reports `code-fell-off-end`. Helper procedures before the selected entry procedure must not execute merely because they appear earlier in source order; helper procedures after the selected entry procedure execute only when control reaches them by ordinary VM fallthrough or implemented explicit control transfer.
 
 2. **Procedure target metadata.** User procedure entries, ordinary executable code labels, data symbols, numeric equates, reserved words, recognized Irvine32 registry entries, external/API/linker non-goal names, malformed target expressions, and unknown symbols are classified separately. This metadata supports later CALL and INVOKE phases but does not itself execute CALL, RET, INVOKE, stack mutation, root return, Irvine32 routine dispatch, or procedure-frame behavior.
 

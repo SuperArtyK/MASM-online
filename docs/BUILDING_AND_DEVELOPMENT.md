@@ -13,13 +13,13 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup
+- Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71A - Optional Root RET Strictness Mode
+- Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
 
-Phase 71B2 is documentation and static-check cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
+Phase 71C advances runtime/source-run MASM behavior. Selected-entry `ENDP` is no longer an implicit successful terminator; ordinary VM code-stream fallthrough can continue into later lowered executable instructions, and reaching the end of the executable stream without explicit `RET` or Irvine32 `exit` reports `code-fell-off-end`.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 
@@ -33,7 +33,7 @@ Browser/Wasm artifact verification has separate levels:
 
 2. **Checked-in artifact-content verification**
 
-   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-71b-source-run-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
+   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-71c-code-stream-falloff-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
 
 3. **Emscripten rebuild verification**
 
@@ -357,7 +357,7 @@ Browser/Wasm artifact compatibility verified through the documented output-contr
 The C source-run JSON field is `sourceRunOutputContract`. Its value is a source-run output-contract version token for the public source-run JSON shape, ordering, serialization, and protocol interpretation. A token may include the milestone in which that output contract was introduced. For example:
 
 ```text
-phase-71b-source-run-output-contract-v1
+phase-71c-code-stream-falloff-output-contract-v1
 ```
 
 The example above is both the token expected by this source tree and an example of the naming convention. A phase-looking prefix in such a token is contract-version naming from the phase that introduced that specific output contract. It is not a separate repository/runtime status field or an absolute value that future output-contract-changing phases must keep.

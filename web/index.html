@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 71B2: Source-of-Truth Role Separation and Stale Milestone Context Cleanup.
+  Milestone 71C: Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 71B2: Source-of-Truth Role Separation and Stale Milestone Context Cleanup</p>
+        <p class="muted">Milestone 71C: Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -28,7 +28,7 @@ value DWORD 7
 main PROC
     call Helper       ; Writes pseudo-EIP return token at ESP - 4
     mov eax, ebx      ; Runs after Helper returns with RET
-    ret               ; Root RET completes by default; strict mode reports a teaching diagnostic
+    ret               ; Explicit terminator; remove this RET to see code-fell-off-end
 main ENDP
 
 Helper PROC

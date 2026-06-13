@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup |
-| Runtime/source-run MASM behavior phase | Phase 71A - Optional Root RET Strictness Mode |
+| Current milestone | Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic |
+| Runtime/source-run MASM behavior phase | Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic |
 
-Phase 71B2 is documentation and static-check cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
+Phase 71C advances runtime/source-run MASM behavior. Selected-entry `ENDP` is no longer an implicit successful terminator; ordinary VM code-stream fallthrough can continue into later lowered executable instructions, and reaching the end of the executable stream without explicit `RET` or Irvine32 `exit` reports `code-fell-off-end`.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -35,8 +35,10 @@ At a high level, the current subset includes:
 - plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer;
 - selected-entry root `ret`/`RET` success by default without stack reads when no helper return is pending;
 - optional `rootRetMode = "strict-call-frame"` teaching mode, which rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`;
-- `non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`;
-- successful completion at the selected entry procedure's `ENDP` boundary;
+- `non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET` while a helper return token is pending;
+- baseline VM code-stream fallthrough across procedure boundaries when execution reaches later lowered instructions without an explicit terminator or transfer;
+- `code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`;
+- `the-front-fell-off` notice diagnostics after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison;
 - procedure-entry and call-target classification metadata for parser/tests;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
