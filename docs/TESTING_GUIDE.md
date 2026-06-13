@@ -6,13 +6,13 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
+- Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
+Phase 71B2 is documentation and static-check cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
 
 

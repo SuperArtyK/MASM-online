@@ -5452,9 +5452,9 @@ The warning explains that the simulator accepts the declaration for compatibilit
 
 ### 20A.6 `.CODE` Memory Access Policy
 
-This section defines the implemented v1 `.code` memory-access policy after Phase 57L - .CODE Memory Access Diagnostics. Phase 57K - .CODE and MASM Segment Symbol Access Policy owns the policy audit and source-of-truth cleanup for `.code` access behavior. Phase 57L owns and implements runtime/source-run `.code` read/write denial diagnostics.
+This section defines the implemented v1 `.code` memory-access policy. The historical Phase 57K policy audit and Phase 57L implementation milestone are provenance for this behavior, but the policy below is stated as stable product behavior rather than active milestone status.
 
-Phase 57L implementation result for the current VM memory layer and source-run path:
+Implemented VM memory-layer and source-run behavior:
 
 - fixed-layout `.code` base: `00400000h`;
 - fixed-layout `.code` capacity: `00100000h` bytes;
@@ -5470,7 +5470,7 @@ The simulator has a `.code` source section and may have parser, IR, source-locat
 
 In MASM32 Educational Mode, `.code` is an internal source/IR execution area, not a modeled PE `.text` byte image and not a region of user-addressable opcode bytes.
 
-Implemented v1 policy after Phase 57L:
+Implemented v1 policy:
 
 ```text
 unsupported-code-memory-access
@@ -5528,16 +5528,16 @@ When a single source-level memory access is not wholly contained in one VM memor
 region-boundary-crossing
 ```
 
-For current `.CONST` behavior:
+For implemented `.CONST` behavior:
 
 - a cross-region read or write whose requested range intersects `.CONST` reports `region-boundary-crossing`;
 - a direct or wholly-contained write overlapping `.CONST` reports `permission-denied`;
 - a wholly-contained read from `.CONST` is allowed unless another mandatory or enabled strict validation rejects it;
 - a cross-region read intersecting `.CONST` must not be described as a general `.CONST` read prohibition.
 
-For current Phase 57L `.code` memory-access-denial behavior:
+For implemented `.code` memory-access-denial behavior:
 
-- a wholly-contained read or write overlapping `.code` reports the `.code` memory-access diagnostic selected by Phase 57L;
+- a wholly-contained read or write overlapping `.code` reports `unsupported-code-memory-access`;
 - a cross-region access that intersects `.code` must use `region-boundary-crossing` if runtime layout metadata can identify `.code` as the protected region involved;
 - the rendered message must use the runtime `.code` base address from active layout metadata, not a hardcoded fixed-layout address, and should identify the no-access `.CODE/_TEXT` region without making `_TEXT` an addressable symbol alias.
 

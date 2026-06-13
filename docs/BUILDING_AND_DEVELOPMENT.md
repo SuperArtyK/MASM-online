@@ -13,13 +13,13 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight
+- Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71A - Optional Root RET Strictness Mode
 
-Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
+Phase 71B2 is documentation and static-check cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 

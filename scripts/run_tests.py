@@ -1684,8 +1684,71 @@ def assert_live_text_avoids_milestone_relative_wording() -> None:
         raise TestFailure("live milestone-relative wording found:\n" + "\n".join(violations))
 
 
+def assert_phase71b2_stale_milestone_context_checks() -> None:
+    """Verify active documentation avoids stale milestone-context wording.
+
+    Phase 71B2 intentionally rejects a narrow set of active-source phrases
+    that imply a source-of-truth document owns current milestone status or
+    next-phase selection. Historical reports, quoted anti-pattern examples,
+    and the guard lists used by this check remain allowed.
+    """
+
+    forbidden_patterns = [
+        re.compile(r"As of the source-of-truth revision after Phase", re.IGNORECASE),
+        re.compile(r"next canonical guide phase is Phase", re.IGNORECASE),
+        re.compile(r"Current behavior through Phase", re.IGNORECASE),
+        re.compile(r"Current Phase\s+\d+[A-Za-z0-9]*\s+behavior", re.IGNORECASE),
+        re.compile(r"current Phase\s+\d+[A-Za-z0-9]*\s+repository state", re.IGNORECASE),
+        re.compile(r"current behavior through Phase", re.IGNORECASE),
+        re.compile(r"\bas of Phase\s+\d+[A-Za-z0-9]*\b", re.IGNORECASE),
+    ]
+    scanned_paths = [
+        ROOT / "README.md",
+        ROOT / "docs" / "FULL_IMPLEMENTATION_SPEC.md",
+        ROOT / "docs" / "INCREMENTAL_IMPLEMENTATION_GUIDE.md",
+        ROOT / "docs" / "SUPPORTED_SYNTAX.md",
+        ROOT / "docs" / "TESTING_GUIDE.md",
+        ROOT / "docs" / "BUILDING_AND_DEVELOPMENT.md",
+        ROOT / "docs" / "MILESTONE_HISTORY.md",
+        ROOT / "web" / "index.html",
+    ]
+    allowed_context_fragments = [
+        "Do not use this style:",
+        "Do not use broad phrases such as",
+        "Remove stale-prone active wording such as",
+        "The minimum rejected active-source patterns are:",
+        "minimum phrases to scan are:",
+    ]
+    allowed_literal_lines = {
+        "As of the source-of-truth revision after Phase",
+        "next canonical guide phase is Phase",
+        "Current behavior through Phase",
+        "Current Phase <N> behavior",
+        "current behavior through Phase",
+        "as of Phase <N>",
+        "Current behavior through Phase 71A treats selected-entry ENDP fallthrough as successful program completion. Phase 71C changes that default.",
+        "Do not use broad phrases such as `current behavior through Phase <N>`, `currently unsupported by Phase <N>`, `not supported by the current milestone`, or `as of the source-of-truth revision after Phase <N>` in active source-of-truth sections. Such phrases may appear in historical reports, quoted anti-pattern examples, or explicitly historical changelog text.",
+    }
+    violations = []
+    for path in scanned_paths:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        relative_path = path.relative_to(ROOT)
+        for line_number, line in enumerate(lines, start=1):
+            stripped = line.strip().strip("`- ")
+            if stripped in allowed_literal_lines:
+                continue
+            if any(fragment in line for fragment in allowed_context_fragments):
+                continue
+            for pattern in forbidden_patterns:
+                if pattern.search(line):
+                    violations.append(f"{relative_path}:{line_number}: {pattern.pattern}")
+                    break
+    if violations:
+        raise TestFailure("stale active milestone-context wording found:\n" + "\n".join(violations))
+
+
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71B1 status, concise status surfaces, and planned fallthrough wording."""
+    """Verify Phase 71B2 status, concise status surfaces, and planned fallthrough wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1705,11 +1768,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "Runtime/source-run MASM behavior phase",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B1 is test-runner subgroup cleanup only",
+            "Phase 71B2 is documentation and static-check cleanup only",
             "implemented runtime features",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
@@ -1773,11 +1836,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B1 is test-runner subgroup cleanup only",
+            "Phase 71B2 is documentation and static-check cleanup only",
             "implemented runtime features",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
@@ -1827,7 +1890,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Current milestone:",
             "Runtime/source-run MASM behavior phase:",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
-            "Phase 71B1 is test-runner subgroup cleanup only",
+            "Phase 71B2 is documentation and static-check cleanup only",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
@@ -1873,7 +1936,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "phase-71b-source-run-output-contract-v1",
@@ -1885,6 +1948,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
+            "## Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
+            "Phase 71B2 is complete as documentation and static-check cleanup only.",
+            "## Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "## Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "## Phase 71A - Optional Root RET Strictness Mode",
             "## Phase 70 - RET Execution and Return Address Validation",
@@ -1985,6 +2051,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "## 75A1. Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "## 75B. Phase 71B - User-Facing Diagnostic Milestone-Wording Cleanup",
             "## 75B1. Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "## 75B2. Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "## 75C. Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
             "## 75D. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
@@ -2022,11 +2089,11 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
+            "Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71A - Optional Root RET Strictness Mode",
             "latest runtime/source-run MASM behavior remains Phase 71A",
-            "Phase 71B1 adds official source-run and native test subgroups",
+            "Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks",
             "tests must prove:",
             "selected-entry root RET default success does not read `[ESP]`",
             "static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted",
@@ -2044,7 +2111,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71B1: Source-Run and Native Control-Flow Subgroup Preflight",
+            "Milestone 71B2: Source-of-Truth Role Separation and Stale Milestone Context Cleanup",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
@@ -2660,6 +2727,7 @@ def run_static_tests() -> None:
     assert_diagnostic_subgroup_inventory_union()
     assert_subgroup_failure_reporting_contract()
     assert_live_text_avoids_milestone_relative_wording()
+    assert_phase71b2_stale_milestone_context_checks()
     assert_phase71_current_status_and_harness_documented()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()

@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight |
+| Current milestone | Phase 71B2 - Source-of-Truth Role Separation and Stale Milestone Context Cleanup |
 | Runtime/source-run MASM behavior phase | Phase 71A - Optional Root RET Strictness Mode |
 
-Phase 71B1 is test-runner subgroup cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B1 adds official source-run and native test subgroups without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
+Phase 71B2 is documentation and static-check cleanup only. The latest runtime/source-run MASM behavior remains Phase 71A because Phase 71B2 changes source-of-truth role separation, stale-context wording, compact status surfaces, and static documentation checks without changing accepted MASM syntax, VM execution behavior, source-run success/failure behavior, diagnostic behavior, or implemented runtime features.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
