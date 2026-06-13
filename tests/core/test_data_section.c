@@ -1550,6 +1550,7 @@ static int test_all_gpr_register_indirect_bases_source_run(void) {
         "    mov DWORD PTR [ebp + 24], 70\n"
         "    mov DWORD PTR [esp + 28], 80\n"
         "    mov eax, DWORD PTR [esp + 28]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1575,6 +1576,7 @@ static int test_symbol_register_memory_forms_execute(void) {
         "    mov esi, 8\n"
         "    mov DWORD PTR nums[esi], 100\n"
         "    mov eax, DWORD PTR [nums + esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1627,6 +1629,7 @@ static int test_register_indirect_runtime_error_path(void) {
         "main PROC\n"
         "    mov esi, 0\n"
         "    mov eax, DWORD PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1656,6 +1659,7 @@ static int test_unaligned_register_indirect_reports_warning(void) {
         "    mov esi, OFFSET nums\n"
         "    mov DWORD PTR [esi + 9], 100\n"
         "    mov eax, DWORD PTR [esi + 9]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1715,6 +1719,7 @@ static int test_wasm_json_reports_ptr_width_memory_changes(void) {
         "main PROC\n"
         "    mov BYTE PTR nums[3], 100\n"
         "    mov WORD PTR nums[5], 1234h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1740,6 +1745,7 @@ static int test_wasm_json_reports_symbolic_memory_change(void) {
         ".code\n"
         "main PROC\n"
         "    mov var, 100\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1939,6 +1945,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "    mov al, SBYTE PTR b\n"
         "    mov bx, SWORD PTR w\n"
         "    mov ecx, SDWORD PTR d\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1959,6 +1966,7 @@ static int test_signed_ptr_width_aliases_source_run_programs(void) {
         "    mov esi, OFFSET buf\n"
         "    mov SBYTE PTR [esi], -1\n"
         "    mov al, BYTE PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2113,7 +2121,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         while (exec_status == VM_EXEC_STATUS_OK && !vm.halted) {
             exec_status = vm_step(&vm);
         }
-        failures += expect_exec_status(exec_status, VM_EXEC_STATUS_OK, "additional data program should execute");
+        failures += expect_exec_status(exec_status, VM_EXEC_STATUS_CODE_FELL_OFF_END, "additional data program should report Phase 71C code-end falloff after executing accepted instructions");
         (void)vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax);
         (void)vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx);
         failures += expect_u32(eax, 16U, "SIZEOF .DATA? buffer should be 16");
@@ -2132,6 +2140,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         ".code\n"
         "main PROC\n"
         "    mov limit, 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2144,6 +2153,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         ".code\n"
         "main PROC\n"
         "    mov BYTE PTR limit[0], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2155,6 +2165,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         ".code\n"
         "main PROC\n"
         "    mov DWORD PTR [limit], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2167,6 +2178,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "main PROC\n"
         "    mov eax, 20\n"
         "    xchg eax, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2178,6 +2190,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         ".code\n"
         "main PROC\n"
         "    add limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2189,6 +2202,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         ".code\n"
         "main PROC\n"
         "    neg limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2201,6 +2215,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2215,6 +2230,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov BYTE PTR [eax + 3], 0FFh\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2227,6 +2243,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax - 1], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2240,6 +2257,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "buf DWORD 5\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2251,6 +2269,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "buf BYTE ?, 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2267,11 +2286,12 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "    mov eax, limit\n"
         "    mov bl, buf\n"
         "    mov cx, words\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
-    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"A\"", ".CONST uninitialized source-run should report the current runtime phase suffix");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"C\"", ".CONST uninitialized source-run should report the current runtime phase suffix");
     failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
     failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
     failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");
@@ -2328,6 +2348,7 @@ static int test_phase28_numeric_equates_and_constant_expressions_regression(void
         "main PROC\n"
         "    mov eax, COUNT + EXTRA\n"
         "    mov ebx, SIZEOF arr\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2353,6 +2374,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
         "GREETING EQU <Hello>\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2364,6 +2386,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
         "COUNT EQU COUNT + 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2374,6 +2397,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
         "COUNT EQU MISSING + 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2385,6 +2409,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, OFFSET COUNT\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2395,6 +2420,7 @@ static int test_phase29_expression_and_equate_error_paths(void) {
         "COUNT = 4 EQ 2\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2489,6 +2515,7 @@ static int test_phase29_extended_constant_expressions(void) {
         "    mov eax, COUNT\n"
         "    mov ebx, MASK\n"
         "    mov ecx, LOWWORD 12345678h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2539,6 +2566,7 @@ static int test_phase30_nested_dup_acceptance_program(void) {
         "main PROC\n"
         "    mov eax, LENGTHOF matrix\n"
         "    mov ebx, SIZEOF matrix\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2757,6 +2785,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, BAD\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2769,6 +2798,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         "COUNT = 4 MOD 0\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2779,6 +2809,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         "COUNT = 1 SHL 64\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2789,6 +2820,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         "COUNT = 1 EQ 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2800,6 +2832,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, eax EQ ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2812,6 +2845,7 @@ static int test_phase29_extended_expression_error_paths(void) {
         "COUNT = eax + 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2860,6 +2894,7 @@ static int test_signed_ptr_width_alias_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, SQWORD PTR q\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );

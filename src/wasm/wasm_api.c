@@ -17,7 +17,8 @@
  * Phase 68B displayed EIP pseudo-code-address control state, Phase 70
  * helper RET execution, Phase 71 root RET termination and non-entry
  * fallthrough diagnostics, Phase 71A optional strict selected-entry root
- * RET diagnostics, and recovered unsupported-feature diagnostics, then
+ * RET diagnostics, Phase 71C code-stream fallthrough and code-end
+ * diagnostics, and recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -82,14 +83,14 @@
 /// Numeric runtime/source-run behavior phase retained for backward-compatible JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 71U
 
-/// Suffix for the current Phase 71A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
+/// Suffix for the current Phase 71C runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "C"
 
-/// Full name of the current Phase 71A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71A - Optional Root RET Strictness Mode"
+/// Full name of the current Phase 71C runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 71B diagnostic wording.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71b-source-run-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 71C code-end diagnostics.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71c-code-stream-falloff-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -799,7 +800,7 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
     }
 }
 
-/// Appends one simulator message object to a JSON writer with optional source span metadata.
+/// Appends one simulator message object with optional source span and procedure metadata.
 ///
 /// @param writer Writer to mutate.
 /// @param kind Diagnostic category string.
@@ -810,8 +811,9 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
 /// @param byte_offset Zero-based source byte offset when @p has_source_span is true.
 /// @param span_length Source span length in bytes when @p has_source_span is true.
 /// @param has_source_span Whether byte-offset and span-length fields should be emitted.
+/// @param procedure_name Optional responsible procedure name to serialize.
 /// @return true when the message fit without overflowing the buffer.
-static bool masm32_sim_json_append_message_with_span(
+static bool masm32_sim_json_append_message_with_span_and_procedure(
     Masm32SimJsonWriter *writer,
     const char *kind,
     const char *code,
@@ -820,7 +822,8 @@ static bool masm32_sim_json_append_message_with_span(
     uint32_t column,
     size_t byte_offset,
     size_t span_length,
-    bool has_source_span
+    bool has_source_span,
+    const char *procedure_name
 ) {
     if (!masm32_sim_json_append(writer, "{\"kind\":")) {
         return false;
@@ -858,8 +861,53 @@ static bool masm32_sim_json_append_message_with_span(
             return false;
         }
     }
+    if (procedure_name != NULL && procedure_name[0] != '\0') {
+        if (!masm32_sim_json_append(writer, ",\"procedure\":")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, procedure_name)) {
+            return false;
+        }
+    }
 
     return masm32_sim_json_append(writer, "}");
+}
+
+/// Appends one simulator message object to a JSON writer with optional source span metadata.
+///
+/// @param writer Writer to mutate.
+/// @param kind Diagnostic category string.
+/// @param code Stable diagnostic code string.
+/// @param message Human-readable diagnostic summary.
+/// @param line One-based source line, or 0 when not available.
+/// @param column One-based source column, or 0 when not available.
+/// @param byte_offset Zero-based source byte offset when @p has_source_span is true.
+/// @param span_length Source span length in bytes when @p has_source_span is true.
+/// @param has_source_span Whether byte-offset and span-length fields should be emitted.
+/// @return true when the message fit without overflowing the buffer.
+static bool masm32_sim_json_append_message_with_span(
+    Masm32SimJsonWriter *writer,
+    const char *kind,
+    const char *code,
+    const char *message,
+    uint32_t line,
+    uint32_t column,
+    size_t byte_offset,
+    size_t span_length,
+    bool has_source_span
+) {
+    return masm32_sim_json_append_message_with_span_and_procedure(
+        writer,
+        kind,
+        code,
+        message,
+        line,
+        column,
+        byte_offset,
+        span_length,
+        has_source_span,
+        NULL
+    );
 }
 
 /// Appends one simulator message object to a JSON writer without source span metadata.
@@ -5414,6 +5462,183 @@ static const char *masm32_sim_wasm_format_memory_error_message(
     return memory_status_name;
 }
 
+/// Returns whether two ASCII strings match case-insensitively.
+///
+/// This helper is intentionally local to source-run diagnostics so the Phase
+/// 71C easter-egg comparison cannot affect ordinary symbol lookup, CASEMAP,
+/// duplicate-name checks, or parser behavior.
+///
+/// @param actual Candidate source spelling.
+/// @param expected Lowercase ASCII spelling to compare against.
+/// @return true when both strings have the same length and ASCII letters match ignoring case.
+static bool masm32_sim_wasm_ascii_equals_ignore_case(const char *actual, const char *expected) {
+    size_t index = 0U;
+
+    if (actual == NULL || expected == NULL) {
+        return false;
+    }
+
+    while (actual[index] != '\0' && expected[index] != '\0') {
+        unsigned char actual_char = (unsigned char)actual[index];
+        unsigned char expected_char = (unsigned char)expected[index];
+        if (actual_char >= (unsigned char)'A' && actual_char <= (unsigned char)'Z') {
+            actual_char = (unsigned char)(actual_char - (unsigned char)'A' + (unsigned char)'a');
+        }
+        if (expected_char >= (unsigned char)'A' && expected_char <= (unsigned char)'Z') {
+            expected_char = (unsigned char)(expected_char - (unsigned char)'A' + (unsigned char)'a');
+        }
+        if (actual_char != expected_char) {
+            return false;
+        }
+        index += 1U;
+    }
+
+    return actual[index] == '\0' && expected[index] == '\0';
+}
+
+/// Finds the accepted procedure range containing a lowered instruction index.
+///
+/// @param parser_result Parser result containing the procedure count.
+/// @param storage Source-run storage containing procedure ranges copied from the parser.
+/// @param instruction_index Lowered executable instruction index to classify.
+/// @return Containing procedure range, or NULL when none contains the instruction.
+static const VmProcedureRange *masm32_sim_wasm_find_procedure_for_instruction(
+    const VmParserResult *parser_result,
+    const Masm32SimWasmRunStorage *storage,
+    size_t instruction_index
+) {
+    size_t index = 0U;
+
+    if (parser_result == NULL || storage == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < parser_result->procedure_range_count; index += 1U) {
+        const VmProcedureRange *range = &storage->procedure_ranges[index];
+        if (instruction_index >= range->start_instruction_index && instruction_index < range->end_instruction_index) {
+            return range;
+        }
+    }
+
+    return NULL;
+}
+
+/// Determines the Phase 71C responsible procedure for a code-end falloff.
+///
+/// The rule mirrors the implementation-guide contract: use the procedure that
+/// contains the last executed lowered instruction when one exists; otherwise use
+/// the selected entry procedure for an empty-entry/no-successor falloff. Future
+/// top-level executable code may legitimately return NULL instead of inventing a
+/// fake procedure.
+///
+/// @param vm VM whose instruction count and last diagnostic describe the falloff.
+/// @param parser_result Parser result containing selected-entry metadata.
+/// @param storage Source-run storage containing accepted procedure ranges.
+/// @return Responsible procedure range, or NULL when no procedure owns it.
+static const VmProcedureRange *masm32_sim_wasm_code_falloff_responsible_procedure(
+    const Vm *vm,
+    const VmParserResult *parser_result,
+    const Masm32SimWasmRunStorage *storage
+) {
+    const VmExecDiagnostic *diagnostic = vm != NULL ? vm_last_diagnostic(vm) : NULL;
+
+    if (diagnostic != NULL && diagnostic->has_instruction) {
+        const VmProcedureRange *range = masm32_sim_wasm_find_procedure_for_instruction(
+            parser_result,
+            storage,
+            (size_t)diagnostic->instruction_index
+        );
+        if (range != NULL) {
+            return range;
+        }
+    }
+
+    if (vm != NULL && vm->instruction_count == 0U &&
+        parser_result != NULL && parser_result->has_selected_entry_procedure &&
+        storage != NULL && parser_result->selected_entry_procedure_index < parser_result->procedure_range_count) {
+        return &storage->procedure_ranges[parser_result->selected_entry_procedure_index];
+    }
+
+    return NULL;
+}
+
+/// Appends the Phase 71C code-end falloff diagnostic and optional notice.
+///
+/// @param writer Writer to mutate.
+/// @param vm VM whose last diagnostic and register state describe the falloff.
+/// @param parser_result Parser result containing procedure metadata.
+/// @param storage Source-run storage containing source text and procedure ranges.
+/// @return true when both required messages fit without overflowing the buffer.
+static bool masm32_sim_json_append_code_fell_off_end_messages(
+    Masm32SimJsonWriter *writer,
+    const Vm *vm,
+    const VmParserResult *parser_result,
+    const Masm32SimWasmRunStorage *storage
+) {
+    const char *message_text = "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?";
+    const VmExecDiagnostic *diagnostic = vm != NULL ? vm_last_diagnostic(vm) : NULL;
+    const VmProcedureRange *responsible = masm32_sim_wasm_code_falloff_responsible_procedure(vm, parser_result, storage);
+    const char *procedure_name = responsible != NULL ? responsible->name : NULL;
+    uint32_t line = 0U;
+    uint32_t column = 0U;
+    size_t byte_offset = 0U;
+    size_t span_length = 0U;
+    bool has_source_span = false;
+
+    if (diagnostic != NULL && diagnostic->has_instruction) {
+        line = diagnostic->instruction.source_line;
+        masm32_sim_wasm_copy_instruction_source_span(
+            &diagnostic->instruction,
+            storage != NULL ? storage->source_text : NULL,
+            &column,
+            &byte_offset,
+            &span_length,
+            &has_source_span
+        );
+    } else if (responsible != NULL) {
+        line = responsible->source_location.line;
+        column = responsible->source_location.column;
+        byte_offset = responsible->source_location.offset;
+        span_length = responsible->source_span_length;
+        has_source_span = span_length > 0U;
+    }
+
+    if (!masm32_sim_json_append_message_with_span_and_procedure(
+            writer,
+            "runtime-error",
+            "code-fell-off-end",
+            message_text,
+            line,
+            column,
+            byte_offset,
+            span_length,
+            has_source_span,
+            procedure_name
+        )) {
+        return false;
+    }
+
+    if (masm32_sim_wasm_ascii_equals_ignore_case(procedure_name, "front")) {
+        if (!masm32_sim_json_append(writer, ",")) {
+            return false;
+        }
+        return masm32_sim_json_append_message_with_span_and_procedure(
+            writer,
+            "simulator-notice",
+            "the-front-fell-off",
+            "that's not very typical, I'd like to make that point",
+            line,
+            column,
+            byte_offset,
+            span_length,
+            has_source_span,
+            procedure_name
+        );
+    }
+
+    return true;
+}
+
 /// Appends an executor diagnostic to the simulatorMessages array.
 ///
 /// @param writer Writer to mutate.
@@ -5461,6 +5686,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
                    status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_INVALID_CALL_TARGET ||
                    status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS ||
                    status == VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH ||
+                   status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
                    status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE ||
                    status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
@@ -5504,6 +5730,9 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     } else if (status == VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH) {
         message_code = "non-root-procedure-fell-through";
         message_text = "A called non-entry procedure reached its ENDP boundary without RET. Execution stopped before treating helper fallthrough as program completion.";
+    } else if (status == VM_EXEC_STATUS_CODE_FELL_OFF_END) {
+        message_code = "code-fell-off-end";
+        message_text = "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?";
     } else if (status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE) {
         message_code = "root-ret-disallowed-by-mode";
         message_text = "RET cannot return from the selected entry procedure because no caller supplied a return address. Use the simulator's MASM32-compatible root RET mode, or terminate explicitly with the supported Irvine32 exit routine.";
@@ -5931,7 +6160,9 @@ static const char *masm32_sim_wasm_build_run_json(
         if (has_message) {
             (void)masm32_sim_json_append(&writer, ",");
         }
-        if (storage != NULL && storage->has_section_violation) {
+        if (exec_status == VM_EXEC_STATUS_CODE_FELL_OFF_END) {
+            (void)masm32_sim_json_append_code_fell_off_end_messages(&writer, vm, parser_result, storage);
+        } else if (storage != NULL && storage->has_section_violation) {
             (void)masm32_sim_json_append_section_violation(&writer, &storage->section_violation);
         } else if (storage != NULL && storage->has_object_violation) {
             (void)masm32_sim_json_append_object_violation(&writer, &storage->object_violation);
@@ -6502,152 +6733,6 @@ static VmExecStatus masm32_sim_wasm_validate_instruction_limit_before_step(
     return VM_EXEC_STATUS_INSTRUCTION_LIMIT_EXCEEDED;
 }
 
-/// Returns whether an opcode is an implemented conditional direct branch.
-///
-/// @param opcode Opcode to inspect.
-/// @return true for implemented equality, signed relational, and unsigned relational Jcc opcodes.
-static bool masm32_sim_wasm_opcode_is_conditional_jump(VmIrOpcode opcode) {
-    switch (opcode) {
-        case VM_IR_OPCODE_JE:
-        case VM_IR_OPCODE_JZ:
-        case VM_IR_OPCODE_JNE:
-        case VM_IR_OPCODE_JNZ:
-        case VM_IR_OPCODE_JL:
-        case VM_IR_OPCODE_JNGE:
-        case VM_IR_OPCODE_JLE:
-        case VM_IR_OPCODE_JNG:
-        case VM_IR_OPCODE_JG:
-        case VM_IR_OPCODE_JNLE:
-        case VM_IR_OPCODE_JGE:
-        case VM_IR_OPCODE_JNL:
-        case VM_IR_OPCODE_JA:
-        case VM_IR_OPCODE_JNBE:
-        case VM_IR_OPCODE_JAE:
-        case VM_IR_OPCODE_JNB:
-        case VM_IR_OPCODE_JB:
-        case VM_IR_OPCODE_JNAE:
-        case VM_IR_OPCODE_JBE:
-        case VM_IR_OPCODE_JNA:
-            return true;
-        default:
-            return false;
-    }
-}
-
-/// Evaluates whether an implemented conditional branch opcode is taken.
-///
-/// The VM has already run the undefined-flag-use policy before this helper is
-/// called. Branch instructions do not mutate modeled flags, so reading the
-/// post-step CPU flags gives the same decision that @ref vm_step used.
-///
-/// @param cpu CPU state containing modeled flag bits.
-/// @param opcode Conditional branch opcode to evaluate.
-/// @param out_taken Receives the branch decision.
-/// @return true when the opcode and flag reads were valid.
-static bool masm32_sim_wasm_conditional_jump_taken(const VmCpu *cpu, VmIrOpcode opcode, bool *out_taken) {
-    bool cf = false;
-    bool zf = false;
-    bool sf = false;
-    bool of = false;
-
-    if (cpu == NULL || out_taken == NULL || !masm32_sim_wasm_opcode_is_conditional_jump(opcode)) {
-        return false;
-    }
-    if (!vm_cpu_read_flag(cpu, VM_FLAG_CF, &cf) ||
-        !vm_cpu_read_flag(cpu, VM_FLAG_ZF, &zf) ||
-        !vm_cpu_read_flag(cpu, VM_FLAG_SF, &sf) ||
-        !vm_cpu_read_flag(cpu, VM_FLAG_OF, &of)) {
-        return false;
-    }
-
-    switch (opcode) {
-        case VM_IR_OPCODE_JE:
-        case VM_IR_OPCODE_JZ:
-            *out_taken = zf;
-            return true;
-        case VM_IR_OPCODE_JNE:
-        case VM_IR_OPCODE_JNZ:
-            *out_taken = !zf;
-            return true;
-        case VM_IR_OPCODE_JL:
-        case VM_IR_OPCODE_JNGE:
-            *out_taken = sf != of;
-            return true;
-        case VM_IR_OPCODE_JLE:
-        case VM_IR_OPCODE_JNG:
-            *out_taken = zf || (sf != of);
-            return true;
-        case VM_IR_OPCODE_JG:
-        case VM_IR_OPCODE_JNLE:
-            *out_taken = !zf && (sf == of);
-            return true;
-        case VM_IR_OPCODE_JGE:
-        case VM_IR_OPCODE_JNL:
-            *out_taken = sf == of;
-            return true;
-        case VM_IR_OPCODE_JA:
-        case VM_IR_OPCODE_JNBE:
-            *out_taken = !cf && !zf;
-            return true;
-        case VM_IR_OPCODE_JAE:
-        case VM_IR_OPCODE_JNB:
-            *out_taken = !cf;
-            return true;
-        case VM_IR_OPCODE_JB:
-        case VM_IR_OPCODE_JNAE:
-            *out_taken = cf;
-            return true;
-        case VM_IR_OPCODE_JBE:
-        case VM_IR_OPCODE_JNA:
-            *out_taken = cf || zf;
-            return true;
-        default:
-            return false;
-    }
-}
-
-/// Returns whether a completed step reached the selected entry boundary by ordinary fallthrough.
-///
-/// @param parser_result Parser result containing selected-entry procedure bounds.
-/// @param instruction Instruction that just executed.
-/// @param before_ip Instruction pointer before the step.
-/// @param after_ip Instruction pointer after the step.
-/// @param cpu CPU state after the step, used only to distinguish taken and non-taken Jcc.
-/// @return true when source-run should halt successfully at the selected `ENDP` boundary.
-static bool masm32_sim_wasm_reached_selected_entry_boundary_by_fallthrough(
-    const VmParserResult *parser_result,
-    const VmIrInstruction *instruction,
-    size_t before_ip,
-    size_t after_ip,
-    const VmCpu *cpu
-) {
-    size_t start_index = 0U;
-    size_t end_index = 0U;
-
-    if (parser_result == NULL || instruction == NULL || !parser_result->has_selected_entry_procedure) {
-        return false;
-    }
-
-    start_index = parser_result->selected_entry_start_instruction_index;
-    end_index = parser_result->selected_entry_end_instruction_index;
-    if (before_ip < start_index || before_ip >= end_index || after_ip != end_index) {
-        return false;
-    }
-
-    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET) {
-        return false;
-    }
-    if (masm32_sim_wasm_opcode_is_conditional_jump(instruction->opcode)) {
-        bool branch_taken = false;
-        if (masm32_sim_wasm_conditional_jump_taken(cpu, instruction->opcode, &branch_taken)) {
-            return !branch_taken;
-        }
-        return false;
-    }
-
-    return after_ip == before_ip + 1U;
-}
-
 /// Configures executor procedure boundaries from parser-owned procedure ranges.
 ///
 /// @param vm VM instance already loaded with the lowered instruction program.
@@ -6916,10 +7001,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
         } else {
             vm.instruction_pointer = parser_result.selected_entry_start_instruction_index;
-            if (parser_result.selected_entry_start_instruction_index == parser_result.selected_entry_end_instruction_index) {
-                (void)vm_cpu_set_display_eip(&vm.cpu, VM_EXEC_PSEUDO_EIP_BASE);
-                vm.halted = true;
-            } else if (!vm_sync_display_eip(&vm)) {
+            if (!vm_sync_display_eip(&vm)) {
                 exec_status = VM_EXEC_STATUS_INVALID_ARGUMENT;
             }
         }
@@ -6988,27 +7070,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
             break;
         }
 
-        {
-            size_t instruction_pointer_before_step = vm.instruction_pointer;
-            const VmIrInstruction *instruction_before_step = vm.program != NULL && vm.instruction_pointer < vm.program_count ?
-                &vm.program[vm.instruction_pointer] : NULL;
-
-            exec_status = vm_step(&vm);
-            if (exec_status == VM_EXEC_STATUS_OK &&
-                masm32_sim_wasm_reached_selected_entry_boundary_by_fallthrough(
-                    &parser_result,
-                    instruction_before_step,
-                    instruction_pointer_before_step,
-                    vm.instruction_pointer,
-                    &vm.cpu
-                )) {
-                uint32_t completed_pseudo_eip = VM_EXEC_PSEUDO_EIP_BASE;
-                if (vm_exec_instruction_index_to_pseudo_eip(instruction_pointer_before_step, &completed_pseudo_eip)) {
-                    (void)vm_cpu_set_display_eip(&vm.cpu, completed_pseudo_eip);
-                }
-                vm.halted = true;
-            }
-        }
+        exec_status = vm_step(&vm);
         if (exec_status == VM_EXEC_STATUS_OK) {
             masm32_sim_wasm_collect_unaligned_warnings(&g_masm32_sim_wasm_run_storage, &vm);
             exec_status = masm32_sim_wasm_validate_section_accesses(&g_masm32_sim_wasm_run_storage, &vm, capacity_policy, image_policy, runtime_policy);

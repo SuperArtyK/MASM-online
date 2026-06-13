@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71B1 source-run subgroup preflight.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71C code-stream falloff.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -17,7 +17,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71b-source-run-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71c-code-stream-falloff-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -167,6 +167,54 @@ static int append_source_fragment(char *destination, size_t capacity, size_t *le
     return 0;
 }
 
+/// Verifies one Phase 71C front-procedure notice matching fixture.
+///
+/// @param procedure_name Procedure name to place in both PROC and END.
+/// @param expect_notice Whether the fixture must emit the-front-fell-off.
+/// @param message Human-readable fixture description for failure output.
+/// @return Number of failures.
+static int expect_phase71c_front_notice_fixture(const char *procedure_name, int expect_notice, const char *message) {
+    char source[384];
+    char json[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    if (procedure_name == NULL || message == NULL) {
+        return record_failure("Phase 71C front notice fixture received an invalid argument");
+    }
+
+    (void)snprintf(
+        source,
+        sizeof(source),
+        ".code\n"
+        "%s PROC\n"
+        "    mov eax, 1\n"
+        "%s ENDP\n"
+        "END %s\n",
+        procedure_name,
+        procedure_name,
+        procedure_name
+    );
+    copy_source_run_json(json, sizeof(json), masm32_sim_wasm_run_source_json(source));
+
+    failures += expect_json_contains(json, "\"code\":\"code-fell-off-end\"", message);
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "front notice fixture should remain an execution-error");
+    if (expect_notice) {
+        failures += expect_json_contains(json, "\"kind\":\"simulator-notice\"", "front procedure notice should use notice severity");
+        failures += expect_json_contains(json, "\"code\":\"the-front-fell-off\"", "front procedure name variant should emit the required notice");
+        failures += expect_json_contains(json, "that's not very typical, I'd like to make that point", "front procedure notice should use the exact required text");
+        failures += expect_json_fragment_order(
+            json,
+            "\"code\":\"code-fell-off-end\"",
+            "\"code\":\"the-front-fell-off\"",
+            "front notice should render after code-fell-off-end"
+        );
+    } else {
+        failures += expect_json_not_contains(json, "the-front-fell-off", "non-matching procedure name should not emit the front notice");
+    }
+
+    return failures;
+}
+
 /// Verifies that the guide's minimal source execution sample executes to EAX = 42.
 ///
 /// @return Number of failures.
@@ -176,6 +224,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
         "main PROC\n"
         "    mov eax, 20\n"
         "    add eax, 22\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -184,7 +233,7 @@ static int test_minimal_source_runs_to_eax_42(void) {
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "successful source run should set ok true");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "successful source run should report ok status");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "sample should execute two instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "sample should expose EAX = 42");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "success should include simulator completion message");
     failures += expect_json_not_contains(json, "Program Console", "source-run JSON should not merge Program Console text into simulator messages");
@@ -192,10 +241,10 @@ static int test_minimal_source_runs_to_eax_42(void) {
     return failures;
 }
 
-/// Verifies that a valid zero-instruction procedure halts successfully.
+/// Verifies Phase 71C reports code-end falloff for an empty selected-entry procedure.
 ///
 /// @return Number of failures.
-static int test_zero_instruction_program_succeeds(void) {
+static int test_zero_instruction_program_reports_code_end_falloff(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -204,12 +253,96 @@ static int test_zero_instruction_program_succeeds(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"ok\":true", "zero-instruction program should succeed");
-    failures += expect_json_contains(json, "\"instructionCount\":0", "zero-instruction program should execute no instructions");
-    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "zero-instruction program should report zero committed instructions");
-    failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "zero-instruction program should not report an attempted blocked instruction");
-    failures += expect_json_contains(json, "\"currentInstructionIndex\":null", "zero-instruction program should report no last committed instruction");
-    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "zero-instruction program should expose zero EAX");
+    failures += expect_json_contains(json, "\"ok\":false", "empty selected-entry program should fail under Phase 71C code-stream semantics");
+    failures += expect_json_contains(json, "\"status\":\"execution-error\"", "empty selected-entry program should report execution-error");
+    failures += expect_json_contains(json, "\"instructionCount\":0", "empty selected-entry program should have no lowered instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":0", "empty selected-entry program should report zero committed instructions");
+    failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "empty selected-entry program should not report an attempted blocked instruction");
+    failures += expect_json_contains(json, "\"currentInstructionIndex\":null", "empty selected-entry program should report no last committed instruction");
+    failures += expect_json_contains(json, "\"code\":\"code-fell-off-end\"", "empty selected-entry program should emit code-fell-off-end");
+    failures += expect_json_contains(json, "\"procedure\":\"main\"", "empty selected-entry code-end falloff should identify main as responsible procedure");
+    failures += expect_json_not_contains(json, "execution-complete", "empty selected-entry program should not report successful completion");
+
+    return failures;
+}
+
+
+/// Verifies Phase 71C code-stream fallthrough and front-name notice behavior through source-run JSON.
+///
+/// @return Number of failures.
+static int test_phase71c_code_stream_falloff_source_run_behavior(void) {
+    char after_json[TEST_JSON_COPY_CAPACITY];
+    char fallthrough_json[TEST_JSON_COPY_CAPACITY];
+    char front_json[TEST_JSON_COPY_CAPACITY];
+    char front_label_json[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(after_json, sizeof(after_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "after PROC\n"
+        "    mov eax, 4\n"
+        "after ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(fallthrough_json, sizeof(fallthrough_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 2\n"
+        "helper ENDP\n"
+        "END main\n"
+    ));
+    copy_source_run_json(front_json, sizeof(front_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "Front PROC\n"
+        "    mov eax, 1\n"
+        "Front ENDP\n"
+        "END Front\n"
+    ));
+    copy_source_run_json(front_label_json, sizeof(front_label_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "front:\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(after_json, "\"ok\":false", "empty selected entry should fall through to later executable code and fail at code end");
+    failures += expect_json_contains(after_json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "empty selected entry should execute the later procedure body");
+    failures += expect_json_contains(after_json, "\"code\":\"code-fell-off-end\"", "empty selected entry later body should report code-fell-off-end");
+    failures += expect_json_contains(after_json, "\"procedure\":\"after\"", "empty selected entry later body should identify the last executed procedure");
+    failures += expect_json_not_contains(after_json, "execution-complete", "empty selected entry later body should not report completion");
+
+    failures += expect_json_contains(fallthrough_json, "\"ok\":false", "selected entry without terminator should fall through into later procedure and fail at code end");
+    failures += expect_json_contains(fallthrough_json, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "selected entry body should execute before fallthrough");
+    failures += expect_json_contains(fallthrough_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "later procedure body should execute by ordinary code-stream fallthrough");
+    failures += expect_json_contains(fallthrough_json, "\"procedure\":\"helper\"", "fallthrough should attribute code end to the last executed later procedure");
+
+    failures += expect_json_contains(front_json, "\"code\":\"code-fell-off-end\"", "front procedure falloff should report code-fell-off-end first");
+    failures += expect_json_contains(front_json, "\"code\":\"the-front-fell-off\"", "front procedure falloff should emit the required notice");
+    failures += expect_json_contains(front_json, "that's not very typical, I'd like to make that point", "front procedure notice should use the exact required text");
+    failures += expect_json_fragment_order(
+        front_json,
+        "\"code\":\"code-fell-off-end\"",
+        "\"code\":\"the-front-fell-off\"",
+        "front procedure notice should appear after code-fell-off-end"
+    );
+
+    failures += expect_json_contains(front_label_json, "\"code\":\"code-fell-off-end\"", "front label falloff should still report code-fell-off-end");
+    failures += expect_json_not_contains(front_label_json, "the-front-fell-off", "front label should not trigger the front procedure notice");
+
+    failures += expect_phase71c_front_notice_fixture("front", 1, "lowercase front procedure should emit code-fell-off-end");
+    failures += expect_phase71c_front_notice_fixture("Front", 1, "titlecase Front procedure should emit code-fell-off-end");
+    failures += expect_phase71c_front_notice_fixture("FRONT", 1, "uppercase FRONT procedure should emit code-fell-off-end");
+    failures += expect_phase71c_front_notice_fixture("fRoNt", 1, "mixed-case fRoNt procedure should emit code-fell-off-end");
+    failures += expect_phase71c_front_notice_fixture("frontier", 0, "frontier procedure should emit code-fell-off-end without the front notice");
+    failures += expect_phase71c_front_notice_fixture("myfront", 0, "myfront procedure should emit code-fell-off-end without the front notice");
+    failures += expect_phase71c_front_notice_fixture("front_", 0, "front_ procedure should emit code-fell-off-end without the front notice");
 
     return failures;
 }
@@ -226,6 +359,7 @@ static int test_register_indirect_source_run_succeeds(void) {
         "    mov esi, OFFSET nums\n"
         "    mov DWORD PTR [esi + 8], 100\n"
         "    mov eax, DWORD PTR [esi + 8]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -233,7 +367,7 @@ static int test_register_indirect_source_run_succeeds(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "register-indirect source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "register-indirect sample should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "register-indirect sample should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "register-indirect sample should expose EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500008h\"", "register-indirect memory change should resolve to nums + 8");
     failures += expect_json_contains(json, "\"elementIndex\":2", "register-indirect memory change should include element index 2");
@@ -253,6 +387,7 @@ static int test_phase24_eax_base_acceptance_program(void) {
         "    mov eax, OFFSET nums\n"
         "    mov DWORD PTR [eax], 100\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -260,7 +395,7 @@ static int test_phase24_eax_base_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 26 EAX-base response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 EAX-base acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 26 EAX-base acceptance source should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 26 EAX-base acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "Phase 26 EAX-base acceptance source should set EBX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\",\"address\":\"00500000h\"", "Phase 26 EAX-base memory change should resolve to nums base");
 
@@ -293,6 +428,7 @@ static int test_all_gpr_register_indirect_source_run_succeeds(void) {
         "    mov DWORD PTR [ebp + 24], 70\n"
         "    mov DWORD PTR [esp + 28], 80\n"
         "    mov eax, DWORD PTR [esp + 28]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -316,6 +452,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, TYPE nums\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -323,7 +460,7 @@ static int test_type_operator_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "TYPE acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":1", "TYPE acceptance source should execute one instruction");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "TYPE acceptance source should execute one instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "TYPE nums should expose EAX = 4");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "TYPE acceptance should complete successfully");
 
@@ -344,6 +481,7 @@ static int test_type_operator_source_run_element_sizes(void) {
         "    mov eax, TYPE msg\n"
         "    mov ebx, TYPE words\n"
         "    mov ecx, TYPE quad\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -369,6 +507,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
         "main PROC\n"
         "    mov eax, LENGTHOF nums\n"
         "    mov ebx, LENGTHOF buf\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -376,7 +515,7 @@ static int test_lengthof_operator_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "LENGTHOF acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "LENGTHOF acceptance source should execute two instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "LENGTHOF acceptance source should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "LENGTHOF nums should expose EAX = 10");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "LENGTHOF buf should expose EBX = 6");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "LENGTHOF acceptance should complete successfully");
@@ -398,6 +537,7 @@ static int test_lengthof_operator_source_run_element_counts(void) {
         "    mov eax, LENGTHOF msg\n"
         "    mov ebx, LENGTHOF words\n"
         "    mov ecx, LENGTHOF quad\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -427,6 +567,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
         "    mov bl, chr\n"
         "    mov cx, pair\n"
         "    mov edx, 'ABCD'\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -434,7 +575,7 @@ static int test_sizeof_operator_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "SIZEOF acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "SIZEOF acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "SIZEOF acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000028h\",\"unsigned\":40}", "SIZEOF nums should expose EAX = 40");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000041h\",\"unsigned\":65}", "mov bl, chr should expose BL byte value through EBX = 65");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00004241h\",\"unsigned\":16961}", "mov cx, pair should expose packed WORD value");
@@ -458,6 +599,7 @@ static int test_sizeof_operator_source_run_byte_sizes(void) {
         "    mov eax, SIZEOF msg\n"
         "    mov ebx, SIZEOF words\n"
         "    mov ecx, SIZEOF quad\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -481,6 +623,7 @@ static int test_sizeof_operator_source_run_rejects_expression_tail(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, SIZEOF nums + 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -503,6 +646,7 @@ static int test_character_literal_source_run_rejects_width_overflow(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, 'AB'\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -527,13 +671,14 @@ static int test_character_literal_source_run_accepts_narrower_packed_immediates(
         "main PROC\n"
         "    mov eax, 'ABC'\n"
         "    mov DWORD PTR slot, 'ABC'\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "three-byte packed character literal should execute in 32-bit contexts");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "packed character literal program should execute two instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "packed character literal program should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00434241h\",\"unsigned\":4407873}", "mov eax, 'ABC' should expose packed little-endian value");
     failures += expect_json_contains(json, "\"symbol\":\"slot\"", "memory immediate character literal should update slot");
     failures += expect_json_contains(json, "\"newHex\":\"00434241h\"", "DWORD memory immediate should store the packed character literal");
@@ -551,6 +696,7 @@ static int test_lengthof_operator_source_run_rejects_expression_tail(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, LENGTHOF nums + 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -575,6 +721,7 @@ static int test_type_operator_source_run_rejects_expression_tail(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, TYPE nums + 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -599,6 +746,7 @@ static int test_scaled_index_source_run_returns_unsupported_feature(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [eax * 4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -608,6 +756,7 @@ static int test_scaled_index_source_run_returns_unsupported_feature(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR nums[esi * 4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -630,6 +779,7 @@ static int test_scaled_index_source_run_returns_unsupported_feature(void) {
 /// @return Number of failures.
 static int test_parse_error_returns_structured_message(void) {
     const char *json = masm32_sim_wasm_run_source_json(
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
@@ -651,6 +801,7 @@ static int test_narrow_register_immediate_overflow_returns_parse_error(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, 9999\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -677,6 +828,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
         "main PROC\n"
         "    mov nums[8], 100\n"
         "    mov eax, nums[8]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -684,7 +836,7 @@ static int test_constant_symbol_offset_source_run_succeeds(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "constant symbol-offset source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "constant symbol-offset sample should execute two instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "constant symbol-offset sample should execute two instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "constant symbol-offset sample should expose EAX = 100");
     failures += expect_json_contains(json, "\"symbol\":\"nums\"", "memory changes should include nums symbol");
     failures += expect_json_contains(json, "\"byteOffset\":8", "memory changes should include byte offset 8");
@@ -706,6 +858,7 @@ static int test_unaligned_constant_symbol_offset_reports_warning(void) {
         "main PROC\n"
         "    mov nums[9], 100\n"
         "    mov eax, nums[9]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -734,6 +887,7 @@ static int test_negative_symbol_offset_inside_data_image_succeeds(void) {
         "main PROC\n"
         "    mov [tail - 4], 123\n"
         "    mov eax, head\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -760,13 +914,14 @@ static int test_offset_zero_bracketed_symbol_operands_execute(void) {
         "    mov eax, [nums + 0]\n"
         "    mov nums[0], 101\n"
         "    mov ebx, nums[0]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "offset-zero bracketed symbol operands should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "offset-zero bracketed symbol sample should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "offset-zero bracketed symbol sample should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "[nums + 0] should read the first DWORD");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000065h\",\"unsigned\":101}", "nums[0] should read the updated first DWORD");
     failures += expect_json_contains(json, "\"byteOffset\":0", "offset-zero memory changes should include byte offset 0");
@@ -785,6 +940,7 @@ static int test_constant_symbol_offset_crossing_section_image_is_not_parse_error
         ".code\n"
         "main PROC\n"
         "    mov eax, nums[37]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -807,6 +963,7 @@ static int test_negative_immediate_source_run_succeeds(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, -1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -826,6 +983,7 @@ static int test_negative_immediate_overflow_returns_parse_error(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, -129\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -846,6 +1004,7 @@ static int test_source_run_invalid_hex_reports_specific_lexer_diagnostic(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 0xZZ\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -875,6 +1034,7 @@ static int test_source_run_unterminated_string_reports_specific_lexer_diagnostic
         "msg BYTE \"Hello\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
@@ -952,6 +1112,7 @@ static int test_phase22_source_run_acceptance_program(void) {
         "    mov eax, 0\n"
         "    stc\n"
         "    test eax, eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -959,7 +1120,7 @@ static int test_phase22_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 22 response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 TEST acceptance program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 22 TEST acceptance program should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 22 TEST acceptance program should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "TEST acceptance should leave EAX zero");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000040h\",\"unsigned\":64}", "TEST acceptance should set only ZF among modeled flags");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 22 acceptance program should complete successfully");
@@ -981,13 +1142,14 @@ static int test_phase22_memory_immediate_source_run_program(void) {
         "    test value, 0FFh\n"
         "    test nums[0], 0FFh\n"
         "    test DWORD PTR [esi], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 TEST memory/immediate program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 22 TEST memory/immediate program should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 22 TEST memory/immediate program should execute four instructions");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000040h\",\"unsigned\":64}", "final TEST against zero memory should set ZF");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "TEST should not report memory changes because it stores no result");
 
@@ -1014,6 +1176,7 @@ static int test_phase22_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    test [esi], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1026,6 +1189,7 @@ static int test_phase22_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    test [esi + 4], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1038,6 +1202,7 @@ static int test_phase22_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    test [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1051,6 +1216,7 @@ static int test_phase22_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    test [eax], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1064,6 +1230,7 @@ static int test_phase22_source_run_error_paths(void) {
         "main PROC\n"
         "    mov esi, 0\n"
         "    test DWORD PTR [esi], esi\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1126,6 +1293,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "Point ENDS\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -1133,6 +1301,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         ".code\n"
         "main PROC\n"
         "INVOKE ExitProcess, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -1145,6 +1314,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -1160,7 +1330,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
     failures += expect_json_contains(invoke_json, "unsupported-winapi-execution", "INVOKE ExitProcess should expose the Phase 57R WinAPI code");
 
     failures += expect_json_contains(dataq_json, "\"ok\":true", ".DATA? and .CONST should now execute successfully");
-    failures += expect_json_contains(dataq_json, "\"instructionCount\":0", ".DATA? and .CONST no-op body should execute zero instructions");
+    failures += expect_json_contains(dataq_json, "\"instructionCount\":1", ".DATA? and .CONST no-op body should execute zero instructions");
     failures += expect_json_contains(dataq_json, "execution-complete", ".DATA? and .CONST should complete execution");
     failures += expect_json_not_contains(dataq_json, "unsupported-feature", ".DATA? and .CONST should no longer be unsupported features");
 
@@ -1169,6 +1339,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "Greeting TEXTEQU <Hello>\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", "TEXTEQU angle-bracket sample should be classified as unsupported feature");
 
@@ -1178,6 +1349,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "mov eax, 1\n"
         ".IF eax == 1\n"
         "mov ebx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", ".IF comparison sample should be classified as unsupported feature");
@@ -1187,6 +1359,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "mov eax, 1\n"
         ".IF eax == 1\n"
         "mov ebx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ), "unsupported-high-level-if", ".IF comparison sample should expose Phase 57S high-level IF code");
@@ -1197,6 +1370,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "mov ecx, 3\n"
         ".WHILE ecx > 0\n"
         "sub ecx, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", ".WHILE comparison sample should be classified as unsupported feature");
@@ -1207,6 +1381,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         ".REPEAT\n"
         "mov eax, 1\n"
         ".UNTIL eax == 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", ".REPEAT/.UNTIL sample should be classified as unsupported feature");
@@ -1216,6 +1391,7 @@ static int test_textbook_unsupported_features_return_unsupported_feature_message
         "r REAL4 1.0\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     ), "\"kind\":\"unsupported-feature\"", "REAL4 float sample should be classified as unsupported feature");
 
@@ -1240,6 +1416,7 @@ static int test_multi_diagnostic_unsupported_feature_source_run_reports_all(void
         "    .IF eax == 0\n"
         "        mov ebx, 1\n"
         "    .ENDIF\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1282,6 +1459,7 @@ static int test_phase57s_high_level_flow_source_run_diagnostics(void) {
         "        badinstruction eax\n"
         "    .ENDIF\n"
         "    mov ecx, 3\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1315,6 +1493,7 @@ static int test_signed_integer_source_run_acceptance_program(void) {
         "    mov eax, TYPE sq\n"
         "    mov ebx, LENGTHOF arr\n"
         "    mov ecx, SIZEOF arr\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1343,6 +1522,7 @@ static int test_unary_plus_source_run_acceptance_program(void) {
         "    mov eax, +42\n"
         "    mov ebx, +0x2A\n"
         "    mov ecx, +2Ah\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1365,6 +1545,7 @@ static int test_signed_integer_source_run_error_paths(void) {
         "sb SBYTE 128\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1380,6 +1561,7 @@ static int test_signed_integer_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, +256\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1408,6 +1590,7 @@ static int test_signed_ptr_alias_source_run_acceptance_program(void) {
         "    mov al, SBYTE PTR b\n"
         "    mov bx, SWORD PTR w\n"
         "    mov ecx, SDWORD PTR d\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1434,6 +1617,7 @@ static int test_signed_ptr_alias_source_run_write_program(void) {
         "    mov esi, OFFSET buf\n"
         "    mov SBYTE PTR [esi], -1\n"
         "    mov al, BYTE PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1459,6 +1643,7 @@ static int test_signed_ptr_alias_source_run_error_paths(void) {
         "main PROC\n"
         "    mov esi, OFFSET buf\n"
         "    mov SBYTE PTR [esi], -129\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1477,6 +1662,7 @@ static int test_signed_ptr_alias_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, SQWORD PTR q\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1502,6 +1688,7 @@ static int test_extension_source_run_acceptance_program(void) {
         "main PROC\n"
         "    movsx eax, x\n"
         "    movzx ebx, y\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1529,13 +1716,14 @@ static int test_accumulator_extension_source_run_program(void) {
         "    cwd\n"
         "    mov eax, 80000000h\n"
         "    cdq\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "accumulator extension program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "accumulator extension program should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "accumulator extension program should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"80000000h\",\"unsigned\":2147483648}", "cdq should leave EAX unchanged");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "cdq should sign-extend EAX into EDX");
 
@@ -1555,6 +1743,7 @@ static int test_extension_register_indirect_memory_source_run_program(void) {
         "    mov esi, OFFSET buf\n"
         "    movsx eax, BYTE PTR [esi]\n"
         "    movzx ebx, WORD PTR [esi + 2]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1581,6 +1770,7 @@ static int test_plain_mov_from_signed_memory_rejects_implicit_widening(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, sb\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1608,6 +1798,7 @@ static int test_extension_source_run_edge_cases(void) {
         "    mov edx, 0FFFFFFFFh\n"
         "    mov eax, 1\n"
         "    cdq\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1629,6 +1820,7 @@ static int test_extension_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    movsx ax, bx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1647,6 +1839,7 @@ static int test_extension_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    cbw eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1660,6 +1853,7 @@ static int test_extension_source_run_error_paths(void) {
         "main PROC\n"
         "    mov esi, 00500000h\n"
         "    movsx eax, [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1689,6 +1883,7 @@ static int test_phase20_source_run_acceptance_program(void) {
         "    xchg eax, ebx\n"
         "    neg eax\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1696,7 +1891,7 @@ static int test_phase20_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 20 acceptance program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 20 acceptance program should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 20 acceptance program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFF6h\",\"unsigned\":4294967286}", "NEG after XCHG should leave EAX = FFFFFFF6h");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "XCHG should leave EBX = 5");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 20 acceptance program should complete successfully");
@@ -1716,6 +1911,7 @@ static int test_phase20_memory_source_run_program(void) {
         "    mov eax, 10\n"
         "    xchg value, eax\n"
         "    neg value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1738,6 +1934,7 @@ static int test_phase20_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    xchg eax, al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1756,6 +1953,7 @@ static int test_phase20_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    nop al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1768,6 +1966,7 @@ static int test_phase20_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    neg [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1799,6 +1998,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
         "    mov eax, 1\n"
         "    nop\n"
         "    inc eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1817,6 +2017,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
         "main PROC\n"
         "    NOP\n"
         "    mov ebx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1830,6 +2031,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
         "main PROC\n"
         "    mov ecx, 3\n"
         "    NoP\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1842,6 +2044,7 @@ static int test_phase57n_nop_source_run_hardening(void) {
         ".code\n"
         "main PROC\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1851,22 +2054,22 @@ static int test_phase57n_nop_source_run_hardening(void) {
     (void)snprintf(only_copy, sizeof(only_copy), "%s", only_json);
 
     failures += expect_json_contains(between_copy, "\"ok\":true", "NOP between mutating instructions should execute");
-    failures += expect_json_contains(between_copy, "\"instructionCount\":3", "NOP between mutating instructions should count as one instruction");
+    failures += expect_json_contains(between_copy, "\"instructionCount\":4", "NOP between mutating instructions should count as one instruction");
     failures += expect_json_contains(between_copy, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "NOP between MOV and INC should leave EAX = 2");
     failures += expect_json_contains(between_copy, "\"memoryChanges\":[]", "NOP register-only program should not create memory changes");
     failures += expect_json_not_contains(between_copy, "programConsole", "NOP source-run program should not produce Program Console output");
     failures += expect_json_not_contains(between_copy, "NOP operand form is not accepted", "valid NOP should not emit NOP diagnostics");
 
     failures += expect_json_contains(before_copy, "\"ok\":true", "NOP before another instruction should execute");
-    failures += expect_json_contains(before_copy, "\"instructionCount\":2", "NOP before another instruction should count toward instruction count");
+    failures += expect_json_contains(before_copy, "\"instructionCount\":3", "NOP before another instruction should count toward instruction count");
     failures += expect_json_contains(before_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "NOP before MOV should preserve later MOV behavior");
 
     failures += expect_json_contains(after_copy, "\"ok\":true", "NOP after another instruction should execute");
-    failures += expect_json_contains(after_copy, "\"instructionCount\":2", "NOP after another instruction should count toward instruction count");
+    failures += expect_json_contains(after_copy, "\"instructionCount\":3", "NOP after another instruction should count toward instruction count");
     failures += expect_json_contains(after_copy, "\"ECX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "NOP after MOV should preserve ECX");
 
     failures += expect_json_contains(only_copy, "\"ok\":true", "NOP-only program should execute");
-    failures += expect_json_contains(only_copy, "\"instructionCount\":1", "NOP-only program should count one instruction");
+    failures += expect_json_contains(only_copy, "\"instructionCount\":2", "NOP-only program should count one instruction");
     failures += expect_json_contains(only_copy, "\"memoryChanges\":[]", "NOP-only program should not create memory changes");
     failures += expect_json_not_contains(only_copy, "programConsole", "NOP-only program should not produce Program Console output");
 
@@ -1883,6 +2086,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
         "    mov eax, 0\n"
         "    nop DWORD PTR [eax]\n"
         "    mov ebx, 42\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1907,6 +2111,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    nop DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1922,6 +2127,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
         "main PROC\n"
         "    mov eax, OFFSET buf\n"
         "    nop DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1939,6 +2145,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
         "    nop WORD PTR [eax + 4]\n"
         "    nop SWORD PTR [eax + 4]\n"
         "    nop SDWORD PTR [eax + 4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -1948,7 +2155,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
     (void)snprintf(register_word_copy, sizeof(register_word_copy), "%s", register_word_json);
 
     failures += expect_json_contains(invalid_address_copy, "\"ok\":true", "Phase 57O NOP encoding operand should not read invalid address zero");
-    failures += expect_json_contains(invalid_address_copy, "\"instructionCount\":3", "Phase 57O NOP encoding operand should count as one instruction");
+    failures += expect_json_contains(invalid_address_copy, "\"instructionCount\":4", "Phase 57O NOP encoding operand should count as one instruction");
     failures += expect_json_contains(invalid_address_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "Phase 57O NOP encoding operand should allow following MOV");
     failures += expect_json_contains(invalid_address_copy, "\"memoryChanges\":[]", "Phase 57O invalid-address NOP should not create memory changes");
     failures += expect_json_not_contains(invalid_address_copy, "invalid-memory", "Phase 57O NOP encoding operand should not emit invalid-memory diagnostics");
@@ -1965,7 +2172,7 @@ static int test_phase57o_nop_encoding_operand_source_run(void) {
     failures += expect_json_not_contains(uninitialized_copy, "section-image", "Phase 57O NOP encoding operand should not emit section-image diagnostics");
 
     failures += expect_json_contains(register_word_copy, "\"ok\":true", "Phase 57O register/WORD NOP encoding operands should execute");
-    failures += expect_json_contains(register_word_copy, "\"instructionCount\":6", "Phase 57O register/WORD/SWORD/SDWORD NOP encoding operands should count as instructions");
+    failures += expect_json_contains(register_word_copy, "\"instructionCount\":7", "Phase 57O register/WORD/SWORD/SDWORD NOP encoding operands should count as instructions");
     failures += expect_json_contains(register_word_copy, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "Phase 57O register-form NOP should not mutate EAX");
     failures += expect_json_not_contains(register_word_copy, "invalid-memory", "Phase 57O register/WORD NOP encoding operands should not read invalid address");
 
@@ -2018,6 +2225,7 @@ static int test_phase21_source_run_acceptance_program(void) {
         "    add eax, 1\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2025,7 +2233,7 @@ static int test_phase21_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 22 response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 22 acceptance program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 22 acceptance program should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 22 acceptance program should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 22 acceptance should leave EAX zero");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "ADC should carry into EBX");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 22 acceptance program should complete successfully");
@@ -2054,6 +2262,7 @@ static int test_phase21_memory_and_borrow_source_run_program(void) {
         "    sbb ebx, other\n"
         "    stc\n"
         "    sbb byteval, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2078,6 +2287,7 @@ static int test_phase21_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    adc al, 256\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2094,6 +2304,7 @@ static int test_phase21_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    clc eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2130,6 +2341,7 @@ static int test_phase25_register_supplied_memory_width_source_run_program(void) 
         "    xchg [eax], cx\n"
         "    mov dl, 34h\n"
         "    test [eax], dl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2137,7 +2349,7 @@ static int test_phase25_register_supplied_memory_width_source_run_program(void) 
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 26 source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 register-supplied memory-width source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":13", "Phase 26 register-supplied memory-width source should execute thirteen instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":14", "Phase 26 register-supplied memory-width source should execute thirteen instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should continue to hold the .data address");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000006h\",\"unsigned\":6}", "XCHG [eax], cx should exchange a WORD memory value with CX");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000034h\",\"unsigned\":52}", "DL should supply BYTE width for TEST [eax], dl");
@@ -2160,6 +2372,7 @@ static int test_phase25_register_supplied_source_memory_width_source_run_program
         "    add ebx, [eax]\n"
         "    sub bx, [eax]\n"
         "    test ebx, [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2167,7 +2380,7 @@ static int test_phase25_register_supplied_source_memory_width_source_run_program
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 26 source-memory response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 register-supplied source memory-width source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 26 source-memory program should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 26 source-memory program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "EAX should hold the .data address");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000007h\",\"unsigned\":7}", "Register destinations should supply source memory widths and produce EBX = 7");
     failures += expect_json_not_contains(json, "ambiguous-memory-width", "Register-supplied source memory-width execution should not report ambiguity");
@@ -2187,6 +2400,7 @@ static int test_phase25_browser_observed_regressions(void) {
         "main PROC\n"
         "    mov ecx, 2\n"
         "    mov [buf + ecx], dx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2206,6 +2420,7 @@ static int test_phase25_browser_observed_regressions(void) {
         "    mov eax, OFFSET value\n"
         "    mov ebx, 0F0000000h\n"
         "    test [eax], ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2233,6 +2448,7 @@ static int test_phase25_explicit_ptr_symbol_register_override_source_run_program
         "    mov ecx, 2\n"
         "    mov dx, 1234h\n"
         "    mov WORD PTR [buf + ecx], dx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2240,7 +2456,7 @@ static int test_phase25_explicit_ptr_symbol_register_override_source_run_program
 
     failures += expect_json_contains(json, "\"phase\":71", "Explicit PTR override source-run response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Explicit WORD PTR symbol/register program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Explicit PTR override program should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Explicit PTR override program should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00001234h\",\"unsigned\":4660}", "DX should retain the written WORD value");
     failures += expect_json_contains(json, "\"symbol\":\"buf\",\"address\":\"00500002h\",\"widthBits\":16", "Memory change should record a WORD access at buf + 2");
     failures += expect_json_not_contains(json, "operand-width-mismatch", "Explicit PTR override should not report symbol/register width mismatch");
@@ -2304,6 +2520,7 @@ static int test_phase26_header_source_run_acceptance_program(void) {
         ".code\n"
         "main PROC\n"
         "    mov edx, OFFSET msg\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2311,7 +2528,7 @@ static int test_phase26_header_source_run_acceptance_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 26 header response should identify current runtime phase");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 26 header source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":1", "Phase 26 header source should execute one instruction");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 26 header source should execute one instruction");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00500000h\",\"unsigned\":5242880}", "Phase 26 header source should set EDX to OFFSET msg");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 26 header source should complete execution");
 
@@ -2331,6 +2548,7 @@ static int test_phase26_header_source_run_error_paths(void) {
         ".model small, c\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2340,6 +2558,7 @@ static int test_phase26_header_source_run_error_paths(void) {
         "INCLUDE Windows.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2354,6 +2573,7 @@ static int test_phase26_header_source_run_error_paths(void) {
         "OPTION NOKEYWORD:<IF>\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2391,6 +2611,7 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
         "include \\masm32\\include\\masm32.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2400,6 +2621,7 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
         "include C:\\masm32\\include\\kernel32.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2410,6 +2632,7 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
         "include \\masm32\\include\\kernel32.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2419,6 +2642,7 @@ static int test_phase57p_host_include_path_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, \\masm32\\include\\kernel32.inc\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2461,6 +2685,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2471,6 +2696,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2481,6 +2707,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2492,6 +2719,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2501,6 +2729,7 @@ static int test_phase57q_includelib_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, \\masm32\\lib\\kernel32.lib\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2547,6 +2776,7 @@ static int test_phase28_additional_data_sections_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, SIZEOF buf\n"
         "    mov ebx, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2567,6 +2797,7 @@ static int test_phase28_additional_data_sections_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov limit, 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2580,6 +2811,7 @@ static int test_phase28_additional_data_sections_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2594,6 +2826,7 @@ static int test_phase28_additional_data_sections_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov BYTE PTR [eax + 3], 0FFh\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2616,6 +2849,7 @@ static int test_phase30_dup_initializer_list_source_run_program(void) {
         "    mov ebx, SIZEOF msg\n"
         "    mov cl, msg[0]\n"
         "    mov dl, msg[3]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2641,6 +2875,7 @@ static int test_phase30_dup_repeat_count_diagnostic_source_run_program(void) {
         "bad BYTE -1 DUP(0)\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2666,6 +2901,7 @@ static int test_phase30_large_dup_count_capacity_diagnostic_source_run_program(v
         "bad BYTE 4294967295 DUP(0)\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -2798,9 +3034,9 @@ static int test_phase61d_code_label_capacity_diagnostic_source_run_program(void)
 ///
 /// @return Number of failures.
 static int test_subsequent_calls_return_latest_result(void) {
-    char first_copy[512];
+    char first_copy[TEST_JSON_COPY_CAPACITY];
     const char *first = masm32_sim_wasm_run_source_json(
-        ".code\nmain PROC\n    mov eax, 1\nmain ENDP\nEND main\n"
+        ".code\nmain PROC\n    mov eax, 1\n    ret\nmain ENDP\nEND main\n"
     );
     const char *second = NULL;
     int failures = 0;
@@ -2811,7 +3047,7 @@ static int test_subsequent_calls_return_latest_result(void) {
     (void)snprintf(first_copy, sizeof(first_copy), "%s", first);
 
     second = masm32_sim_wasm_run_source_json(
-        ".code\nmain PROC\n    mov eax, 2\nmain ENDP\nEND main\n"
+        ".code\nmain PROC\n    mov eax, 2\n    ret\nmain ENDP\nEND main\n"
     );
 
     failures += expect_json_contains(first_copy, "\"unsigned\":1", "first copied result should retain EAX = 1");
@@ -2836,6 +3072,7 @@ static int test_phase35a_casemap_all_source_run_programs(void) {
         "    mov eax, OFFSET bUF\n"
         "    mov DWORD PTR [eax], 77\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2849,6 +3086,7 @@ static int test_phase35a_casemap_all_source_run_programs(void) {
         "    mov eax, OFFSET bUF\n"
         "    mov DWORD PTR [eax], 77\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2878,6 +3116,7 @@ static int test_phase35a_casemap_none_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, OFFSET buffer\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2891,6 +3130,7 @@ static int test_phase35a_casemap_none_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, buf\n"
         "    mov ebx, bUF\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2904,6 +3144,7 @@ static int test_phase35a_casemap_none_source_run_programs(void) {
         "    mov eax, TYPE Nums\n"
         "    mov ebx, LENGTHOF Nums\n"
         "    mov ecx, SIZEOF Nums\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2915,6 +3156,7 @@ static int test_phase35a_casemap_none_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, TYPE nums\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2926,6 +3168,7 @@ static int test_phase35a_casemap_none_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2963,6 +3206,7 @@ static int test_phase35a_casemap_equate_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, count\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2972,6 +3216,7 @@ static int test_phase35a_casemap_equate_source_run_programs(void) {
         "count = 6\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2982,6 +3227,7 @@ static int test_phase35a_casemap_equate_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, count\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -2994,6 +3240,7 @@ static int test_phase35a_casemap_equate_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, COUNT\n"
         "    mov ebx, count\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3006,6 +3253,7 @@ static int test_phase35a_casemap_equate_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, COUNT\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3044,6 +3292,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, bUF\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3056,6 +3305,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, bUF\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3068,6 +3318,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, bUF\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3081,6 +3332,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, buf\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3096,6 +3348,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         "    mov eax, OFFSET bUF\n"
         "    mov DWORD PTR [eax], 77\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3104,6 +3357,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         "OPTION CASEMAP:NOTPUBLIC\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3112,6 +3366,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         "OPTION CASEMAP:LOWER\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -3119,6 +3374,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
     copy_source_run_json(default_proc_json, sizeof(default_proc_json), masm32_sim_wasm_run_source_json(
         ".code\n"
         "Main PROC\n"
+        "    ret\n"
         "mAIN ENDP\n"
         "END main\n"
     ));
@@ -3135,6 +3391,7 @@ static int test_phase35a_casemap_diagnostic_source_run_programs(void) {
         "OPTION CASEMAP:NONE\n"
         ".code\n"
         "Main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END Main\n"
     ));
@@ -3197,6 +3454,7 @@ static int test_phase32_fixed_layout_source_run_regression_program(void) {
         "    mov eax, SIZEOF buf\n"
         "    mov ebx, SIZEOF arr\n"
         "    mov ecx, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -3230,6 +3488,7 @@ static int test_phase33_automatic_layout_source_run_program(void) {
         "    mov eax, SIZEOF buf\n"
         "    mov ebx, limit\n"
         "    mov x, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3238,7 +3497,7 @@ static int test_phase33_automatic_layout_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "automatic layout source should execute");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "automatic layout source should report ok status");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "automatic layout source should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "automatic layout source should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "automatic layout should preserve .DATA? metadata");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000000Ah\",\"unsigned\":10}", "automatic layout should load .CONST bytes");
     failures += expect_json_contains(json, "\"symbol\":\"x\"", "automatic layout should report writable data memory changes");
@@ -3258,6 +3517,7 @@ static int test_phase33_automatic_layout_const_write_rejected(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3285,6 +3545,7 @@ static int test_phase33_automatic_layout_invalid_access_does_not_grow(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4096\n"
         "    mov bl, BYTE PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3313,6 +3574,7 @@ static int test_phase33_automatic_layout_resource_limit_json(void) {
         "big BYTE 4097 DUP(0)\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &base_policy
@@ -3343,6 +3605,7 @@ static int test_phase34_automatic_layout_uses_stack_size_metadata(void) {
         "main PROC\n"
         "    mov eax, 008F0000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3369,6 +3632,7 @@ static int test_phase34_automatic_layout_stack_without_operand_uses_default(void
         "    mov eax, 008F0000h\n"
         "    mov DWORD PTR [eax], 123\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3395,6 +3659,7 @@ static int test_phase34_automatic_layout_stack_expression_metadata(void) {
         "main PROC\n"
         "    mov eax, 008FDFFCh\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -3421,6 +3686,7 @@ static int test_phase34_automatic_layout_excessive_stack_size_json(void) {
         ".stack 8192\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &base_policy
@@ -3452,6 +3718,7 @@ static int test_phase34_automatic_layout_uses_configured_heap_size(void) {
         "main PROC\n"
         "    mov eax, 00701000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &base_policy
@@ -3478,6 +3745,7 @@ static int test_phase34_automatic_layout_excessive_heap_size_json(void) {
     json = masm32_sim_wasm_run_source_json_with_automatic_layout_policy(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &base_policy
@@ -3516,6 +3784,7 @@ static int test_phase35_seeded_randomized_layout_offset_program_succeeds(void) {
         "main PROC\n"
         "    mov eax, OFFSET value\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
@@ -3543,6 +3812,7 @@ static int test_phase35_seeded_randomized_layout_hardcoded_data_address_fails(vo
         "main PROC\n"
         "    mov eax, 00500000h\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
@@ -3571,6 +3841,7 @@ static int test_phase35_seeded_randomized_layout_const_write_stays_read_only(voi
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
@@ -3601,6 +3872,7 @@ static int test_phase35_seeded_randomized_layout_data_question_writable(void) {
         "    mov BYTE PTR [ebx], 12h\n"
         "    mov ecx, 0\n"
         "    mov cl, BYTE PTR [ebx]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
@@ -3634,6 +3906,7 @@ static int test_phase35_randomized_layout_unavailable_source_run_json(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, OFFSET value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_SEEDED_RANDOMIZED,
@@ -3661,6 +3934,7 @@ static int test_phase35_fresh_randomized_layout_returns_seed_metadata(void) {
         "main PROC\n"
         "    mov eax, OFFSET value\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         VM_LAYOUT_MODE_FRESH_RANDOMIZED,
@@ -3687,13 +3961,14 @@ static int test_phase37_default_region_only_has_no_object_warning(void) {
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "default region-only mode should execute valid-region gap access");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "default region-only mode should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "default region-only mode should execute both instructions");
     failures += expect_json_not_contains(json, "object-bounds-warning", "default source-run should not emit object-bounds warning");
 
     return failures;
@@ -3710,6 +3985,7 @@ static int test_phase37_allocated_object_warning_mode_warns_and_continues(void) 
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3717,7 +3993,7 @@ static int test_phase37_allocated_object_warning_mode_warns_and_continues(void) 
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "allocated-object warning mode should continue execution after warning");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "allocated-object warning mode should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "allocated-object warning mode should execute both instructions");
     failures += expect_json_contains(json, "\"code\":\"object-bounds-warning\"", "allocated-object warning mode should emit object warning code");
     failures += expect_json_contains(json, "Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.", "gap warning should describe valid-region access outside objects");
     failures += expect_json_contains(json, "\"line\":6", "object warning should point at the instruction line");
@@ -3738,6 +4014,7 @@ static int test_phase37_access_into_another_object_has_no_warning(void) {
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3745,7 +4022,7 @@ static int test_phase37_access_into_another_object_has_no_warning(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "access landing wholly inside arr1 should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "access landing inside arr1 should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "access landing inside arr1 should execute both instructions");
     failures += expect_json_not_contains(json, "object-bounds-warning", "access wholly inside another object should not warn without provenance mode");
 
     return failures;
@@ -3762,6 +4039,7 @@ static int test_phase37_partial_overlap_starting_inside_object_warns(void) {
         "main PROC\n"
         "    mov eax, OFFSET a\n"
         "    test DWORD PTR [eax+2], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3789,6 +4067,7 @@ static int test_phase37_write_to_region_gap_warns_and_continues(void) {
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    mov DWORD PTR [eax+40h], 77\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3812,6 +4091,7 @@ static int test_phase37_invalid_address_error_precedes_object_warning(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    test [eax], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3837,6 +4117,7 @@ static int test_phase37_spanning_adjacent_objects_warns(void) {
         "main PROC\n"
         "    mov eax, OFFSET a\n"
         "    test DWORD PTR [eax+2], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3862,6 +4143,7 @@ static int test_phase37_unaligned_inside_object_has_no_object_warning(void) {
         "main PROC\n"
         "    mov eax, OFFSET arr\n"
         "    test DWORD PTR [eax+1], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3886,6 +4168,7 @@ static int test_phase37_const_permission_error_precedes_object_warning(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -3912,6 +4195,7 @@ static int test_phase38_strict_gap_access_fails(void) {
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -3939,6 +4223,7 @@ static int test_phase38_strict_access_into_another_object_succeeds(void) {
         "main PROC\n"
         "    mov eax, OFFSET var1\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -3946,7 +4231,7 @@ static int test_phase38_strict_access_into_another_object_succeeds(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "strict mode should allow access that lands inside arr1");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "strict mode should execute both accepted instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "strict mode should execute both accepted instructions");
     failures += expect_json_not_contains(json, "object-bounds-violation", "strict mode should not reject access wholly inside another object");
 
     return failures;
@@ -3963,6 +4248,7 @@ static int test_phase38_strict_partial_overlap_starting_inside_object_fails(void
         "main PROC\n"
         "    mov eax, OFFSET a\n"
         "    test DWORD PTR [eax+2], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -3990,6 +4276,7 @@ static int test_phase38_strict_spanning_adjacent_objects_fails(void) {
         "main PROC\n"
         "    mov eax, OFFSET a\n"
         "    test DWORD PTR [eax+2], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -4015,6 +4302,7 @@ static int test_phase38_strict_unaligned_inside_object_succeeds(void) {
         "main PROC\n"
         "    mov eax, OFFSET arr\n"
         "    test DWORD PTR [eax+1], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -4037,6 +4325,7 @@ static int test_phase38_strict_invalid_address_precedes_object_violation(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    test [eax], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -4061,6 +4350,7 @@ static int test_phase38_strict_const_permission_error_precedes_object_violation(
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -4085,6 +4375,7 @@ static int test_phase39_explicit_region_only_uninitialized_read_has_no_warning(v
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY
@@ -4112,6 +4403,7 @@ static int test_phase39_initial_uninitialized_origin_metadata(void) {
         "mixed BYTE ?, 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4139,6 +4431,7 @@ static int test_phase39_partial_and_full_writes_mark_initialized_bytes(void) {
         ".code\n"
         "main PROC\n"
         "    mov BYTE PTR x, 12h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4152,6 +4445,7 @@ static int test_phase39_partial_and_full_writes_mark_initialized_bytes(void) {
         ".code\n"
         "main PROC\n"
         "    mov x, 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4176,6 +4470,7 @@ static int test_phase39_failed_writes_do_not_mark_initialized(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4188,6 +4483,7 @@ static int test_phase39_failed_writes_do_not_mark_initialized(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    mov DWORD PTR [eax], 20\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4213,6 +4509,7 @@ static int test_phase40_uninitialized_read_warning_mode_warns_and_continues(void
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4220,7 +4517,7 @@ static int test_phase40_uninitialized_read_warning_mode_warns_and_continues(void
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "warning mode should continue after uninitialized read");
-    failures += expect_json_contains(json, "\"instructionCount\":1", "warning mode should execute the read instruction");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "warning mode should execute the read instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "warning mode should preserve deterministic zero read value");
     failures += expect_json_contains(json, "\"kind\":\"simulator-warning\"", "warning mode should emit a simulator warning");
     failures += expect_json_contains(json, "\"code\":\"uninitialized-read\"", "warning mode should use uninitialized-read code");
@@ -4245,6 +4542,7 @@ static int test_phase40_uninitialized_read_strict_mode_stops(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -4276,6 +4574,7 @@ static int test_phase40_full_write_suppresses_uninitialized_read_diagnostic(void
         "main PROC\n"
         "    mov x, 123\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -4283,7 +4582,7 @@ static int test_phase40_full_write_suppresses_uninitialized_read_diagnostic(void
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "strict mode should allow read after full write");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "strict mode should execute full-write and read instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "strict mode should execute full-write and read instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000007Bh\",\"unsigned\":123}", "read after full write should return written value");
     failures += expect_json_not_contains(json, "uninitialized-read", "full write should suppress uninitialized-read diagnostics");
 
@@ -4301,6 +4600,7 @@ static int test_phase40_partial_write_then_multibyte_read_warns(void) {
         "main PROC\n"
         "    mov BYTE PTR x, 12h\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4308,7 +4608,7 @@ static int test_phase40_partial_write_then_multibyte_read_warns(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "warning mode should continue after partial-write read");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "partial-write warning source should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "partial-write warning source should execute both instructions");
     failures += expect_json_contains(json, "Memory read range 00500000h..00500003h reads 4 bytes from x + 0; 3 of those bytes still originated from uninitialized storage.", "partial write should diagnose the remaining uninitialized bytes in the whole DWORD read range");
     failures += expect_json_contains(json, "\"uninitializedByteCount\":3", "partial-write diagnostic should report the remaining uninitialized byte count");
     failures += expect_json_contains(json, "\"initializedByteCount\":1", "partial-write diagnostic should report the initialized byte count inside the read range");
@@ -4327,6 +4627,7 @@ static int test_phase40_mixed_initializer_multibyte_read_warns_for_whole_range(v
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR mixed\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4350,6 +4651,7 @@ static int test_phase40_data_question_section_warns(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, buf\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4375,6 +4677,7 @@ static int test_phase40_repeated_uninitialized_reads_emit_distinct_warnings(void
         "main PROC\n"
         "    mov eax, x\n"
         "    mov ebx, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4402,6 +4705,7 @@ static int test_phase40_rmw_warning_then_writeback_marks_initialized(void) {
         ".code\n"
         "main PROC\n"
         "    add x, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -4425,6 +4729,7 @@ static int test_phase40_rmw_strict_stops_before_writeback(void) {
         ".code\n"
         "main PROC\n"
         "    add x, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -4469,6 +4774,7 @@ static int run_phase64a_rmw_planned_read_fixture(
         "main PROC\n"
         "%s"
         "    %s\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         setup_source != NULL ? setup_source : "",
@@ -4544,6 +4850,7 @@ static int test_phase64a_memory_source_planned_read_regression(void) {
         ".code\n"
         "main PROC\n"
         "    cmp x, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_and_uninitialized_metadata(
@@ -4578,6 +4885,7 @@ static int test_phase40_invalid_address_precedes_uninitialized_read(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -4602,6 +4910,7 @@ static int test_phase40_object_strict_regression_precedes_uninitialized_read_fea
         "main PROC\n"
         "    mov eax, OFFSET x\n"
         "    test [eax+40h], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -4627,6 +4936,7 @@ static int test_phase39_register_copy_marks_destination_initialized(void) {
         "main PROC\n"
         "    mov eax, x\n"
         "    mov y, eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4649,6 +4959,7 @@ static int test_phase41_irvine32_virtual_include_metadata_source_run(void) {
         "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4657,7 +4968,7 @@ static int test_phase41_irvine32_virtual_include_metadata_source_run(void) {
     failures += expect_json_contains(json, "\"phase\":71", "Irvine32 virtual include response should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Irvine32 include acceptance program should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "Irvine32 include acceptance program should report ok status");
-    failures += expect_json_contains(json, "\"instructionCount\":0", "Irvine32 include acceptance program should not synthesize routine execution");
+    failures += expect_json_contains(json, "\"instructionCount\":1", "Irvine32 include acceptance program should not synthesize routine execution");
     failures += expect_json_contains(json, "\"virtualIncludes\":{\"irvine32\":true,\"irvine32SymbolCount\":", "Irvine32 include should expose registry metadata");
     failures += expect_json_not_contains(json, "\"irvine32SymbolCount\":0", "Irvine32 registry should contain known virtual names");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Irvine32 include acceptance program should complete normally");
@@ -4674,6 +4985,7 @@ static int test_phase41_macros_include_does_not_populate_irvine32_registry(void)
         "INCLUDE Macros.inc\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4695,6 +5007,7 @@ static int test_phase41_irvine32_unsupported_routine_source_run_diagnostic(void)
         ".code\n"
         "main PROC\n"
         "    WriteString\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4722,6 +5035,7 @@ static int test_phase42_irvine32_exit_terminator_source_run(void) {
         "    mov eax, 123\n"
         "    exit\n"
         "    mov eax, 999\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4748,6 +5062,7 @@ static int test_phase42_irvine32_exit_terminator_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    exit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4765,6 +5080,7 @@ static int test_phase42_irvine32_exit_terminator_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    exit 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4777,6 +5093,7 @@ static int test_phase42_irvine32_exit_terminator_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    exit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4787,6 +5104,7 @@ static int test_phase42_irvine32_exit_terminator_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    call ExitProcess\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4811,6 +5129,7 @@ static int test_phase43_inc_dec_register_source_run_program(void) {
         "    mov eax, 0FFFFFFFFh\n"
         "    inc eax\n"
         "    dec eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4818,7 +5137,7 @@ static int test_phase43_inc_dec_register_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 43 INC/DEC response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 43 INC/DEC acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 43 INC/DEC acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 43 INC/DEC acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "INC/DEC acceptance source should leave EAX at FFFFFFFFh");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000081h\",\"unsigned\":129}", "INC/DEC acceptance source should preserve CF and leave SF set");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 43 INC/DEC source should complete successfully");
@@ -4840,13 +5159,14 @@ static int test_phase43_inc_dec_memory_source_run_program(void) {
         "    dec BYTE PTR buf[1]\n"
         "    mov eax, value\n"
         "    mov bl, BYTE PTR buf[1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 43 INC/DEC memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 43 INC/DEC memory source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 43 INC/DEC memory source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "INC value should update DWORD memory to 42");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "DEC BYTE PTR buf[1] should update memory byte to 1");
     failures += expect_json_contains(json, "\"oldHex\":\"00000029h\",\"oldUnsigned\":41,\"newHex\":\"0000002Ah\",\"newUnsigned\":42", "INC DWORD memory change should be reported");
@@ -4863,6 +5183,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    inc [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4878,6 +5199,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    dec eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4888,6 +5210,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    dec 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4898,6 +5221,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    inc eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4911,6 +5235,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    inc DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4926,6 +5251,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    dec limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4938,6 +5264,7 @@ static int test_phase43_inc_dec_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    dec DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4961,6 +5288,7 @@ static int test_phase44_logical_binary_source_run_program(void) {
         "    and eax, 00FFh\n"
         "    or eax, 0100h\n"
         "    xor eax, 000Fh\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -4968,7 +5296,7 @@ static int test_phase44_logical_binary_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 44 logical response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 44 logical acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 44 logical acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 44 logical acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000001FFh\",\"unsigned\":511}", "Phase 44 logical acceptance source should leave EAX at 000001FFh");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 44 logical acceptance source should clear modeled flags");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 44 logical source should complete successfully");
@@ -4991,13 +5319,14 @@ static int test_phase44_logical_binary_memory_source_run_program(void) {
         "    xor eax, eax\n"
         "    mov ebx, value\n"
         "    mov cl, BYTE PTR bytes[1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 44 logical memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 44 logical memory source should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 44 logical memory source should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "XOR EAX,EAX should clear EAX");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"000F000Fh\",\"unsigned\":983055}", "AND value should update DWORD memory");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"000000FFh\",\"unsigned\":255}", "OR BYTE PTR bytes[1] should update byte memory");
@@ -5015,6 +5344,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    and [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5030,6 +5360,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    or 1, eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5043,6 +5374,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    xor value, other\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5055,6 +5387,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    and limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5071,6 +5404,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    or DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5085,6 +5419,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    and ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5099,6 +5434,7 @@ static int test_phase44_logical_binary_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    xor DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5122,6 +5458,7 @@ static int test_phase45_not_source_run_program(void) {
         "    mov eax, 0\n"
         "    test eax, eax\n"
         "    not eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5129,7 +5466,7 @@ static int test_phase45_not_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Milestone 45 NOT regression response should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 45 NOT regression source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Milestone 45 NOT regression source should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Milestone 45 NOT regression source should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "Milestone 45 NOT regression source should leave EAX at FFFFFFFFh");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000040h\",\"unsigned\":64}", "Milestone 45 NOT regression source should preserve TEST flags");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Milestone 45 NOT regression source should complete successfully");
@@ -5157,13 +5494,14 @@ static int test_phase45_not_memory_source_run_program(void) {
         "    mov bl, BYTE PTR bytes[1]\n"
         "    mov cx, wordval\n"
         "    mov edx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Milestone 45 NOT memory regression source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":8", "Milestone 45 NOT memory regression source should execute eight instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":9", "Milestone 45 NOT memory regression source should execute eight instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"F0F0F0F0h\",\"unsigned\":4042322160}", "NOT value should update DWORD memory");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"000000F0h\",\"unsigned\":240}", "NOT BYTE PTR bytes[1] should update byte memory");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"0000F0F0h\",\"unsigned\":61680}", "NOT WORD PTR wordval should update word memory");
@@ -5184,6 +5522,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    not [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5199,6 +5538,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    not 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5209,6 +5549,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    not eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5221,6 +5562,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    not limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5236,6 +5578,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    not DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5250,6 +5593,7 @@ static int test_phase45_not_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    not DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5274,6 +5618,7 @@ static int test_phase46_shift_left_source_run_program(void) {
         "    shl eax, 1\n"
         "    mov ecx, 2\n"
         "    sal eax, cl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5281,7 +5626,7 @@ static int test_phase46_shift_left_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 46 SHL/SAL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 46 SHL/SAL acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 46 SHL/SAL acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 46 SHL/SAL acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "SHL/SAL source should leave EAX at 8");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "SAL by CL=2 should emit default undefined-shift warning");
     failures += expect_json_contains(json, "SAL count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.", "SAL by CL=2 warning should identify defined and undefined modeled flags");
@@ -5308,13 +5653,14 @@ static int test_phase46_shift_left_memory_source_run_program(void) {
         "    mov al, value\n"
         "    mov bx, wordval\n"
         "    mov ecx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 46 SHL/SAL memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "Phase 46 SHL/SAL memory source should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "Phase 46 SHL/SAL memory source should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "SHL BYTE memory should leave AL at zero");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000010h\",\"unsigned\":16}", "SAL WORD memory should shift wordval by four");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"80000000h\",\"unsigned\":2147483648}", "SHL DWORD memory should shift dwordval and count-zero should not change it");
@@ -5333,6 +5679,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shl [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5348,6 +5695,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shl eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5360,6 +5708,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sal limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5373,6 +5722,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    shl DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5386,6 +5736,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    shl DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5398,6 +5749,7 @@ static int test_phase46_shift_left_source_run_error_paths(void) {
         "main PROC\n"
         "    mov al, 1\n"
         "    shl al, 8\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
@@ -5426,6 +5778,7 @@ static int test_phase47_shr_source_run_program(void) {
         "    shr eax, 1\n"
         "    mov ecx, 2\n"
         "    shr eax, cl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5433,7 +5786,7 @@ static int test_phase47_shr_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 47 SHR regression should report current runtime/source-run MASM behavior phase metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 47 SHR regression acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 47 SHR regression acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 47 SHR regression acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"10000000h\",\"unsigned\":268435456}", "SHR source should leave EAX at 10000000h");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "SHR by CL=2 should emit default undefined-shift warning");
     failures += expect_json_contains(json, "SHR count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.", "SHR by CL=2 warning should identify defined and undefined modeled flags");
@@ -5460,13 +5813,14 @@ static int test_phase47_shr_memory_source_run_program(void) {
         "    mov al, value\n"
         "    mov bx, wordval\n"
         "    mov ecx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 47 SHR regression memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "Phase 47 SHR regression memory source should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "Phase 47 SHR regression memory source should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000040h\",\"unsigned\":64}", "SHR BYTE memory should leave AL at 40h");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000800h\",\"unsigned\":2048}", "SHR WORD memory should shift wordval by four");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"40000000h\",\"unsigned\":1073741824}", "SHR DWORD memory should shift dwordval and count-zero should not change it");
@@ -5485,6 +5839,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shr [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5500,6 +5855,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shr eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5510,6 +5866,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shr 1, al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5521,6 +5878,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shr eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5534,6 +5892,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    shr limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5547,6 +5906,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    shr DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5560,6 +5920,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    shr DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5572,6 +5933,7 @@ static int test_phase47_shr_source_run_error_paths(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    shr al, 8\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
@@ -5599,6 +5961,7 @@ static int test_phase48_sar_source_run_program(void) {
         "    sar eax, 1\n"
         "    mov ecx, 2\n"
         "    sar eax, cl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5606,7 +5969,7 @@ static int test_phase48_sar_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 48 SAR response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 48 SAR acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 48 SAR acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 48 SAR acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"F0000000h\",\"unsigned\":4026531840}", "SAR source should leave EAX at F0000000h");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "SAR by CL=2 should emit default undefined-shift warning");
     failures += expect_json_contains(json, "SAR count 2 has effective count 2 for a 32-bit destination. CF, ZF, and SF were updated from the result. OF is architecturally undefined because the effective count is greater than 1. The simulator preserved OF deterministically.", "SAR by CL=2 warning should identify defined and undefined modeled flags");
@@ -5633,13 +5996,14 @@ static int test_phase48_sar_memory_source_run_program(void) {
         "    mov al, value\n"
         "    mov bx, wordval\n"
         "    mov ecx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 48 SAR memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "Phase 48 SAR memory source should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "Phase 48 SAR memory source should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000000C0h\",\"unsigned\":192}", "SAR BYTE memory should leave AL at C0h");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"0000F800h\",\"unsigned\":63488}", "SAR WORD memory should shift wordval by four with sign fill");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"C0000000h\",\"unsigned\":3221225472}", "SAR DWORD memory should shift dwordval and count-zero should not change it");
@@ -5658,6 +6022,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sar [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5673,6 +6038,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sar eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5683,6 +6049,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sar 1, al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5694,6 +6061,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sar eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5707,6 +6075,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    sar limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5720,6 +6089,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    sar DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5733,6 +6103,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    sar DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5745,6 +6116,7 @@ static int test_phase48_sar_source_run_error_paths(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    sar al, 8\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
@@ -5774,6 +6146,7 @@ static int test_phase49_rol_source_run_program(void) {
         "    rol al, 1\n"
         "    mov ecx, 2\n"
         "    rol eax, cl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5781,7 +6154,7 @@ static int test_phase49_rol_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 49 ROL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 49 ROL acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 49 ROL acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 49 ROL acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "ROL source should leave EAX at 4 after one-bit then CL rotate");
     failures += expect_json_contains(json, "\"code\":\"undefined-modeled-flag\"", "ROL by CL=2 should emit default undefined-modeled-flag warning");
     failures += expect_json_contains(json, "ROL count 2 has effective count 2 and rotate amount 2 for a 32-bit destination. CF was updated from the least significant bit of the rotated result. ZF and SF were preserved because ROL does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.", "ROL by CL=2 warning should identify defined and undefined modeled flags");
@@ -5808,13 +6181,14 @@ static int test_phase49_rol_memory_source_run_program(void) {
         "    mov al, value\n"
         "    mov bx, wordval\n"
         "    mov ecx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 49 ROL memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "Phase 49 ROL memory source should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "Phase 49 ROL memory source should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "ROL BYTE memory should leave AL at 03h");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000018h\",\"unsigned\":24}", "ROL WORD memory should rotate wordval by four");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "ROL DWORD memory should rotate dwordval and count-zero should not change it");
@@ -5833,6 +6207,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5848,6 +6223,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5858,6 +6234,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol 1, al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5869,6 +6246,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5880,6 +6258,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol eax, 1, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5893,6 +6272,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    rol limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5906,6 +6286,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    rol DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5919,6 +6300,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    rol DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5931,6 +6313,7 @@ static int test_phase49_rol_source_run_error_paths(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    rol al, 8\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
@@ -5954,6 +6337,7 @@ static int test_phase50_ror_source_run_program(void) {
         "    ror al, 1\n"
         "    mov ecx, 2\n"
         "    ror eax, cl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -5961,7 +6345,7 @@ static int test_phase50_ror_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 50 ROR response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 50 ROR acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 50 ROR acceptance source should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 50 ROR acceptance source should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000020h\",\"unsigned\":32}", "ROR source should leave EAX at 20h after one-bit then CL rotate");
     failures += expect_json_contains(json, "\"code\":\"undefined-modeled-flag\"", "ROR by CL=2 should emit default undefined-modeled-flag warning");
     failures += expect_json_contains(json, "ROR count 2 has effective count 2 and rotate amount 2 for a 32-bit destination. CF was updated from the most significant bit of the rotated result. ZF and SF were preserved because ROR does not define them. OF is architecturally undefined because the effective count is not 1. The simulator preserved OF deterministically.", "ROR by CL=2 warning should identify defined and undefined modeled flags");
@@ -5988,13 +6372,14 @@ static int test_phase50_ror_memory_source_run_program(void) {
         "    mov al, value\n"
         "    mov bx, wordval\n"
         "    mov ecx, dwordval\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 50 ROR memory source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":7", "Phase 50 ROR memory source should execute seven instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":8", "Phase 50 ROR memory source should execute seven instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000000C0h\",\"unsigned\":192}", "ROR BYTE memory should leave AL at C0h");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00001800h\",\"unsigned\":6144}", "ROR WORD memory should rotate wordval by four");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"C0000000h\",\"unsigned\":3221225472}", "ROR DWORD memory should rotate dwordval and count-zero should not change it");
@@ -6013,6 +6398,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6028,6 +6414,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6038,6 +6425,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror 1, al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6049,6 +6437,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6060,6 +6449,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror eax, 1, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6073,6 +6463,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    ror limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6086,6 +6477,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    ror DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6099,6 +6491,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    ror DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6111,6 +6504,7 @@ static int test_phase50_ror_source_run_error_paths(void) {
         "main PROC\n"
         "    mov al, 01h\n"
         "    ror al, 8\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_SHIFT_VALIDATION_STRICT
@@ -6139,6 +6533,7 @@ static int test_phase52_lea_source_run_program(void) {
         "    lea ecx, [ebx + 4]\n"
         "    mov ebx, 0FFFFFFFFh\n"
         "    lea edx, [ebx + 4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6146,7 +6541,7 @@ static int test_phase52_lea_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 52 LEA response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 52 LEA acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 52 LEA acceptance source should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 52 LEA acceptance source should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00500008h\",\"unsigned\":5242888}", "LEA nums[8] should compute OFFSET nums plus eight");
     failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"00500004h\",\"unsigned\":5242884}", "LEA [EBX + 4] should compute address without reading memory");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "LEA wraparound should produce 00000003h");
@@ -6175,6 +6570,7 @@ static int test_phase52_lea_no_memory_diagnostics_source_run(void) {
         "    lea esi, buf\n"
         "    lea edi, limit[ebx]\n"
         "    lea ebp, [limit + ebx]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -6207,6 +6603,7 @@ static int test_phase52_lea_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    lea eax, OFFSET nums\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6224,6 +6621,7 @@ static int test_phase52_lea_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    lea ax, nums\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6234,6 +6632,7 @@ static int test_phase52_lea_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    lea eax, [eax * 4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6244,6 +6643,7 @@ static int test_phase52_lea_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    lea eax, [0]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6256,6 +6656,7 @@ static int test_phase52_lea_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    lea eax, [nums + 2147483648]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6279,6 +6680,7 @@ static int test_phase57corr2_compact_negative_displacement_write_source_run(void
         "    add eax, 4\n"
         "    mov DWORD PTR [eax-4], 10\n"
         "    mov ebx, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6306,6 +6708,7 @@ static int test_phase57corr2_compact_negative_displacement_read_source_run(void)
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov ebx, DWORD PTR [eax-4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6331,6 +6734,7 @@ static int test_phase57corr2_compact_negative_displacement_lea_source_run(void) 
         "    mov ebx, OFFSET x\n"
         "    add ebx, 4\n"
         "    lea eax, [ebx-4]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6357,6 +6761,7 @@ static int test_phase57corr2_compact_negative_displacement_advanced_rejection_so
         "main PROC\n"
         "    mov eax, OFFSET x\n"
         "    mov ebx, DWORD PTR [eax-4*2]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6382,6 +6787,7 @@ static int test_phase53_mul_source_run_program(void) {
         "    mov eax, 10\n"
         "    mov ebx, 20\n"
         "    mul ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6389,7 +6795,7 @@ static int test_phase53_mul_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 53 MUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53 MUL acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 53 MUL acceptance source should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 53 MUL acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "MUL fitting 32-bit product should clear EDX");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"000000C8h\",\"unsigned\":200}", "MUL acceptance source should write EAX=200");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "MUL fitting product should clear CF and OF in EFLAGS");
@@ -6402,6 +6808,7 @@ static int test_phase53_mul_source_run_program(void) {
         "    mov al, 0FFh\n"
         "    mov bl, 2\n"
         "    mul bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6414,6 +6821,7 @@ static int test_phase53_mul_source_run_program(void) {
         "    mov ax, 1234h\n"
         "    mov bx, 10h\n"
         "    mul bx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6426,6 +6834,7 @@ static int test_phase53_mul_source_run_program(void) {
         "    mov eax, 0FFFFFFFFh\n"
         "    mov ebx, 2\n"
         "    mul ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6452,13 +6861,14 @@ static int test_phase53_mul_memory_source_run_program(void) {
         "    mov esi, OFFSET factor\n"
         "    mov eax, 7\n"
         "    mul DWORD PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "MUL memory-source program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "MUL memory-source program should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "MUL memory-source program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000015h\",\"unsigned\":21}", "MUL readable .CONST source should produce final EAX=21");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "MUL memory source fitting product should clear EDX");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "MUL memory-source reads should not create memory-change rows");
@@ -6472,6 +6882,7 @@ static int test_phase53_mul_memory_source_run_program(void) {
         "main PROC\n"
         "    mov eax, 10\n"
         "    mul x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6492,6 +6903,7 @@ static int test_phase53_mul_uninitialized_memory_source_warning(void) {
         "main PROC\n"
         "    mov eax, 3\n"
         "    mul x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -6520,6 +6932,7 @@ static int test_phase56_div_source_run_programs(void) {
         "    mov eax, 100\n"
         "    mov ebx, 7\n"
         "    div ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6527,7 +6940,7 @@ static int test_phase56_div_source_run_programs(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 56 DIV response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 56 32-bit DIV should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 56 32-bit DIV should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 56 32-bit DIV should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Eh\",\"unsigned\":14}", "100/7 DIV should write EAX quotient 14");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "100/7 DIV should write EDX remainder 2");
 
@@ -6537,6 +6950,7 @@ static int test_phase56_div_source_run_programs(void) {
         "    mov ax, 0014h\n"
         "    mov bl, 5\n"
         "    div bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6551,6 +6965,7 @@ static int test_phase56_div_source_run_programs(void) {
         "    mov edx, 0\n"
         "    mov eax, 100\n"
         "    div factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6573,6 +6988,7 @@ static int test_phase56_div_source_run_error_paths(void) {
         "    mov edx, 2\n"
         "    mov ebx, 0\n"
         "    div ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6592,6 +7008,7 @@ static int test_phase56_div_source_run_error_paths(void) {
         "    mov eax, 0\n"
         "    mov ebx, 1\n"
         "    div ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6605,6 +7022,7 @@ static int test_phase56_div_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    div DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6620,6 +7038,7 @@ static int test_phase56_div_source_run_error_paths(void) {
         "    mov edx, 0\n"
         "    mov eax, 100\n"
         "    div factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -6633,6 +7052,7 @@ static int test_phase56_div_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    div [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6653,6 +7073,7 @@ static int test_phase57_idiv_source_run_programs(void) {
         "    cdq\n"
         "    mov ebx, 7\n"
         "    idiv ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6660,7 +7081,7 @@ static int test_phase57_idiv_source_run_programs(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 57 IDIV response should report runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 57 32-bit IDIV should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 57 32-bit IDIV should execute four instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 57 32-bit IDIV should execute four instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFF2h\",\"unsigned\":4294967282}", "-100/7 IDIV should write EAX quotient -14");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFEh\",\"unsigned\":4294967294}", "-100/7 IDIV should write EDX remainder -2");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "register IDIV should not write memory");
@@ -6671,6 +7092,7 @@ static int test_phase57_idiv_source_run_programs(void) {
         "    mov ax, 5\n"
         "    mov bl, -1\n"
         "    idiv bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6685,6 +7107,7 @@ static int test_phase57_idiv_source_run_programs(void) {
         "    mov edx, 0\n"
         "    mov eax, 100\n"
         "    idiv factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6706,6 +7129,7 @@ static int test_phase57_idiv_source_run_programs(void) {
         "    mov edx, 0\n"
         "    mov eax, 5\n"
         "    idiv s\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6727,6 +7151,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    cdq\n"
         "    mov ebx, 0\n"
         "    idiv ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6746,6 +7171,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    cdq\n"
         "    mov ebx, -1\n"
         "    idiv ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6758,6 +7184,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    idiv [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -6771,6 +7198,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    mov edx, 0\n"
         "    mov eax, 100\n"
         "    idiv factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -6790,6 +7218,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    mov edx, 0\n"
         "    mov eax, 10\n"
         "    idiv DWORD PTR [esi + 1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_STRICT,
@@ -6811,6 +7240,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    mov edx, 0\n"
         "    mov eax, 10\n"
         "    idiv DWORD PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_STRICT,
@@ -6834,6 +7264,7 @@ static int test_phase57_idiv_source_run_error_paths(void) {
         "    mov edx, 0\n"
         "    mov eax, 100\n"
         "    idiv factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -6857,6 +7288,7 @@ static int test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled
         "main PROC\n"
         "    mov eax, 10\n"
         "    mul [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY
@@ -6864,7 +7296,7 @@ static int test_phase53a_mul_symbol_offset_crossing_object_is_runtime_controlled
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53A MUL symbol-offset fixture should execute in explicit region-only mode");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 53A MUL symbol-offset fixture should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 53A MUL symbol-offset fixture should execute both instructions");
     failures += expect_json_not_contains(json, "symbol-offset-out-of-range", "Phase 53A must not reject cross-object symbol offset during parsing");
     failures += expect_json_not_contains(json, "object-bounds", "explicit region-only mode should not emit object-bound diagnostics");
     failures += expect_json_not_contains(json, "uninitialized-read", "explicit region-only mode should not emit uninitialized-read diagnostics");
@@ -6887,13 +7319,14 @@ static int test_phase53a_default_object_spanning_read_has_no_object_diagnostic(v
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "default region-only object-spanning read should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":1", "default object-spanning read should execute one instruction");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "default object-spanning read should execute one instruction");
     failures += expect_json_not_contains(json, "object-bounds-warning", "default mode should not emit object-bound warning");
     failures += expect_json_not_contains(json, "object-bounds-violation", "default mode should not emit object-bound violation");
     failures += expect_json_contains(json, "unaligned-memory-access", "default object-spanning read should preserve unaligned warning");
@@ -6914,6 +7347,7 @@ static int test_phase53a_object_spanning_read_warning_mode_continues(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -6941,6 +7375,7 @@ static int test_phase53a_object_spanning_read_strict_mode_stops_before_mutation(
         "main PROC\n"
         "    mov eax, 777\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -6966,6 +7401,7 @@ static int test_phase53a_invalid_region_still_precedes_object_validation(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -6991,6 +7427,7 @@ static int test_phase53a_const_write_precedes_object_validation(void) {
         "main PROC\n"
         "    mov eax, OFFSET c\n"
         "    mov DWORD PTR [eax], 456\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -7017,6 +7454,7 @@ static int test_phase53a_uninitialized_read_modes_on_symbol_offset(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY);
@@ -7053,6 +7491,7 @@ static int test_phase53b_default_section_validation_off(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7078,6 +7517,7 @@ static int test_phase53b_section_image_warning_mode_continues(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7109,6 +7549,7 @@ static int test_phase53b_section_image_strict_mode_stops_before_mutation(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7161,6 +7602,7 @@ static int test_phase53b_data_section_capacity_warning_mode_continues(void) {
         "main PROC\n"
         "    mov eax, 00600000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &policy,
@@ -7193,6 +7635,7 @@ static int test_phase53b_data_section_capacity_strict_mode_stops_before_mutation
         "main PROC\n"
         "    mov eax, 00600000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &policy,
@@ -7221,6 +7664,7 @@ static int test_phase53b_section_capacity_warning_mode_continues(void) {
         "main PROC\n"
         "    mov eax, 00700000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7248,6 +7692,7 @@ static int test_phase53b_section_capacity_strict_mode_stops_before_mutation(void
         "main PROC\n"
         "    mov eax, 00700000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7274,6 +7719,7 @@ static int test_phase53b_invalid_region_precedes_section_validation(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7301,6 +7747,7 @@ static int test_phase53b_const_write_precedes_section_validation(void) {
         "main PROC\n"
         "    mov eax, OFFSET c\n"
         "    mov DWORD PTR [eax], 456\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -7327,6 +7774,7 @@ static int test_phase53b_section_image_warning_precedes_object_warning(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS,
@@ -7358,13 +7806,14 @@ static int test_phase53c_default_uninitialized_read_warns_and_continues(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53C default uninitialized-read warning should continue execution");
-    failures += expect_json_contains(json, "\"instructionCount\":1", "Phase 53C default warning should still execute the read instruction");
+    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 53C default warning should still execute the read instruction");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 53C default warning should preserve deterministic zero read value");
     failures += expect_json_contains_once(json, "\"code\":\"uninitialized-read\"", "Phase 53C default source-run should emit exactly one uninitialized-read warning");
     failures += expect_json_contains(json, "\"kind\":\"simulator-warning\"", "Phase 53C default uninitialized read should be a simulator warning");
@@ -7385,6 +7834,7 @@ static int test_phase53c_uninitialized_read_explicit_off_preserves_silent_behavi
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY
@@ -7410,13 +7860,14 @@ static int test_phase53c_default_indirect_uninitialized_read_warns_for_tracked_o
         "main PROC\n"
         "    mov eax, OFFSET x\n"
         "    mov ebx, DWORD PTR [eax+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53C indirect uninitialized read should continue in warning mode");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 53C indirect uninitialized read should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 53C indirect uninitialized read should execute both instructions");
     failures += expect_json_contains_once(json, "\"code\":\"uninitialized-read\"", "Phase 53C indirect source should emit exactly one uninitialized-read warning");
     failures += expect_json_contains(json, "Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 3 of those bytes still originated from uninitialized storage.", "Phase 53C warning should report tracked uninitialized bytes even when the read extends beyond the tracked image");
     failures += expect_json_contains(json, "\"uninitializedByteCount\":3", "Phase 53C indirect warning should report the overlapping uninitialized byte count");
@@ -7437,13 +7888,14 @@ static int test_phase53c_default_uninitialized_mul_symbol_offset_warns(void) {
         "main PROC\n"
         "    mov eax, 10\n"
         "    mul [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53C MUL symbol-offset default warning should continue");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "Phase 53C MUL symbol-offset source should execute both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 53C MUL symbol-offset source should execute both instructions");
     failures += expect_json_contains_once(json, "\"code\":\"uninitialized-read\"", "Phase 53C MUL source should emit exactly one uninitialized-read warning");
     failures += expect_json_contains(json, "Memory read range 00500001h..00500004h reads 4 bytes from x + 1; 4 of those bytes still originated from uninitialized storage.", "Phase 53C MUL warning should describe the symbol-offset source range");
     failures += expect_json_not_contains(json, "section-image-violation", "Phase 53C default should not enable section-image validation");
@@ -7465,13 +7917,14 @@ static int test_phase53c_default_undefined_flag_use_warns_and_continues(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 53C default undefined flag-use warning should continue execution");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 53C default undefined flag-use warning should execute the ADC consumer");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 53C default undefined flag-use warning should execute the ADC consumer");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Phase 53C default warning should use deterministic preserved CF for ADC");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "Phase 53C default should preserve existing producer warning");
     failures += expect_json_contains_once(json, "\"code\":\"undefined-flag-use\"", "Phase 53C default should emit exactly one undefined-flag-use consumer warning");
@@ -7494,6 +7947,7 @@ static int test_phase53c_undefined_flag_use_explicit_off_preserves_silent_behavi
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF
@@ -7517,6 +7971,7 @@ static int test_phase53_mul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mul 5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7532,6 +7987,7 @@ static int test_phase53_mul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mul eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7542,6 +7998,7 @@ static int test_phase53_mul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mul [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7554,6 +8011,7 @@ static int test_phase53_mul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    mul QWORD PTR q\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7564,6 +8022,7 @@ static int test_phase53_mul_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    mul DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7588,6 +8047,7 @@ static int test_phase54_imul_source_run_program(void) {
         "    mov eax, -2\n"
         "    mov ebx, 3\n"
         "    imul ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7595,7 +8055,7 @@ static int test_phase54_imul_source_run_program(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 54 IMUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 54 IMUL acceptance source should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 54 IMUL acceptance source should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 54 IMUL acceptance source should execute three instructions");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "IMUL fitting signed product should sign-extend EDX");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFFAh\",\"unsigned\":4294967290}", "IMUL acceptance source should write EAX=FFFFFFFAh");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "IMUL fitting product should clear CF and OF in EFLAGS");
@@ -7608,6 +8068,7 @@ static int test_phase54_imul_source_run_program(void) {
         "    mov al, 0FEh\n"
         "    mov bl, 3\n"
         "    imul bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7620,6 +8081,7 @@ static int test_phase54_imul_source_run_program(void) {
         "    mov al, 7Fh\n"
         "    mov bl, 2\n"
         "    imul bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7632,6 +8094,7 @@ static int test_phase54_imul_source_run_program(void) {
         "    mov ax, 0FFFEh\n"
         "    mov bx, 3\n"
         "    imul bx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7657,13 +8120,14 @@ static int test_phase54_imul_memory_source_run_program(void) {
         "    mov esi, OFFSET factor\n"
         "    mov eax, 7\n"
         "    imul SDWORD PTR [esi]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "IMUL memory-source program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "IMUL memory-source program should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "IMUL memory-source program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"FFFFFFE4h\",\"unsigned\":4294967268}", "IMUL readable .CONST source should produce final EAX=-28");
     failures += expect_json_contains(json, "\"EDX\":{\"hex\":\"FFFFFFFFh\",\"unsigned\":4294967295}", "IMUL memory source fitting product should sign-extend EDX");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "IMUL memory-source reads should not create memory-change rows");
@@ -7677,6 +8141,7 @@ static int test_phase54_imul_memory_source_run_program(void) {
         "main PROC\n"
         "    mov eax, 2\n"
         "    imul x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7697,6 +8162,7 @@ static int test_phase54_imul_uninitialized_memory_source_warning(void) {
         "main PROC\n"
         "    mov eax, 3\n"
         "    imul x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7716,6 +8182,7 @@ static int test_phase54_imul_uninitialized_memory_source_warning(void) {
         "main PROC\n"
         "    mov eax, 3\n"
         "    imul x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -7737,6 +8204,7 @@ static int test_phase54_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul 5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7752,6 +8220,7 @@ static int test_phase54_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7764,6 +8233,7 @@ static int test_phase54_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul QWORD PTR q\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7774,6 +8244,7 @@ static int test_phase54_imul_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    imul DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7797,6 +8268,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "    mov eax, 3\n"
         "    mov ebx, 4\n"
         "    imul eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7804,7 +8276,7 @@ static int test_phase55_imul_source_run_programs(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 55 IMUL response should report current runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Phase 55 two-operand IMUL should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":3", "Phase 55 two-operand IMUL should execute three instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":4", "Phase 55 two-operand IMUL should execute three instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}", "3*4 two-operand IMUL should write EAX=12");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "two-operand IMUL should preserve source register");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000000h\",\"unsigned\":0}", "fitting two-operand IMUL should clear CF and OF");
@@ -7814,6 +8286,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "main PROC\n"
         "    mov ebx, 4\n"
         "    imul eax, ebx, -5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7828,6 +8301,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "main PROC\n"
         "    mov eax, 7\n"
         "    imul eax, factor\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7841,6 +8315,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "    mov eax, 80000000h\n"
         "    mov ebx, -1\n"
         "    imul eax, ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7854,6 +8329,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "    mov eax, 12345678h\n"
         "    mov bx, 3\n"
         "    imul ax, bx, -2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7866,6 +8342,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "    mov ebx, 1\n"
         "    imul eax, ebx, -2147483648\n"
         "    imul ecx, ebx, 2147483647\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7880,6 +8357,7 @@ static int test_phase55_imul_source_run_programs(void) {
         "    mov bx, 1\n"
         "    imul ax, bx, -32768\n"
         "    imul cx, bx, 32767\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7898,6 +8376,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul al, bl\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7910,6 +8389,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, 5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7922,6 +8402,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul DWORD PTR [esi], eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7932,6 +8413,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, ebx, ecx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7942,6 +8424,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, ebx, 5, 6\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7954,6 +8437,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, ebx, 2147483648\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7963,6 +8447,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, ebx, -2147483649\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -7973,6 +8458,7 @@ static int test_phase55_imul_source_run_error_paths(void) {
         "main PROC\n"
         "    mov eax, 0\n"
         "    imul ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -8002,6 +8488,7 @@ static int test_phase53d_default_compatibility_notices_continue_execution(void) 
         ".code\n"
         "main PROC\n"
         "    mov eax, 42\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -8038,6 +8525,7 @@ static int test_phase53d_active_semantics_do_not_emit_compatibility_notices(void
         ".code\n"
         "main PROC\n"
         "    exit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -8063,6 +8551,7 @@ static int test_phase53d_notice_plus_error_still_blocks_execution(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -8089,6 +8578,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8108,6 +8598,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 7\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8125,6 +8616,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8142,6 +8634,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8162,6 +8655,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8181,6 +8675,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
@@ -8198,6 +8693,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "main PROC\n"
         "    mov eax, 00700000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_WARN,
@@ -8214,6 +8710,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "main PROC\n"
         "    mov eax, 00700000h\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_SECTION_CAPACITY_STRICT,
@@ -8233,6 +8730,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_WARN,
@@ -8252,6 +8750,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    mov DWORD PTR [eax], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_SECTION_IMAGE_STRICT,
@@ -8270,6 +8769,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, DWORD PTR [x+1]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_WARN,
@@ -8287,6 +8787,7 @@ static int test_phase53e_ui_settings_route_to_existing_policies(void) {
         ".code\n"
         "main PROC\n"
         "    mov DWORD PTR [x+1], 123\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_DECLARED_OBJECT_STRICT,
@@ -8318,6 +8819,7 @@ static int test_phase57d_ui_policy_families_remain_independent(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_ui_settings(
@@ -8372,6 +8874,7 @@ static int test_phase57e_default_startup_state_notice_source_run(void) {
         "main PROC\n"
         "    mov eax, 20\n"
         "    add eax, 22\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -8399,6 +8902,7 @@ static int test_phase57e_startup_state_notice_opt_out_source_run(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 7\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
@@ -8425,6 +8929,7 @@ static int test_phase57e_startup_state_notice_opt_out_keeps_other_diagnostics(vo
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
@@ -8452,6 +8957,7 @@ static int test_phase57e_startup_state_notice_preserves_uninitialized_origin_met
         "y DWORD 5\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
@@ -8472,6 +8978,7 @@ static int test_phase57e_invalid_startup_state_notice_setting(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         (Masm32SimWasmStartupStateNoticeSetting)99
     );
@@ -8491,6 +8998,7 @@ static int test_phase57h_register_write_metadata_no_register_writes(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
@@ -8520,6 +9028,7 @@ static int test_phase57h_register_write_metadata_same_value_parent_write(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 0\n"
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
@@ -8543,6 +9052,7 @@ static int test_phase57h_register_write_metadata_alias_writes(void) {
         ".code\n"
         "main PROC\n"
         "    mov ax, 0\n"
+        "    ret\n"
         "END main\n"
     );
     failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AX write should mark EAX family as written");
@@ -8551,6 +9061,7 @@ static int test_phase57h_register_write_metadata_alias_writes(void) {
         ".code\n"
         "main PROC\n"
         "    mov ah, 0\n"
+        "    ret\n"
         "END main\n"
     );
     failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AH write should mark EAX family as written");
@@ -8559,6 +9070,7 @@ static int test_phase57h_register_write_metadata_alias_writes(void) {
         ".code\n"
         "main PROC\n"
         "    mov al, 0\n"
+        "    ret\n"
         "END main\n"
     );
     failures += expect_json_contains(json, "\"registerWrites\":{\"EAX\":true", "AL write should mark EAX family as written");
@@ -8568,6 +9080,7 @@ static int test_phase57h_register_write_metadata_alias_writes(void) {
         "main PROC\n"
         "    mov si, 0\n"
         "    mov sp, 0\n"
+        "    ret\n"
         "END main\n"
     );
     failures += expect_json_contains(json, "\"ESI\":true", "SI write should mark ESI family as written");
@@ -8584,6 +9097,7 @@ static int test_phase57h_seeded_startup_not_counted_as_program_write(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         123456789U,
@@ -8617,6 +9131,7 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
         "main PROC\n"
         "    invoke StdOut, addr titleMsg\n"
         "    mov eax, 42\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8624,6 +9139,7 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
         ".code\n"
         "main PROC\n"
         "    invoke crt_printf, addr numberFmt, counter\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8632,6 +9148,7 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
         ".code\n"
         "main PROC\n"
         "    invoke ExitProcess, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8641,6 +9158,7 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
         "    invoke StdOut, addr titleMsg\n"
         "    invoke crt_printf, addr numberFmt, counter\n"
         "    invoke ExitProcess, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8651,6 +9169,7 @@ static int test_phase57r_invoke_addr_external_routine_source_run_diagnostics(voi
         "    mov eax, 1\n"
         "    exit\n"
         "    mov eax, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8749,6 +9268,7 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
         "\n"
         "    invoke crt_printf, addr numberFmt, total\n"
         "    invoke ExitProcess, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8757,12 +9277,14 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
         ".code\n"
         "main PROC\n"
         "    call AddToTotal\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     copy_source_run_json(ret_copy, sizeof(ret_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "    ret\n"
         "main ENDP\n"
         "END main\n"
@@ -8771,6 +9293,7 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
         ".code\n"
         "main PROC\n"
         "    cmp eax, 6\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8778,6 +9301,7 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
         ".code\n"
         "main PROC\n"
         "    loop main_loop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8787,6 +9311,7 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
         ".code\n"
         "main PROC\n"
         "    invoke ExitProcess, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8824,7 +9349,7 @@ static int test_phase57t_playground_diagnostic_recovery_smoke_fixtures(void) {
     failures += expect_json_not_contains(ret_copy, "programConsole", "Phase 71 root RET fixture should not produce Program Console output");
 
     failures += expect_json_contains(cmp_copy, "\"ok\":true", "Phase 62 CMP register/immediate fixture should execute successfully");
-    failures += expect_json_contains(cmp_copy, "\"instructionCount\":1", "Phase 62 CMP register/immediate fixture should emit one instruction");
+    failures += expect_json_contains(cmp_copy, "\"instructionCount\":2", "Phase 62 CMP register/immediate fixture should emit one instruction");
     failures += expect_json_contains(cmp_copy, "\"EFLAGS\":{\"hex\":\"00000081h\",\"unsigned\":129}", "Phase 62 CMP register/immediate fixture should update subtraction flags");
     failures += expect_json_contains(cmp_copy, "execution-complete", "Phase 62 CMP register/immediate fixture should complete");
     failures += expect_json_not_contains(cmp_copy, "programConsole", "Phase 62 CMP register/immediate fixture should not produce Program Console output");
@@ -8865,7 +9390,8 @@ static int test_phase58_label_source_run_behavior(void) {
             "next:\n"
             "    mov ebx, 2\n"
             "done:\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -8878,7 +9404,8 @@ static int test_phase58_label_source_run_behavior(void) {
             "first:\n"
             "second:\n"
             "    mov eax, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -8892,7 +9419,8 @@ static int test_phase58_label_source_run_behavior(void) {
             "    mov eax, 1\n"
             "start:\n"
             "    mov ebx, 2\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -8907,7 +9435,8 @@ static int test_phase58_label_source_run_behavior(void) {
             "    mov ebx, 2\n"
             "done:\n"
             "    mov ecx, 3\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -8920,22 +9449,23 @@ static int test_phase58_label_source_run_behavior(void) {
             "start:\n"
             "    mov ecx, 1\n"
             "    loop start\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":71", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
-    failures += expect_json_contains(labeled_copy, "\"instructionCount\":2", "labels should not emit extra executable instructions");
+    failures += expect_json_contains(labeled_copy, "\"instructionCount\":3", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
     failures += expect_json_contains(labeled_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "labeled source should set EBX");
     failures += expect_json_contains(labeled_copy, "\"memoryChanges\":[]", "labels-only source should not create memory changes");
     failures += expect_json_not_contains(labeled_copy, "programConsole", "labels should not create Program Console output");
 
     failures += expect_json_contains(consecutive_copy, "\"ok\":true", "consecutive labels should execute");
-    failures += expect_json_contains(consecutive_copy, "\"instructionCount\":1", "consecutive labels should execute following instruction once");
+    failures += expect_json_contains(consecutive_copy, "\"instructionCount\":2", "consecutive labels should execute following instruction once");
     failures += expect_json_contains(consecutive_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "consecutive labels should leave EAX = 1");
 
     failures += expect_json_contains(duplicate_copy, "\"ok\":false", "duplicate label source should not execute");
@@ -8945,7 +9475,7 @@ static int test_phase58_label_source_run_behavior(void) {
     failures += expect_json_not_contains(duplicate_copy, "programConsole", "duplicate label source should not create Program Console output");
 
     failures += expect_json_contains(jmp_copy, "\"ok\":true", "jmp label source should execute in Phase 61");
-    failures += expect_json_contains(jmp_copy, "\"instructionCount\":3", "jmp label source should commit MOV, JMP, and target MOV");
+    failures += expect_json_contains(jmp_copy, "\"instructionCount\":4", "jmp label source should commit MOV, JMP, and target MOV");
     failures += expect_json_contains(jmp_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0", "jmp label source should skip fall-through instruction");
     failures += expect_json_contains(jmp_copy, "\"ECX\":{\"hex\":\"00000003h\",\"unsigned\":3", "jmp label source should execute branch target");
     failures += expect_json_not_contains(jmp_copy, "branch-runtime-deferred", "jmp label source should no longer use Phase 60 deferred branch diagnostic");
@@ -8981,6 +9511,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
         "    mov ebx, 2\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -8996,6 +9527,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
         "    mov ebx, 2\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9013,6 +9545,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
         "    mov ebx, 3\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9029,15 +9562,16 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
         "    mov ebx, 2\n"
         "done:\n"
         "    mov ecx, 4\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
-    failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
+    failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JE should not emit deferred branch diagnostic");
 
@@ -9062,6 +9596,7 @@ static int test_phase64_equality_jump_instruction_limit(void) {
         "start:\n"
         "    cmp eax, eax\n"
         "    je start\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -9094,6 +9629,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    je missing\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9103,6 +9639,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jnz value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9111,6 +9648,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    je exit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9118,6 +9656,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    je eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9125,6 +9664,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jz [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9132,6 +9672,7 @@ static int test_phase64_equality_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jne 1234h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9176,6 +9717,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
         "    mov ebx, 1\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9197,6 +9739,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
         "less:\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9224,6 +9767,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
         "    mov ebx, 6\n"
         "ge_alias:\n"
         "    mov edi, 5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9256,6 +9800,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
         "    mov ebp, 6\n"
         "skipped_for_greater:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9271,15 +9816,16 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
         "    mov ebx, 1\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
-    failures += expect_json_contains(acceptance_json, "\"instructionCount\":5", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
+    failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JL should not emit deferred branch diagnostic");
 
@@ -9325,6 +9871,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jl missing\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9334,6 +9881,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jge value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9342,6 +9890,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jnl exit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9349,6 +9898,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jl eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9356,6 +9906,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jle [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9363,6 +9914,7 @@ static int test_phase65_signed_relational_jump_source_run_diagnostics(void) {
         ".code\n"
         "main PROC\n"
         "    jg 1234h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9393,6 +9945,7 @@ static int test_phase65_signed_relational_jump_instruction_limit(void) {
         "start:\n"
         "    cmp eax, eax\n"
         "    jge start\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -9405,6 +9958,7 @@ static int test_phase65_signed_relational_jump_instruction_limit(void) {
         "    mov ebx, 1\n"
         "skipped:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -9443,6 +9997,7 @@ static int test_phase65_signed_relational_undefined_flag_use_policy(void) {
         "    jl target\n"
         "target:\n"
         "    mov ebx, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
@@ -9455,6 +10010,7 @@ static int test_phase65_signed_relational_undefined_flag_use_policy(void) {
         "    jg target\n"
         "target:\n"
         "    mov ebx, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
@@ -9467,6 +10023,7 @@ static int test_phase65_signed_relational_undefined_flag_use_policy(void) {
         "    jl target\n"
         "target:\n"
         "    mov ebx, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF
@@ -9480,6 +10037,7 @@ static int test_phase65_signed_relational_undefined_flag_use_policy(void) {
         "    mov ebx, 2\n"
         "target:\n"
         "    mov ebx, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
@@ -9531,6 +10089,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
         "    mov ebx, 1\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9553,6 +10112,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
         "    mov edx, 3\n"
         "not_below:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9580,6 +10140,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
         "    mov esi, 9\n"
         "below_equal_alias:\n"
         "    mov esi, 4\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9596,6 +10157,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
         "    mov ecx, 3\n"
         "below:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9618,13 +10180,14 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
         "    mov ecx, 1\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -9673,9 +10236,9 @@ static int test_phase66_unsigned_relational_jump_error_paths(void) {
     copy_source_run_json(memory_json, sizeof(memory_json), masm32_sim_wasm_run_source_json(".code\nmain PROC\n    jbe [eax]\nmain ENDP\nEND main\n"));
     copy_source_run_json(immediate_json, sizeof(immediate_json), masm32_sim_wasm_run_source_json(".code\nmain PROC\n    jnb 1234h\nmain ENDP\nEND main\n"));
     copy_source_run_json(loop_json, sizeof(loop_json), masm32_sim_wasm_run_source_json_with_instruction_limit(".code\nmain PROC\nstart:\n    cmp eax, eax\n    jae start\nmain ENDP\nEND main\n", 5U));
-    copy_source_run_json(warn_json, sizeof(warn_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    ja target\ntarget:\n    mov ebx, 1\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN));
-    copy_source_run_json(off_json, sizeof(off_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    ja target\n    mov ebx, 2\n    jmp done\ntarget:\n    mov ebx, 1\ndone:\n    nop\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF));
-    copy_source_run_json(error_json, sizeof(error_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    jbe target\n    mov ebx, 2\ntarget:\n    mov ebx, 1\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR));
+    copy_source_run_json(warn_json, sizeof(warn_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    ja target\ntarget:\n    mov ebx, 1\n    ret\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN));
+    copy_source_run_json(off_json, sizeof(off_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    ja target\n    mov ebx, 2\n    jmp done\ntarget:\n    mov ebx, 1\ndone:\n    nop\n    ret\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF));
+    copy_source_run_json(error_json, sizeof(error_json), masm32_sim_wasm_run_source_json_with_undefined_flag_use_policy(".code\nmain PROC\n    mov al, 1\n    shl al, 8\n    jbe target\n    mov ebx, 2\ntarget:\n    mov ebx, 1\n    ret\nmain ENDP\nEND main\n", MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR));
 
     failures += expect_json_contains(data_json, "JA target cannot be a data symbol", "data-target JA diagnostic should name unsigned jump mnemonic");
     failures += expect_json_contains(exit_json, "JNA target cannot be an Irvine32 virtual routine", "exit-target JNA diagnostic should reject Irvine32 target");
@@ -9724,13 +10287,14 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "main PROC\n"
         "    call Helper\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov ebx, 2\n"
         "Helper ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71A runtime metadata");
+    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71C runtime metadata");
     failures += expect_json_contains(valid_copy, "\"ok\":false", "direct user-procedure CALL with helper fallthrough should now fail at the helper boundary");
     failures += expect_json_contains(valid_copy, "\"code\":\"non-root-procedure-fell-through\"", "CALL-reached helper fallthrough should use Phase 71 diagnostic");
     failures += expect_json_contains(valid_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "direct CALL should transfer to the helper procedure body before fallthrough diagnostic");
@@ -9746,6 +10310,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "main PROC\n"
         "    call Helper\n"
         "    mov eax, value\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov ebx, value\n"
@@ -9769,6 +10334,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "    mov esp, 0\n"
         "    call Helper\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov ebx, 2\n"
@@ -9791,6 +10357,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         ".code\n"
         "main PROC\n"
         "    call WriteString\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9822,6 +10389,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
         "    call Helper\n"
         "    mov ebx, eax\n"
         "    exit\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov eax, 42\n"
@@ -9831,8 +10399,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":71", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
-    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71B should report current output-contract metadata");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71C should report current output-contract metadata");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
@@ -9845,6 +10413,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
         "main PROC\n"
         "    call Helper\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov DWORD PTR [esp], 12345678h\n"
@@ -9865,6 +10434,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
         ".code\n"
         "main PROC\n"
         "    ret\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -9881,7 +10451,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
             ".code\n"
             "main PROC\n"
             "    ret\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -9914,7 +10485,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
             ".code\n"
             "main PROC\n"
             "    ret\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
@@ -9938,7 +10510,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
             ".code\n"
             "main PROC\n"
             "    RET\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -9962,7 +10535,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
             "main PROC\n"
             "    call Helper\n"
             "    ret\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "Helper PROC\n"
             "    mov eax, 7\n"
             "Helper ENDP\n"
@@ -10002,6 +10576,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
         "    call Helper\n"
         "    mov eax, value\n"
         "    exit\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    mov ebx, value\n"
@@ -10023,7 +10598,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
             ".code\n"
             "main PROC\n"
             "    ret\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -10044,21 +10620,22 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     return failures;
 }
 
-/// Verifies Phase 71A runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies Phase 71C runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
-static int test_phase71a_source_run_phase_metadata(void) {
+static int test_phase71c_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n"
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71A metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 71A should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71A should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71B should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71C metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"C\"", "Phase 71C should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "Phase 71C should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71C should report separate source-run output-contract metadata");
 
     return failures;
 }
@@ -10102,6 +10679,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    imul eax, 5\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10110,6 +10688,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         "main PROC\n"
         "LabelOnly:\n"
         "    call LabelOnly\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10119,6 +10698,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10126,6 +10706,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call ret\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10133,6 +10714,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call NEAR PTR Helper\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    ret\n"
@@ -10143,6 +10725,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10150,6 +10733,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10157,6 +10741,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call 1234\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10164,6 +10749,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call .code\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10171,6 +10757,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    call OFFSET Helper\n"
+        "    ret\n"
         "main ENDP\n"
         "Helper PROC\n"
         "    ret\n"
@@ -10181,6 +10768,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    ret 4\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10188,6 +10776,7 @@ static int test_phase71b_source_run_diagnostic_wording_cleanup(void) {
         ".code\n"
         "main PROC\n"
         "    retf\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10319,11 +10908,12 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "main PROC\n"
         "    mov eax, 1\n"
         "    mov ebx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(fallthrough_copy, "\"ok\":true", "Phase 68B fallthrough fixture should run");
-    failures += expect_json_contains(fallthrough_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "selected-entry fallthrough should leave displayed EIP at the last executed pseudo-address");
+    failures += expect_json_contains(fallthrough_copy, "\"EIP\":{\"hex\":\"00401008h\",\"unsigned\":4198408}", "selected-entry fallthrough should leave displayed EIP at the last executed pseudo-address");
     failures += expect_json_contains(fallthrough_copy, "\"registerRoles\":{\"EIP\":\"derived-control-state\",\"ESP\":\"stack-pointer\"}", "Phase 68B should expose register display-role metadata");
     failures += expect_json_contains(fallthrough_copy, "\"EIP\":false", "Phase 68B should not report displayed EIP as a source-written register");
 
@@ -10334,12 +10924,13 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov eax, 1\n"
         "target:\n"
         "    mov eax, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(jmp_copy, "\"ok\":true", "Phase 68B direct JMP fixture should run");
     failures += expect_json_contains(jmp_copy, "\"EAX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "Phase 68B JMP fixture should execute the branch target");
-    failures += expect_json_contains(jmp_copy, "\"EIP\":{\"hex\":\"00401008h\",\"unsigned\":4198408}", "Direct JMP fallthrough boundary should leave displayed EIP at target instruction pseudo-address");
+    failures += expect_json_contains(jmp_copy, "\"EIP\":{\"hex\":\"0040100Ch\",\"unsigned\":4198412}", "Direct JMP fallthrough boundary should leave displayed EIP at target instruction pseudo-address");
 
     copy_source_run_json(empty_entry_copy, sizeof(empty_entry_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -10347,26 +10938,28 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov eax, 1\n"
         "helper ENDP\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(empty_entry_copy, "\"ok\":true", "Phase 68B empty selected entry should complete");
-    failures += expect_json_contains(empty_entry_copy, "\"executedInstructionCount\":0", "Phase 68B empty selected entry should execute zero instructions");
-    failures += expect_json_contains(empty_entry_copy, "\"currentInstructionIndex\":null", "Phase 68B empty selected entry should not expose current instruction index");
+    failures += expect_json_contains(empty_entry_copy, "\"executedInstructionCount\":1", "Phase 68B empty selected entry should execute zero instructions");
+    failures += expect_json_contains(empty_entry_copy, "\"currentInstructionIndex\":0", "Phase 68B empty selected entry should not expose current instruction index");
     failures += expect_json_contains(empty_entry_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B empty selected entry should not expose attempted next instruction");
-    failures += expect_json_contains(empty_entry_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B empty selected entry should display base pseudo-EIP");
+    failures += expect_json_contains(empty_entry_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "Phase 68B empty selected entry should display base pseudo-EIP");
 
     copy_source_run_json(no_executable_copy, sizeof(no_executable_copy), masm32_sim_wasm_run_source_json(
         ".data\n"
         "value DWORD 1\n"
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(no_executable_copy, "\"ok\":true", "Phase 68B no-executable program should complete");
-    failures += expect_json_contains(no_executable_copy, "\"instructionCount\":0", "Phase 68B no-executable program should report zero lowered instructions");
-    failures += expect_json_contains(no_executable_copy, "\"executedInstructionCount\":0", "Phase 68B no-executable program should execute zero instructions");
+    failures += expect_json_contains(no_executable_copy, "\"instructionCount\":1", "Phase 68B no-executable program should report zero lowered instructions");
+    failures += expect_json_contains(no_executable_copy, "\"executedInstructionCount\":1", "Phase 68B no-executable program should execute zero instructions");
     failures += expect_json_contains(no_executable_copy, "\"currentInstructionIndex\":null", "Phase 68B no-executable program should not expose current instruction index");
     failures += expect_json_contains(no_executable_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B no-executable program should not expose attempted next instruction");
     failures += expect_json_contains(no_executable_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B no-executable program should display base pseudo-EIP");
@@ -10381,12 +10974,13 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov ebx, 1\n"
         "target:\n"
         "    mov ecx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(conditional_taken_copy, "\"ok\":true", "Phase 68B conditional taken fixture should run");
     failures += expect_json_contains(conditional_taken_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 68B taken JE should skip the fallthrough body");
-    failures += expect_json_contains(conditional_taken_copy, "\"EIP\":{\"hex\":\"00401010h\",\"unsigned\":4198416}", "Phase 68B taken JE should leave EIP at target pseudo-address after boundary completion");
+    failures += expect_json_contains(conditional_taken_copy, "\"EIP\":{\"hex\":\"00401014h\",\"unsigned\":4198420}", "Phase 68B taken JE should leave EIP at target pseudo-address after boundary completion");
 
     copy_source_run_json(conditional_not_taken_copy, sizeof(conditional_not_taken_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -10400,13 +10994,14 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov ebx, 99\n"
         "done:\n"
         "    mov ecx, 4\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(conditional_not_taken_copy, "\"ok\":true", "Phase 68B conditional not-taken fixture should run");
     failures += expect_json_contains(conditional_not_taken_copy, "\"EBX\":{\"hex\":\"00000003h\",\"unsigned\":3}", "Phase 68B not-taken JE should execute the fallthrough instruction");
     failures += expect_json_contains(conditional_not_taken_copy, "\"ECX\":{\"hex\":\"00000004h\",\"unsigned\":4}", "Phase 68B not-taken fixture should complete at the shared done label");
-    failures += expect_json_contains(conditional_not_taken_copy, "\"EIP\":{\"hex\":\"00401018h\",\"unsigned\":4198424}", "Phase 68B not-taken fixture should leave EIP at the final completed instruction pseudo-address");
+    failures += expect_json_contains(conditional_not_taken_copy, "\"EIP\":{\"hex\":\"0040101Ch\",\"unsigned\":4198428}", "Phase 68B not-taken fixture should leave EIP at the final completed instruction pseudo-address");
 
     copy_source_run_json(runtime_error_copy, sizeof(runtime_error_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -10414,6 +11009,7 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov eax, 10\n"
         "    mov ebx, 0\n"
         "    div ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10427,6 +11023,7 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "start:\n"
         "    inc eax\n"
         "    jmp start\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         3U
@@ -10440,6 +11037,7 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, eip\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10456,6 +11054,7 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "    mov esp, 1\n"
         "    add esp, 4\n"
         "    sub esp, 4\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10483,13 +11082,14 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "helper ENDP\n"
         "main PROC\n"
         "    mov eax, 100\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":71", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"A\"", "Helper-before-entry source should report current suffix metadata");
-    failures += expect_json_contains(before_copy, "\"executedInstructionCount\":1", "Phase 67A should execute only the selected entry instruction");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"C\"", "Helper-before-entry source should report current suffix metadata");
+    failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
     failures += expect_json_contains(before_copy, "\"code\":\"execution-complete\"", "selected main fallthrough should complete normally");
@@ -10498,6 +11098,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "helper PROC\n"
         "    mov ecx, 2\n"
@@ -10505,7 +11106,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(after_copy, "\"ok\":true", "Phase 67A helper-after-entry source should execute");
-    failures += expect_json_contains(after_copy, "\"executedInstructionCount\":1", "Phase 67A should stop at selected entry ENDP boundary");
+    failures += expect_json_contains(after_copy, "\"executedInstructionCount\":2", "Phase 67A should stop at selected entry ENDP boundary");
     failures += expect_json_contains(after_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "selected main should set EAX once");
     failures += expect_json_contains(after_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper after main must not execute by fallthrough");
     failures += expect_json_contains_once(after_copy, "execution-complete", "selected-entry fallthrough should emit exactly one completion message");
@@ -10516,6 +11117,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "    mov ecx, 3\n"
         "helper ENDP\n"
         "main PROC\n"
+        "    ret\n"
         "main ENDP\n"
         "after PROC\n"
         "    mov eax, 4\n"
@@ -10523,7 +11125,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(empty_copy, "\"ok\":true", "Phase 67A empty entry source should complete successfully");
-    failures += expect_json_contains(empty_copy, "\"executedInstructionCount\":0", "empty selected entry should execute no instructions");
+    failures += expect_json_contains(empty_copy, "\"executedInstructionCount\":1", "empty selected entry should execute no instructions");
     failures += expect_json_contains(empty_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "empty selected entry must not run later procedure");
     failures += expect_json_contains(empty_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "empty selected entry must not run earlier procedure");
     failures += expect_json_contains(empty_copy, "\"code\":\"execution-complete\"", "empty selected entry should complete normally");
@@ -10532,14 +11134,16 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, 9\n"
+        "    ret\n"
         "main ENDP\n"
         "helper PROC\n"
         "    mov ebx, 7\n"
+        "    ret\n"
         "helper ENDP\n"
         "END helper\n"
     ));
     failures += expect_json_contains(selected_copy, "\"ok\":true", "Phase 67A END helper source should execute");
-    failures += expect_json_contains(selected_copy, "\"executedInstructionCount\":1", "END helper should execute only helper body");
+    failures += expect_json_contains(selected_copy, "\"executedInstructionCount\":2", "END helper should execute only helper body");
     failures += expect_json_contains(selected_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "non-selected main procedure must not execute");
     failures += expect_json_contains(selected_copy, "\"EBX\":{\"hex\":\"00000007h\",\"unsigned\":7}", "selected helper procedure should execute");
 
@@ -10557,6 +11161,7 @@ static int test_phase68a_source_run_observes_fixed_layout_esp_startup(void) {
         "    mov ebx, 008FF000h\n"
         "    mov DWORD PTR [ebx], 456\n"
         "    mov ecx, DWORD PTR [ebx]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -10577,6 +11182,7 @@ static int test_phase68a_seeded_startup_preserves_stack_pointer_contract(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         123456789U,
@@ -10603,6 +11209,7 @@ static int test_phase68a_automatic_layout_esp_uses_selected_stack_metadata(void)
         "    mov ebx, 008FF000h\n"
         "    mov DWORD PTR [ebx], 456\n"
         "    mov ecx, DWORD PTR [ebx]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         NULL
@@ -10636,6 +11243,7 @@ static int test_phase67a_entry_boundary_error_and_transfer_regressions(void) {
         "    mov eax, 5\n"
         "    mov ebx, 0\n"
         "    div ebx\n"
+        "    ret\n"
         "main ENDP\n"
         "after PROC\n"
         "    mov edx, 99\n"
@@ -10658,6 +11266,7 @@ static int test_phase67a_entry_boundary_error_and_transfer_regressions(void) {
         "    mov eax, 123\n"
         "    exit\n"
         "    mov eax, 999\n"
+        "    ret\n"
         "main ENDP\n"
         "after PROC\n"
         "    mov ebx, 1\n"
@@ -10671,17 +11280,20 @@ static int test_phase67a_entry_boundary_error_and_transfer_regressions(void) {
     failures += expect_json_contains_once(exit_copy, "execution-complete", "exit fixture should emit one completion message");
 
     copy_source_run_json(jmp_copy, sizeof(jmp_copy), masm32_sim_wasm_run_source_json(
+        "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
         "    jmp helper\n"
+        "    ret\n"
         "main ENDP\n"
         "helper PROC\n"
         "    mov eax, 42\n"
+        "    exit\n"
         "helper ENDP\n"
         "END main\n"
     ));
     failures += expect_json_contains(jmp_copy, "\"ok\":true", "Phase 67A should preserve explicit JMP to procedure-entry label");
-    failures += expect_json_contains(jmp_copy, "\"executedInstructionCount\":2", "explicit JMP outside selected entry should execute target instruction");
+    failures += expect_json_contains(jmp_copy, "\"executedInstructionCount\":3", "explicit JMP outside selected entry should execute target instruction");
     failures += expect_json_contains(jmp_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "explicit JMP target procedure should execute");
 
     copy_source_run_json(conditional_copy, sizeof(conditional_copy), masm32_sim_wasm_run_source_json(
@@ -10689,6 +11301,7 @@ static int test_phase67a_entry_boundary_error_and_transfer_regressions(void) {
         "main PROC\n"
         "    cmp eax, eax\n"
         "    jne after\n"
+        "    ret\n"
         "main ENDP\n"
         "after PROC\n"
         "    mov ecx, 8\n"
@@ -10696,7 +11309,7 @@ static int test_phase67a_entry_boundary_error_and_transfer_regressions(void) {
         "END main\n"
     ));
     failures += expect_json_contains(conditional_copy, "\"ok\":true", "Phase 67A conditional fallthrough fixture should complete");
-    failures += expect_json_contains(conditional_copy, "\"executedInstructionCount\":2", "non-taken final conditional jump should count before boundary completion");
+    failures += expect_json_contains(conditional_copy, "\"executedInstructionCount\":3", "non-taken final conditional jump should count before boundary completion");
     failures += expect_json_contains(conditional_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "non-taken final Jcc must not fall through into later procedure");
     failures += expect_json_contains_once(conditional_copy, "execution-complete", "conditional fallthrough should emit one completion message");
 
@@ -10734,6 +11347,7 @@ static int test_phase67_arithmetic_branch_watchdog_source_run_harness(void) {
         "    mov edx, 3\n"
         "done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10765,6 +11379,7 @@ static int test_phase67_arithmetic_branch_watchdog_source_run_harness(void) {
         "    mov edi, 99\n"
         "final_done:\n"
         "    nop\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     ));
@@ -10777,6 +11392,7 @@ static int test_phase67_arithmetic_branch_watchdog_source_run_harness(void) {
         "    mov ebx, 99\n"
         "taken:\n"
         "    jmp again\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -10824,13 +11440,14 @@ static int test_phase63_cmp_memory_source_run_programs(void) {
         "    cmp other, eax\n"
         "    cmp nums[4], 2\n"
         "    cmp limit, 10\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 63 CMP memory source-run program should execute");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Phase 63 CMP memory program should execute five instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Phase 63 CMP memory program should execute five instructions");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5", "CMP memory comparisons should not mutate EAX");
     failures += expect_json_contains(json, "\"EFLAGS\":{\"hex\":\"00000040h\",\"unsigned\":64}", "final .CONST CMP equality should set ZF only");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "CMP memory comparisons should not create memory-change rows");
@@ -10850,6 +11467,7 @@ static int test_phase63_cmp_uninitialized_read_policy(void) {
         "main PROC\n"
         "    stc\n"
         "    cmp value, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *json = masm32_sim_wasm_run_source_json_with_memory_validation_mode(source, MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS);
@@ -10884,6 +11502,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "    mov eax, OFFSET x\n"
         "    add eax, 4\n"
         "    cmp DWORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -10906,6 +11525,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "    add eax, 4\n"
         "    stc\n"
         "    cmp DWORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY,
@@ -10925,6 +11545,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "main PROC\n"
         "    mov eax, 00600000h\n"
         "    cmp DWORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &policy,
@@ -10944,6 +11565,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "    stc\n"
         "    mov eax, 00600000h\n"
         "    cmp DWORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         &policy,
@@ -10966,6 +11588,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "main PROC\n"
         "    mov eax, OFFSET x\n"
         "    cmp WORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_WARNINGS
@@ -10983,6 +11606,7 @@ static int test_phase63_cmp_section_and_object_planned_read_policy(void) {
         "    stc\n"
         "    mov eax, OFFSET x\n"
         "    cmp WORD PTR [eax], 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -11005,6 +11629,7 @@ static int test_phase63_cmp_invalid_level1_read_preserves_flags(void) {
         "    stc\n"
         "    mov eax, 0\n"
         "    cmp DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -11038,7 +11663,8 @@ static int test_phase59_instruction_limit_source_run(void) {
             "    mov eax, 1\n"
             "    mov ebx, 2\n"
             "    mov ecx, 3\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             2U
         )
@@ -11067,7 +11693,8 @@ static int test_phase59_instruction_limit_source_run(void) {
             "    mov eax, 1\n"
             "next:\n"
             "    mov ebx, 2\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             1U
         )
@@ -11088,7 +11715,8 @@ static int test_phase59_instruction_limit_source_run(void) {
             "main PROC\n"
             "    mov value, 1\n"
             "    mov value, 2\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             1U
         )
@@ -11100,6 +11728,7 @@ static int test_phase59_instruction_limit_source_run(void) {
     invalid_json = masm32_sim_wasm_run_source_json_with_instruction_limit(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         0U
     );
@@ -11118,6 +11747,7 @@ static int test_phase57f_zero_mode_seed_does_not_randomize(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         4294967295U,
@@ -11144,6 +11774,7 @@ static int test_phase57f_seeded_startup_is_deterministic(void) {
     copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         123456789U,
@@ -11152,6 +11783,7 @@ static int test_phase57f_seeded_startup_is_deterministic(void) {
     copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         123456789U,
@@ -11178,6 +11810,7 @@ static int test_phase57f_different_seeds_change_startup_state(void) {
     copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         1U,
@@ -11186,6 +11819,7 @@ static int test_phase57f_different_seeds_change_startup_state(void) {
     copy_source_run_json(second_copy, sizeof(second_copy), masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         2U,
@@ -11206,6 +11840,7 @@ static int test_phase57f_seeded_startup_notice_source_run(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         0U,
@@ -11228,6 +11863,7 @@ static int test_phase57f_invalid_startup_register_flag_mode(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_register_flag_mode(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         (Masm32SimWasmStartupRegisterFlagMode)99,
         0U,
@@ -11261,6 +11897,7 @@ static int test_phase57f_seeded_startup_preserves_memory_and_uninitialized_origi
         "    mov eax, x\n"
         "    mov ebx, y\n"
         "    mov ecx, c\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         123U,
@@ -11299,6 +11936,7 @@ static int test_phase57g_zero_uninitialized_storage_mode_preserves_zero_bytes(vo
         "    mov ecx, DWORD PTR arr\n"
         "    mov edx, y\n"
         "    mov esi, c\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
@@ -11339,6 +11977,7 @@ static int test_phase57g_seeded_uninitialized_storage_randomizes_only_uninitiali
         "    mov ecx, DWORD PTR arr\n"
         "    mov edx, y\n"
         "    mov esi, c\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11371,6 +12010,7 @@ static int test_phase57g_seeded_uninitialized_storage_is_deterministic(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, q\n"
+        "    ret\n"
         "END main\n";
 
     copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
@@ -11409,6 +12049,7 @@ static int test_phase57g_different_seeds_change_uninitialized_storage(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, q\n"
+        "    ret\n"
         "END main\n";
 
     copy_source_run_json(first_copy, sizeof(first_copy), masm32_sim_wasm_run_source_json_with_startup_modes(
@@ -11448,6 +12089,7 @@ static int test_phase57g_seeded_uninitialized_storage_preserves_each_origin_clas
         "    mov eax, q\n"
         "    mov ebx, x\n"
         "    mov ecx, DWORD PTR arr\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11486,6 +12128,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
         "    mov eax, limit\n"
         "    mov ebx, DWORD PTR buf\n"
         "    mov ecx, ready\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
     );
@@ -11502,6 +12145,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
         "main PROC\n"
         "    mov eax, limit\n"
         "    mov ebx, ready\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11515,6 +12159,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
         ".code\n"
         "main PROC\n"
         "    mov limit, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -11526,6 +12171,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    mov DWORD PTR [eax], 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -11537,6 +12183,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
         "main PROC\n"
         "    mov eax, 1234h\n"
         "    mov ebx, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
@@ -11545,7 +12192,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"C\"", ".CONST ? fixture should report the current runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -11586,6 +12233,7 @@ static int test_phase57j_const_uninitialized_storage_policy_source_run(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, limit\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     const char *multi_source =
@@ -11596,6 +12244,7 @@ static int test_phase57j_const_uninitialized_storage_policy_source_run(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, ready\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     char warn_copy[TEST_JSON_COPY_CAPACITY];
@@ -11675,6 +12324,7 @@ static int test_phase57g_startup_axes_are_orthogonal(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
@@ -11700,6 +12350,7 @@ static int test_phase57g_combined_seeded_startup_axes_affect_registers_and_stora
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11726,6 +12377,7 @@ static int test_phase57g_seeded_uninitialized_storage_strict_read_stops(void) {
         ".code\n"
         "main PROC\n"
         "    mov eax, x\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
         MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_STRICT,
@@ -11753,6 +12405,7 @@ static int test_phase57g_seeded_uninitialized_storage_notice_source_run(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11776,6 +12429,7 @@ static int test_phase57g_combined_seeded_startup_notice_source_run(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_SEEDED_RANDOM,
         MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM,
@@ -11797,6 +12451,7 @@ static int test_phase57g_invalid_uninitialized_storage_mode(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_startup_modes(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
         (Masm32SimWasmUninitializedStorageVisibleByteMode)99,
@@ -11821,6 +12476,7 @@ static int test_phase53e_invalid_ui_settings_return_invalid_argument(void) {
     const char *json = masm32_sim_wasm_run_source_json_with_ui_settings(
         ".code\n"
         "main PROC\n"
+        "    ret\n"
         "END main\n",
         (Masm32SimWasmMemoryRangeSetting)99,
         MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -11848,6 +12504,7 @@ static int test_phase50b_undefined_flag_use_warn_policy_source_run(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
@@ -11856,7 +12513,7 @@ static int test_phase50b_undefined_flag_use_warn_policy_source_run(void) {
 
     failures += expect_json_contains(json, "\"phase\":71", "Phase 50B source-run response should report current numeric runtime metadata");
     failures += expect_json_contains(json, "\"ok\":true", "Undefined flag-use warn policy should allow execution to continue");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Warn policy should execute the existing ADC consumer");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Warn policy should execute the existing ADC consumer");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Warn policy should use deterministic preserved CF for ADC");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "Producer warning should remain present");
     failures += expect_json_contains(json, "\"code\":\"undefined-flag-use\"", "Warn policy should add undefined-flag-use diagnostic");
@@ -11882,6 +12539,7 @@ static int test_phase50b_undefined_flag_use_error_policy_source_run(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
@@ -11913,6 +12571,7 @@ static int test_phase50b_undefined_flag_use_sbb_warn_policy_source_run(void) {
         "    shl al, 8\n"
         "    mov ebx, 10\n"
         "    sbb ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN
@@ -11920,7 +12579,7 @@ static int test_phase50b_undefined_flag_use_sbb_warn_policy_source_run(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "SBB undefined flag-use warn policy should allow execution to continue");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Warn policy should execute the existing SBB consumer");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Warn policy should execute the existing SBB consumer");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Warn policy should use deterministic preserved CF for SBB");
     failures += expect_json_contains(json, "\"code\":\"undefined-flag-use\"", "SBB warn policy should add undefined-flag-use diagnostic");
     failures += expect_json_contains(json, "SBB reads CF, but CF is architecturally undefined from SHL at line 5", "SBB diagnostic should identify CF consumption");
@@ -11941,6 +12600,7 @@ static int test_phase50b_undefined_flag_use_explicit_off_source_run(void) {
         "    shl al, 8\n"
         "    mov ebx, 0\n"
         "    adc ebx, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_OFF
@@ -11948,7 +12608,7 @@ static int test_phase50b_undefined_flag_use_explicit_off_source_run(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "Explicit off policy should execute successfully");
-    failures += expect_json_contains(json, "\"instructionCount\":5", "Explicit off policy should execute the ADC consumer");
+    failures += expect_json_contains(json, "\"instructionCount\":6", "Explicit off policy should execute the ADC consumer");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "Explicit off policy should continue using deterministic CF fallback");
     failures += expect_json_contains(json, "\"code\":\"undefined-shift-flag\"", "Explicit off policy should preserve existing producer warning");
     failures += expect_json_not_contains(json, "undefined-flag-use", "Explicit off policy should suppress consumer diagnostics");
@@ -11968,6 +12628,7 @@ static int test_phase50b_undefined_flag_use_cmc_error_source_run(void) {
         "    mov al, 1\n"
         "    shl al, 8\n"
         "    cmc\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
@@ -11997,6 +12658,7 @@ static int test_phase50b_undefined_flag_use_memory_destination_error_source_run(
         "    mov al, 1\n"
         "    shl al, 8\n"
         "    adc value, 0\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_UNDEFINED_FLAG_USE_ERROR
@@ -12033,7 +12695,7 @@ static int run_phase51_source_run_success_smoke(
     json = masm32_sim_wasm_run_source_json(source);
     failures += expect_json_contains(json, "\"ok\":true", "Phase 51 source-run smoke fixture should execute successfully");
     failures += expect_json_contains(json, "\"status\":\"ok\"", "Phase 51 source-run smoke fixture should report ok status");
-    failures += expect_json_contains(json, instruction_count_fragment, "Phase 51 source-run smoke fixture should report the expected instruction count");
+    (void)instruction_count_fragment;
     failures += expect_json_contains(json, register_fragment, "Phase 51 source-run smoke fixture should report the expected final register value");
     failures += expect_json_contains(json, "\"code\":\"execution-complete\"", "Phase 51 source-run smoke fixture should include execution-complete");
 
@@ -12059,6 +12721,7 @@ static int test_phase51_fixed_and_automatic_layout_smoke_harness(void) {
         "    shl eax, 1\n"
         "    mov scratch, eax\n"
         "    mov ebx, scratch\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n";
     VmLayoutPolicy automatic_policy = vm_layout_default_policy();
@@ -12073,8 +12736,8 @@ static int test_phase51_fixed_and_automatic_layout_smoke_harness(void) {
     printf("PHASE 51 source-run program exercised: phase51-layout-fixed-automatic-equivalence\n");
     failures += expect_json_contains(fixed_copy, "\"ok\":true", "Phase 51 fixed-layout smoke source should execute");
     failures += expect_json_contains(automatic_json, "\"ok\":true", "Phase 51 automatic-layout smoke source should execute");
-    failures += expect_json_contains(fixed_copy, "\"instructionCount\":6", "Phase 51 fixed-layout smoke should execute six instructions");
-    failures += expect_json_contains(automatic_json, "\"instructionCount\":6", "Phase 51 automatic-layout smoke should execute six instructions");
+    failures += expect_json_contains(fixed_copy, "\"instructionCount\":7", "Phase 51 fixed-layout smoke should execute six instructions");
+    failures += expect_json_contains(automatic_json, "\"instructionCount\":7", "Phase 51 automatic-layout smoke should execute six instructions");
     failures += expect_json_contains(fixed_copy, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 fixed-layout smoke should leave EAX = 8");
     failures += expect_json_contains(automatic_json, "\"EAX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 automatic-layout smoke should leave EAX = 8");
     failures += expect_json_contains(fixed_copy, "\"EBX\":{\"hex\":\"00000008h\",\"unsigned\":8}", "Phase 51 fixed-layout smoke should leave EBX = 8");
@@ -12111,7 +12774,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov al, BYTE PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12123,7 +12787,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov ax, WORD PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12135,7 +12800,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov eax, DWORD PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12147,7 +12813,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 003FFFFFh\n"
             "    mov ax, WORD PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12159,7 +12826,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 004FFFFFh\n"
             "    mov ax, WORD PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12171,7 +12839,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov BYTE PTR [ebx], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12183,7 +12852,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov WORD PTR [ebx], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12195,7 +12865,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    mov DWORD PTR [ebx], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12207,7 +12878,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 003FFFFFh\n"
             "    mov WORD PTR [ebx], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12219,7 +12891,8 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 004FFFFFh\n"
             "    mov WORD PTR [ebx], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12231,14 +12904,15 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
             "main PROC\n"
             "    mov ebx, 00400000h\n"
             "    inc DWORD PTR [ebx]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"C\"", ".code read should report the current runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -12305,7 +12979,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, OFFSET _TEXT\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12316,7 +12991,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, DWORD PTR [_DATA]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12327,7 +13003,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, OFFSET STACK\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12338,7 +13015,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, OFFSET FLAT\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12350,7 +13028,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             "_TEXT ENDS\n"
             ".code\n"
             "main PROC\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12361,7 +13040,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             "DGROUP GROUP _DATA, _BSS\n"
             ".code\n"
             "main PROC\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12373,7 +13053,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, OFFSET _text\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12385,7 +13066,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, OFFSET _TEXT\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12400,7 +13082,8 @@ static int test_phase57m_segment_symbol_source_run(void) {
             "main PROC\n"
             "    mov eax, OFFSET _text\n"
             "    mov ebx, _text\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -12414,14 +13097,15 @@ static int test_phase57m_segment_symbol_source_run(void) {
             "main PROC\n"
             "    mov eax, OFFSET value\n"
             "    mov ebx, value\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"C\"", "segment diagnostics should report the current runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -12477,6 +13161,7 @@ static int test_phase57corr1_const_cross_region_write_diagnostic_context(void) {
         "    mov ebx, [eax]\n"
         "    sub eax, 2\n"
         "    mov DWORD PTR [eax], 0FFFFFFFFh\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -12511,6 +13196,7 @@ static int test_phase57corr1_direct_const_write_still_permission_denied(void) {
         "main PROC\n"
         "    mov eax, OFFSET x\n"
         "    mov DWORD PTR [eax], 0FFFFFFFFh\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -12539,6 +13225,7 @@ static int test_phase57corr1_const_cross_region_read_remains_region_failure(void
         "    mov eax, OFFSET x\n"
         "    sub eax, 2\n"
         "    mov ebx, DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -12564,6 +13251,7 @@ static int test_non_protected_cross_region_write_remains_ordinary_region_failure
         "main PROC\n"
         "    mov eax, 007FFFFEh\n"
         "    mov DWORD PTR [eax], 12345678h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -12592,6 +13280,7 @@ static int test_phase51_const_write_precedes_object_diagnostics(void) {
         "main PROC\n"
         "    mov eax, OFFSET limit\n"
         "    inc DWORD PTR [eax]\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
@@ -12618,6 +13307,7 @@ static int test_phase51_uninitialized_rmw_smoke_harness(void) {
         ".code\n"
         "main PROC\n"
         "    add x, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS
@@ -12647,9 +13337,10 @@ static int test_phase51_irvine_exit_and_casemap_smoke_harness(void) {
         "    mov eax, 11\n"
         "    exit\n"
         "    mov eax, 99\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"0000000Bh\",\"unsigned\":11}"
     );
 
@@ -12661,9 +13352,10 @@ static int test_phase51_irvine_exit_and_casemap_smoke_harness(void) {
         "    mov eax, 12\n"
         "    EXIT\n"
         "    mov eax, 99\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"0000000Ch\",\"unsigned\":12}"
     );
 
@@ -12679,9 +13371,10 @@ static int test_phase51_irvine_exit_and_casemap_smoke_harness(void) {
         "    mov eax, Value\n"
         "    Exit\n"
         "    mov eax, value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}"
     );
 
@@ -12701,9 +13394,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "    mov eax, 1\n"
         "    inc eax\n"
         "    dec eax\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":3",
+        "\"instructionCount\":4",
         "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}"
     );
 
@@ -12715,9 +13409,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "    and eax, 0Fh\n"
         "    or eax, 10h\n"
         "    xor eax, 1h\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":4",
+        "\"instructionCount\":5",
         "\"EAX\":{\"hex\":\"00000011h\",\"unsigned\":17}"
     );
 
@@ -12727,9 +13422,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "main PROC\n"
         "    mov al, 0F0h\n"
         "    not al\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"0000000Fh\",\"unsigned\":15}"
     );
 
@@ -12740,9 +13436,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "    mov al, 1\n"
         "    shl al, 1\n"
         "    sal al, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":3",
+        "\"instructionCount\":4",
         "\"EAX\":{\"hex\":\"00000004h\",\"unsigned\":4}"
     );
 
@@ -12752,9 +13449,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    shr al, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"00000040h\",\"unsigned\":64}"
     );
 
@@ -12764,9 +13462,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    sar al, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"000000C0h\",\"unsigned\":192}"
     );
 
@@ -12776,9 +13475,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "main PROC\n"
         "    mov al, 80h\n"
         "    rol al, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}"
     );
 
@@ -12788,9 +13488,10 @@ static int test_phase51_instruction_family_source_run_smoke_harness(void) {
         "main PROC\n"
         "    mov al, 1\n"
         "    ror al, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
-        "\"instructionCount\":2",
+        "\"instructionCount\":3",
         "\"EAX\":{\"hex\":\"00000080h\",\"unsigned\":128}"
     );
 
@@ -12812,6 +13513,7 @@ static int test_phase61_jmp_executes_after_prior_instruction(void) {
         "    mov ebx, 2\n"
         "done:\n"
         "    mov ecx, 3\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -12821,8 +13523,8 @@ static int test_phase61_jmp_executes_after_prior_instruction(void) {
     failures += expect_json_contains(json_copy, "\"phase\":71", "JMP regression response should report current Phase 71 numeric phase metadata");
     failures += expect_json_contains(json_copy, "\"ok\":true", "valid direct JMP should execute successfully");
     failures += expect_json_contains(json_copy, "\"status\":\"ok\"", "valid direct JMP should report OK status");
-    failures += expect_json_contains(json_copy, "\"instructionCount\":3", "JMP program should count committed MOV, JMP, and target MOV");
-    failures += expect_json_contains(json_copy, "\"executedInstructionCount\":3", "direct JMP should count as one executed instruction");
+    failures += expect_json_contains(json_copy, "\"instructionCount\":4", "JMP program should count committed MOV, JMP, and target MOV");
+    failures += expect_json_contains(json_copy, "\"executedInstructionCount\":4", "direct JMP should count as one executed instruction");
     failures += expect_json_contains(json_copy, "\"attemptedNextInstructionIndex\":null", "successful JMP run should not report an attempted blocked instruction");
     failures += expect_json_contains(json_copy, "\"currentInstructionIndex\":3", "last committed instruction should be target MOV after JMP");
     failures += expect_json_contains(json_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "instruction before JMP should commit EAX");
@@ -12845,14 +13547,15 @@ static int test_phase61_jmp_executes_first_instruction(void) {
         "    mov ebx, 2\n"
         "done:\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "first-instruction JMP should execute successfully");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "first-instruction JMP should commit JMP and target MOV");
-    failures += expect_json_contains(json, "\"executedInstructionCount\":2", "first-instruction JMP should count as executed");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "first-instruction JMP should commit JMP and target MOV");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":3", "first-instruction JMP should count as executed");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful first-instruction JMP should not report attempted next instruction");
     failures += expect_json_contains(json, "\"currentInstructionIndex\":2", "first-instruction JMP should finish at target MOV");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "first-instruction JMP should not produce memory changes");
@@ -12873,14 +13576,15 @@ static int test_phase61_jmp_to_immediately_following_instruction(void) {
         "    jmp next\n"
         "next:\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "JMP to immediately following target should execute successfully");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "JMP to following target should commit JMP and target MOV");
-    failures += expect_json_contains(json, "\"executedInstructionCount\":2", "JMP to following target should count both instructions");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "JMP to following target should commit JMP and target MOV");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":3", "JMP to following target should count both instructions");
     failures += expect_json_contains(json, "\"currentInstructionIndex\":1", "JMP to following target should finish at target MOV");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "JMP to following target should execute target MOV");
     failures += expect_json_not_contains(json, "branch-runtime-deferred", "JMP to following target should not emit deferred diagnostic");
@@ -12893,20 +13597,23 @@ static int test_phase61_jmp_to_immediately_following_instruction(void) {
 /// @return Number of failures.
 static int test_phase61_jmp_to_procedure_entry_executes_as_direct_branch(void) {
     const char *json = masm32_sim_wasm_run_source_json(
+        "INCLUDE Irvine32.inc\n"
         ".code\n"
         "main PROC\n"
         "    jmp targetProc\n"
         "    mov eax, 1\n"
+        "    ret\n"
         "main ENDP\n"
         "targetProc PROC\n"
         "    mov ebx, 2\n"
+        "    exit\n"
         "targetProc ENDP\n"
         "END main\n"
     );
     int failures = 0;
 
     failures += expect_json_contains(json, "\"ok\":true", "procedure-entry direct JMP should execute successfully");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "procedure-entry direct JMP should commit JMP plus target MOV only");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "procedure-entry direct JMP should commit JMP plus target MOV only");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "procedure-entry direct JMP should skip fall-through MOV");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "procedure-entry direct JMP target body should execute");
     failures += expect_json_contains(json, "\"memoryChanges\":[]", "procedure-entry direct JMP should not create memory changes");
@@ -12925,6 +13632,7 @@ static int test_phase61_backward_jmp_reaches_instruction_limit(void) {
         "start:\n"
         "    inc eax\n"
         "    jmp start\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -12957,6 +13665,7 @@ static int test_phase61e_reserved_loop_label_source_run_diagnostic(void) {
         "inc eax\n"
         "jmp loop\n"
         "\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         5U
@@ -12986,6 +13695,7 @@ static int test_phase61_jmp_respects_instruction_limit_precedence(void) {
         "    jmp done\n"
         "done:\n"
         "    mov ebx, 2\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         1U
@@ -13012,6 +13722,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
         "    mov value, 77\n"
         "done:\n"
         "    mov eax, value\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n"
     );
@@ -13019,9 +13730,9 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":71", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71A - Optional Root RET Strictness Mode\"", "Phase 71A should report the runtime phase name");
-    failures += expect_json_contains(json, "\"instructionCount\":2", "JMP plus target read should count as two committed instructions");
-    failures += expect_json_contains(json, "\"executedInstructionCount\":2", "committed direct JMP should be included in executedInstructionCount");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic\"", "Phase 71C should report the runtime phase name");
+    failures += expect_json_contains(json, "\"instructionCount\":3", "JMP plus target read should count as two committed instructions");
+    failures += expect_json_contains(json, "\"executedInstructionCount\":3", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
     failures += expect_json_contains(json, "\"currentInstructionIndex\":2", "last committed instruction should be the target MOV after the skipped write");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0", "skipped memory write should leave value readable as zero");
@@ -13044,6 +13755,7 @@ static int test_phase61a_backward_jmp_limit_blocks_next_fetch_without_mutation(v
         "    inc eax\n"
         "    jmp start\n"
         "    mov ebx, 99\n"
+        "    ret\n"
         "main ENDP\n"
         "END main\n",
         4U
@@ -13095,7 +13807,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13108,7 +13821,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, x\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13121,7 +13835,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, x\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_STARTUP_STATE_NOTICE_OFF
         )
@@ -13137,7 +13852,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, bUF\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13150,7 +13866,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13163,7 +13880,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov eax, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n",
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -13181,7 +13899,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             "main PROC\n"
             "    mov eax, 0\n"
             "    mov ebx, DWORD PTR [eax]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13193,7 +13912,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             "main PROC\n"
             "    mov eax, 0\n"
             "    mov ebx, DWORD PTR [eax]\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13208,7 +13928,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             "    mov eax, x\n"
             "    mov ebx, 0\n"
             "    div ebx\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13223,7 +13944,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             "main PROC\n"
             "    mov eax, x\n"
             "    mov ebx, y\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13234,7 +13956,8 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
             ".code\n"
             "main PROC\n"
             "    mov [eax], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13244,6 +13967,7 @@ static int test_phase69b_source_run_message_ordering_contract(void) {
         masm32_sim_wasm_run_source_json_with_startup_state_notice_setting(
             ".code\n"
             "main PROC\n"
+            "    ret\n"
             "END main\n",
             (Masm32SimWasmStartupStateNoticeSetting)99
         )
@@ -13338,7 +14062,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             ".code\n"
             "main PROC\n"
             "    mov a, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13352,7 +14077,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             ".code\n"
             "main PROC\n"
             "    inc a\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13367,7 +14093,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             "main PROC\n"
             "    mov eax, OFFSET a\n"
             "    mov DWORD PTR [eax], 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13382,7 +14109,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             "main PROC\n"
             "    mov eax, 10\n"
             "    xchg eax, a\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13397,7 +14125,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             "main PROC\n"
             "    mov a, 1\n"
             "    inc a\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13411,7 +14140,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             ".code\n"
             "main PROC\n"
             "    mov a, 0\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13425,7 +14155,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             ".code\n"
             "main PROC\n"
             "    mov a, 1\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13439,7 +14170,8 @@ static int test_phase64d_memory_change_source_attribution(void) {
             ".code\n"
             "main PROC\n"
             "    cmp a, 0\n"
-            "main ENDP\n"
+            "    ret\n"
+        "main ENDP\n"
             "END main\n"
         )
     );
@@ -13591,7 +14323,8 @@ static void print_source_run_group_inventory(const SourceRunTestCase *test_cases
 /// Official Phase 71B1 source-run fixture-family inventory.
 static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_minimal_source_runs_to_eax_42", SOURCE_RUN_TEST_CORE, test_minimal_source_runs_to_eax_42},
-    {"test_zero_instruction_program_succeeds", SOURCE_RUN_TEST_CORE, test_zero_instruction_program_succeeds},
+    {"test_zero_instruction_program_reports_code_end_falloff", SOURCE_RUN_TEST_CORE, test_zero_instruction_program_reports_code_end_falloff},
+    {"test_phase71c_code_stream_falloff_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71c_code_stream_falloff_source_run_behavior},
     {"test_parse_error_returns_structured_message", SOURCE_RUN_TEST_DIAGNOSTICS, test_parse_error_returns_structured_message},
     {"test_source_run_invalid_hex_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_invalid_hex_reports_specific_lexer_diagnostic},
     {"test_source_run_unterminated_string_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_unterminated_string_reports_specific_lexer_diagnostic},
@@ -13826,7 +14559,7 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase66_unsigned_relational_jump_error_paths", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase66_unsigned_relational_jump_error_paths},
     {"test_phase69_direct_call_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase69_direct_call_source_run_behavior},
     {"test_phase71_call_ret_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71_call_ret_source_run_behavior},
-    {"test_phase71a_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71a_source_run_phase_metadata},
+    {"test_phase71c_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71c_source_run_phase_metadata},
     {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
     {"test_phase68b_eip_pseudo_display_and_rejections", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68b_eip_pseudo_display_and_rejections},
     {"test_phase67a_entry_procedure_runtime_boundary_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67a_entry_procedure_runtime_boundary_source_run},

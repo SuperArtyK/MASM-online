@@ -439,9 +439,9 @@ static int test_parsed_ir_executes_to_eax_42(void) {
     failures += expect_exec_status(vm_load_program(&vm, buffers.instructions, result.instruction_count), VM_EXEC_STATUS_OK, "parsed program should load");
     failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_OK, "parsed mov should execute");
     failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_OK, "parsed add should execute");
+    failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "parsed program should report Phase 71C code-end falloff after two instructions");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed"));
-    failures += expect_u32(eax, 42U, "parsed program should produce EAX = 42");
-    failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "parsed program should halt after two instructions");
+    failures += expect_u32(eax, 42U, "parsed program should produce EAX = 42 before code-end falloff");
     vm_deinit(&vm);
 
     return failures;
@@ -467,6 +467,7 @@ static int test_register_register_and_mixed_case(void) {
     failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first mixed-case step should execute");
     failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_OK, "second mixed-case step should execute");
     failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_OK, "third mixed-case step should execute");
+    failures += expect_exec_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "mixed-case program should report Phase 71C code-end falloff after three instructions");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed"));
     failures += expect_u32(ebx, 3U, "register/register parsed program should produce EBX = 3");
     vm_deinit(&vm);

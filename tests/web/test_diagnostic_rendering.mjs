@@ -393,13 +393,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71A - Optional Root RET Strictness Mode. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71A - Optional Root RET Strictness Mode. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -1015,6 +1015,7 @@ END main
 main PROC
     mov al, 1
     shl al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1026,6 +1027,7 @@ main PROC
     mov ecx, 00000102h
     mov eax, 00000003h
     sal eax, cl
+    ret
 main ENDP
 END main
 `,
@@ -1036,6 +1038,7 @@ END main
 main PROC
     mov al, 1
     shl al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1065,6 +1068,7 @@ END main
 main PROC
     mov al, 80h
     shr al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1075,6 +1079,7 @@ END main
 main PROC
     mov al, 80h
     shr al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1104,6 +1109,7 @@ END main
 main PROC
     mov al, 80h
     sar al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1114,6 +1120,7 @@ END main
 main PROC
     mov al, 80h
     sar al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1152,6 +1159,7 @@ END main
 main PROC
     mov al, 80h
     rol al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1162,6 +1170,7 @@ END main
 main PROC
     mov al, 80h
     rol al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1199,6 +1208,7 @@ END main
 main PROC
     mov al, 01h
     ror al, 1
+    ret
 main ENDP
 END main
 `,
@@ -1219,6 +1229,7 @@ END main
 main PROC
     mov al, 80h
     ror al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1229,6 +1240,7 @@ END main
 main PROC
     mov al, 80h
     ror al, 8
+    ret
 main ENDP
 END main
 `,
@@ -1397,6 +1409,7 @@ x DWORD ?
 main PROC
     mov eax, 3
     imul x
+    ret
 main ENDP
 END main
 `,
@@ -1410,6 +1423,7 @@ main PROC
     shl al, 8
     mov ebx, 0
     adc ebx, 0
+    ret
 main ENDP
 END main
 `,
@@ -1495,6 +1509,7 @@ nums DWORD 2 DUP(0)
 .code
 main PROC
     mov eax, DWORD PTR nums[1]
+    ret
 main ENDP
 END main
 `,
@@ -1507,6 +1522,7 @@ var1 DWORD 12345
 main PROC
     mov eax, OFFSET var1
     test [eax+40h], eax
+    ret
 main ENDP
 END main
 `,
@@ -1520,6 +1536,7 @@ y DWORD 0
 .code
 main PROC
     mov eax, DWORD PTR [x+1]
+    ret
 main ENDP
 END main
 `,
@@ -1547,6 +1564,7 @@ y DWORD ?
 .code
 main PROC
     mov eax, DWORD PTR [x+1]
+    ret
 main ENDP
 END main
 `,
@@ -1560,6 +1578,7 @@ main PROC
     mov eax, OFFSET x
     add eax, 4
     mov ebx, DWORD PTR [eax]
+    ret
 main ENDP
 END main
 `,
@@ -1583,6 +1602,7 @@ END main
 main PROC
     mov eax, 00700000h
     mov DWORD PTR [eax], 123
+    ret
 main ENDP
 END main
 `,
@@ -1593,6 +1613,7 @@ END main
 main PROC
     mov eax, 00700000h
     mov DWORD PTR [eax], 123
+    ret
 main ENDP
 END main
 `,
@@ -1604,6 +1625,7 @@ x DWORD ?
 .code
 main PROC
     mov eax, x
+    ret
 main ENDP
 END main
 `,
@@ -1628,6 +1650,7 @@ x DWORD ?
 main PROC
     mov eax, OFFSET x
     mov ebx, DWORD PTR [eax+1]
+    ret
 main ENDP
 END main
 `,
@@ -1677,6 +1700,7 @@ main PROC
     shl eax, 1
     mov scratch, eax
     mov ebx, scratch
+    ret
 main ENDP
 END main
 `,
@@ -1700,6 +1724,7 @@ x DWORD ?
 .code
 main PROC
     add x, 1
+    ret
 main ENDP
 END main
 `,
@@ -1781,6 +1806,7 @@ END main
     source: `.code
 main PROC
     mov eax, 42
+    ret
 main ENDP
 END main
 `,
@@ -1900,6 +1926,7 @@ END main
     source: `.code
 main PROC
     cmp eax, 6
+    ret
 main ENDP
 END main
 `,
@@ -1932,6 +1959,7 @@ buf DWORD 1
 .code
 main PROC
     mov eax, bUF
+    ret
 main ENDP
 END main
 `,
@@ -2236,7 +2264,7 @@ test("native producer accepts fixture file path for successful execution", () =>
   const source = fixtureSource("success");
   const { json, rawJson, rendered } = runFixtureFile(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "info",
     code: "execution-complete",
@@ -2561,8 +2589,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2589,7 +2617,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2616,7 +2644,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2641,7 +2669,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2665,7 +2693,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2691,7 +2719,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2725,14 +2753,15 @@ main PROC
     mov ebx, 2
 done:
     mov ecx, 3
+    ret
 main ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.instructionCount, 3);
-  assert.equal(json.executedInstructionCount, 3);
+  assert.equal(json.instructionCount, 4);
+  assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
   assert.equal(json.currentInstructionIndex, 3);
   assert.equal(json.registers.EAX.hex, "00000001h");
@@ -2762,7 +2791,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2801,15 +2830,16 @@ main PROC
     mov ebx, 1
 equal:
     mov ebx, 2
+    ret
 main ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(json.instructionCount, 4);
-  assert.equal(json.executedInstructionCount, 4);
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 5);
+  assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assertNoMessageWithCode(json.simulatorMessages, "branch-runtime-deferred");
@@ -2980,8 +3010,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3008,8 +3038,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3036,8 +3066,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3063,8 +3093,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -4180,7 +4210,7 @@ test("renders SHL undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4209,7 +4239,7 @@ test("renders SAL undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 3);
+  assert.equal(json.instructionCount, 4);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4296,7 +4326,7 @@ test("renders SHR undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4382,7 +4412,7 @@ test("renders SAR undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4488,7 +4518,7 @@ test("renders ROL undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4519,7 +4549,7 @@ test("renders ROL warning under strict shift validation without runtime error", 
     MASM32_DIAGNOSTIC_SHIFT_VALIDATION: "strict"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.equal(json.simulatorMessages[0].code, "undefined-modeled-flag");
   assert.equal(json.simulatorMessages[1].code, "execution-complete");
   assertRenderedEquals(name, source, rawJson, rendered, [
@@ -4589,7 +4619,7 @@ test("renders successful ROR execution exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "info",
@@ -4827,7 +4857,7 @@ test("renders IMUL default uninitialized-read warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4862,12 +4892,13 @@ limit DWORD ?
 .code
 main PROC
     mov eax, limit
+    ret
 main ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -4911,6 +4942,7 @@ limit DWORD ?
 .code
 main PROC
     mov eax, limit
+    ret
 main ENDP
 END main
 `;
@@ -4940,6 +4972,7 @@ limit DWORD ?
 .code
 main PROC
     mov eax, limit
+    ret
 main ENDP
 END main
 `;
@@ -4947,7 +4980,7 @@ END main
     MASM32_DIAGNOSTIC_CONST_UNINITIALIZED_STORAGE: "off"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5051,7 +5084,7 @@ test("renders ROR undefined modeled flag warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5082,7 +5115,7 @@ test("renders ROR warning under strict shift validation without runtime error", 
     MASM32_DIAGNOSTIC_SHIFT_VALIDATION: "strict"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.equal(json.simulatorMessages[0].code, "undefined-modeled-flag");
   assert.equal(json.simulatorMessages[1].code, "execution-complete");
   assertRenderedEquals(name, source, rawJson, rendered, [
@@ -5195,7 +5228,7 @@ test("renders undefined flag-use warning exactly", () => {
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 5);
+  assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5239,7 +5272,7 @@ test("Phase 53C renders default undefined flag-use warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 5);
+  assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5319,6 +5352,7 @@ main PROC
     mov ebx, 1
 target:
     nop
+    ret
 main ENDP
 END main
 `;
@@ -5327,9 +5361,9 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(json.instructionCount, 5);
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5380,6 +5414,7 @@ main PROC
     mov ebx, 1
 target:
     nop
+    ret
 main ENDP
 END main
 `;
@@ -5388,9 +5423,9 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(json.instructionCount, 5);
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5439,6 +5474,7 @@ main PROC
     mov ebx, 1
 target:
     nop
+    ret
 main ENDP
 END main
 `;
@@ -5447,8 +5483,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5470,8 +5506,8 @@ END main
 });
 
 
-test("renders Phase 67A selected-entry fallthrough completion exactly", () => {
-  const name = "phase67aSelectedEntryFallthroughCompletion";
+test("renders Phase 71C selected-entry code-stream fallthrough error exactly", () => {
+  const name = "phase71cSelectedEntryCodeStreamFalloff";
   const source = `.code
 main PROC
     mov eax, 1
@@ -5482,25 +5518,33 @@ helper ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
-  assertRunStatus(json, true, "ok");
+  assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(json.executedInstructionCount, 1);
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 2);
+  assert.equal(json.executedInstructionCount, 2);
+  assert.equal(json.currentInstructionIndex, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
-  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.equal(json.registers.ECX.hex, "00000002h");
   assert.deepEqual(json.simulatorMessages, [
     {
-      kind: "info",
-      code: "execution-complete",
-      message: "Execution completed successfully."
+      kind: "runtime-error",
+      code: "code-fell-off-end",
+      message: "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?",
+      line: 6,
+      column: 5,
+      byteOffset: 57,
+      spanLength: 10,
+      procedure: "helper"
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] code-fell-off-end line 6, column 5, byte offset 57, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?");
 });
 
-test("renders Phase 67A empty selected-entry completion exactly", () => {
-  const name = "phase67aEmptySelectedEntryCompletion";
+test("renders Phase 71C empty selected-entry fallthrough error exactly", () => {
+  const name = "phase71cEmptySelectedEntryCodeStreamFalloff";
   const source = `.code
 main PROC
 main ENDP
@@ -5510,20 +5554,111 @@ helper ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
-  assertRunStatus(json, true, "ok");
+  assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
-  assert.equal(json.executedInstructionCount, 0);
-  assert.equal(json.registers.ECX.hex, "00000000h");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.executedInstructionCount, 1);
+  assert.equal(json.currentInstructionIndex, 0);
+  assert.equal(json.registers.ECX.hex, "00000002h");
   assert.deepEqual(json.simulatorMessages, [
     {
-      kind: "info",
-      code: "execution-complete",
-      message: "Execution completed successfully."
+      kind: "runtime-error",
+      code: "code-fell-off-end",
+      message: "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?",
+      line: 5,
+      column: 5,
+      byteOffset: 42,
+      spanLength: 10,
+      procedure: "helper"
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] code-fell-off-end line 5, column 5, byte offset 42, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?");
+});
+
+
+test("renders Phase 71C front notice after code-stream falloff error exactly", () => {
+  const name = "phase71cFrontNoticeAfterCodeStreamFalloff";
+  const source = `.code
+front PROC
+    mov eax, 1
+front ENDP
+END front
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 71);
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.instructionCount, 1);
+  assert.equal(json.executedInstructionCount, 1);
+  assert.equal(json.currentInstructionIndex, 0);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "code-fell-off-end",
+      message: "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?",
+      line: 3,
+      column: 5,
+      byteOffset: 21,
+      spanLength: 10,
+      procedure: "front"
+    },
+    {
+      kind: "simulator-notice",
+      code: "the-front-fell-off",
+      message: "that's not very typical, I'd like to make that point",
+      line: 3,
+      column: 5,
+      byteOffset: 21,
+      spanLength: 10,
+      procedure: "front"
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] code-fell-off-end line 3, column 5, byte offset 21, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?\n\n[simulator-notice] the-front-fell-off line 3, column 5, byte offset 21, span length 10: that's not very typical, I'd like to make that point");
+});
+
+test("renders Phase 71C front notice only for exact case-insensitive procedure names", () => {
+  const positiveNames = ["front", "Front", "FRONT", "fRoNt"];
+  const negativeNames = ["frontier", "myfront", "front_"];
+
+  for (const procName of positiveNames) {
+    const source = `.code\n${procName} PROC\n    mov eax, 1\n${procName} ENDP\nEND ${procName}\n`;
+    const { json, rendered } = runFixture(`phase71cFrontNoticePositive${procName}`, source);
+    assertRunStatus(json, false, "execution-error");
+    assert.equal(json.simulatorMessages[0].code, "code-fell-off-end");
+    assert.equal(json.simulatorMessages[1].kind, "simulator-notice");
+    assert.equal(json.simulatorMessages[1].code, "the-front-fell-off");
+    assert.equal(json.simulatorMessages[1].procedure, procName);
+    assert.equal(rendered.includes("[simulator-notice] the-front-fell-off"), true);
+    assert.equal(rendered.includes("that's not very typical, I'd like to make that point"), true);
+    assert.equal(rendered.indexOf("[runtime-error] code-fell-off-end") < rendered.indexOf("[simulator-notice] the-front-fell-off"), true);
+  }
+
+  for (const procName of negativeNames) {
+    const source = `.code\n${procName} PROC\n    mov eax, 1\n${procName} ENDP\nEND ${procName}\n`;
+    const { json, rendered } = runFixture(`phase71cFrontNoticeNegative${procName}`, source);
+    assertRunStatus(json, false, "execution-error");
+    assert.deepEqual(json.simulatorMessages.map((message) => message.code), ["code-fell-off-end"]);
+    assert.equal(rendered.includes("[simulator-notice] the-front-fell-off"), false);
+    assert.equal(rendered.includes("that's not very typical, I'd like to make that point"), false);
+  }
+
+  const labelSource = `.code
+main PROC
+front:
+    mov eax, 1
+main ENDP
+END main
+`;
+  const { json: labelJson, rendered: labelRendered } = runFixture("phase71cFrontLabelDoesNotEmitNotice", labelSource);
+  assertRunStatus(labelJson, false, "execution-error");
+  assert.deepEqual(labelJson.simulatorMessages.map((message) => message.code), ["code-fell-off-end"]);
+  assert.equal(labelRendered.includes("[simulator-notice] the-front-fell-off"), false);
+  assert.equal(labelRendered.includes("that's not very typical, I'd like to make that point"), false);
 });
 
 test("renders Phase 67A selected-entry fatal diagnostic without completion", () => {
@@ -5545,8 +5680,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 71A - Optional Root RET Strictness Mode");
+  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -5695,7 +5830,7 @@ test("Phase 51 renders automatic-layout instruction smoke success exactly", () =
     MASM32_DIAGNOSTIC_LAYOUT_MODE: "automatic"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 6);
+  assert.equal(json.instructionCount, 7);
   assert.equal(json.registers.EAX.hex, "00000008h");
   assert.equal(json.registers.EBX.hex, "00000008h");
   console.log("PHASE 51 expected rendered diagnostic line: [info] execution-complete: Execution completed successfully.");
@@ -5747,7 +5882,7 @@ test("renders unaligned warning followed by successful execution exactly", () =>
   const source = fixtureSource("unalignedWarning");
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5771,7 +5906,7 @@ test("renders allocated-object warning followed by successful execution exactly"
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5817,7 +5952,7 @@ test("Phase 53A renders default region-only object-spanning read without object 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.equal(json.simulatorMessages.some((message) => message.code === "object-bounds-warning"), false);
   assert.equal(json.simulatorMessages.some((message) => message.code === "object-bounds-violation"), false);
   assert.deepEqual(json.simulatorMessages, [
@@ -5843,7 +5978,7 @@ test("Phase 53A renders object-spanning warning before unaligned warning", () =>
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5896,7 +6031,7 @@ test("Phase 53A renders uninitialized-read before unaligned warning for symbol-o
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -5943,7 +6078,7 @@ test("Phase 53B renders section-image warning exactly", () => {
     MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 3);
+  assert.equal(json.instructionCount, 4);
   assert.deepEqual(json.simulatorMessages[0], {
     kind: "simulator-warning",
     code: "section-image-violation",
@@ -6000,7 +6135,7 @@ test("Phase 53B renders section-capacity warning exactly", () => {
     MASM32_DIAGNOSTIC_SECTION_CAPACITY_VALIDATION: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages[0], {
     kind: "simulator-warning",
     code: "section-capacity-violation",
@@ -6092,7 +6227,7 @@ test("renders uninitialized-read warning followed by successful execution exactl
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -6130,7 +6265,7 @@ test("Phase 53C renders default uninitialized-read warning exactly", () => {
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -6170,7 +6305,7 @@ test("Phase 53C keeps default uninitialized-read warnings when only section vali
     MASM32_DIAGNOSTIC_SECTION_IMAGE_VALIDATION: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -6208,7 +6343,7 @@ test("Phase 53C renders indirect overlapping uninitialized-read warning exactly"
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 2);
+  assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "simulator-warning",
@@ -6290,6 +6425,7 @@ x DWORD ?
 .code
 main PROC
     inc x
+    ret
 main ENDP
 END main
 `;
@@ -6297,7 +6433,7 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.instructionCount, 1);
+  assert.equal(json.instructionCount, 2);
   assert.equal(json.simulatorMessages[0].kind, "simulator-warning");
   assert.equal(json.simulatorMessages[0].code, "uninitialized-read");
   assert.equal(json.simulatorMessages[0].line, 5);
@@ -6317,6 +6453,7 @@ x DWORD ?
 .code
 main PROC
     inc x
+    ret
 main ENDP
 END main
 `;
@@ -6540,7 +6677,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -6821,7 +6958,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseSuffix, "C");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -7013,6 +7150,7 @@ value DWORD 1
 main PROC
     mov eax, 1
     cmp eax, value
+    ret
 main ENDP
 END main
 `;
@@ -7082,6 +7220,7 @@ value DWORD ?
 main PROC
     stc
     cmp value, 0
+    ret
 main ENDP
 END main
 `;
@@ -7261,6 +7400,7 @@ PAGE 60, 132
 .code
 main PROC
     mov eax, 42
+    ret
 main ENDP
 END main
 `;
@@ -7349,6 +7489,7 @@ PAGE 60, 132
 .code
 main PROC
     mov eax, 42
+    ret
 main ENDP
 END main
 `;
@@ -7752,6 +7893,7 @@ test("Phase 52A formats source-run register signed display from existing JSON", 
   const source = `.code
 main PROC
     mov eax, 0FFFFFFFFh
+    ret
 main ENDP
 END main
 `;
@@ -7768,6 +7910,7 @@ test("Phase 52A formats register aliases using alias display width", () => {
   const source = `.code
 main PROC
     mov eax, 000000FFh
+    ret
 main ENDP
 END main
 `;
@@ -7787,6 +7930,7 @@ b BYTE 0
 main PROC
     mov value, 0FFFFFFFFh
     mov b, 0FFh
+    ret
 main ENDP
 END main
 `;
@@ -7811,6 +7955,7 @@ a DWORD 0
 main PROC
     mov a, 1
     inc a
+    ret
 main ENDP
 END main
 `;
@@ -7835,6 +7980,7 @@ a DWORD 0
 main PROC
     mov eax, OFFSET a
     mov DWORD PTR [eax], 1
+    ret
 main ENDP
 END main
 `;
@@ -7856,6 +8002,7 @@ a DWORD 5
 main PROC
     mov eax, 10
     xchg eax, a
+    ret
 main ENDP
 END main
 `;
@@ -7877,6 +8024,7 @@ sb SBYTE -1
 main PROC
     mov al, sb
     mov eax, sd
+    ret
 main ENDP
 END main
 `;
@@ -7893,6 +8041,7 @@ test("Phase 64C formats modeled flag rows after XOR sets ZF", () => {
   const source = `.code
 main PROC
     xor eax, eax
+    ret
 main ENDP
 END main
 `;
@@ -7909,6 +8058,7 @@ test("Phase 64C formats modeled flag rows after ADD sets CF", () => {
 main PROC
     mov al, 0FFh
     add al, 1
+    ret
 main ENDP
 END main
 `;
@@ -7925,6 +8075,7 @@ test("Phase 64C formats modeled flag rows after ADD sets SF and OF", () => {
 main PROC
     mov al, 7Fh
     add al, 1
+    ret
 main ENDP
 END main
 `;
@@ -7942,6 +8093,7 @@ main PROC
     stc
     cmc
     stc
+    ret
 main ENDP
 END main
 `;
@@ -7959,6 +8111,7 @@ main PROC
     mov eax, 80000000h
     stc
     test eax, eax
+    ret
 main ENDP
 END main
 `;
@@ -7979,6 +8132,7 @@ main PROC
     mov ebx, 99
 equal:
     mov ecx, 2
+    ret
 main ENDP
 END main
 `;
@@ -8274,6 +8428,7 @@ main PROC
     add eax, 4
     mov DWORD PTR [eax-4], 10
     mov ebx, x
+    ret
 main ENDP
 END main
 `;
@@ -8295,6 +8450,7 @@ main PROC
     mov eax, OFFSET x
     add eax, 4
     mov ebx, DWORD PTR [eax-4]
+    ret
 main ENDP
 END main
 `;
@@ -8316,6 +8472,7 @@ main PROC
     mov ebx, OFFSET x
     add ebx, 4
     lea eax, [ebx-4]
+    ret
 main ENDP
 END main
 `;

@@ -8,7 +8,9 @@
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
  * signed relational conditional jumps, direct CALL, Phase 71 root/helper plain near RET,
- * called non-entry procedure fallthrough diagnostics, and Irvine32 exit forms over the currently supported operand shapes. Phase 59
+ * called non-entry procedure fallthrough diagnostics, Phase 71C code-stream
+ * end-falloff diagnostics, and Irvine32 exit forms over the currently supported
+ * operand shapes. Phase 59
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
@@ -43,7 +45,7 @@
 /// Maximum checked memory accesses retained in one step delta.
 #define VM_EXEC_MAX_MEMORY_ACCESSES 4U
 
-/// Maximum procedure boundaries retained for root/fallthrough termination checks.
+/// Maximum procedure boundaries retained for root, helper-fallthrough, and code-falloff checks.
 #define VM_EXEC_MAX_PROCEDURE_BOUNDARIES 128U
 
 /// Canonical Phase 68B pseudo-code-address base for displayed EIP.
@@ -85,6 +87,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
     /// A CALL-reached non-entry procedure fell through its ENDP boundary without RET.
     VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH,
+    /// Execution reached the end of the lowered executable code stream without an explicit terminator.
+    VM_EXEC_STATUS_CODE_FELL_OFF_END,
     /// Optional Phase 71A strict root-RET mode rejected a selected-entry root RET.
     VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE,
     /// The VM detected an impossible root/helper termination state.
@@ -94,7 +98,7 @@ typedef enum VmExecStatus {
 } VmExecStatus;
 
 
-/// Describes one procedure boundary used by Phase 71 terminal-state checks.
+/// Describes one procedure boundary used by root RET, helper fallthrough, and code-falloff checks.
 typedef struct VmExecProcedureBoundary {
     /// Zero-based first executable instruction index in the procedure body.
     size_t start_instruction_index;
@@ -240,7 +244,7 @@ typedef struct Vm {
     size_t instruction_pointer;
     /// Total number of successfully executed IR instructions.
     uint64_t instruction_count;
-    /// Whether the loaded program has halted by reaching its end.
+    /// Whether the loaded program has halted through an explicit supported terminator.
     bool halted;
     /// Last-step observable changes.
     VmExecDelta last_delta;
@@ -323,13 +327,14 @@ bool vm_sync_display_eip(Vm *vm);
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_initialize_stack_pointer(Vm *vm);
 
-/// Configures Phase 71 root and procedure-boundary metadata for a loaded VM.
+/// Configures root, helper-fallthrough, and code-falloff procedure metadata for a loaded VM.
 ///
 /// The executor copies the supplied boundaries and uses them only to distinguish
-/// selected-entry root RET success from ordinary helper RET token reads, and to
-/// diagnose CALL-reached non-entry procedure fallthrough. The count is not a Phase
-/// 72 call-depth limit or public call trace. Passing zero boundaries clears the
-/// metadata.
+/// selected-entry root RET success from ordinary helper RET token reads, diagnose
+/// CALL-reached non-entry procedure fallthrough, and retain enough selected-entry
+/// boundary metadata for Phase 71C code-stream falloff handling. The count is not
+/// a Phase 72 call-depth limit or public call trace. Passing zero boundaries
+/// clears the metadata.
 ///
 /// @param vm VM instance to mutate.
 /// @param boundaries Procedure-boundary records to copy; may be NULL only when count is zero.
