@@ -9,8 +9,9 @@
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
  * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination,
- * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71C
- * code-stream end-falloff diagnostics, and Irvine32 exit
+ * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
+ * entry-procedure auto-stop compatibility, Phase 71C code-stream
+ * end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
@@ -96,6 +97,15 @@ static bool vm_exec_procedure_fallthrough_policy_is_valid(VmProcedureFallthrough
     return policy == VM_PROCEDURE_FALLTHROUGH_POLICY_OFF ||
            policy == VM_PROCEDURE_FALLTHROUGH_POLICY_WARN ||
            policy == VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR;
+}
+
+/// Returns whether a Phase 71E entry procedure end mode is valid.
+///
+/// @param mode Mode value to inspect.
+/// @return true when @p mode is accepted.
+static bool vm_exec_entry_procedure_end_mode_is_valid(VmEntryProcedureEndMode mode) {
+    return mode == VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM ||
+           mode == VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END;
 }
 
 /// Records one Phase 71D procedure-fallthrough event.
@@ -282,6 +292,7 @@ static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
     vm->selected_entry_procedure_index = 0U;
     vm->active_helper_return_count = 0U;
     vm->root_code_stream_active = false;
+    vm->selected_entry_end_stop_eligible = true;
     vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
 }
 
@@ -310,6 +321,21 @@ static bool vm_exec_index_is_inside_procedure_boundary(const VmExecProcedureBoun
            instruction_index < boundary->end_instruction_index;
 }
 
+/// Returns whether an opcode is a currently implemented conditional jump.
+///
+/// @param opcode Opcode to inspect.
+/// @return true when @p opcode is one of the supported conditional jump opcodes.
+static bool vm_exec_opcode_is_conditional_jump(VmIrOpcode opcode);
+
+/// Returns whether a committed step moved by ordinary fallthrough.
+///
+/// @param instruction Instruction that just executed.
+/// @param before_ip Instruction pointer before execution.
+/// @param after_ip Instruction pointer after execution.
+/// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
+/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/taken branch.
+static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip, bool conditional_branch_taken);
+
 /// Returns whether selected-entry root metadata is internally inconsistent.
 ///
 /// @param vm VM instance containing selected-entry metadata.
@@ -328,20 +354,79 @@ static bool vm_exec_root_metadata_is_inconsistent(const Vm *vm) {
     return !root->is_selected_entry || !vm_exec_procedure_boundary_is_valid(vm, root);
 }
 
+/// Returns the selected-entry procedure boundary when valid.
+///
+/// @param vm VM instance containing selected-entry metadata.
+/// @return Pointer to the selected-entry boundary, or NULL when unavailable.
+static const VmExecProcedureBoundary *vm_exec_selected_entry_boundary(const Vm *vm) {
+    if (vm == NULL || !vm->has_selected_entry_procedure || vm_exec_root_metadata_is_inconsistent(vm)) {
+        return NULL;
+    }
+
+    return &vm->procedure_boundaries[vm->selected_entry_procedure_index];
+}
+
 /// Returns whether an instruction index is inside the selected-entry procedure.
 ///
 /// @param vm VM instance containing selected-entry metadata.
 /// @param instruction_index Instruction index to classify.
 /// @return true when @p instruction_index is inside the selected-entry procedure boundary.
 static bool vm_exec_instruction_is_in_selected_entry(const Vm *vm, size_t instruction_index) {
-    const VmExecProcedureBoundary *root = NULL;
+    return vm_exec_index_is_inside_procedure_boundary(vm_exec_selected_entry_boundary(vm), instruction_index);
+}
 
-    if (vm == NULL || !vm->has_selected_entry_procedure || vm_exec_root_metadata_is_inconsistent(vm)) {
-        return false;
+/// Returns whether Phase 71E compatibility mode should stop at the selected entry boundary.
+///
+/// This predicate is true for an empty selected entry before the first fetch and
+/// after an ordinary sequential step reaches the selected entry ENDP boundary.
+/// Explicit control-transfer paths clear the eligibility flag before this helper
+/// is allowed to stop execution.
+///
+/// @param vm VM instance to inspect.
+/// @return true when execution should halt successfully at the selected entry boundary.
+static bool vm_exec_should_stop_at_selected_entry_end(const Vm *vm) {
+    const VmExecProcedureBoundary *root = vm_exec_selected_entry_boundary(vm);
+
+    return vm != NULL &&
+           root != NULL &&
+           vm->entry_procedure_end_mode == VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END &&
+           vm->selected_entry_end_stop_eligible &&
+           vm->active_helper_return_count == 0U &&
+           vm->instruction_pointer == root->end_instruction_index;
+}
+
+/// Updates Phase 71E selected-entry path state after one committed selected-entry step.
+///
+/// Ordinary sequential movement preserves selected-entry ENDP auto-stop
+/// eligibility and root-code-stream state. Explicit CALL/RET paths and explicit
+/// transfers that leave the selected entry procedure clear that state. Explicit
+/// jumps or taken conditional branches that remain inside the selected entry
+/// procedure do not by themselves prevent later ordinary boundary completion.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction that just executed.
+/// @param before_ip Instruction pointer before execution.
+/// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
+static void vm_exec_update_entry_end_stop_eligibility_after_step(Vm *vm, const VmIrInstruction *instruction, size_t before_ip, bool conditional_branch_taken) {
+    if (vm == NULL || instruction == NULL) {
+        return;
     }
 
-    root = &vm->procedure_boundaries[vm->selected_entry_procedure_index];
-    return vm_exec_index_is_inside_procedure_boundary(root, instruction_index);
+    if (!vm_exec_instruction_is_in_selected_entry(vm, before_ip)) {
+        return;
+    }
+
+    if (vm_exec_step_was_fallthrough(instruction, before_ip, vm->instruction_pointer, conditional_branch_taken)) {
+        return;
+    }
+
+    if (instruction->opcode != VM_IR_OPCODE_CALL && instruction->opcode != VM_IR_OPCODE_RET &&
+        vm_exec_instruction_is_in_selected_entry(vm, vm->instruction_pointer)) {
+        return;
+    }
+
+    vm->selected_entry_end_stop_eligible = false;
+    vm->root_code_stream_active = false;
 }
 
 /// Refreshes whether execution is in the no-helper selected-entry root code stream.
@@ -398,12 +483,16 @@ static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary(const Vm *
 /// @param instruction Instruction that just executed.
 /// @param before_ip Instruction pointer before execution.
 /// @param after_ip Instruction pointer after execution.
+/// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
 /// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/taken branch.
-static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip) {
+static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip, bool conditional_branch_taken) {
     if (instruction == NULL || after_ip != before_ip + 1U) {
         return false;
     }
     if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET) {
+        return false;
+    }
+    if (conditional_branch_taken && vm_exec_opcode_is_conditional_jump(instruction->opcode)) {
         return false;
     }
 
@@ -419,14 +508,15 @@ static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, siz
 /// @param vm VM instance to inspect and possibly halt.
 /// @param instruction Instruction that just executed.
 /// @param before_ip Instruction pointer before execution.
+/// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
 /// @return OK for normal continuation, or a terminal diagnostic status.
-static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstruction *instruction, size_t before_ip) {
+static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstruction *instruction, size_t before_ip, bool conditional_branch_taken) {
     const VmExecProcedureBoundary *from_boundary = NULL;
     const VmExecProcedureBoundary *to_boundary = NULL;
     bool crossed_into_other_procedure = false;
     bool helper_fell_out_of_code = false;
 
-    if (vm == NULL || instruction == NULL || !vm_exec_step_was_fallthrough(instruction, before_ip, vm->instruction_pointer)) {
+    if (vm == NULL || instruction == NULL || !vm_exec_step_was_fallthrough(instruction, before_ip, vm->instruction_pointer, conditional_branch_taken)) {
         return VM_EXEC_STATUS_OK;
     }
 
@@ -3595,6 +3685,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     memset(vm, 0, sizeof(*vm));
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
+    vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3631,6 +3722,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     memset(vm, 0, sizeof(*vm));
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
+    vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init(&vm->memory, memory_config);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3690,6 +3782,7 @@ VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoun
     vm->has_selected_entry_procedure = has_selected;
     vm->selected_entry_procedure_index = selected_index;
     vm->active_helper_return_count = 0U;
+    vm->selected_entry_end_stop_eligible = true;
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
 }
@@ -3734,6 +3827,25 @@ VmExecStatus vm_set_procedure_fallthrough_policy(Vm *vm, VmProcedureFallthroughP
 /// @return VM-owned diagnostic pointer, or NULL when @p vm is NULL.
 const VmProcedureFallthroughDiagnostic *vm_last_procedure_fallthrough_diagnostic(const Vm *vm) {
     return vm != NULL ? &vm->last_procedure_fallthrough_diagnostic : NULL;
+}
+
+
+/// Configures the Phase 71E selected-entry procedure end mode for a VM.
+///
+/// @param vm VM instance to mutate.
+/// @param mode Mode to apply.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
+VmExecStatus vm_set_entry_procedure_end_mode(Vm *vm, VmEntryProcedureEndMode mode) {
+    if (vm == NULL || !vm_exec_entry_procedure_end_mode_is_valid(mode)) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm->entry_procedure_end_mode = mode;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
 }
 
 void vm_deinit(Vm *vm) {
@@ -3979,6 +4091,7 @@ VmExecStatus vm_step(Vm *vm) {
     const VmIrInstruction *instruction = NULL;
     VmCpu before_cpu;
     size_t instruction_pointer_before_step = 0U;
+    bool conditional_branch_taken = false;
     VmExecStatus status = VM_EXEC_STATUS_OK;
 
     if (vm == NULL) {
@@ -3993,6 +4106,13 @@ VmExecStatus vm_step(Vm *vm) {
     if (vm->halted) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_HALTED, NULL);
         return VM_EXEC_STATUS_HALTED;
+    }
+    if (vm_exec_should_stop_at_selected_entry_end(vm)) {
+        vm->halted = true;
+        vm_exec_clear_delta(&vm->last_delta);
+        vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_OK, NULL);
+        return VM_EXEC_STATUS_OK;
     }
     if (vm->instruction_pointer >= vm->program_count) {
         const VmIrInstruction *falloff_instruction = vm->last_delta.has_instruction ? &vm->last_delta.instruction : NULL;
@@ -4020,17 +4140,23 @@ VmExecStatus vm_step(Vm *vm) {
     } else if (instruction->opcode == VM_IR_OPCODE_RET) {
         /* vm_exec_execute_ret either halted a root RET or transferred to the validated pseudo-EIP target. */
     } else if (vm_exec_opcode_is_conditional_jump(instruction->opcode)) {
-        bool branch_taken = false;
-        if (!vm_exec_conditional_jump_taken(&vm->cpu, instruction->opcode, &branch_taken)) {
+        if (!vm_exec_conditional_jump_taken(&vm->cpu, instruction->opcode, &conditional_branch_taken)) {
             vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_BRANCH_TARGET, instruction);
             return VM_EXEC_STATUS_INVALID_BRANCH_TARGET;
         }
-        vm->instruction_pointer = branch_taken ? (size_t)instruction->destination.immediate : vm->instruction_pointer + 1U;
+        vm->instruction_pointer = conditional_branch_taken ? (size_t)instruction->destination.immediate : vm->instruction_pointer + 1U;
     } else {
         vm->instruction_pointer += 1U;
     }
     vm->instruction_count += 1U;
-    status = vm_exec_apply_procedure_fallthrough(vm, instruction, instruction_pointer_before_step);
+    vm_exec_update_entry_end_stop_eligibility_after_step(vm, instruction, instruction_pointer_before_step, conditional_branch_taken);
+    if (vm_exec_should_stop_at_selected_entry_end(vm)) {
+        vm->halted = true;
+        vm_exec_capture_delta(vm, instruction, &before_cpu);
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_OK, instruction);
+        return VM_EXEC_STATUS_OK;
+    }
+    status = vm_exec_apply_procedure_fallthrough(vm, instruction, instruction_pointer_before_step, conditional_branch_taken);
     if (status != VM_EXEC_STATUS_OK) {
         vm_exec_set_diagnostic(vm, status, instruction);
         return status;

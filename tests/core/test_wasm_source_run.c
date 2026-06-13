@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71D procedure-fallthrough policy.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71E entry-procedure end-mode compatibility.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -17,7 +17,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71d-procedure-fallthrough-policy-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-71e-entry-procedure-end-mode-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -9456,7 +9456,7 @@ static int test_phase58_label_source_run_behavior(void) {
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":71", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":3", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -9569,7 +9569,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9823,7 +9823,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -10187,7 +10187,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":71", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -10294,7 +10294,7 @@ static int test_phase69_direct_call_source_run_behavior(void) {
         "Helper ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71D runtime metadata");
+    failures += expect_json_contains(valid_copy, "\"phase\":71", "Phase 69 CALL regression fixture should report current Phase 71E runtime metadata");
     failures += expect_json_contains(valid_copy, "\"ok\":false", "direct user-procedure CALL with helper fallthrough should now fail at the helper boundary");
     failures += expect_json_contains(valid_copy, "\"code\":\"procedure-fell-through\"", "CALL-reached helper fallthrough should use Phase 71 diagnostic");
     failures += expect_json_contains(valid_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "direct CALL should transfer to the helper procedure body before fallthrough diagnostic");
@@ -10399,8 +10399,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":71", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
-    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71D should report current output-contract metadata");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71E should report current output-contract metadata");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
@@ -10655,6 +10655,7 @@ static int test_phase71d_procedure_fallthrough_policy_source_run_behavior(void) 
         MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN
     ));
     failures += expect_json_contains(warn_copy, "\"procedureFallthroughPolicy\":\"warn\"", "warn policy should serialize active procedure-fallthrough setting");
+    failures += expect_json_contains(warn_copy, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71E default entry procedure end mode should serialize as code-stream");
     failures += expect_json_contains(warn_copy, "\"kind\":\"simulator-warning\"", "warn policy should emit a non-fatal procedure-fallthrough warning");
     failures += expect_json_contains(warn_copy, "\"code\":\"procedure-fell-through\"", "warn policy should use public procedure-fell-through code");
     failures += expect_json_contains(warn_copy, "Execution fell through from procedure", "warn policy should explain procedure-boundary crossing");
@@ -10751,10 +10752,228 @@ static int test_phase71d_procedure_fallthrough_policy_source_run_behavior(void) 
     return failures;
 }
 
-/// Verifies Phase 71D runtime/source-run status metadata is emitted by source-run JSON.
+
+/// Verifies Phase 71E source-run entry-procedure end mode serialization and behavior.
 ///
 /// @return Number of failures.
-static int test_phase71c_source_run_phase_metadata(void) {
+static int test_phase71e_entry_procedure_end_mode_source_run_behavior(void) {
+    static const char *fallthrough_source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 2\n"
+        "    ret\n"
+        "helper ENDP\n"
+        "END main\n";
+    static const char *empty_entry_source =
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    static const char *empty_entry_with_successor_source =
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 3\n"
+        "    ret\n"
+        "helper ENDP\n"
+        "END main\n";
+    static const char *taken_branch_to_boundary_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    cmp eax, eax\n"
+        "    je helper_body\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "helper_body:\n"
+        "    mov ebx, 2\n"
+        "    exit\n"
+        "helper ENDP\n"
+        "END main\n";
+    static const char *parser_error_source =
+        ".code\n"
+        "main PROC\n"
+        "    definitely_not_an_instruction eax\n"
+        "main ENDP\n"
+        "END main\n";
+    char code_stream_copy[8192];
+    char stop_copy[8192];
+    char empty_default_copy[8192];
+    char empty_stop_copy[8192];
+    char empty_successor_stop_copy[8192];
+    char branch_stop_copy[8192];
+    char parser_error_stop_copy[4096];
+    char invalid_copy[4096];
+    int failures = 0;
+
+    copy_source_run_json(code_stream_copy, sizeof(code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(code_stream_copy, "\"entryProcedureEndMode\":\"code-stream\"", "code-stream mode should serialize explicitly");
+    failures += expect_json_contains(code_stream_copy, "\"code\":\"procedure-fell-through\"", "code-stream mode should preserve Phase 71D procedure-fell-through warning");
+    failures += expect_json_contains(code_stream_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "code-stream mode should execute later procedure text");
+    failures += expect_json_contains(code_stream_copy, "\"ok\":true", "code-stream fallthrough RET fixture should still complete successfully");
+
+    copy_source_run_json(stop_copy, sizeof(stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "stop-at-entry-end mode should serialize explicitly");
+    failures += expect_json_contains(stop_copy, "\"ok\":true", "stop-at-entry-end should complete successfully at selected-entry ENDP");
+    failures += expect_json_contains(stop_copy, "\"status\":\"ok\"", "stop-at-entry-end should report OK status");
+    failures += expect_json_contains(stop_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "stop-at-entry-end should preserve selected-entry side effects");
+    failures += expect_json_contains(stop_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "stop-at-entry-end should stop before later procedure text");
+    failures += expect_json_not_contains(stop_copy, "\"code\":\"procedure-fell-through\"", "stop-at-entry-end should not warn for the stopped selected-entry boundary");
+    failures += expect_json_not_contains(stop_copy, "\"code\":\"code-fell-off-end\"", "stop-at-entry-end should not report code-fell-off-end at selected-entry ENDP");
+
+    copy_source_run_json(empty_default_copy, sizeof(empty_default_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        empty_entry_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(empty_default_copy, "\"entryProcedureEndMode\":\"code-stream\"", "empty selected entry should serialize default code-stream mode");
+    failures += expect_json_contains(empty_default_copy, "\"code\":\"code-fell-off-end\"", "empty selected entry should keep Phase 71C code-fell-off-end in code-stream mode");
+
+    copy_source_run_json(empty_stop_copy, sizeof(empty_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        empty_entry_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(empty_stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "empty selected entry should serialize stop-at-entry-end mode");
+    failures += expect_json_contains(empty_stop_copy, "\"ok\":true", "empty selected entry should succeed in stop-at-entry-end mode");
+    failures += expect_json_contains(empty_stop_copy, "\"instructionCount\":0", "empty selected entry should not fabricate execution count in stop-at-entry-end mode");
+    failures += expect_json_not_contains(empty_stop_copy, "\"code\":\"code-fell-off-end\"", "empty selected entry should not report code-fell-off-end in stop-at-entry-end mode");
+
+    copy_source_run_json(empty_successor_stop_copy, sizeof(empty_successor_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        empty_entry_with_successor_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(empty_successor_stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "empty selected entry followed by later text should serialize stop-at-entry-end mode");
+    failures += expect_json_contains(empty_successor_stop_copy, "\"ok\":true", "empty selected entry followed by later text should succeed in stop-at-entry-end mode");
+    failures += expect_json_contains(empty_successor_stop_copy, "\"instructionCount\":0", "empty selected entry followed by later text should not execute helper text in stop-at-entry-end mode");
+    failures += expect_json_contains(empty_successor_stop_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "empty selected entry stop should leave later helper side effects absent");
+    failures += expect_json_not_contains(empty_successor_stop_copy, "\"code\":\"procedure-fell-through\"", "empty selected entry stop should not warn before later helper text");
+    failures += expect_json_not_contains(empty_successor_stop_copy, "\"code\":\"code-fell-off-end\"", "empty selected entry stop should not report code-fell-off-end before later helper text");
+
+    copy_source_run_json(branch_stop_copy, sizeof(branch_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        taken_branch_to_boundary_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(branch_stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "taken-branch fixture should serialize stop-at-entry-end mode");
+    failures += expect_json_contains(branch_stop_copy, "\"ok\":true", "taken branch to selected-entry boundary should execute explicit transfer instead of compatibility-stopping");
+    failures += expect_json_contains(branch_stop_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "taken branch to later helper text should execute the helper body");
+    failures += expect_json_contains(branch_stop_copy, "execution-complete", "taken branch fixture should terminate through explicit Irvine32 exit");
+    failures += expect_json_not_contains(branch_stop_copy, "\"code\":\"procedure-fell-through\"", "taken branch to helper text should not be reported as ordinary procedure fallthrough");
+
+    copy_source_run_json(parser_error_stop_copy, sizeof(parser_error_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        parser_error_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(parser_error_stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "parser-error fixture should still serialize stop-at-entry-end mode");
+    failures += expect_json_contains(parser_error_stop_copy, "\"ok\":false", "stop-at-entry-end must not hide parser errors inside the selected entry procedure");
+    failures += expect_json_contains(parser_error_stop_copy, "unsupported-instruction", "stop-at-entry-end parser-error fixture should expose the parser diagnostic");
+    failures += expect_json_not_contains(parser_error_stop_copy, "execution-complete", "stop-at-entry-end parser-error fixture should not execute or complete");
+
+    copy_source_run_json(invalid_copy, sizeof(invalid_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        (Masm32SimWasmEntryProcedureEndMode)99
+    ));
+    failures += expect_json_contains(invalid_copy, "invalid-entry-procedure-end-mode-setting", "invalid entry-procedure end mode should produce a settings error");
+    failures += expect_json_contains(invalid_copy, "\"setting\":\"entryProcedureEndMode\"", "invalid entry-procedure end mode diagnostic should name the setting");
+    failures += expect_json_contains(invalid_copy, "code-stream", "invalid entry-procedure end mode diagnostic should list code-stream");
+    failures += expect_json_contains(invalid_copy, "stop-at-entry-end", "invalid entry-procedure end mode diagnostic should list stop-at-entry-end");
+    failures += expect_json_not_contains(invalid_copy, "execution-complete", "invalid entry-procedure end mode should not execute source");
+
+    return failures;
+}
+
+/// Verifies Phase 71E runtime/source-run status metadata is emitted by source-run JSON.
+///
+/// @return Number of failures.
+static int test_phase71e_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -10763,10 +10982,11 @@ static int test_phase71c_source_run_phase_metadata(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71D metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"D\"", "Phase 71D should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "Phase 71D should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71D should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"phase\":71", "Runtime metadata should report numeric Phase 71E metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"E\"", "Phase 71E should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "Phase 71E should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 71E should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71E should serialize the default entry procedure end mode");
 
     return failures;
 }
@@ -11219,7 +11439,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":71", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"D\"", "Helper-before-entry source should report current suffix metadata");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"E\"", "Helper-before-entry source should report current suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
@@ -12323,7 +12543,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"D\"", ".CONST ? fixture should report the current runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"E\"", ".CONST ? fixture should report the current runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -13043,7 +13263,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"D\"", ".code read should report the current runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"E\"", ".code read should report the current runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -13236,7 +13456,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"D\"", "segment diagnostics should report the current runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"E\"", "segment diagnostics should report the current runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -13861,7 +14081,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":71", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy\"", "Phase 71D should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting\"", "Phase 71E should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":3", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":3", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -14691,7 +14911,8 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase69_direct_call_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase69_direct_call_source_run_behavior},
     {"test_phase71_call_ret_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71_call_ret_source_run_behavior},
     {"test_phase71d_procedure_fallthrough_policy_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71d_procedure_fallthrough_policy_source_run_behavior},
-    {"test_phase71c_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71c_source_run_phase_metadata},
+    {"test_phase71e_entry_procedure_end_mode_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71e_entry_procedure_end_mode_source_run_behavior},
+    {"test_phase71e_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71e_source_run_phase_metadata},
     {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
     {"test_phase68b_eip_pseudo_display_and_rejections", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68b_eip_pseudo_display_and_rejections},
     {"test_phase67a_entry_procedure_runtime_boundary_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67a_entry_procedure_runtime_boundary_source_run},

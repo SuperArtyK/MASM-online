@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy.
+  Milestone 71E: Entry-Procedure Auto-Stop Compatibility Setting.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy</p>
+        <p class="muted">Milestone 71E: Entry-Procedure Auto-Stop Compatibility Setting</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -26,11 +26,11 @@
 value DWORD 7
 .code
 main PROC
-    mov eax, value    ; Default Warn policy reports procedure-fell-through here
+    mov eax, value    ; Default code-stream mode reports procedure-fell-through here
 main ENDP
 
 Helper PROC
-    mov ebx, value    ; Off mode continues silently; Error mode stops before this
+    mov ebx, value    ; stop-at-entry-end mode stops before this helper text
     exit              ; Explicit Irvine32 terminator after the fallthrough demo
 Helper ENDP
 END main</textarea>
@@ -117,6 +117,18 @@ END main</textarea>
                   <li><strong>Warn:</strong> ordinary fallthrough from one procedure range into another emits <code>procedure-fell-through</code> and continues.</li>
                   <li><strong>Off:</strong> suppresses the warning while preserving ordinary code-stream execution.</li>
                   <li><strong>Error:</strong> stops before the first instruction in the destination procedure.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="entry-procedure-end-mode-setting">Entry procedure end mode</label>
+                <select id="entry-procedure-end-mode-setting" aria-describedby="entry-procedure-end-mode-setting-help">
+                  <option value="code-stream" selected>Code-stream execution (default)</option>
+                  <option value="stop-at-entry-end">Stop at selected-entry ENDP</option>
+                </select>
+                <ul id="entry-procedure-end-mode-setting-help" class="setting-help muted">
+                  <li><strong>Code-stream execution:</strong> realistic VM control flow continues past the selected-entry <code>ENDP</code> boundary unless source code terminates explicitly.</li>
+                  <li><strong>Stop at selected-entry ENDP:</strong> beginner-friendly compatibility mode stops successfully when ordinary sequential execution reaches the selected entry procedure boundary.</li>
+                  <li>This setting does not make <code>ENDP</code> executable and does not change helper <code>CALL</code>/<code>RET</code> behavior.</li>
                 </ul>
               </div>
               <div class="setting-control">

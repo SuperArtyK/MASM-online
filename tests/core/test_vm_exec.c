@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71D procedure-fallthrough policy behavior.
+ * @brief Unit tests for the VM executor through Phase 71E entry-procedure end-mode compatibility behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture, Phase 71C code-end falloff, and Phase 71D procedure-fallthrough policy. They intentionally avoid
+ * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, and Phase 71E entry-procedure end-mode compatibility. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -4966,6 +4966,174 @@ static int test_phase71c_selected_entry_falls_through_to_later_procedure(void) {
 }
 
 
+/// Verifies Phase 71E compatibility mode stops at the selected-entry boundary before later procedure text.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71e_stop_at_entry_end_prevents_later_procedure_execution(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmProcedureFallthroughDiagnostic *fallthrough = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71E stop-at-entry-end test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 71E stop-at-entry-end program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "Phase 71E procedure metadata should configure");
+    failures += expect_status(vm_set_entry_procedure_end_mode(&vm, VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END), VM_EXEC_STATUS_OK, "stop-at-entry-end mode should configure");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "stop-at-entry-end should finish successfully at selected-entry boundary");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "stop-at-entry-end should halt successfully");
+    failures += expect_size(vm.instruction_pointer, 1U, "stop-at-entry-end should leave IP at the selected-entry ENDP boundary");
+    failures += expect_size((size_t)vm.instruction_count, 1U, "stop-at-entry-end should count only the selected-entry instruction");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after stop-at-entry-end should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after stop-at-entry-end should succeed"));
+    failures += expect_u32(eax, 1U, "stop-at-entry-end should preserve selected-entry side effects");
+    failures += expect_u32(ebx, 0U, "stop-at-entry-end should not execute later procedure text");
+
+    fallthrough = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (fallthrough != NULL && fallthrough->has_diagnostic) {
+        failures += record_failure("stop-at-entry-end should not emit procedure-fell-through for the stopped selected-entry boundary");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "a finished stop-at-entry-end VM should report halted on later steps");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies Phase 71E treats a taken conditional branch to the selected-entry boundary as an explicit transfer.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71e_taken_branch_to_entry_boundary_does_not_auto_stop(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t ebx = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CMP, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "cmp eax, eax", 0U},
+        {VM_IR_OPCODE_JE, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "je helper_body", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true},
+        {2U, 3U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for Phase 71E branch-boundary stop test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "branch-boundary program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "branch-boundary metadata should configure");
+    failures += expect_status(vm_set_entry_procedure_end_mode(&vm, VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END), VM_EXEC_STATUS_OK, "stop-at-entry-end should configure for branch-boundary test");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CMP should execute before conditional branch");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "taken JE to the boundary should execute as explicit transfer, not auto-stop");
+    failures += expect_size(vm.halted ? 1U : 0U, 0U, "taken branch to selected-entry boundary should not halt as compatibility ENDP completion");
+    failures += expect_size(vm.instruction_pointer, 2U, "taken branch should transfer to helper-body instruction at the selected-entry boundary");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper body reached by explicit branch should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after branch-boundary helper execution should succeed"));
+    failures += expect_u32(ebx, 2U, "taken branch should execute later helper text instead of stopping at selected-entry ENDP");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "explicit branch into helper text should still report code-fell-off-end at code end");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71E empty selected entries succeed only in compatibility mode.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71e_empty_selected_entry_succeeds_only_in_stop_mode(void) {
+    int failures = 0;
+    Vm default_vm;
+    Vm stop_vm;
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 0U, true, false}
+    };
+
+    failures += expect_status(vm_init(&default_vm, NULL), VM_EXEC_STATUS_OK, "default empty-entry VM should initialize");
+    failures += expect_status(vm_load_program(&default_vm, NULL, 0U), VM_EXEC_STATUS_OK, "default empty-entry program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&default_vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "default empty-entry metadata should configure");
+    failures += expect_status(vm_step(&default_vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "default code-stream empty entry should still report code-fell-off-end");
+    failures += expect_size(default_vm.halted ? 1U : 0U, 0U, "default empty-entry falloff should not be a successful halt");
+    vm_deinit(&default_vm);
+
+    failures += expect_status(vm_init(&stop_vm, NULL), VM_EXEC_STATUS_OK, "compatibility empty-entry VM should initialize");
+    failures += expect_status(vm_load_program(&stop_vm, NULL, 0U), VM_EXEC_STATUS_OK, "compatibility empty-entry program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&stop_vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "compatibility empty-entry metadata should configure");
+    failures += expect_status(vm_set_entry_procedure_end_mode(&stop_vm, VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END), VM_EXEC_STATUS_OK, "compatibility empty-entry mode should configure");
+    failures += expect_status(vm_step(&stop_vm), VM_EXEC_STATUS_OK, "compatibility empty entry should stop successfully at selected-entry boundary");
+    failures += expect_size(stop_vm.halted ? 1U : 0U, 1U, "compatibility empty entry should halt successfully");
+    failures += expect_size(stop_vm.instruction_pointer, 0U, "compatibility empty entry should remain at boundary index 0");
+    failures += expect_size((size_t)stop_vm.instruction_count, 0U, "compatibility empty entry should not count a fabricated instruction");
+    vm_deinit(&stop_vm);
+
+    return failures;
+}
+
+/// Verifies Phase 71E rejects invalid entry-procedure end mode values.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71e_invalid_entry_end_mode_rejected(void) {
+    int failures = 0;
+    Vm vm;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize before invalid entry mode test");
+    failures += expect_status(vm_set_entry_procedure_end_mode(&vm, (VmEntryProcedureEndMode)99), VM_EXEC_STATUS_INVALID_ARGUMENT, "invalid entry-procedure end mode should be rejected");
+    failures += expect_status(vm.entry_procedure_end_mode == VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT, VM_EXEC_STATUS_OK, "invalid entry mode should leave default code-stream mode unchanged");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71E compatibility mode does not suppress helper fallthrough after CALL leaves the selected entry.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71e_stop_mode_does_not_suppress_helper_fallthrough(void) {
+    int failures = 0;
+    Vm vm;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ret", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true},
+        {2U, 3U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for stop-mode helper fallthrough test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "stop-mode helper fallthrough program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "stop-mode helper fallthrough metadata should configure");
+    failures += expect_status(vm_set_entry_procedure_end_mode(&vm, VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END), VM_EXEC_STATUS_OK, "stop-at-entry-end should configure for helper fallthrough test");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL should leave selected entry without compatibility stop");
+    failures += expect_size(vm.instruction_pointer, 2U, "CALL should enter helper procedure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper instruction should execute and retain Phase 71D warning behavior");
+
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic == NULL || !diagnostic->has_diagnostic) {
+        failures += record_failure("stop-at-entry-end must not suppress helper procedure fallthrough after CALL leaves selected entry");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH, "helper fallthrough in stop mode should remain procedure-fell-through");
+        failures += expect_u32(diagnostic->from_instruction_index, 2U, "helper fallthrough in stop mode should report helper source instruction");
+        failures += expect_u32(diagnostic->to_instruction_index, 3U, "helper fallthrough in stop mode should report code-end successor");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "stop mode should still report code-fell-off-end after helper fallthrough");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5491,6 +5659,11 @@ int main(void) {
     failures += test_phase71c_empty_selected_entry_falls_off_code_end();
     failures += test_phase71c_selected_entry_falloff_reports_code_end();
     failures += test_phase71c_selected_entry_falls_through_to_later_procedure();
+    failures += test_phase71e_stop_at_entry_end_prevents_later_procedure_execution();
+    failures += test_phase71e_taken_branch_to_entry_boundary_does_not_auto_stop();
+    failures += test_phase71e_empty_selected_entry_succeeds_only_in_stop_mode();
+    failures += test_phase71e_invalid_entry_end_mode_rejected();
+    failures += test_phase71e_stop_mode_does_not_suppress_helper_fallthrough();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -5501,6 +5674,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71D procedure-fallthrough policy coverage passed.");
+    puts("Executor tests through Phase 71E entry-procedure end-mode compatibility coverage passed.");
     return 0;
 }

@@ -14,6 +14,7 @@ import {
   MEMORY_RANGE_REGION_ONLY,
   ROOT_RET_MODE_MASM32_COMPATIBLE,
   PROCEDURE_FALLTHROUGH_POLICY_WARN,
+  ENTRY_PROCEDURE_END_MODE_CODE_STREAM,
   TEACHING_DIAGNOSTIC_WARN,
   readDiagnosticSettingsFromControls
 } from "./settings.js";
@@ -72,7 +73,7 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
 }
 
 /**
- * Reads the selected diagnostic and Phase 71A root RET settings from the browser controls.
+ * Reads the selected diagnostic, Phase 71A root RET, Phase 71D fallthrough, and Phase 71E entry-end settings from the browser controls.
  *
  * @returns {import("./settings.js").DiagnosticSettings} Settings payload for RUN_SOURCE.
  */
@@ -83,7 +84,8 @@ function readDiagnosticSettings() {
     undefinedFlagUseSetting,
     compatibilityNoticesSetting,
     rootRetModeSetting,
-    procedureFallthroughPolicySetting
+    procedureFallthroughPolicySetting,
+    entryProcedureEndModeSetting
   );
 }
 
@@ -102,9 +104,10 @@ const undefinedFlagUseSetting = document.getElementById("undefined-flag-use-sett
 const compatibilityNoticesSetting = document.getElementById("compatibility-notices-setting");
 const rootRetModeSetting = document.getElementById("root-ret-mode-setting");
 const procedureFallthroughPolicySetting = document.getElementById("procedure-fallthrough-policy-setting");
+const entryProcedureEndModeSetting = document.getElementById("entry-procedure-end-mode-setting");
 
 if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton ||
-    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting || !rootRetModeSetting || !procedureFallthroughPolicySetting) {
+    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting || !rootRetModeSetting || !procedureFallthroughPolicySetting || !entryProcedureEndModeSetting) {
   throw new Error("Required simulator UI elements are missing.");
 }
 
@@ -114,6 +117,7 @@ undefinedFlagUseSetting.value = TEACHING_DIAGNOSTIC_WARN;
 compatibilityNoticesSetting.value = COMPATIBILITY_NOTICES_ON;
 rootRetModeSetting.value = ROOT_RET_MODE_MASM32_COMPATIBLE;
 procedureFallthroughPolicySetting.value = PROCEDURE_FALLTHROUGH_POLICY_WARN;
+entryProcedureEndModeSetting.value = ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
 initializeCollapsiblePanel(diagnosticSettingsToggle, diagnosticSettingsBody, false);
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });

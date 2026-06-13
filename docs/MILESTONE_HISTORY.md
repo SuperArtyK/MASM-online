@@ -18,20 +18,20 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 71D had been implemented as configurable procedure-fallthrough diagnostic policy, then the guide kept Phase 71E through Phase 71F before Phase 72. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 71E had been implemented as entry-procedure auto-stop compatibility, then the guide kept Phase 71F before Phase 72. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
 
 Phase 69B was output/message-ordering cleanup only. At its completion it kept Phase 69 as the latest runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 70 has since advanced the runtime/source-run MASM behavior phase.
 
-Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The latest recorded source tree for this history entry expects `phase-71d-procedure-fallthrough-policy-output-contract-v1`. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The latest recorded source tree for this history entry expects `phase-71e-entry-procedure-end-mode-output-contract-v1`. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
 
 Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token to the simulated stack through checked VM memory helpers, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. That stack write is internal VM execution state; current public source-run JSON does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
 
@@ -46,6 +46,15 @@ Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM
 Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, direct supported writes to `ESP` remain legal, and direct user-procedure `CALL` uses the active `ESP` value for its checked return-token stack write.
 
 Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. Phase 71 adds selected-entry root RET termination and called non-entry procedure fallthrough diagnostics. Source-level PUSH/POP, procedure frames, Irvine32 routine dispatch beyond virtual `exit`, `INVOKE`, `PROTO`, `LOCAL`, `USES`, and `ADDR` remain future-owned.
+
+
+## Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+
+Phase 71E is complete as a runtime/source-run behavior phase. It adds the configurable `entryProcedureEndMode` source-run and browser setting with accepted values `code-stream` and `stop-at-entry-end`, defaulting to `code-stream`. Default `code-stream` preserves the Phase 71C/71D realistic VM code stream: selected-entry `ENDP` is not an implicit successful terminator, `procedureFallthroughPolicy` still governs ordinary procedure-boundary crossings, and `code-fell-off-end` still reports executable code that ends without an explicit terminator.
+
+Opt-in `stop-at-entry-end` terminates successfully only when ordinary sequential execution reaches the selected entry procedure's `ENDP` boundary, including empty selected-entry procedures. It suppresses `procedure-fell-through` only for that stopped selected-entry boundary and does not suppress diagnostics after execution has left the selected entry through `CALL`/`RET`, `JMP`, or another explicit supported path. Root `RET`, helper `CALL`/`RET`, invalid return-token, parser, memory, unsupported-syntax, and source-run schema diagnostics remain independent.
+
+Phase 71E advances runtime/source-run MASM behavior metadata and source-run output-contract metadata to `phase-71e-entry-procedure-end-mode-output-contract-v1` because public settings, terminal behavior, rendered Simulator Messages coverage, and source-run JSON serialization changed.
 
 ## Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
 

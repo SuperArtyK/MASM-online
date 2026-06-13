@@ -523,7 +523,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy")
+    assert_text_contains("README.md", "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -603,8 +603,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 71")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"D\"")
-    assert_text_contains("web/src/protocol.js", "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"E\"")
+    assert_text_contains("web/src/protocol.js", "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1748,7 +1748,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71D status, concise status surfaces, and implemented fallthrough wording."""
+    """Verify Phase 71E status, concise status surfaces, and implemented entry-end wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1768,13 +1768,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "Runtime/source-run MASM behavior phase",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
-            "Phase 71D advances runtime/source-run MASM behavior",
-            "Ordinary procedure-boundary fallthrough is now governed by `procedureFallthroughPolicy`",
-            "default `warn` emits `procedure-fell-through` and continues",
-            "`code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics remain independent",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71E advances runtime/source-run MASM behavior",
+            "The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution",
+            "opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion",
+            "`procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
             "selected-entry source-run startup from `END entryName`",
@@ -1792,7 +1792,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         ],
     )
     for forbidden in [
-        "phase-71d-procedure-fallthrough-policy-output-contract-v1",
+        "phase-71e-entry-procedure-end-mode-output-contract-v1",
         "output-contract tokens and browser/Wasm artifact compatibility details",
         "Wasm API behavior",
         "browser behavior",
@@ -1801,7 +1801,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Next planned runtime/source-run behavior phase",
         "Repository/archive milestone",
         "Next canonical guide phase",
-        "Phase 71D through Phase 71F are planned",
+        "Phase 71E through Phase 71F are planned",
         "Artifact compatibility is intentionally strict",
         "older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
         "Exact requirements implemented",
@@ -1838,13 +1838,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
-            "Phase 71D advances runtime/source-run MASM behavior",
-            "Ordinary procedure-boundary fallthrough is now governed by `procedureFallthroughPolicy`",
-            "default `warn` emits `procedure-fell-through` and continues",
-            "`code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics remain independent",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71E advances runtime/source-run MASM behavior",
+            "The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution",
+            "opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion",
+            "`procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1940,10 +1940,10 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
-            "phase-71d-procedure-fallthrough-policy-output-contract-v1",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
             "Forward-looking phase navigation is guide-owned.",
@@ -1952,7 +1952,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-            "## Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "## Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "Phase 71D is complete as a runtime/source-run behavior phase.",
             "## Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "## Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
@@ -2093,14 +2093,14 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
-            "Phase 71D advances runtime/source-run MASM behavior",
-            "Tests must cover `procedureFallthroughPolicy` default `warn`, explicit `off`, and strict `error`",
-            "public `procedure-fell-through` diagnostic",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71E advances runtime/source-run MASM behavior",
+            "Tests must cover `entryProcedureEndMode` default `code-stream`, opt-in `stop-at-entry-end`, selected-entry boundary completion",
+            "empty selected-entry completion, invalid setting values",
             "root-code-stream RET default success does not read `[ESP]`",
-            "continued independence of `code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics",
+            "continued independence of `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2115,12 +2115,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Milestone 71E: Entry-Procedure Auto-Stop Compatibility Setting",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "procedure-fell-through",
-            "Default Warn policy reports procedure-fell-through here",
-            "Error mode stops before this",
+            "Default code-stream mode reports procedure-fell-through here",
+            "stop-at-entry-end mode stops before this helper text",
             "final-registers",
             "Program Console",
         ],

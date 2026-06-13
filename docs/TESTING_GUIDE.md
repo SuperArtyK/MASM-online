@@ -6,13 +6,13 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
-Phase 71D advances runtime/source-run MASM behavior. Tests must cover `procedureFallthroughPolicy` default `warn`, explicit `off`, and strict `error`; the public `procedure-fell-through` diagnostic; and the continued independence of `code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics.
+Phase 71E advances runtime/source-run MASM behavior. Tests must cover `entryProcedureEndMode` default `code-stream`, opt-in `stop-at-entry-end`, selected-entry boundary completion, empty selected-entry completion, invalid setting values, and the continued independence of `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics.
 
 
 
@@ -1222,7 +1222,7 @@ For stack/procedure diagnostics, tests must prove:
 - current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
 
 
-For Phase 71A root RET mode, Phase 71C code-stream fallthrough, and Phase 71D procedure-fallthrough policy specifically, tests must prove:
+For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, and Phase 71E entry-procedure end mode specifically, tests must prove:
 
 - a source-run fixture where the selected entry procedure contains only `ret` completes successfully in default `rootRetMode = "masm32-compatible"`;
 - a source-run fixture where explicit `rootRetMode = "masm32-compatible"` preserves default root `RET` success;
@@ -1292,7 +1292,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71D, the expected token is `phase-71d-procedure-fallthrough-policy-output-contract-v1` because the phase changes public terminal diagnostics and rendered Simulator Messages.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

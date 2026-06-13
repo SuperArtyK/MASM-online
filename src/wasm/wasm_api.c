@@ -84,13 +84,13 @@
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 71U
 
 /// Suffix for the current Phase 71D runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "D"
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "E"
 
 /// Full name of the current Phase 71D runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy"
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting"
 
 /// Browser/Wasm source-run JSON output-contract identifier for Phase 71D procedure-fallthrough policy.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71d-procedure-fallthrough-policy-output-contract-v1"
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-71e-entry-procedure-end-mode-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -490,6 +490,8 @@ typedef struct Masm32SimWasmRunStorage {
     Masm32SimWasmRootRetMode root_ret_mode;
     /// Configured Phase 71D procedure-fallthrough diagnostic policy.
     Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy;
+    /// Configured Phase 71E selected-entry procedure end mode.
+    Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode;
     /// Number of VM instructions fully executed and committed for this run.
     uint64_t executed_instruction_count;
     /// Instruction index that would have been fetched after the limit was reached.
@@ -620,6 +622,44 @@ static const char *masm32_sim_wasm_procedure_fallthrough_policy_name(Masm32SimWa
 /// @return Default warning policy.
 static Masm32SimWasmProcedureFallthroughPolicy masm32_sim_wasm_default_procedure_fallthrough_policy(void) {
     return MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN;
+}
+
+/// Returns whether a Phase 71E entry procedure end mode enum value is accepted.
+///
+/// @param mode Entry procedure end mode value to inspect.
+/// @return true when @p mode is valid.
+static bool masm32_sim_wasm_entry_procedure_end_mode_is_valid(Masm32SimWasmEntryProcedureEndMode mode) {
+    return mode == MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM ||
+        mode == MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END;
+}
+
+/// Maps a browser-facing entry procedure end mode to the core VM setting.
+///
+/// @param mode Browser-facing entry procedure end mode.
+/// @return Core VM mode; invalid input maps to the default code-stream mode.
+static VmEntryProcedureEndMode masm32_sim_wasm_map_entry_procedure_end_mode(Masm32SimWasmEntryProcedureEndMode mode) {
+    if (mode == MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END) {
+        return VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END;
+    }
+    return VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
+}
+
+/// Returns the source-run JSON value for an entry procedure end mode.
+///
+/// @param mode Entry procedure end mode to serialize.
+/// @return Stable setting string for accepted modes.
+static const char *masm32_sim_wasm_entry_procedure_end_mode_name(Masm32SimWasmEntryProcedureEndMode mode) {
+    if (mode == MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END) {
+        return "stop-at-entry-end";
+    }
+    return "code-stream";
+}
+
+/// Returns the Phase 71E default entry procedure end mode.
+///
+/// @return Default code-stream mode.
+static Masm32SimWasmEntryProcedureEndMode masm32_sim_wasm_default_entry_procedure_end_mode(void) {
+    return MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM;
 }
 
 /// Returns whether the next instruction is a strict-mode root-code-stream RET.
@@ -1086,7 +1126,7 @@ static const char *masm32_sim_wasm_build_invalid_root_ret_mode_json(Masm32SimWas
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"memoryChanges\":[],\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT
     );
     (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-root-ret-mode-setting", message, 0U, 0U);
@@ -1099,7 +1139,7 @@ static const char *masm32_sim_wasm_build_invalid_root_ret_mode_json(Masm32SimWas
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -1136,7 +1176,7 @@ static const char *masm32_sim_wasm_build_invalid_procedure_fallthrough_policy_js
     (void)masm32_sim_json_append_source_run_metadata(&writer);
     (void)masm32_sim_json_append(
         &writer,
-        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"memoryChanges\":[],\"simulatorMessages\":[",
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[",
         (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT
     );
     (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-procedure-fallthrough-policy-setting", message, 0U, 0U);
@@ -1149,7 +1189,57 @@ static const char *masm32_sim_wasm_build_invalid_procedure_fallthrough_policy_js
         snprintf(
             g_masm32_sim_wasm_run_json,
             sizeof(g_masm32_sim_wasm_run_json),
-            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
+            (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
+            MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
+            MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
+            MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT,
+            (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT
+        );
+    }
+
+    return g_masm32_sim_wasm_run_json;
+}
+
+/// Builds a renderable invalid Phase 71E entry procedure end mode JSON result.
+///
+/// @param mode Invalid entry procedure end mode supplied by the caller.
+/// @return Pointer to the static JSON response buffer.
+static const char *masm32_sim_wasm_build_invalid_entry_procedure_end_mode_json(Masm32SimWasmEntryProcedureEndMode mode) {
+    Masm32SimJsonWriter writer;
+    const char *accepted_values = "code-stream, stop-at-entry-end";
+    char message[224];
+
+    (void)snprintf(
+        message,
+        sizeof(message),
+        "Invalid entryProcedureEndMode setting value %d. Accepted values: code-stream, stop-at-entry-end.",
+        (int)mode
+    );
+
+    memset(g_masm32_sim_wasm_run_json, 0, sizeof(g_masm32_sim_wasm_run_json));
+    writer.buffer = g_masm32_sim_wasm_run_json;
+    writer.capacity = sizeof(g_masm32_sim_wasm_run_json);
+    writer.length = 0U;
+    writer.overflowed = false;
+
+    (void)masm32_sim_json_append_source_run_metadata(&writer);
+    (void)masm32_sim_json_append(
+        &writer,
+        ",\"ok\":false,\"status\":\"invalid-argument\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[",
+        (unsigned int)MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT
+    );
+    (void)masm32_sim_json_append_message(&writer, "ui-error", "invalid-entry-procedure-end-mode-setting", message, 0U, 0U);
+    (void)masm32_sim_json_append(&writer, "],\"invalidSetting\":{");
+    (void)masm32_sim_json_append(&writer, "\"setting\":\"entryProcedureEndMode\",\"value\":%d,\"acceptedValues\":", (int)mode);
+    (void)masm32_sim_json_append_string(&writer, accepted_values);
+    (void)masm32_sim_json_append(&writer, "}}");
+
+    if (writer.overflowed) {
+        snprintf(
+            g_masm32_sim_wasm_run_json,
+            sizeof(g_masm32_sim_wasm_run_json),
+            "{\"phase\":%u,\"phaseSuffix\":\"%s\",\"phaseName\":\"%s\",\"sourceRunOutputContract\":\"%s\",\"ok\":false,\"status\":\"response-truncated\",\"instructionCount\":0,\"instructionLimit\":%u,\"rootRetMode\":\"masm32-compatible\",\"procedureFallthroughPolicy\":\"warn\",\"entryProcedureEndMode\":\"code-stream\",\"memoryChanges\":[],\"simulatorMessages\":[{\"kind\":\"internal-simulator-error\",\"code\":\"response-truncated\",\"message\":\"The simulator response exceeded its fixed buffer.\"}]}",
             (unsigned int)MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER,
             MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX,
             MASM32_SIM_WASM_RUNTIME_PHASE_NAME,
@@ -6460,6 +6550,11 @@ static const char *masm32_sim_wasm_build_run_json(
         &writer,
         masm32_sim_wasm_procedure_fallthrough_policy_name(storage != NULL ? storage->procedure_fallthrough_policy : masm32_sim_wasm_default_procedure_fallthrough_policy())
     );
+    (void)masm32_sim_json_append(&writer, ",\"entryProcedureEndMode\":");
+    (void)masm32_sim_json_append_string(
+        &writer,
+        masm32_sim_wasm_entry_procedure_end_mode_name(storage != NULL ? storage->entry_procedure_end_mode : masm32_sim_wasm_default_entry_procedure_end_mode())
+    );
     (void)masm32_sim_json_append(&writer, ",");
     (void)masm32_sim_json_append_layout_metadata(&writer, layout_policy);
     (void)masm32_sim_json_append(
@@ -7192,6 +7287,7 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     uint32_t instruction_limit,
     Masm32SimWasmRootRetMode root_ret_mode,
     Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy,
+    Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode,
     bool include_uninitialized_metadata
 ) {
     VmParserConfig config;
@@ -7235,6 +7331,9 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     if (!masm32_sim_wasm_procedure_fallthrough_policy_is_valid(procedure_fallthrough_policy)) {
         return masm32_sim_wasm_build_invalid_procedure_fallthrough_policy_json(procedure_fallthrough_policy);
     }
+    if (!masm32_sim_wasm_entry_procedure_end_mode_is_valid(entry_procedure_end_mode)) {
+        return masm32_sim_wasm_build_invalid_entry_procedure_end_mode_json(entry_procedure_end_mode);
+    }
 
     if (source == NULL) {
         return masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT, NULL, NULL, NULL, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL, NULL, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
@@ -7252,6 +7351,7 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     g_masm32_sim_wasm_run_storage.instruction_limit = instruction_limit;
     g_masm32_sim_wasm_run_storage.root_ret_mode = root_ret_mode;
     g_masm32_sim_wasm_run_storage.procedure_fallthrough_policy = procedure_fallthrough_policy;
+    g_masm32_sim_wasm_run_storage.entry_procedure_end_mode = entry_procedure_end_mode;
 
     config.source = source;
     config.source_file = "main.asm";
@@ -7356,6 +7456,13 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     }
 
     exec_status = vm_set_procedure_fallthrough_policy(&vm, masm32_sim_wasm_map_procedure_fallthrough_policy(procedure_fallthrough_policy));
+    if (exec_status != VM_EXEC_STATUS_OK) {
+        const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
+        vm_deinit(&vm);
+        return json;
+    }
+
+    exec_status = vm_set_entry_procedure_end_mode(&vm, masm32_sim_wasm_map_entry_procedure_end_mode(entry_procedure_end_mode));
     if (exec_status != VM_EXEC_STATUS_OK) {
         const char *json = masm32_sim_wasm_build_run_json(MASM32_SIM_WASM_RUN_OUTCOME_EXEC_ERROR, &vm, &parser_result, g_masm32_sim_wasm_run_storage.parser_diagnostics, exec_status, &g_masm32_sim_wasm_run_storage, json_layout_policy, NULL, include_uninitialized_metadata, startup_state_notice_setting == MASM32_SIM_WASM_STARTUP_STATE_NOTICE_ON, startup_register_flag_mode, uninitialized_storage_visible_byte_mode);
         vm_deinit(&vm);
@@ -7581,6 +7688,7 @@ static const char *masm32_sim_wasm_run_source_json_internal(
         instruction_limit,
         root_ret_mode,
         masm32_sim_wasm_default_procedure_fallthrough_policy(),
+        masm32_sim_wasm_default_entry_procedure_end_mode(),
         include_uninitialized_metadata
     );
 }
@@ -8353,6 +8461,91 @@ MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_startup_st
         instruction_limit,
         root_ret_mode,
         procedure_fallthrough_policy,
+        masm32_sim_wasm_default_entry_procedure_end_mode(),
+        false
+    );
+}
+
+/// Browser-facing Phase 71E source-run export with entry procedure end mode.
+///
+/// @param source Null-terminated source text to parse and execute.
+/// @param memory_range_setting Browser memory validation setting.
+/// @param uninitialized_read_setting Browser uninitialized-read setting.
+/// @param undefined_flag_use_setting Browser undefined-flag-use setting.
+/// @param compatibility_notice_setting Browser compatibility-notice setting.
+/// @param startup_register_flag_mode Register and flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Visible-byte startup mode for uninitialized storage.
+/// @param startup_state_seed Deterministic startup seed.
+/// @param instruction_limit Positive instruction-count limit.
+/// @param root_ret_mode Root-code-stream RET mode.
+/// @param procedure_fallthrough_policy Ordinary procedure-boundary fallthrough policy.
+/// @param entry_procedure_end_mode Selected-entry ENDP boundary compatibility mode.
+/// @return Pointer to static JSON result storage.
+MASM32_SIM_EXPORT const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit,
+    Masm32SimWasmRootRetMode root_ret_mode,
+    Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy,
+    Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode
+) {
+    Masm32SimWasmMemoryValidationMode object_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY;
+    Masm32SimWasmMemoryValidationMode uninitialized_validation_mode = MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_WARNINGS;
+    Masm32SimWasmSectionValidationPolicy capacity_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    Masm32SimWasmSectionValidationPolicy image_policy = MASM32_SIM_WASM_SECTION_VALIDATION_OFF;
+    Masm32SimWasmUndefinedFlagUsePolicy flag_use_policy = MASM32_SIM_WASM_UNDEFINED_FLAG_USE_WARN;
+
+    {
+        VmDiagnosticPolicyValue compatibility_notice_value = VM_DIAGNOSTIC_POLICY_VALUE_OFF;
+
+        if (!masm32_sim_wasm_map_memory_range_setting(memory_range_setting, &object_validation_mode, &capacity_policy, &image_policy) ||
+            !masm32_sim_wasm_map_uninitialized_read_setting(uninitialized_read_setting, &uninitialized_validation_mode) ||
+            !masm32_sim_wasm_map_undefined_flag_use_setting(undefined_flag_use_setting, &flag_use_policy) ||
+            !masm32_sim_wasm_map_compatibility_setting_to_policy_value(compatibility_notice_setting, &compatibility_notice_value) ||
+            !masm32_sim_wasm_map_compatibility_notice_policy_value(compatibility_notice_value, &compatibility_notice_setting)) {
+            return masm32_sim_wasm_build_run_json(
+                MASM32_SIM_WASM_RUN_OUTCOME_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                VM_EXEC_STATUS_INVALID_ARGUMENT,
+                NULL,
+                NULL,
+                NULL,
+                false,
+                false,
+                MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+                MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO
+            );
+        }
+    }
+
+    return masm32_sim_wasm_run_source_json_internal_with_procedure_fallthrough_policy(
+        source,
+        VM_LAYOUT_MODE_FIXED,
+        NULL,
+        object_validation_mode,
+        uninitialized_validation_mode,
+        capacity_policy,
+        image_policy,
+        MASM32_SIM_WASM_SHIFT_VALIDATION_WARNINGS,
+        flag_use_policy,
+        compatibility_notice_setting,
+        masm32_sim_wasm_default_const_uninitialized_storage_policy(),
+        masm32_sim_wasm_default_startup_state_notice_setting(),
+        startup_register_flag_mode,
+        uninitialized_storage_visible_byte_mode,
+        startup_state_seed,
+        instruction_limit,
+        root_ret_mode,
+        procedure_fallthrough_policy,
+        entry_procedure_end_mode,
         false
     );
 }

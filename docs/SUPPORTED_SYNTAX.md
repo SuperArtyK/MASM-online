@@ -2,13 +2,13 @@
 
 Current milestone:
 
-- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
+- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71D adds configurable `procedureFallthroughPolicy` handling for ordinary procedure-boundary fallthrough while preserving the Phase 71C baseline that selected-entry `ENDP` is not an implicit successful terminator and executable code that reaches the end without an explicit terminator reports `code-fell-off-end`.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71E adds the explicit `entryProcedureEndMode` compatibility setting while preserving the default Phase 71C/71D baseline: selected-entry `ENDP` is not an implicit successful terminator in default `code-stream` mode, ordinary procedure-boundary fallthrough is governed by `procedureFallthroughPolicy`, and executable code that reaches the end without an explicit terminator reports `code-fell-off-end`.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
@@ -24,11 +24,12 @@ Implemented procedure and termination behavior for the active runtime/source-run
 - Virtual Irvine32 `exit` is an explicit successful terminator where recognized.
 - Ordinary VM sequential execution follows the lowered executable code stream and may fall through across procedure boundaries when no explicit supported transfer or terminator changes control flow.
 - Ordinary procedure-boundary fallthrough is governed by `procedureFallthroughPolicy`. The default `warn` mode emits non-fatal `procedure-fell-through` and continues, `off` suppresses only that diagnostic and continues, and `error` emits runtime-error `procedure-fell-through` and stops before executing the first destination-procedure instruction.
+- `entryProcedureEndMode` controls selected-entry `ENDP` boundary compatibility. Default `code-stream` preserves realistic VM control flow across selected-entry `ENDP`; opt-in `stop-at-entry-end` terminates successfully only when ordinary sequential execution reaches the selected entry procedure boundary, including empty selected-entry procedures.
 - Reaching the end of the lowered executable code stream without explicit `RET`, virtual Irvine32 `exit`, or another supported terminator reports runtime error `code-fell-off-end`.
 - When the responsible procedure for `code-fell-off-end` is named exactly `front` under ASCII case-insensitive comparison, the simulator appends the notice `the-front-fell-off` after the runtime error.
 - Called helper procedure fallthrough while a helper return token is pending is mapped to `procedure-fell-through`; active public output does not expose the older `non-root-procedure-fell-through` code for this procedure-boundary code smell.
 
-The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default. The current behavior is baseline VM code-stream fallthrough plus `procedureFallthroughPolicy` for procedure-boundary crossings and `code-fell-off-end` when executable code ends without an explicit terminator. This behavior is simulator-owned; it must not be described as a native MASM diagnostic, a native x86 CPU trap, a PE loader behavior, a C runtime behavior, or Windows process termination.
+The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default. The default behavior is baseline VM code-stream fallthrough plus `procedureFallthroughPolicy` for procedure-boundary crossings and `code-fell-off-end` when executable code ends without an explicit terminator. Phase 71E provides opt-in `entryProcedureEndMode = "stop-at-entry-end"` for beginner-friendly selected-entry boundary completion without changing parser, semantic, root `RET`, or helper `CALL`/`RET` behavior. This behavior is simulator-owned; it must not be described as a native MASM diagnostic, a native x86 CPU trap, a PE loader behavior, a C runtime behavior, or Windows process termination.
 
 Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
@@ -39,7 +40,7 @@ Implemented and planned fallthrough diagnostics and settings:
 | `code-fell-off-end` | 71D implemented | runtime error | Execution reached the end of the executable code stream without an explicit program terminator. |
 | `the-front-fell-off` | 71D implemented | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison. |
 | `procedure-fell-through` | 71D implemented | warning by default; configurable `off`/`warn`/`error` | Ordinary sequential execution crossed from one procedure range into another without explicit supported control transfer or termination. |
-| `entryProcedureEndMode` | 71E planned | default `code-stream`; opt-in `stop-at-entry-end` | Compatibility setting for selected-entry `ENDP` auto-stop behavior. |
+| `entryProcedureEndMode` | 71E implemented | default `code-stream`; opt-in `stop-at-entry-end` | Compatibility setting for selected-entry `ENDP` auto-stop behavior. |
 
 The implemented `code-fell-off-end` text is:
 

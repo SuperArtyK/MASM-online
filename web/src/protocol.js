@@ -19,13 +19,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 71;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "D";
+export const IMPLEMENTED_PHASE_SUFFIX = "E";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy";
+export const IMPLEMENTED_PHASE_NAME = "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71d-procedure-fallthrough-policy-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71e-entry-procedure-end-mode-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

@@ -488,7 +488,7 @@ Ordinary sequential execution proceeds through the lowered executable code strea
 
 Procedure-boundary fallthrough diagnostics and optional beginner compatibility settings are assigned by the implementation guide. The existence of procedure declarations, `ENDP`, `END`, direct `CALL`, helper `RET`, or root `RET` must not be used to infer hidden procedure stops, hidden native calls, hidden stack frames, native return-address behavior, PE loader behavior, Windows process teardown, C runtime startup behavior, or Irvine32 library behavior.
 
-A future or optional entry-procedure auto-stop compatibility setting may preserve or restore selected-entry `ENDP` auto-success for beginner examples only when an accepted implementation-guide phase explicitly defines that setting, its default, its exact scope, its diagnostics, and its tests. Such a compatibility setting must be limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
+The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
 None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack frames, `RET imm16`, `LEAVE`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, source-level `PUSH`/`POP`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
 
@@ -540,24 +540,24 @@ The policy behavior is:
 
 The older called-helper fallthrough public diagnostic path is represented as `procedure-fell-through` so active output has one public diagnostic code for this procedure-boundary code smell.
 
-#### 8.1.1C Planned Entry-Procedure Auto-Stop Compatibility Setting
+#### 8.1.1C Implemented Entry-Procedure Auto-Stop Compatibility Setting
 
-A later accepted compatibility phase may add an explicit setting that restores selected-entry `ENDP` auto-success for beginner examples and empty-entry examples.
+Phase 71E implements an explicit compatibility setting for beginner examples and empty selected-entry procedures that should complete at the selected-entry `ENDP` boundary. The setting is source-run and browser-visible. It is not MASM/x86-like code-stream behavior and must remain opt-in.
 
-The planned setting name is:
+The setting name is:
 
 ```text
 entryProcedureEndMode
 ```
 
-Planned allowed values:
+Allowed values:
 
 ```text
 code-stream
 stop-at-entry-end
 ```
 
-Planned default:
+Default:
 
 ```text
 code-stream
@@ -575,12 +575,14 @@ Behavior in `stop-at-entry-end` mode:
 - if ordinary sequential execution reaches the selected entry procedure's `ENDP` boundary, terminate successfully before executing any later procedure or later executable instruction;
 - if the selected entry procedure is empty, terminate successfully at the selected entry procedure boundary;
 - do not emit `procedure-fell-through` for the selected-entry boundary that the setting stops;
-- do not suppress `procedure-fell-through` after execution has already left the selected entry procedure through some other path;
+- do not suppress `procedure-fell-through` after execution has already left the selected entry procedure through `CALL`/`RET`, `JMP`, implemented conditional branch behavior, or another explicit supported path;
 - do not suppress `code-fell-off-end` after execution has already left the selected entry procedure;
 - do not change root RET behavior;
+- do not change helper `CALL`/`RET` behavior;
+- do not hide parser, semantic, memory, unsupported-syntax, source-run schema, or internal invariant diagnostics;
 - do not turn `ENDP` into an executable VM instruction.
 
-This setting is a compatibility convenience. It is not MASM/x86-like code-stream behavior. Documentation must present it as an explicit opt-in compatibility mode, not the correctness-first default.
+Documentation and UI must present `code-stream` as the realistic VM control-flow default and `stop-at-entry-end` as a beginner-friendly compatibility mode.
 
 #### 8.1.1D Required `the-front-fell-off` Diagnostic Easter Egg
 

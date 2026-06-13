@@ -6,10 +6,10 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy |
-| Runtime/source-run MASM behavior phase | Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy |
+| Current milestone | Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting |
+| Runtime/source-run MASM behavior phase | Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting |
 
-Phase 71D advances runtime/source-run MASM behavior. Ordinary procedure-boundary fallthrough is now governed by `procedureFallthroughPolicy`: default `warn` emits `procedure-fell-through` and continues, `off` suppresses only that diagnostic, and `error` stops before executing the first instruction in the destination procedure. `code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics remain independent.
+Phase 71E advances runtime/source-run MASM behavior. The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution and adds opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion, including empty selected-entry procedures. `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -36,6 +36,7 @@ At a high level, the current subset includes:
 - root-code-stream `ret`/`RET` success by default without stack reads when no helper return is pending, including after ordinary fallthrough from the selected entry into later procedure text;
 - optional `rootRetMode = "strict-call-frame"` teaching mode, which rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`;
 - configurable `procedureFallthroughPolicy` for ordinary procedure-boundary fallthrough;
+- configurable `entryProcedureEndMode`, default `code-stream` and opt-in `stop-at-entry-end`, for selected-entry `ENDP` boundary compatibility;
 - `procedure-fell-through` diagnostics for ordinary procedure-boundary fallthrough, including called helper procedures;
 - baseline VM code-stream fallthrough across procedure boundaries when execution reaches later lowered instructions without an explicit terminator or transfer;
 - `code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`;

@@ -70,6 +70,14 @@ typedef enum Masm32SimWasmProcedureFallthroughPolicy {
     MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_ERROR
 } Masm32SimWasmProcedureFallthroughPolicy;
 
+/// Selects browser-facing Phase 71E selected-entry procedure end handling.
+typedef enum Masm32SimWasmEntryProcedureEndMode {
+    /// Preserve realistic code-stream execution across the selected-entry ENDP boundary.
+    MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM = 0,
+    /// Stop successfully when ordinary execution reaches the selected entry procedure boundary.
+    MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+} Masm32SimWasmEntryProcedureEndMode;
+
 /// Selects browser-facing Phase 71A root-code-stream RET handling.
 typedef enum Masm32SimWasmRootRetMode {
     /// Preserve default MASM32 Educational Mode behavior: root-code-stream RET terminates successfully.
@@ -267,6 +275,39 @@ const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_
     uint32_t instruction_limit,
     Masm32SimWasmRootRetMode root_ret_mode,
     Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy
+);
+
+/// Parses and executes source using diagnostics, startup settings, instruction limit, root RET mode, procedure fallthrough policy, and entry procedure end mode.
+///
+/// This Phase 71E browser/test-facing export extends the Phase 71D procedure
+/// fallthrough export with the source-run option named `entryProcedureEndMode`.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Phase 57G uninitialized-storage visible-byte mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param instruction_limit Positive maximum executed-VM-instruction count.
+/// @param root_ret_mode Phase 71A root-code-stream RET handling mode.
+/// @param procedure_fallthrough_policy Phase 71D ordinary procedure-fallthrough diagnostic policy.
+/// @param entry_procedure_end_mode Phase 71E selected-entry ENDP boundary behavior.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit,
+    Masm32SimWasmRootRetMode root_ret_mode,
+    Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy,
+    Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode
 );
 
 /// Parses and executes source using Phase 53E browser diagnostic settings.

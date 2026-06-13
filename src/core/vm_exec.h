@@ -8,8 +8,9 @@
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
  * signed relational conditional jumps, direct CALL, Phase 71 root/helper plain near RET,
- * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71C
- * code-stream end-falloff diagnostics, and Irvine32 exit forms over the currently supported
+ * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
+ * entry-procedure auto-stop compatibility, Phase 71C code-stream end-falloff
+ * diagnostics, and Irvine32 exit forms over the currently supported
  * operand shapes. Phase 59
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
@@ -128,6 +129,14 @@ typedef enum VmProcedureFallthroughPolicy {
     /// Emit a runtime error before executing the destination procedure instruction.
     VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR
 } VmProcedureFallthroughPolicy;
+
+/// Selects Phase 71E selected-entry ENDP boundary handling.
+typedef enum VmEntryProcedureEndMode {
+    /// Preserve realistic code-stream execution through selected-entry ENDP boundaries.
+    VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM = 0,
+    /// Stop successfully when ordinary execution reaches the selected entry procedure boundary.
+    VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END
+} VmEntryProcedureEndMode;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.
 typedef enum VmUndefinedFlagUsePolicy {
@@ -290,10 +299,14 @@ typedef struct Vm {
     size_t active_helper_return_count;
     /// Whether execution is currently in the selected-entry root code stream rather than an explicit helper CALL.
     bool root_code_stream_active;
+    /// Whether Phase 71E selected-entry boundary auto-stop remains eligible for this run.
+    bool selected_entry_end_stop_eligible;
     /// Selected Phase 71A root RET handling mode.
     VmRootRetMode root_ret_mode;
     /// Selected Phase 71D procedure-fallthrough diagnostic policy.
     VmProcedureFallthroughPolicy procedure_fallthrough_policy;
+    /// Selected Phase 71E selected-entry procedure end behavior.
+    VmEntryProcedureEndMode entry_procedure_end_mode;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
@@ -397,6 +410,20 @@ VmExecStatus vm_set_root_ret_mode(Vm *vm, VmRootRetMode mode);
 /// @param policy Procedure-fallthrough diagnostic policy.
 /// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or policy.
 VmExecStatus vm_set_procedure_fallthrough_policy(Vm *vm, VmProcedureFallthroughPolicy policy);
+
+
+/// Configures Phase 71E selected-entry procedure end handling.
+///
+/// The default is @ref VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM. The
+/// compatibility mode stops only when ordinary sequential execution reaches
+/// the selected entry procedure ENDP boundary. It does not make ENDP an
+/// executable instruction and does not suppress diagnostics after explicit
+/// CALL, RET, or branch paths have left the selected entry procedure.
+///
+/// @param vm VM instance to mutate.
+/// @param mode Entry procedure end behavior.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or mode.
+VmExecStatus vm_set_entry_procedure_end_mode(Vm *vm, VmEntryProcedureEndMode mode);
 
 /// Returns the most recent Phase 71D procedure-fallthrough diagnostic metadata.
 ///
