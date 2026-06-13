@@ -94,7 +94,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE",
   "MASM32_DIAGNOSTIC_STARTUP_STATE_SEED",
   "MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT",
-  "MASM32_DIAGNOSTIC_ROOT_RET_MODE"
+  "MASM32_DIAGNOSTIC_ROOT_RET_MODE",
+  "MASM32_DIAGNOSTIC_PROCEDURE_FALLTHROUGH_POLICY"
 ];
 
 /**
@@ -393,13 +394,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2589,8 +2590,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2617,7 +2618,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2644,7 +2645,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2669,7 +2670,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2693,7 +2694,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2719,7 +2720,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2791,7 +2792,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2837,7 +2838,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3010,8 +3011,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3038,8 +3039,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3066,8 +3067,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3093,8 +3094,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -5361,8 +5362,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5423,8 +5424,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5483,8 +5484,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5506,7 +5507,7 @@ END main
 });
 
 
-test("renders Phase 71C selected-entry code-stream fallthrough error exactly", () => {
+test("renders Phase 71D selected-entry code-stream fallthrough error exactly", () => {
   const name = "phase71cSelectedEntryCodeStreamFalloff";
   const source = `.code
 main PROC
@@ -5520,14 +5521,24 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
   assert.equal(json.registers.EAX.hex, "00000001h");
   assert.equal(json.registers.ECX.hex, "00000002h");
   assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "procedure-fell-through",
+      message: "Execution fell through from procedure 'main' into procedure 'helper' without RET, JMP, exit, or another explicit control-transfer or termination instruction.",
+      line: 3,
+      column: 5,
+      byteOffset: 20,
+      spanLength: 10,
+      procedure: "main"
+    },
     {
       kind: "runtime-error",
       code: "code-fell-off-end",
@@ -5540,10 +5551,12 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] code-fell-off-end line 6, column 5, byte offset 57, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?");
+  assertRenderedEquals(name, source, rawJson, rendered, `[simulator-warning] procedure-fell-through line 3, column 5, byte offset 20, span length 10: Execution fell through from procedure 'main' into procedure 'helper' without RET, JMP, exit, or another explicit control-transfer or termination instruction.
+
+[runtime-error] code-fell-off-end line 6, column 5, byte offset 57, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?`);
 });
 
-test("renders Phase 71C empty selected-entry fallthrough error exactly", () => {
+test("renders Phase 71D empty selected-entry fallthrough error exactly", () => {
   const name = "phase71cEmptySelectedEntryCodeStreamFalloff";
   const source = `.code
 main PROC
@@ -5556,8 +5569,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5579,7 +5592,7 @@ END main
 });
 
 
-test("renders Phase 71C front notice after code-stream falloff error exactly", () => {
+test("renders Phase 71D front notice after code-stream falloff error exactly", () => {
   const name = "phase71cFrontNoticeAfterCodeStreamFalloff";
   const source = `.code
 front PROC
@@ -5590,8 +5603,8 @@ END front
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5621,7 +5634,7 @@ END front
   assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] code-fell-off-end line 3, column 5, byte offset 21, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?\n\n[simulator-notice] the-front-fell-off line 3, column 5, byte offset 21, span length 10: that's not very typical, I'd like to make that point");
 });
 
-test("renders Phase 71C front notice only for exact case-insensitive procedure names", () => {
+test("renders Phase 71D front notice only for exact case-insensitive procedure names", () => {
   const positiveNames = ["front", "Front", "FRONT", "fRoNt"];
   const negativeNames = ["frontier", "myfront", "front_"];
 
@@ -5680,8 +5693,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
-  assert.equal(json.phaseName, "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic");
+  assert.equal(json.phaseSuffix, "D");
+  assert.equal(json.phaseName, "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6677,7 +6690,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -6958,7 +6971,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "C");
+  assert.equal(json.phaseSuffix, "D");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -7066,7 +7079,7 @@ END main
   assertNoExecutionComplete(strictRootResult.json.simulatorMessages);
   assertRenderedEquals(strictRootName, strictRootSource, strictRootResult.rawJson, strictRootResult.rendered, `${STARTUP_STATE_NOTICE_RENDERED}
 
-[runtime-error] root-ret-disallowed-by-mode line 3, column 5, byte offset 20, span length 3: RET cannot return from the selected entry procedure because no caller supplied a return address. Use the simulator's MASM32-compatible root RET mode, or terminate explicitly with the supported Irvine32 exit routine.`);
+[runtime-error] root-ret-disallowed-by-mode line 3, column 5, byte offset 20, span length 3: RET cannot return because no caller supplied a return address. Use the simulator's MASM32-compatible root RET mode, or terminate explicitly with the supported Irvine32 exit routine.`);
 
   const fallthroughName = "phase71HelperFallthroughDiagnostic";
   const fallthroughSource = `.code
@@ -7082,7 +7095,9 @@ END main
   const fallthroughResult = runFixture(fallthroughName, fallthroughSource);
   assertRunStatus(fallthroughResult.json, false, "execution-error");
   assertNoExecutionComplete(fallthroughResult.json.simulatorMessages);
-  assertRenderedEquals(fallthroughName, fallthroughSource, fallthroughResult.rawJson, fallthroughResult.rendered, "[runtime-error] non-root-procedure-fell-through line 7, column 5, byte offset 66, span length 10: A called non-entry procedure reached its ENDP boundary without RET. Execution stopped before treating helper fallthrough as program completion.");
+  assertRenderedEquals(fallthroughName, fallthroughSource, fallthroughResult.rawJson, fallthroughResult.rendered, `[simulator-warning] procedure-fell-through line 7, column 5, byte offset 66, span length 10: Execution fell through out of procedure 'Helper' without RET, JMP, exit, or another explicit control-transfer or termination instruction.
+
+[runtime-error] code-fell-off-end line 7, column 5, byte offset 66, span length 10: Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?`);
 
   const jumpName = "phase57tLoopUnsupported";
   const jumpSource = fixtureSource(jumpName);

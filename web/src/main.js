@@ -13,6 +13,7 @@ import {
   COMPATIBILITY_NOTICES_ON,
   MEMORY_RANGE_REGION_ONLY,
   ROOT_RET_MODE_MASM32_COMPATIBLE,
+  PROCEDURE_FALLTHROUGH_POLICY_WARN,
   TEACHING_DIAGNOSTIC_WARN,
   readDiagnosticSettingsFromControls
 } from "./settings.js";
@@ -81,7 +82,8 @@ function readDiagnosticSettings() {
     uninitializedReadsSetting,
     undefinedFlagUseSetting,
     compatibilityNoticesSetting,
-    rootRetModeSetting
+    rootRetModeSetting,
+    procedureFallthroughPolicySetting
   );
 }
 
@@ -99,9 +101,10 @@ const uninitializedReadsSetting = document.getElementById("uninitialized-reads-s
 const undefinedFlagUseSetting = document.getElementById("undefined-flag-use-setting");
 const compatibilityNoticesSetting = document.getElementById("compatibility-notices-setting");
 const rootRetModeSetting = document.getElementById("root-ret-mode-setting");
+const procedureFallthroughPolicySetting = document.getElementById("procedure-fallthrough-policy-setting");
 
 if (!simulatorMessages || !programConsole || !finalRegisters || !memoryChanges || !editor || !pingButton || !runButton ||
-    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting || !rootRetModeSetting) {
+    !diagnosticSettingsToggle || !diagnosticSettingsBody || !memoryRangeSetting || !uninitializedReadsSetting || !undefinedFlagUseSetting || !compatibilityNoticesSetting || !rootRetModeSetting || !procedureFallthroughPolicySetting) {
   throw new Error("Required simulator UI elements are missing.");
 }
 
@@ -110,6 +113,7 @@ uninitializedReadsSetting.value = TEACHING_DIAGNOSTIC_WARN;
 undefinedFlagUseSetting.value = TEACHING_DIAGNOSTIC_WARN;
 compatibilityNoticesSetting.value = COMPATIBILITY_NOTICES_ON;
 rootRetModeSetting.value = ROOT_RET_MODE_MASM32_COMPATIBLE;
+procedureFallthroughPolicySetting.value = PROCEDURE_FALLTHROUGH_POLICY_WARN;
 initializeCollapsiblePanel(diagnosticSettingsToggle, diagnosticSettingsBody, false);
 
 const worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });

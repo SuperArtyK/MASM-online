@@ -492,17 +492,17 @@ A future or optional entry-procedure auto-stop compatibility setting may preserv
 
 None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack frames, `RET imm16`, `LEAVE`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, source-level `PUSH`/`POP`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
 
-#### 8.1.1B Planned Procedure-Fallthrough Diagnostic Policy
+#### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
-A later accepted procedure-fallthrough behavior phase may introduce a configurable diagnostic policy for ordinary sequential execution crossing a procedure boundary without an explicit supported control transfer or terminator.
+Ordinary sequential execution that crosses from one procedure range into another without an explicit supported control transfer or terminator is governed by the configurable procedure-fallthrough diagnostic policy.
 
-The planned setting name is:
+The setting name is:
 
 ```text
 procedureFallthroughPolicy
 ```
 
-Planned allowed values:
+Allowed values:
 
 ```text
 off
@@ -510,13 +510,13 @@ warn
 error
 ```
 
-Planned default:
+Default value:
 
 ```text
 warn
 ```
 
-Planned public diagnostic code:
+Public diagnostic code:
 
 ```text
 procedure-fell-through
@@ -528,17 +528,18 @@ Recommended diagnostic text:
 Execution fell through from procedure '<from>' into procedure '<to>' without RET, JMP, exit, or another explicit control-transfer or termination instruction.
 ```
 
-The owning phase may adjust placeholder formatting to match the project's existing diagnostic style. It must preserve this meaning: ordinary procedure-boundary fallthrough occurred, no explicit supported transfer or terminator caused it, both procedure names are reported when available, and execution either continues or stops according to the active policy.
+The implementation may adjust placeholder formatting to match the project's existing diagnostic style. It must preserve this meaning: ordinary procedure-boundary fallthrough occurred, no explicit supported transfer or terminator caused it, both procedure names are reported when available, and execution either continues or stops according to the active policy.
 
 The policy controls only `procedure-fell-through`. It must not suppress, downgrade, or convert `code-fell-off-end`, invalid return-token diagnostics, root RET diagnostics, memory errors, parser errors, unsupported syntax diagnostics, source-run schema errors, or internal invariant diagnostics.
 
-The planned policy behavior is:
+The policy behavior is:
 
 - `off`: suppress `procedure-fell-through` and continue ordinary code-stream execution;
 - `warn`: emit non-fatal `procedure-fell-through` and continue ordinary code-stream execution;
 - `error`: emit runtime error `procedure-fell-through` and stop before executing the first instruction in the next procedure.
 
-This setting is not current behavior until the owning implementation phase is accepted. Documentation must not describe it as implemented early.
+The older called-helper fallthrough public diagnostic path is represented as `procedure-fell-through` so active output has one public diagnostic code for this procedure-boundary code smell.
+
 #### 8.1.1C Planned Entry-Procedure Auto-Stop Compatibility Setting
 
 A later accepted compatibility phase may add an explicit setting that restores selected-entry `ENDP` auto-success for beginner examples and empty-entry examples.
@@ -3584,7 +3585,7 @@ The simulator distinguishes ordinary helper-procedure RET from root-procedure RE
 
 An ordinary helper-procedure RET consumes a simulator pseudo-EIP return token that was produced by a prior accepted simulator control-transfer path or by another explicitly defined simulator mechanism. That return token is simulator metadata encoded as a 32-bit VM control token. It is not a host address, native x86 return address, PE image address, linker relocation, import-library target, WinAPI callback, or readable instruction-byte pointer.
 
-A root-procedure RET is a RET executed by the selected entry procedure when no helper-procedure return is pending. In MASM32 Educational Mode, root-procedure RET is allowed only after an accepted implementation-guide phase defines the root terminal behavior. The intended educational behavior is that root RET terminates the source run successfully, similar to returning from a program startup/runtime context in a real MASM32-style build, without modeling the Windows loader, PE entrypoint, C runtime startup, MASM linker output, import libraries, host call stack, or native process teardown.
+A root-code-stream RET is a RET executed while the VM is in the selected-entry root code stream and no helper-procedure return is pending. That includes a RET physically inside the selected entry procedure and, after Phase 71C/71D code-stream fallthrough semantics, a RET reached by ordinary sequential fallthrough from the selected entry into later procedure text without a helper CALL return pending. In MASM32 Educational Mode, root-code-stream RET is allowed only after an accepted implementation-guide phase defines the root terminal behavior. The intended educational behavior is that root RET terminates the source run successfully, similar to returning from a program startup/runtime context in a real MASM32-style build, without modeling the Windows loader, PE entrypoint, C runtime startup, MASM linker output, import libraries, host call stack, or native process teardown.
 
 Root RET support must not be implemented by exposing a fake host address, real native return address, PE entrypoint, linker-generated thunk, WinAPI call, readable instruction memory, source byte offset, source line number, raw VM instruction index, or source-written `EIP` value.
 
@@ -3592,11 +3593,11 @@ The simulator uses 32-bit VM return tokens for ordinary helper `CALL`/`RET` flow
 
 Ordinary helper return-token bytes may appear as modeled stack memory effects because the educational VM models the CALL return-token stack write. That visibility does not make the token encoding a stable external interface. Tests may assert behavior through documented simulator effects such as checked memory writes, checked memory reads, diagnostics, terminal status, register state, and rendered messages. Tests must not treat the private token encoding as a public ABI unless a later accepted phase explicitly promotes it to one.
 
-Selected-entry root `RET` is different from ordinary helper `RET`. The accepted selected-entry root RET terminal model does not require, expose, read, write, or validate a root-return token. The implementation model is VM-internal root/helper terminal-state metadata: selected-entry root `RET` succeeds by default before any `[ESP]` read when no helper-procedure return is pending. The optional `rootRetMode = "strict-call-frame"` teaching mode rejects selected-entry root `RET` before any `[ESP]` read, `ESP` mutation, pseudo-EIP token validation, public `memoryChanges` row, or successful terminal status.
+Root-code-stream `RET` is different from ordinary helper `RET`. The accepted root RET terminal model does not require, expose, read, write, or validate a root-return token. The implementation model is VM-internal root/helper terminal-state metadata: root-code-stream `RET` succeeds by default before any `[ESP]` read when no helper-procedure return is pending. The optional `rootRetMode = "strict-call-frame"` teaching mode rejects root-code-stream `RET` before any `[ESP]` read, `ESP` mutation, pseudo-EIP token validation, public `memoryChanges` row, or successful terminal status.
 
 A future implementation must not introduce a root-return sentinel, synthetic terminal pseudo-EIP, `ENDP` return token, source-boundary token, native-address-like token, or instruction-after-procedure placeholder by implication. A numeric value such as `0xFFFFFFFFu` is not a valid or required root-return token unless a later accepted guide phase explicitly defines the sentinel, names the symbol, proves that the value cannot collide with ordinary pseudo-EIP return tokens, defines validation and diagnostic behavior, proves that it is never exposed as a user-authored memory value or as a documented public ABI value, and adds structured diagnostics tests plus rendered Simulator Messages tests.
 
-This rule preserves the accepted MASM32-compatible root RET default behavior: selected-entry root `RET` is terminal VM state, not a hidden stack token. Ordinary helper `RET` remains checked pseudo-EIP return-token behavior in both root-ret modes.
+This rule preserves the accepted MASM32-compatible root RET default behavior: root-code-stream `RET` is terminal VM state, not a hidden stack token. Ordinary helper `RET` reached while a helper return is pending remains checked pseudo-EIP return-token behavior in both root-ret modes.
 
 The root terminal mechanism must not be exposed as:
 
@@ -3609,7 +3610,7 @@ The root terminal mechanism must not be exposed as:
 - permission to return to arbitrary pseudo-EIP values;
 - permission to execute outside the selected source program.
 
-Default MASM32 Educational Mode accepts selected-entry root RET. The accepted stricter teaching mode is `rootRetMode = "strict-call-frame"`; it rejects selected-entry root RET with `root-ret-disallowed-by-mode`. The diagnostic message must explain the source-level cause: selected-entry `RET` cannot return because no caller supplied a return address. The message must not repeat the literal strict-mode setting value; it should direct the user to MASM32-compatible root RET mode or the supported Irvine32 `exit` routine for explicit termination. This setting must not change ordinary helper CALL/RET behavior or called non-entry procedure fallthrough behavior.
+Default MASM32 Educational Mode accepts root-code-stream RET. The accepted stricter teaching mode is `rootRetMode = "strict-call-frame"`; it rejects root-code-stream RET with `root-ret-disallowed-by-mode`. The diagnostic message must explain the source-level cause: `RET` cannot return because no caller supplied a return address. The message must not repeat the literal strict-mode setting value; it should direct the user to MASM32-compatible root RET mode or the supported Irvine32 `exit` routine for explicit termination. This setting must not change ordinary helper CALL/RET behavior when a helper return token is pending or called non-entry procedure fallthrough behavior.
 
 This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
 

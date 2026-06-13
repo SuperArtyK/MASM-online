@@ -474,6 +474,37 @@ static int diagnostic_json_producer_get_root_ret_mode(Masm32SimWasmRootRetMode *
     return 0;
 }
 
+/// Returns the requested Phase 71D procedure-fallthrough policy.
+///
+/// @param out_policy Receives the selected procedure-fallthrough policy.
+/// @return Nonzero when MASM32_DIAGNOSTIC_PROCEDURE_FALLTHROUGH_POLICY selects a setting.
+static int diagnostic_json_producer_get_procedure_fallthrough_policy(Masm32SimWasmProcedureFallthroughPolicy *out_policy) {
+    const char *policy = getenv("MASM32_DIAGNOSTIC_PROCEDURE_FALLTHROUGH_POLICY");
+
+    if (out_policy == NULL) {
+        return 0;
+    }
+
+    *out_policy = MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN;
+    if (policy == NULL) {
+        return 0;
+    }
+    if (strcmp(policy, "off") == 0) {
+        *out_policy = MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_OFF;
+        return 1;
+    }
+    if (strcmp(policy, "warn") == 0) {
+        *out_policy = MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN;
+        return 1;
+    }
+    if (strcmp(policy, "error") == 0) {
+        *out_policy = MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_ERROR;
+        return 1;
+    }
+
+    return 0;
+}
+
 /// Applies optional automatic layout limit environment overrides.
 ///
 /// @param policy Policy to mutate.
@@ -552,6 +583,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_instruction_limit = 0;
     Masm32SimWasmRootRetMode root_ret_mode = MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     int has_root_ret_mode = 0;
+    Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy = MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN;
+    int has_procedure_fallthrough_policy = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -564,6 +597,7 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     has_startup_register_flag_mode = diagnostic_json_producer_get_startup_register_flag_mode(&startup_register_flag_mode);
     has_uninitialized_storage_visible_byte_mode = diagnostic_json_producer_get_uninitialized_storage_visible_byte_mode(&uninitialized_storage_visible_byte_mode);
     has_root_ret_mode = diagnostic_json_producer_get_root_ret_mode(&root_ret_mode);
+    has_procedure_fallthrough_policy = diagnostic_json_producer_get_procedure_fallthrough_policy(&procedure_fallthrough_policy);
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_STARTUP_STATE_SEED", &startup_state_seed, &has_startup_state_seed) != 0) {
         return 1;
     }
@@ -571,8 +605,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
         return 1;
     }
 
-    if (has_root_ret_mode) {
-        json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings(
+    if (has_root_ret_mode || has_procedure_fallthrough_policy) {
+        json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_and_procedure_fallthrough_settings(
             source,
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -582,7 +616,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
             uninitialized_storage_visible_byte_mode,
             startup_state_seed,
             has_instruction_limit ? instruction_limit : 1000000U,
-            root_ret_mode
+            root_ret_mode,
+            procedure_fallthrough_policy
         );
     } else if (has_instruction_limit) {
         json = masm32_sim_wasm_run_source_json_with_instruction_limit(source, instruction_limit);

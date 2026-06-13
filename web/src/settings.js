@@ -6,7 +6,7 @@
  * diagnostic policies through structured browser settings. Phases 57F and 57G
  * add test/protocol-facing startup settings, Phase 59 adds the
  * instructionLimit setting, and Phase 71A adds the optional browser-visible
- * rootRetMode teaching setting.
+ * rootRetMode teaching setting, and Phase 71D adds procedureFallthroughPolicy.
  * This module keeps the accepted string values, defaults, and
  * Wasm argument mapping in one place so the main thread, worker protocol,
  * and Node tests use the same rules.
@@ -50,6 +50,13 @@ export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO = "zero";
 export const UNINITIALIZED_STORAGE_VISIBLE_BYTE_SEEDED_RANDOM = "seeded-random";
 
 
+/** Suppress Phase 71D ordinary procedure-fallthrough diagnostics. */
+export const PROCEDURE_FALLTHROUGH_POLICY_OFF = "off";
+/** Default Phase 71D ordinary procedure-fallthrough warning policy. */
+export const PROCEDURE_FALLTHROUGH_POLICY_WARN = "warn";
+/** Phase 71D ordinary procedure-fallthrough strict-stop policy. */
+export const PROCEDURE_FALLTHROUGH_POLICY_ERROR = "error";
+
 /** Default Phase 71A selected-entry root RET compatibility mode. */
 export const ROOT_RET_MODE_MASM32_COMPATIBLE = "masm32-compatible";
 /** Phase 71A strict selected-entry root RET teaching mode. */
@@ -60,8 +67,8 @@ export const DEFAULT_INSTRUCTION_LIMIT = 1000000;
 /** Maximum accepted Phase 59 source-run instruction-count limit. */
 export const MAX_INSTRUCTION_LIMIT = 0xFFFFFFFF;
 
-/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number, rootRetMode: string}} DiagnosticSettings */
-/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number, rootRetMode: number}} BackendDiagnosticSettings */
+/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number, rootRetMode: string, procedureFallthroughPolicy: string}} DiagnosticSettings */
+/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number, rootRetMode: number, procedureFallthroughPolicy: number}} BackendDiagnosticSettings */
 
 /** Default browser diagnostic and Phase 57F/57G startup settings. */
 export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
@@ -73,7 +80,8 @@ export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
   uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
   startupStateSeed: 0,
   instructionLimit: DEFAULT_INSTRUCTION_LIMIT,
-  rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
+  rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
+  procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN
 });
 
 /** Accepted memory range setting values. */
@@ -118,6 +126,13 @@ export const ROOT_RET_MODE_VALUES = Object.freeze([
   ROOT_RET_MODE_STRICT_CALL_FRAME
 ]);
 
+/** Accepted Phase 71D procedure-fallthrough policy values. */
+export const PROCEDURE_FALLTHROUGH_POLICY_VALUES = Object.freeze([
+  PROCEDURE_FALLTHROUGH_POLICY_OFF,
+  PROCEDURE_FALLTHROUGH_POLICY_WARN,
+  PROCEDURE_FALLTHROUGH_POLICY_ERROR
+]);
+
 /** Phase 53E backend enum values for memory range validation. */
 const BACKEND_MEMORY_RANGE = Object.freeze({
   [MEMORY_RANGE_REGION_ONLY]: 0,
@@ -158,6 +173,13 @@ const BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE = Object.freeze({
 const BACKEND_ROOT_RET_MODE = Object.freeze({
   [ROOT_RET_MODE_MASM32_COMPATIBLE]: 0,
   [ROOT_RET_MODE_STRICT_CALL_FRAME]: 1
+});
+
+/** Phase 71D backend enum values for procedure-fallthrough diagnostics. */
+const BACKEND_PROCEDURE_FALLTHROUGH_POLICY = Object.freeze({
+  [PROCEDURE_FALLTHROUGH_POLICY_OFF]: 0,
+  [PROCEDURE_FALLTHROUGH_POLICY_WARN]: 1,
+  [PROCEDURE_FALLTHROUGH_POLICY_ERROR]: 2
 });
 
 /**
@@ -300,6 +322,7 @@ function normalizeInstructionLimit(source) {
  * @param {{value?: string}} undefinedFlagUseControl Undefined-flag-use select control.
  * @param {{value?: string}} compatibilityNoticesControl Compatibility-notices select control.
  * @param {{value?: string}=} rootRetModeControl Optional root RET mode select control.
+ * @param {{value?: string}=} procedureFallthroughPolicyControl Optional procedure-fallthrough policy select control.
  * @returns {DiagnosticSettings} Settings payload for RUN_SOURCE.
  */
 export function readDiagnosticSettingsFromControls(
@@ -307,7 +330,8 @@ export function readDiagnosticSettingsFromControls(
   uninitializedReadsControl,
   undefinedFlagUseControl,
   compatibilityNoticesControl,
-  rootRetModeControl
+  rootRetModeControl,
+  procedureFallthroughPolicyControl
 ) {
   const defaults = defaultDiagnosticSettings();
   return {
@@ -319,7 +343,8 @@ export function readDiagnosticSettingsFromControls(
     uninitializedStorageVisibleByteMode: defaults.uninitializedStorageVisibleByteMode,
     startupStateSeed: defaults.startupStateSeed,
     instructionLimit: defaults.instructionLimit,
-    rootRetMode: rootRetModeControl && rootRetModeControl.value ? rootRetModeControl.value : defaults.rootRetMode
+    rootRetMode: rootRetModeControl && rootRetModeControl.value ? rootRetModeControl.value : defaults.rootRetMode,
+    procedureFallthroughPolicy: procedureFallthroughPolicyControl && procedureFallthroughPolicyControl.value ? procedureFallthroughPolicyControl.value : defaults.procedureFallthroughPolicy
   };
 }
 
@@ -393,6 +418,11 @@ export function normalizeDiagnosticSettings(settings) {
     return rootRetMode;
   }
 
+  const procedureFallthroughPolicy = normalizeField(source, "procedureFallthroughPolicy", DEFAULT_DIAGNOSTIC_SETTINGS.procedureFallthroughPolicy, PROCEDURE_FALLTHROUGH_POLICY_VALUES);
+  if (!procedureFallthroughPolicy.ok) {
+    return procedureFallthroughPolicy;
+  }
+
   const normalizedSettings = {
     memoryRange: memoryRange.value,
     uninitializedReads: uninitializedReads.value,
@@ -402,7 +432,8 @@ export function normalizeDiagnosticSettings(settings) {
     uninitializedStorageVisibleByteMode: uninitializedStorageVisibleByteMode.value,
     startupStateSeed: startupStateSeed.value,
     instructionLimit: instructionLimit.value,
-    rootRetMode: rootRetMode.value
+    rootRetMode: rootRetMode.value,
+    procedureFallthroughPolicy: procedureFallthroughPolicy.value
   };
 
   return {
@@ -413,7 +444,7 @@ export function normalizeDiagnosticSettings(settings) {
 }
 
 /**
- * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, Phase 59 instruction-limit, and Phase 71A root RET Wasm arguments.
+ * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, Phase 59 instruction-limit, Phase 71A root RET, and Phase 71D procedure-fallthrough Wasm arguments.
  *
  * @param {DiagnosticSettings} settings Normalized diagnostic settings.
  * @returns {BackendDiagnosticSettings} Integer enum values passed to the C/Wasm export.
@@ -433,6 +464,7 @@ export function diagnosticSettingsToBackendArguments(settings) {
     uninitializedStorageVisibleByteMode: BACKEND_UNINITIALIZED_STORAGE_VISIBLE_BYTE_MODE[normalized.uninitializedStorageVisibleByteMode],
     startupStateSeed: normalized.startupStateSeed >>> 0,
     instructionLimit: normalized.instructionLimit >>> 0,
-    rootRetMode: BACKEND_ROOT_RET_MODE[normalized.rootRetMode]
+    rootRetMode: BACKEND_ROOT_RET_MODE[normalized.rootRetMode],
+    procedureFallthroughPolicy: BACKEND_PROCEDURE_FALLTHROUGH_POLICY[normalized.procedureFallthroughPolicy]
   };
 }

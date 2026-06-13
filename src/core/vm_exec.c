@@ -8,8 +8,8 @@
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
- * Phase 70 helper plain near RET, Phase 71 selected-entry root RET termination,
- * Phase 71 called non-entry procedure fallthrough diagnostics, Phase 71C
+ * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination,
+ * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71C
  * code-stream end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
@@ -18,7 +18,7 @@
  * RET imm16, and non-exit Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
- * treats an eligible selected-entry root RET as successful termination. Phase 68B
+ * treats an eligible root-code-stream RET as successful termination. Phase 68B
  * displays EIP as VM control-state pseudo-code address metadata instead of a
  * source-writable or delta-tracked register.
  */
@@ -75,6 +75,51 @@ static void vm_exec_clear_diagnostic(VmExecDiagnostic *diagnostic, VmExecStatus 
     diagnostic->status = status;
     diagnostic->memory_status = VM_MEMORY_STATUS_OK;
 }
+
+/// Clears one Phase 71D procedure-fallthrough diagnostic to its empty state.
+///
+/// @param diagnostic Diagnostic structure to clear.
+static void vm_exec_clear_procedure_fallthrough_diagnostic(VmProcedureFallthroughDiagnostic *diagnostic) {
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->status = VM_EXEC_STATUS_OK;
+}
+
+/// Returns whether a Phase 71D procedure-fallthrough policy is valid.
+///
+/// @param policy Policy value to inspect.
+/// @return true when @p policy is accepted.
+static bool vm_exec_procedure_fallthrough_policy_is_valid(VmProcedureFallthroughPolicy policy) {
+    return policy == VM_PROCEDURE_FALLTHROUGH_POLICY_OFF ||
+           policy == VM_PROCEDURE_FALLTHROUGH_POLICY_WARN ||
+           policy == VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR;
+}
+
+/// Records one Phase 71D procedure-fallthrough event.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction that caused the event.
+/// @param from_index Instruction index that caused the event.
+/// @param to_index Destination instruction index, or program count at code end.
+static void vm_exec_record_procedure_fallthrough_diagnostic(Vm *vm, const VmIrInstruction *instruction, size_t from_index, size_t to_index) {
+    if (vm == NULL) {
+        return;
+    }
+
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
+    vm->last_procedure_fallthrough_diagnostic.has_diagnostic = true;
+    vm->last_procedure_fallthrough_diagnostic.status = VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH;
+    vm->last_procedure_fallthrough_diagnostic.from_instruction_index = (uint32_t)from_index;
+    vm->last_procedure_fallthrough_diagnostic.to_instruction_index = (uint32_t)to_index;
+    if (instruction != NULL) {
+        vm->last_procedure_fallthrough_diagnostic.has_from_instruction = true;
+        vm->last_procedure_fallthrough_diagnostic.from_instruction = *instruction;
+    }
+}
+
 
 /// Clears one Phase 50B flag-use diagnostic to its empty state.
 ///
@@ -236,6 +281,8 @@ static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
     vm->has_selected_entry_procedure = false;
     vm->selected_entry_procedure_index = 0U;
     vm->active_helper_return_count = 0U;
+    vm->root_code_stream_active = false;
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
 }
 
 /// Returns whether @p boundary has usable instruction bounds for @p vm.
@@ -281,21 +328,46 @@ static bool vm_exec_root_metadata_is_inconsistent(const Vm *vm) {
     return !root->is_selected_entry || !vm_exec_procedure_boundary_is_valid(vm, root);
 }
 
-/// Returns whether the current instruction is an eligible Phase 71 selected-entry root RET.
+/// Returns whether an instruction index is inside the selected-entry procedure.
 ///
-/// @param vm VM instance containing selected-entry and helper-return metadata.
-/// @return true when no helper return is pending and the instruction pointer is inside the selected entry procedure.
-static bool vm_exec_current_instruction_is_root_ret(const Vm *vm) {
+/// @param vm VM instance containing selected-entry metadata.
+/// @param instruction_index Instruction index to classify.
+/// @return true when @p instruction_index is inside the selected-entry procedure boundary.
+static bool vm_exec_instruction_is_in_selected_entry(const Vm *vm, size_t instruction_index) {
     const VmExecProcedureBoundary *root = NULL;
 
-    if (vm == NULL || !vm->has_selected_entry_procedure ||
-        vm_exec_root_metadata_is_inconsistent(vm) ||
-        vm->active_helper_return_count != 0U) {
+    if (vm == NULL || !vm->has_selected_entry_procedure || vm_exec_root_metadata_is_inconsistent(vm)) {
         return false;
     }
 
     root = &vm->procedure_boundaries[vm->selected_entry_procedure_index];
-    return vm_exec_index_is_inside_procedure_boundary(root, vm->instruction_pointer);
+    return vm_exec_index_is_inside_procedure_boundary(root, instruction_index);
+}
+
+/// Refreshes whether execution is in the no-helper selected-entry root code stream.
+///
+/// @param vm VM instance to mutate. NULL is ignored.
+static void vm_exec_refresh_root_code_stream_state(Vm *vm) {
+    if (vm == NULL) {
+        return;
+    }
+
+    if (vm->active_helper_return_count == 0U &&
+        vm_exec_instruction_is_in_selected_entry(vm, vm->instruction_pointer)) {
+        vm->root_code_stream_active = true;
+    }
+}
+
+/// Returns whether the current instruction is an eligible Phase 71 root-code-stream RET.
+///
+/// @param vm VM instance containing selected-entry and helper-return metadata.
+/// @return true when no helper return is pending and RET is in the root code stream.
+static bool vm_exec_current_instruction_is_root_ret(const Vm *vm) {
+    if (vm == NULL || vm_exec_root_metadata_is_inconsistent(vm) || vm->active_helper_return_count != 0U) {
+        return false;
+    }
+
+    return vm_exec_instruction_is_in_selected_entry(vm, vm->instruction_pointer) || vm->root_code_stream_active;
 }
 
 /// Finds the procedure boundary containing an instruction index.
@@ -340,33 +412,48 @@ static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, siz
 
 /// Applies procedure-boundary fallthrough diagnostics after one committed step.
 ///
-/// Phase 71C deliberately does not stop ordinary fallthrough at the selected
-/// entry procedure boundary. A CALL-reached helper procedure with a pending
-/// return token still reports the pre-existing helper fallthrough diagnostic.
+/// Phase 71D applies only to ordinary sequential procedure-boundary crossings.
+/// It maps the earlier called-helper fallthrough-at-code-end public path into
+/// procedure-fell-through so active output has one procedure-fallthrough code.
 ///
 /// @param vm VM instance to inspect and possibly halt.
 /// @param instruction Instruction that just executed.
 /// @param before_ip Instruction pointer before execution.
 /// @return OK for normal continuation, or a terminal diagnostic status.
 static VmExecStatus vm_exec_apply_procedure_fallthrough(Vm *vm, const VmIrInstruction *instruction, size_t before_ip) {
-    const VmExecProcedureBoundary *boundary = NULL;
+    const VmExecProcedureBoundary *from_boundary = NULL;
+    const VmExecProcedureBoundary *to_boundary = NULL;
+    bool crossed_into_other_procedure = false;
+    bool helper_fell_out_of_code = false;
 
     if (vm == NULL || instruction == NULL || !vm_exec_step_was_fallthrough(instruction, before_ip, vm->instruction_pointer)) {
         return VM_EXEC_STATUS_OK;
     }
 
-    boundary = vm_exec_find_procedure_boundary(vm, before_ip);
-    if (boundary == NULL || vm->instruction_pointer != boundary->end_instruction_index) {
+    from_boundary = vm_exec_find_procedure_boundary(vm, before_ip);
+    if (from_boundary == NULL || vm->instruction_pointer != from_boundary->end_instruction_index) {
         return VM_EXEC_STATUS_OK;
     }
 
-    if (boundary->is_selected_entry) {
+    if (vm->instruction_pointer < vm->program_count) {
+        to_boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+        crossed_into_other_procedure = to_boundary != NULL && to_boundary != from_boundary;
+    } else {
+        helper_fell_out_of_code = !from_boundary->is_selected_entry && vm->active_helper_return_count > 0U;
+    }
+
+    if (!crossed_into_other_procedure && !helper_fell_out_of_code) {
         return VM_EXEC_STATUS_OK;
     }
-    if (vm->active_helper_return_count > 0U) {
+
+    if (vm->procedure_fallthrough_policy == VM_PROCEDURE_FALLTHROUGH_POLICY_OFF) {
+        return VM_EXEC_STATUS_OK;
+    }
+
+    vm_exec_record_procedure_fallthrough_diagnostic(vm, instruction, before_ip, vm->instruction_pointer);
+    if (vm->procedure_fallthrough_policy == VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR) {
         vm->halted = true;
-        vm->instruction_pointer = before_ip;
-        return VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH;
+        return VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH;
     }
 
     return VM_EXEC_STATUS_OK;
@@ -3173,13 +3260,14 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     if (vm->active_helper_return_count < (size_t)UINT32_MAX) {
         vm->active_helper_return_count += 1U;
     }
+    vm->root_code_stream_active = false;
 
     return VM_EXEC_STATUS_OK;
 }
 
 /// Executes one plain near RET root/helper operation.
 ///
-/// A selected-entry root RET with no helper return pending uses the configured
+/// A root-code-stream RET with no helper return pending uses the configured
 /// Phase 71A root RET mode: the default mode terminates successfully before
 /// reading `[ESP]`, while strict mode stops before stack access with a teaching
 /// diagnostic. Every ordinary helper RET preserves the Phase 70 checked DWORD
@@ -3506,6 +3594,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
 
     memset(vm, 0, sizeof(*vm));
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
+    vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3524,6 +3613,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
     return VM_EXEC_STATUS_OK;
 }
 
@@ -3540,6 +3630,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
 
     memset(vm, 0, sizeof(*vm));
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
+    vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init(&vm->memory, memory_config);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3558,6 +3649,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     (void)vm_sync_display_eip(vm);
     vm_exec_clear_delta(&vm->last_delta);
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
     return VM_EXEC_STATUS_OK;
 }
 
@@ -3614,6 +3706,34 @@ VmExecStatus vm_set_root_ret_mode(Vm *vm, VmRootRetMode mode) {
     vm->root_ret_mode = mode;
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
+}
+
+
+/// Configures the Phase 71D procedure-fallthrough diagnostic policy for a VM.
+///
+/// @param vm VM instance to mutate.
+/// @param policy Policy to apply.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
+VmExecStatus vm_set_procedure_fallthrough_policy(Vm *vm, VmProcedureFallthroughPolicy policy) {
+    if (vm == NULL || !vm_exec_procedure_fallthrough_policy_is_valid(policy)) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm->procedure_fallthrough_policy = policy;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Returns the most recent Phase 71D procedure-fallthrough diagnostic for a VM.
+///
+/// @param vm VM instance to inspect.
+/// @return VM-owned diagnostic pointer, or NULL when @p vm is NULL.
+const VmProcedureFallthroughDiagnostic *vm_last_procedure_fallthrough_diagnostic(const Vm *vm) {
+    return vm != NULL ? &vm->last_procedure_fallthrough_diagnostic : NULL;
 }
 
 void vm_deinit(Vm *vm) {
@@ -3882,6 +4002,8 @@ VmExecStatus vm_step(Vm *vm) {
 
     vm_exec_clear_delta(&vm->last_delta);
     vm_memory_clear_changes(&vm->memory);
+    vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
+    vm_exec_refresh_root_code_stream_state(vm);
     instruction_pointer_before_step = vm->instruction_pointer;
     instruction = &vm->program[vm->instruction_pointer];
     before_cpu = vm->cpu;
@@ -3967,8 +4089,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-call-target";
         case VM_EXEC_STATUS_INVALID_RETURN_ADDRESS:
             return "invalid-return-address";
-        case VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH:
-            return "non-root-procedure-fell-through";
+        case VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH:
+            return "procedure-fell-through";
         case VM_EXEC_STATUS_CODE_FELL_OFF_END:
             return "code-fell-off-end";
         case VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE:

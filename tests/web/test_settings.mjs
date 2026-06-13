@@ -20,6 +20,8 @@ import {
   MEMORY_RANGE_SECTION_IMAGE_WARN,
   ROOT_RET_MODE_MASM32_COMPATIBLE,
   ROOT_RET_MODE_STRICT_CALL_FRAME,
+  PROCEDURE_FALLTHROUGH_POLICY_ERROR,
+  PROCEDURE_FALLTHROUGH_POLICY_WARN,
   TEACHING_DIAGNOSTIC_OFF,
   TEACHING_DIAGNOSTIC_STRICT,
   TEACHING_DIAGNOSTIC_WARN,
@@ -55,7 +57,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
+    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
+    procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN
   });
 
   const normalized = normalizeDiagnosticSettings(undefined);
@@ -70,7 +73,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: 0
+    rootRetMode: 0,
+    procedureFallthroughPolicy: 1
   });
 });
 
@@ -90,7 +94,8 @@ test("partial settings fill missing values from defaults", () => {
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE
+    rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
+    procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN
   });
   assert.deepEqual(normalized.backendSettings, {
     memoryRange: 1,
@@ -101,7 +106,8 @@ test("partial settings fill missing values from defaults", () => {
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: 0
+    rootRetMode: 0,
+    procedureFallthroughPolicy: 1
   });
 });
 
@@ -131,7 +137,8 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0,
       instructionLimit: 1000000,
-      rootRetMode: 0
+      rootRetMode: 0,
+      procedureFallthroughPolicy: 1
     });
   }
 });
@@ -158,7 +165,8 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       uninitializedStorageVisibleByteMode: 0,
       startupStateSeed: 0,
       instructionLimit: 1000000,
-      rootRetMode: 0
+      rootRetMode: 0,
+      procedureFallthroughPolicy: 1
     });
   }
 });
@@ -228,6 +236,20 @@ test("Phase 71A root RET mode maps to backend enum values", () => {
   assert.equal(invalid.diagnostic.setting, "rootRetMode");
 });
 
+test("Phase 71D procedure fallthrough policy maps to backend enum values", () => {
+  const normalized = normalizeDiagnosticSettings({ procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_ERROR });
+
+  assert.equal(normalized.ok, true);
+  assert.equal(normalized.settings.procedureFallthroughPolicy, PROCEDURE_FALLTHROUGH_POLICY_ERROR);
+  assert.equal(normalized.backendSettings.procedureFallthroughPolicy, 2);
+
+  const invalid = normalizeDiagnosticSettings({ procedureFallthroughPolicy: "strict" });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.diagnostic.kind, "ui-error");
+  assert.equal(invalid.diagnostic.code, "invalid-diagnostic-setting");
+  assert.equal(invalid.diagnostic.setting, "procedureFallthroughPolicy");
+});
+
 test("invalid memory range setting returns ui-error diagnostic", () => {
   const normalized = normalizeDiagnosticSettings({ memoryRange: "future-provenance-mode" });
   assert.equal(normalized.ok, false);
@@ -252,13 +274,15 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
   const undefinedFlagUseControl = { value: TEACHING_DIAGNOSTIC_OFF };
   const compatibilityNoticesControl = { value: COMPATIBILITY_NOTICES_OFF };
   const rootRetModeControl = { value: ROOT_RET_MODE_STRICT_CALL_FRAME };
+  const procedureFallthroughPolicyControl = { value: PROCEDURE_FALLTHROUGH_POLICY_ERROR };
 
   const settings = readDiagnosticSettingsFromControls(
     memoryRangeControl,
     uninitializedReadsControl,
     undefinedFlagUseControl,
     compatibilityNoticesControl,
-    rootRetModeControl
+    rootRetModeControl,
+    procedureFallthroughPolicyControl
   );
 
   assert.equal(hiddenBody.hidden, true);
@@ -271,7 +295,8 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     uninitializedStorageVisibleByteMode: UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME
+    rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME,
+    procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_ERROR
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
     memoryRange: 5,
@@ -282,6 +307,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     uninitializedStorageVisibleByteMode: 0,
     startupStateSeed: 0,
     instructionLimit: 1000000,
-    rootRetMode: 1
+    rootRetMode: 1,
+    procedureFallthroughPolicy: 2
   });
 });

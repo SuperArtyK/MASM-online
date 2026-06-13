@@ -8,8 +8,8 @@
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
  * signed relational conditional jumps, direct CALL, Phase 71 root/helper plain near RET,
- * called non-entry procedure fallthrough diagnostics, Phase 71C code-stream
- * end-falloff diagnostics, and Irvine32 exit forms over the currently supported
+ * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71C
+ * code-stream end-falloff diagnostics, and Irvine32 exit forms over the currently supported
  * operand shapes. Phase 59
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
@@ -18,7 +18,7 @@
  * Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
- * selected-entry root RET as successful program termination by default, and
+ * root-code-stream RET as successful program termination by default, and
  * Phase 71A can optionally reject that root RET in strict teaching mode.
  */
 
@@ -85,11 +85,11 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_CALL_TARGET,
     /// A checked RET return token did not map to an executable pseudo-EIP instruction target.
     VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
-    /// A CALL-reached non-entry procedure fell through its ENDP boundary without RET.
-    VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH,
+    /// Execution crossed or left a procedure range without an explicit supported terminator or transfer.
+    VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH,
     /// Execution reached the end of the lowered executable code stream without an explicit terminator.
     VM_EXEC_STATUS_CODE_FELL_OFF_END,
-    /// Optional Phase 71A strict root-RET mode rejected a selected-entry root RET.
+    /// Optional Phase 71A strict root-RET mode rejected a root-code-stream RET.
     VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE,
     /// The VM detected an impossible root/helper termination state.
     VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
@@ -111,13 +111,23 @@ typedef struct VmExecProcedureBoundary {
 } VmExecProcedureBoundary;
 
 
-/// Selects how selected-entry root RET is handled when no helper return is pending.
+/// Selects how root-code-stream RET is handled when no helper return is pending.
 typedef enum VmRootRetMode {
     /// Preserve Phase 71 MASM32 Educational Mode behavior: root RET terminates successfully.
     VM_ROOT_RET_MODE_MASM32_COMPATIBLE = 0,
     /// Reject root RET as an opt-in teaching check that requires an active helper call frame.
     VM_ROOT_RET_MODE_STRICT_CALL_FRAME
 } VmRootRetMode;
+
+/// Selects the Phase 71D diagnostic policy for ordinary procedure-boundary fallthrough.
+typedef enum VmProcedureFallthroughPolicy {
+    /// Suppress procedure-fell-through diagnostics and continue execution.
+    VM_PROCEDURE_FALLTHROUGH_POLICY_OFF = 0,
+    /// Emit a non-fatal procedure-fell-through warning and continue execution.
+    VM_PROCEDURE_FALLTHROUGH_POLICY_WARN,
+    /// Emit a runtime error before executing the destination procedure instruction.
+    VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR
+} VmProcedureFallthroughPolicy;
 
 /// Selects Phase 50B diagnostics for using architecturally undefined modeled flags.
 typedef enum VmUndefinedFlagUsePolicy {
@@ -230,6 +240,22 @@ typedef struct VmExecDiagnostic {
     VmMemoryDiagnostic memory_diagnostic;
 } VmExecDiagnostic;
 
+/// Captures the most recent Phase 71D procedure-fallthrough event.
+typedef struct VmProcedureFallthroughDiagnostic {
+    /// Whether this record contains a procedure-fell-through event.
+    bool has_diagnostic;
+    /// Status represented by this diagnostic.
+    VmExecStatus status;
+    /// Instruction index that caused the boundary crossing.
+    uint32_t from_instruction_index;
+    /// Instruction index reached by the boundary crossing, or program count at code end.
+    uint32_t to_instruction_index;
+    /// Whether @ref from_instruction contains a meaningful instruction copy.
+    bool has_from_instruction;
+    /// Instruction that caused the boundary crossing when available.
+    VmIrInstruction from_instruction;
+} VmProcedureFallthroughDiagnostic;
+
 /// Owns CPU, memory, loaded IR program, and last-step diagnostics for VM execution.
 typedef struct Vm {
     /// CPU register and flag state.
@@ -250,6 +276,8 @@ typedef struct Vm {
     VmExecDelta last_delta;
     /// Last structured executor diagnostic.
     VmExecDiagnostic last_diagnostic;
+    /// Last non-fatal or fatal procedure-fell-through diagnostic metadata.
+    VmProcedureFallthroughDiagnostic last_procedure_fallthrough_diagnostic;
     /// Procedure boundaries used by Phase 71 root RET and fallthrough checks.
     VmExecProcedureBoundary procedure_boundaries[VM_EXEC_MAX_PROCEDURE_BOUNDARIES];
     /// Number of valid entries in @ref procedure_boundaries.
@@ -260,8 +288,12 @@ typedef struct Vm {
     size_t selected_entry_procedure_index;
     /// Internal count of committed helper return tokens currently pending.
     size_t active_helper_return_count;
+    /// Whether execution is currently in the selected-entry root code stream rather than an explicit helper CALL.
+    bool root_code_stream_active;
     /// Selected Phase 71A root RET handling mode.
     VmRootRetMode root_ret_mode;
+    /// Selected Phase 71D procedure-fallthrough diagnostic policy.
+    VmProcedureFallthroughPolicy procedure_fallthrough_policy;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
@@ -327,11 +359,11 @@ bool vm_sync_display_eip(Vm *vm);
 /// @return VM_EXEC_STATUS_OK on success, or a status describing failure.
 VmExecStatus vm_initialize_stack_pointer(Vm *vm);
 
-/// Configures root, helper-fallthrough, and code-falloff procedure metadata for a loaded VM.
+/// Configures root, procedure-fallthrough, and code-falloff procedure metadata for a loaded VM.
 ///
 /// The executor copies the supplied boundaries and uses them only to distinguish
-/// selected-entry root RET success from ordinary helper RET token reads, diagnose
-/// CALL-reached non-entry procedure fallthrough, and retain enough selected-entry
+/// root-code-stream RET success from ordinary helper RET token reads, apply
+/// Phase 71D procedure-fallthrough policy, and retain enough selected-entry
 /// boundary metadata for Phase 71C code-stream falloff handling. The count is not
 /// a Phase 72 call-depth limit or public call trace. Passing zero boundaries
 /// clears the metadata.
@@ -342,16 +374,35 @@ VmExecStatus vm_initialize_stack_pointer(Vm *vm);
 /// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
 VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoundary *boundaries, size_t boundary_count);
 
-/// Configures optional Phase 71A selected-entry root RET strictness.
+/// Configures optional Phase 71A root-code-stream RET strictness.
 ///
 /// The default is @ref VM_ROOT_RET_MODE_MASM32_COMPATIBLE. Strict mode only
-/// rejects selected-entry root RET with no helper return pending; ordinary
+/// rejects root-code-stream RET with no helper return pending; ordinary
 /// helper RET behavior and Phase 70 token validation are unchanged.
 ///
 /// @param vm VM instance to mutate.
 /// @param mode Root RET handling mode.
 /// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or mode.
 VmExecStatus vm_set_root_ret_mode(Vm *vm, VmRootRetMode mode);
+
+/// Configures Phase 71D procedure-boundary fallthrough diagnostics.
+///
+/// The default is @ref VM_PROCEDURE_FALLTHROUGH_POLICY_WARN. OFF mode
+/// suppresses only procedure-fell-through, WARN mode records a non-fatal
+/// event and continues, and ERROR mode stops before the destination procedure
+/// instruction executes. Other diagnostics, including code-fell-off-end, are
+/// independent.
+///
+/// @param vm VM instance to mutate.
+/// @param policy Procedure-fallthrough diagnostic policy.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or policy.
+VmExecStatus vm_set_procedure_fallthrough_policy(Vm *vm, VmProcedureFallthroughPolicy policy);
+
+/// Returns the most recent Phase 71D procedure-fallthrough diagnostic metadata.
+///
+/// @param vm VM instance to inspect.
+/// @return Pointer to the VM-owned diagnostic record, or NULL when @p vm is NULL.
+const VmProcedureFallthroughDiagnostic *vm_last_procedure_fallthrough_diagnostic(const Vm *vm);
 
 /// Releases resources owned by a VM instance.
 ///

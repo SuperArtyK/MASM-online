@@ -6,13 +6,13 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
+- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic
+- Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy
 
-Phase 71C advances runtime/source-run MASM behavior. Phase 71C changes runtime/source-run MASM behavior by replacing selected-entry `ENDP` auto-success with baseline code-stream fallthrough. Selected-entry `ENDP` is no longer an implicit successful terminator; ordinary VM code-stream fallthrough can continue into later lowered executable instructions, and reaching the end of the executable stream without explicit `RET` or Irvine32 `exit` reports `code-fell-off-end`.
+Phase 71D advances runtime/source-run MASM behavior. Tests must cover `procedureFallthroughPolicy` default `warn`, explicit `off`, and strict `error`; the public `procedure-fell-through` diagnostic; and the continued independence of `code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics.
 
 
 
@@ -1222,25 +1222,26 @@ For stack/procedure diagnostics, tests must prove:
 - current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
 
 
-For Phase 71A root RET mode and non-entry fallthrough specifically, tests must prove:
+For Phase 71A root RET mode, Phase 71C code-stream fallthrough, and Phase 71D procedure-fallthrough policy specifically, tests must prove:
 
 - a source-run fixture where the selected entry procedure contains only `ret` completes successfully in default `rootRetMode = "masm32-compatible"`;
 - a source-run fixture where explicit `rootRetMode = "masm32-compatible"` preserves default root `RET` success;
 - a source-run fixture where `rootRetMode = "strict-call-frame"` rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`;
-- strict root `RET` rejection explains that selected-entry `RET` has no caller-supplied return address, suggests MASM32-compatible root RET mode or the supported Irvine32 `exit` routine, and does not repeat the literal strict-mode setting value;
+- strict root `RET` rejection explains that root-code-stream `RET` has no caller-supplied return address, suggests MASM32-compatible root RET mode or the supported Irvine32 `exit` routine, and does not repeat the literal strict-mode setting value;
 - strict root `RET` rejection does not read `[ESP]`, mutate `ESP`, validate a pseudo-EIP token, create public `memoryChanges`, or emit success;
 - a source-run fixture where the selected entry procedure calls a helper, the helper returns, and the selected entry procedure then uses root `ret` completes successfully in compatible mode;
 - selected-entry procedure `ENDP` fallthrough is no longer successful by default after Phase 71C; Phase 71A root RET tests should use explicit `RET` or Irvine32 `exit` when they are not testing code-stream falloff;
-- a called non-entry procedure that falls through without RET reports `non-root-procedure-fell-through`;
-- selected-entry root RET default success does not read `[ESP]`;
-- selected-entry root RET default success does not mutate `ESP`;
-- selected-entry root RET does not emit `invalid-address`;
-- selected-entry root RET does not emit `invalid-return-address`;
-- selected-entry root RET emits exactly one successful terminal status;
+- a called non-entry procedure that falls through without RET reports `procedure-fell-through`;
+- root-code-stream RET default success does not read `[ESP]`;
+- root-code-stream RET reached after selected-entry procedure fallthrough also succeeds in compatible mode without reading `[ESP]`;
+- selected-entry/root-code-stream RET default success does not mutate `ESP`;
+- selected-entry/root-code-stream RET does not emit `invalid-address`;
+- selected-entry/root-code-stream RET does not emit `invalid-return-address`;
+- selected-entry/root-code-stream RET emits exactly one successful terminal status;
 - ordinary helper RET still emits checked-memory diagnostics when `[ESP]` must be read and is unreadable;
 - ordinary helper RET still emits `invalid-return-address` for readable invalid tokens;
 - rendered Simulator Messages show root RET completion exactly once;
-- rendered Simulator Messages for non-entry fallthrough include `non-root-procedure-fell-through`;
+- rendered Simulator Messages for non-entry fallthrough include `procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
 - static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
 
@@ -1291,7 +1292,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71C, the expected token is `phase-71c-code-stream-falloff-output-contract-v1` because the phase changes public terminal diagnostics and rendered Simulator Messages.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71D, the expected token is `phase-71d-procedure-fallthrough-policy-output-contract-v1` because the phase changes public terminal diagnostics and rendered Simulator Messages.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

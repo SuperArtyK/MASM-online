@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 71C: Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic.
+  Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 71C: Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic</p>
+        <p class="muted">Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -26,14 +26,12 @@
 value DWORD 7
 .code
 main PROC
-    call Helper       ; Writes pseudo-EIP return token at ESP - 4
-    mov eax, ebx      ; Runs after Helper returns with RET
-    ret               ; Explicit terminator; remove this RET to see code-fell-off-end
+    mov eax, value    ; Default Warn policy reports procedure-fell-through here
 main ENDP
 
 Helper PROC
-    mov ebx, value
-    ret               ; Helper RET reads token and returns to mov eax, ebx
+    mov ebx, value    ; Off mode continues silently; Error mode stops before this
+    exit              ; Explicit Irvine32 terminator after the fallthrough demo
 Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
@@ -106,6 +104,19 @@ END main</textarea>
                 <ul id="compatibility-notices-setting-help" class="setting-help muted">
                   <li>Notices explain accepted MASM compatibility directives that are no-ops, metadata-only, or limited.</li>
                   <li>Off hides these notices without changing execution behavior.</li>
+                </ul>
+              </div>
+              <div class="setting-control">
+                <label for="procedure-fallthrough-policy-setting">Procedure fallthrough policy</label>
+                <select id="procedure-fallthrough-policy-setting" aria-describedby="procedure-fallthrough-policy-setting-help">
+                  <option value="warn" selected>Warn and continue (default)</option>
+                  <option value="off">Off / continue silently</option>
+                  <option value="error">Error / stop before destination procedure</option>
+                </select>
+                <ul id="procedure-fallthrough-policy-setting-help" class="setting-help muted">
+                  <li><strong>Warn:</strong> ordinary fallthrough from one procedure range into another emits <code>procedure-fell-through</code> and continues.</li>
+                  <li><strong>Off:</strong> suppresses the warning while preserving ordinary code-stream execution.</li>
+                  <li><strong>Error:</strong> stops before the first instruction in the destination procedure.</li>
                 </ul>
               </div>
               <div class="setting-control">

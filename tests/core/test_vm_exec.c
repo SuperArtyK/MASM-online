@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71C code-stream falloff behavior.
+ * @brief Unit tests for the VM executor through Phase 71D procedure-fallthrough policy behavior.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture, and Phase 71C code-end falloff. They intentionally avoid
+ * last-step delta capture, Phase 71C code-end falloff, and Phase 71D procedure-fallthrough policy. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -4537,7 +4537,7 @@ static int test_phase71_root_ret_terminates_without_stack_read(void) {
     if (diagnostic != NULL && diagnostic->status != VM_EXEC_STATUS_OK) {
         failures += record_failure("root RET should not populate an error diagnostic");
     }
-    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH), "non-root-procedure-fell-through") == 0 ? 1U : 0U, 1U, "executor status helper should name non-root-procedure-fell-through");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH), "procedure-fell-through") == 0 ? 1U : 0U, 1U, "executor status helper should name procedure-fell-through");
     failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE), "invalid-root-termination-state") == 0 ? 1U : 0U, 1U, "executor status helper should name invalid-root-termination-state");
 
     vm_deinit(&vm);
@@ -4639,7 +4639,7 @@ static int test_phase71_invalid_root_metadata_diagnostic(void) {
     return failures;
 }
 
-/// Verifies Phase 71 reports CALL-reached non-entry procedure fallthrough.
+/// Verifies Phase 71D default warning policy reports CALL-reached helper fallthrough without stopping.
 ///
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase71_called_helper_fallthrough_diagnostic(void) {
@@ -4648,7 +4648,7 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
     uint32_t esp = 0U;
     uint32_t eax = 0U;
     const VmExecDelta *delta = NULL;
-    const VmExecDiagnostic *diagnostic = NULL;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
     const VmIrInstruction program[] = {
         {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "ret", 1U},
@@ -4664,33 +4664,168 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
     failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "helper fallthrough boundary metadata should configure");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL should transfer to helper");
     failures += expect_size(vm.instruction_pointer, 2U, "CALL should enter helper procedure");
-    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH, "CALL-reached helper fallthrough should emit non-root diagnostic");
-    failures += expect_size(vm.halted ? 1U : 0U, 1U, "helper fallthrough diagnostic should halt execution");
-    failures += expect_size(vm.instruction_pointer, 2U, "helper fallthrough diagnostic should preserve helper instruction pointer");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "default helper fallthrough should warn and continue");
+    failures += expect_size(vm.halted ? 1U : 0U, 0U, "default helper fallthrough warning should not halt execution");
+    failures += expect_size(vm.instruction_pointer, 3U, "default helper fallthrough should advance to code end");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after helper fallthrough should succeed"));
     failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "helper fallthrough should leave pending return token on the internal stack");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after helper fallthrough should succeed"));
     failures += expect_u32(eax, 7U, "helper instruction before fallthrough should commit normally");
 
     delta = vm_last_delta(&vm);
-    if (delta == NULL || delta->has_instruction) {
-        failures += record_failure("helper fallthrough diagnostic should not expose an additional terminal instruction delta");
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("helper fallthrough warning should preserve the committed helper instruction delta");
     } else {
-        failures += expect_size(delta->memory_change_count, 0U, "helper fallthrough diagnostic should not report memory changes");
-        failures += expect_size(delta->memory_access_count, 0U, "helper fallthrough diagnostic should not report memory accesses");
-        failures += expect_size(delta->register_change_count, 0U, "helper fallthrough diagnostic should not report register changes");
-        failures += expect_size(delta->flag_change_count, 0U, "helper fallthrough diagnostic should not report flag changes");
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_MOV, "helper fallthrough delta should record committed MOV");
     }
 
-    diagnostic = vm_last_diagnostic(&vm);
-    if (diagnostic == NULL) {
-        failures += record_failure("helper fallthrough should populate diagnostic");
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic == NULL || !diagnostic->has_diagnostic) {
+        failures += record_failure("helper fallthrough should populate procedure-fallthrough diagnostic");
     } else {
-        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_NON_ROOT_PROCEDURE_FELL_THROUGH, "helper fallthrough diagnostic should name non-root-procedure-fell-through");
-        failures += expect_u32(diagnostic->instruction_index, 2U, "helper fallthrough diagnostic should preserve helper instruction index");
-        if (!diagnostic->has_instruction || diagnostic->instruction.source_line != 8U) {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH, "helper fallthrough diagnostic should name procedure-fell-through");
+        failures += expect_u32(diagnostic->from_instruction_index, 2U, "helper fallthrough diagnostic should preserve helper instruction index");
+        failures += expect_u32(diagnostic->to_instruction_index, 3U, "helper fallthrough diagnostic should preserve code-end successor index");
+        if (!diagnostic->has_from_instruction || diagnostic->from_instruction.source_line != 8U) {
             failures += record_failure("helper fallthrough diagnostic should preserve best available source location");
         }
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "helper fallthrough should still reach code-end diagnostic on next fetch");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71D error policy stops before a destination procedure instruction.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71d_procedure_fallthrough_error_stops_before_destination(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough error test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "procedure fallthrough error program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "procedure fallthrough boundary metadata should configure");
+    failures += expect_status(vm_set_procedure_fallthrough_policy(&vm, VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR), VM_EXEC_STATUS_OK, "procedure fallthrough error policy should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH, "error policy should stop at procedure boundary");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "error policy should halt execution");
+    failures += expect_size(vm.instruction_pointer, 1U, "error policy should stop before destination procedure instruction");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after procedure fallthrough error should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after procedure fallthrough error should succeed"));
+    failures += expect_u32(eax, 1U, "source procedure instruction should commit before error policy stop");
+    failures += expect_u32(ebx, 0U, "destination procedure instruction should not execute under error policy");
+
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic == NULL || !diagnostic->has_diagnostic) {
+        failures += record_failure("error policy should populate procedure-fallthrough diagnostic");
+    } else {
+        failures += expect_u32(diagnostic->from_instruction_index, 0U, "error diagnostic should point to source procedure instruction");
+        failures += expect_u32(diagnostic->to_instruction_index, 1U, "error diagnostic should point to destination procedure instruction");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 71D off policy suppresses ordinary procedure-fallthrough diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71d_procedure_fallthrough_off_suppresses_warning(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t ebx = 0U;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough off test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "procedure fallthrough off program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "procedure fallthrough off metadata should configure");
+    failures += expect_status(vm_set_procedure_fallthrough_policy(&vm, VM_PROCEDURE_FALLTHROUGH_POLICY_OFF), VM_EXEC_STATUS_OK, "procedure fallthrough off policy should configure");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "off policy source instruction should execute");
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic != NULL && diagnostic->has_diagnostic) {
+        failures += record_failure("off policy should suppress procedure-fallthrough diagnostic");
+    }
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "off policy destination instruction should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after off-policy destination should succeed"));
+    failures += expect_u32(ebx, 2U, "off policy should allow destination procedure side effect");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
+/// Verifies root-code-stream fallthrough into a later procedure keeps MASM32-compatible RET termination.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71d_fallthrough_into_helper_ret_uses_root_code_stream(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 7", 0U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 7", 1U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 3U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for fallthrough RET root-stream test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "fallthrough RET program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "fallthrough RET procedure metadata should configure");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "default fallthrough policy should warn and continue into helper text");
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic == NULL || !diagnostic->has_diagnostic) {
+        failures += record_failure("fallthrough RET program should record the boundary warning");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH, "fallthrough RET warning should use procedure-fell-through");
+        failures += expect_u32(diagnostic->from_instruction_index, 0U, "fallthrough RET warning should preserve source instruction index");
+        failures += expect_u32(diagnostic->to_instruction_index, 1U, "fallthrough RET warning should preserve helper destination index");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fallthrough helper MOV should execute before RET");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "fallthrough helper RET should terminate as root code stream in MASM32-compatible mode");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "fallthrough helper RET should halt successfully");
+    failures += expect_size(vm.instruction_pointer, 2U, "fallthrough helper RET should not fabricate a return target");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after fallthrough helper RET should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after fallthrough helper RET should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after fallthrough helper RET should succeed"));
+    failures += expect_u32(eax, 7U, "selected-entry instruction should commit before helper RET");
+    failures += expect_u32(ebx, 7U, "fallthrough helper instruction should commit before helper RET");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "fallthrough helper RET should not read or pop a helper return token");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("fallthrough helper RET should expose a terminal RET delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_RET, "fallthrough helper RET delta should record RET");
+        failures += expect_size(delta->memory_access_count, 0U, "fallthrough helper RET should not read stack memory");
     }
 
     vm_deinit(&vm);
@@ -5350,6 +5485,9 @@ int main(void) {
     failures += test_phase71a_strict_root_ret_rejects_without_stack_read();
     failures += test_phase71_invalid_root_metadata_diagnostic();
     failures += test_phase71_called_helper_fallthrough_diagnostic();
+    failures += test_phase71d_procedure_fallthrough_error_stops_before_destination();
+    failures += test_phase71d_procedure_fallthrough_off_suppresses_warning();
+    failures += test_phase71d_fallthrough_into_helper_ret_uses_root_code_stream();
     failures += test_phase71c_empty_selected_entry_falls_off_code_end();
     failures += test_phase71c_selected_entry_falloff_reports_code_end();
     failures += test_phase71c_selected_entry_falls_through_to_later_procedure();
@@ -5363,6 +5501,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71C code-stream falloff coverage passed.");
+    puts("Executor tests through Phase 71D procedure-fallthrough policy coverage passed.");
     return 0;
 }

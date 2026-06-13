@@ -523,7 +523,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic")
+    assert_text_contains("README.md", "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -603,8 +603,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 71")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"C\"")
-    assert_text_contains("web/src/protocol.js", "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"D\"")
+    assert_text_contains("web/src/protocol.js", "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1748,7 +1748,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71C status, concise status surfaces, and implemented fallthrough wording."""
+    """Verify Phase 71D status, concise status surfaces, and implemented fallthrough wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1768,20 +1768,22 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "Runtime/source-run MASM behavior phase",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
-            "Phase 71C advances runtime/source-run MASM behavior",
-            "Selected-entry `ENDP` is no longer an implicit successful terminator",
-            "ordinary VM code-stream fallthrough can continue into later lowered executable instructions",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71D advances runtime/source-run MASM behavior",
+            "Ordinary procedure-boundary fallthrough is now governed by `procedureFallthroughPolicy`",
+            "default `warn` emits `procedure-fell-through` and continues",
+            "`code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics remain independent",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
             "selected-entry source-run startup from `END entryName`",
             "`code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`",
             "direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes",
             "plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads",
-            "selected-entry root `ret`/`RET` success by default without stack reads when no helper return is pending",
-            "`non-root-procedure-fell-through` diagnostics for called helper procedures that reach `ENDP` without `RET`",
+            "root-code-stream `ret`/`RET` success by default without stack reads when no helper return is pending",
+            "configurable `procedureFallthroughPolicy` for ordinary procedure-boundary fallthrough",
+            "`procedure-fell-through` diagnostics for ordinary procedure-boundary fallthrough, including called helper procedures",
             "selected arithmetic, bitwise, shift, rotate, multiply, divide, compare, and branch instructions",
             "direct `jmp`",
             "equality conditional jumps",
@@ -1790,7 +1792,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         ],
     )
     for forbidden in [
-        "phase-71c-code-stream-falloff-output-contract-v1",
+        "phase-71d-procedure-fallthrough-policy-output-contract-v1",
         "output-contract tokens and browser/Wasm artifact compatibility details",
         "Wasm API behavior",
         "browser behavior",
@@ -1799,7 +1801,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Next planned runtime/source-run behavior phase",
         "Repository/archive milestone",
         "Next canonical guide phase",
-        "Phase 71C through Phase 71F are planned",
+        "Phase 71D through Phase 71F are planned",
         "Artifact compatibility is intentionally strict",
         "older, newer, missing, malformed, or suffix-mismatched runtime/source-run behavior metadata",
         "Exact requirements implemented",
@@ -1823,7 +1825,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Failed internal stack writes use the central checked-memory diagnostic path",
             "Phase 70 implements helper plain near `ret`/`RET` with no operands",
             "Phase 71 adds selected-entry root `RET` termination",
-            "Phase 71 also reports called non-entry procedure fallthrough with `non-root-procedure-fell-through`",
+            "Phase 71 also reports called non-entry procedure fallthrough with `procedure-fell-through`",
             "Phase 66 remains the latest runtime/source-run MASM behavior phase",
             "current source-run execution can still follow linear lowered-instruction order",
             "corrected `END entryName` source-run entry behavior",
@@ -1836,12 +1838,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
-            "Phase 71C advances runtime/source-run MASM behavior",
-            "Selected-entry `ENDP` is no longer an implicit successful terminator",
-            "ordinary VM code-stream fallthrough can continue into later lowered executable instructions",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71D advances runtime/source-run MASM behavior",
+            "Ordinary procedure-boundary fallthrough is now governed by `procedureFallthroughPolicy`",
+            "default `warn` emits `procedure-fell-through` and continues",
+            "`code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics remain independent",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1873,7 +1876,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Phase 70A is protocol/artifact compatibility cleanup only",
         "Phase 71B follows Phase 71A1 as diagnostic-copy",
         "selected-entry root `RET` terminates successfully by default without an `[ESP]` read",
-        "called non-entry procedure fallthrough emits `non-root-procedure-fell-through`",
+        "called non-entry procedure fallthrough emits `procedure-fell-through`",
         "Exact requirements implemented",
         "Assumptions used",
         "TODO-style note disposition",
@@ -1890,20 +1893,21 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Current milestone:",
             "Runtime/source-run MASM behavior phase:",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
-            "Selected-entry `ENDP` is no longer an implicit successful terminator",
+            "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
-            "Selected-entry root `RET` succeeds by default in MASM32-compatible root RET mode",
-            "Optional strict root RET mode rejects selected-entry root `RET` with `root-ret-disallowed-by-mode`",
-            "Called helper procedure fallthrough while a helper return token is pending is still diagnosed with `non-root-procedure-fell-through`",
+            "Root-code-stream `RET` succeeds by default in MASM32-compatible root RET mode",
+            "Optional strict root RET mode rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`",
+            "Called helper procedure fallthrough while a helper return token is pending is mapped to `procedure-fell-through`",
             "The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default",
             "Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form",
             "they are not future work merely because they are currently rejected",
             "External/API calls are not simulator-owned deferred CALL forms",
-            "| `the-front-fell-off` | 71C implemented | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison. |",
+            "| `the-front-fell-off` | 71D implemented | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison. |",
+            "| `procedure-fell-through` | 71D implemented | warning by default; configurable `off`/`warn`/`error` |",
             "Execution reached the end of the executable code stream without an explicit program terminator. Did you forget to add RET or Irvine32 exit?",
             "Windows/API execution remains outside the simulator boundary as a permanent non-goal unless the canonical specification and guide are deliberately revised.",
             "### Reserved words and user-defined symbols",
@@ -1926,7 +1930,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Latest source-run output-contract phase:",
             "Latest protocol/artifact compatibility cleanup phase:",
             "Root `RET`, non-entry procedure fallthrough diagnostics",
-            "the-front-fell-off` | 71C, optional",
+            "the-front-fell-off` | 71D, optional",
             "optional easter egg",
             "source spelling is exactly `front`",
         ],
@@ -1936,10 +1940,10 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
-            "phase-71c-code-stream-falloff-output-contract-v1",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "phase-71d-procedure-fallthrough-policy-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
             "Forward-looking phase navigation is guide-owned.",
@@ -1948,8 +1952,8 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Milestone reports, archived repository states, and this history file are historical evidence.",
             "They do not replace or override the canonical specification and implementation guide.",
             "Phase 70B - Canonical Documentation Alignment and Compatibility Test Matrix Cleanup",
-            "## Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
-            "Phase 71C is complete as a runtime/source-run behavior phase.",
+            "## Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71D is complete as a runtime/source-run behavior phase.",
             "## Phase 71B1 - Source-Run and Native Control-Flow Subgroup Preflight",
             "## Phase 71A1 - Diagnostic Test Runner Subgroup Decomposition",
             "## Phase 71A - Optional Root RET Strictness Mode",
@@ -2070,7 +2074,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Runtime/source-run behavior metadata problems must be reported before source-run output-contract metadata problems",
             "The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push",
             "Phase 71 must check selected-entry root RET eligibility before attempting the Phase 70 DWORD read from `[ESP]`",
-            "non-root-procedure-fell-through",
+            "procedure-fell-through",
             "invalid-root-termination-state",
             "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
         ],
@@ -2089,14 +2093,14 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71C - Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
-            "Phase 71C advances runtime/source-run MASM behavior",
-            "Phase 71C changes runtime/source-run MASM behavior",
-            "tests must prove:",
-            "selected-entry root RET default success does not read `[ESP]`",
-            "static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted",
+            "Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
+            "Phase 71D advances runtime/source-run MASM behavior",
+            "Tests must cover `procedureFallthroughPolicy` default `warn`, explicit `off`, and strict `error`",
+            "public `procedure-fell-through` diagnostic",
+            "root-code-stream RET default success does not read `[ESP]`",
+            "continued independence of `code-fell-off-end`, root `RET`, invalid return-token, parser, and memory diagnostics",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2111,12 +2115,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71C: Baseline Code-Stream Procedure Fallthrough and Code-End Runtime Diagnostic",
+            "Milestone 71D: Configurable Procedure-Fallthrough Diagnostic Policy",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
-            "call Helper",
-            "Writes pseudo-EIP return token at ESP - 4",
-            "Explicit terminator; remove this RET to see code-fell-off-end",
+            "procedure-fell-through",
+            "Default Warn policy reports procedure-fell-through here",
+            "Error mode stops before this",
             "final-registers",
             "Program Console",
         ],
