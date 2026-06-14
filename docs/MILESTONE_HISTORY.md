@@ -18,14 +18,14 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+Phase 71F - Fallthrough Test Migration and Opposite Fixtures
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
 Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 71E had been implemented as entry-procedure auto-stop compatibility, then the guide kept Phase 71F before Phase 72. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 71F had been implemented as fallthrough fixture migration and opposite-fixture coverage, then the guide kept Phase 72 after Phase 71F. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
 
@@ -47,6 +47,12 @@ Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack 
 
 Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. Phase 71 adds selected-entry root RET termination and called non-entry procedure fallthrough diagnostics. Source-level PUSH/POP, procedure frames, Irvine32 routine dispatch beyond virtual `exit`, `INVOKE`, `PROTO`, `LOCAL`, `USES`, and `ADDR` remain future-owned.
 
+
+## Phase 71F - Fallthrough Test Migration and Opposite Fixtures
+
+Phase 71F is complete as a test and documentation cleanup phase. It migrates fallthrough-sensitive source-run fixture wording away from the old selected-entry `ENDP` auto-success model, adds explicit opposite fixture coverage for default `code-stream` behavior versus opt-in `stop-at-entry-end`, and documents the inventory requirement that successful examples use explicit `RET`, supported Irvine32 `exit`, or the named compatibility setting.
+
+Runtime/source-run MASM behavior metadata remains Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Phase 71F does not change accepted syntax, parser behavior, terminal success/failure behavior, browser settings, source-run JSON schema, source-run output-contract metadata, Program Console output, or Simulator Messages wording. It does include a narrow conformance fix so Irvine32 `exit` is treated as an explicit terminator for procedure-fallthrough diagnostics, matching the already accepted Phase 71E behavior contract.
 
 ## Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 

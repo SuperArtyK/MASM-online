@@ -5598,6 +5598,69 @@ END main
 [info] execution-complete: Execution completed successfully.`);
 });
 
+test("renders Phase 71F Irvine32 exit completion without procedure fallthrough in both entry modes", () => {
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov eax, 5
+    exit
+main ENDP
+helper PROC
+    mov ebx, 9
+helper ENDP
+END main
+`;
+
+  const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
+  assertRunStatus(defaultResult.json, true, "ok");
+  assert.equal(defaultResult.json.phase, 71);
+  assert.equal(defaultResult.json.phaseSuffix, "E");
+  assert.equal(defaultResult.json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
+  assert.equal(defaultResult.json.instructionCount, 2);
+  assert.equal(defaultResult.json.executedInstructionCount, 2);
+  assert.equal(defaultResult.json.currentInstructionIndex, 1);
+  assert.equal(defaultResult.json.registers.EAX.hex, "00000005h");
+  assert.equal(defaultResult.json.registers.EBX.hex, "00000000h");
+  assert.deepEqual(defaultResult.json.simulatorMessages, [
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals("phase71fExitTerminatesBeforeFallthroughDefault", source, defaultResult.rawJson, defaultResult.rendered, "[info] execution-complete: Execution completed successfully.");
+
+  const stopResult = runFixture("phase71fExitTerminatesBeforeFallthroughStopAtEntryEnd", source, {
+    MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
+  });
+  assertRunStatus(stopResult.json, true, "ok");
+  assert.equal(stopResult.json.phase, 71);
+  assert.equal(stopResult.json.phaseSuffix, "E");
+  assert.equal(stopResult.json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
+  assert.equal(stopResult.json.instructionCount, 2);
+  assert.equal(stopResult.json.executedInstructionCount, 2);
+  assert.equal(stopResult.json.currentInstructionIndex, 1);
+  assert.equal(stopResult.json.registers.EAX.hex, "00000005h");
+  assert.equal(stopResult.json.registers.EBX.hex, "00000000h");
+  assert.deepEqual(stopResult.json.simulatorMessages, [
+    {
+      kind: "simulator-notice",
+      code: "startup-state-notice",
+      message: STARTUP_STATE_NOTICE_TEXT
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals("phase71fExitTerminatesBeforeFallthroughStopAtEntryEnd", source, stopResult.rawJson, stopResult.rendered, `${STARTUP_STATE_NOTICE_RENDERED}
+
+[info] execution-complete: Execution completed successfully.`);
+});
+
 test("renders Phase 71E default empty selected-entry fallthrough error exactly", () => {
   const name = "phase71cEmptySelectedEntryCodeStreamFalloff";
   const source = `.code

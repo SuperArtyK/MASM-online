@@ -2,13 +2,13 @@
 
 Current milestone:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71E adds the explicit `entryProcedureEndMode` compatibility setting while preserving the default Phase 71C/71D baseline: selected-entry `ENDP` is not an implicit successful terminator in default `code-stream` mode, ordinary procedure-boundary fallthrough is governed by `procedureFallthroughPolicy`, and executable code that reaches the end without an explicit terminator reports `code-fell-off-end`.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71F adds migration and opposite-fixture coverage for fallthrough-sensitive tests, updates documentation to recommend explicit terminators before compatibility settings, and includes a narrow conformance fix so Irvine32 `exit` is not reported as procedure fallthrough. Phase 71E remains the active runtime/source-run behavior phase: `entryProcedureEndMode` is explicit, default `code-stream` does not treat selected-entry `ENDP` as a terminator, ordinary procedure-boundary fallthrough is governed by `procedureFallthroughPolicy`, and executable code that reaches the end without an explicit terminator reports `code-fell-off-end`.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
@@ -29,7 +29,7 @@ Implemented procedure and termination behavior for the active runtime/source-run
 - When the responsible procedure for `code-fell-off-end` is named exactly `front` under ASCII case-insensitive comparison, the simulator appends the notice `the-front-fell-off` after the runtime error.
 - Called helper procedure fallthrough while a helper return token is pending is mapped to `procedure-fell-through`; active public output does not expose the older `non-root-procedure-fell-through` code for this procedure-boundary code smell.
 
-The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default. The default behavior is baseline VM code-stream fallthrough plus `procedureFallthroughPolicy` for procedure-boundary crossings and `code-fell-off-end` when executable code ends without an explicit terminator. Phase 71E provides opt-in `entryProcedureEndMode = "stop-at-entry-end"` for beginner-friendly selected-entry boundary completion without changing parser, semantic, root `RET`, or helper `CALL`/`RET` behavior. This behavior is simulator-owned; it must not be described as a native MASM diagnostic, a native x86 CPU trap, a PE loader behavior, a C runtime behavior, or Windows process termination.
+The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default; selected-entry `ENDP` is not an implicit successful terminator. The default behavior is baseline VM code-stream fallthrough plus `procedureFallthroughPolicy` for procedure-boundary crossings and `code-fell-off-end` when executable code ends without an explicit terminator. Phase 71E provides opt-in `entryProcedureEndMode = "stop-at-entry-end"` for beginner-friendly selected-entry boundary completion without changing parser, semantic, root `RET`, or helper `CALL`/`RET` behavior. This behavior is simulator-owned; it must not be described as a native MASM diagnostic, a native x86 CPU trap, a PE loader behavior, a C runtime behavior, or Windows process termination.
 
 Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 

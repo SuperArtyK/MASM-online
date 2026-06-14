@@ -6,13 +6,13 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
-Phase 71E advances runtime/source-run MASM behavior. Tests must cover `entryProcedureEndMode` default `code-stream`, opt-in `stop-at-entry-end`, selected-entry boundary completion, empty selected-entry completion, invalid setting values, and the continued independence of `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics.
+Phase 71F advances test and documentation coverage and verifies a narrow conformance fix that treats Irvine32 `exit` as an explicit terminator for procedure-fallthrough diagnostics. Tests must cover opposite fallthrough fixtures for default `code-stream` versus opt-in `stop-at-entry-end`, all `procedureFallthroughPolicy` values, explicit Irvine32 `exit` termination in both entry-end modes, root `RET` independence from entry-end mode, and static checks proving old implicit selected-entry `ENDP` success fixtures were migrated or explicitly dispositioned.
 
 
 
@@ -1219,10 +1219,10 @@ For stack/procedure diagnostics, tests must prove:
 - rendered Simulator Messages match expected wording;
 - fatal stack/procedure failures do not emit `execution-complete`;
 - no-partial-mutation behavior covers registers, modeled flags, flag-validity metadata, memory bytes, Program Console output, memory-change rows, stack pointer, instruction pointer, and call-depth metadata where applicable;
-- current-status surfaces are advanced only by phases that actually change runtime/source-run MASM behavior.
+- runtime/source-run MASM behavior metadata is advanced only when the target phase introduces or explicitly redefines accepted runtime/source-run behavior; project current-milestone status may advance for accepted fixture, documentation, or conformance-cleanup phases while preserving the prior runtime/source-run behavior phase.
 
 
-For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, and Phase 71E entry-procedure end mode specifically, tests must prove:
+For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end mode, and Phase 71F fallthrough fixture migration specifically, tests must prove:
 
 - a source-run fixture where the selected entry procedure contains only `ret` completes successfully in default `rootRetMode = "masm32-compatible"`;
 - a source-run fixture where explicit `rootRetMode = "masm32-compatible"` preserves default root `RET` success;
@@ -1231,6 +1231,12 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - strict root `RET` rejection does not read `[ESP]`, mutate `ESP`, validate a pseudo-EIP token, create public `memoryChanges`, or emit success;
 - a source-run fixture where the selected entry procedure calls a helper, the helper returns, and the selected entry procedure then uses root `ret` completes successfully in compatible mode;
 - selected-entry procedure `ENDP` fallthrough is no longer successful by default after Phase 71C; Phase 71A root RET tests should use explicit `RET` or Irvine32 `exit` when they are not testing code-stream falloff;
+- Phase 71F opposite fixtures cover default `code-stream` fallthrough from `main` into a later procedure and the matching `stop-at-entry-end` non-fallthrough case;
+- Phase 71F opposite fixtures cover empty selected-entry default `code-stream` `code-fell-off-end` and matching `stop-at-entry-end` success;
+- Phase 71F opposite fixtures cover `procedureFallthroughPolicy` values `warn`, `off`, and `error`;
+- Phase 71F opposite fixtures cover explicit Irvine32 `exit` termination in both entry-end modes;
+- Phase 71F opposite fixtures cover root `RET` behavior as governed by `rootRetMode`, not by `entryProcedureEndMode`;
+- Phase 71F static checks reject active fixture descriptions that describe implicit selected-entry `ENDP` default success as current behavior;
 - a called non-entry procedure that falls through without RET reports `procedure-fell-through`;
 - root-code-stream RET default success does not read `[ESP]`;
 - root-code-stream RET reached after selected-entry procedure fallthrough also succeeds in compatible mode without reading `[ESP]`;

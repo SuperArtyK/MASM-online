@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71E entry-procedure end-mode compatibility behavior.
+ * @brief Unit tests for the VM executor through Phase 71F fallthrough fixture migration coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, and Phase 71E entry-procedure end-mode compatibility. They intentionally avoid
+ * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, and Phase 71F explicit-exit fallthrough regression coverage. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -5134,6 +5134,49 @@ static int test_phase71e_stop_mode_does_not_suppress_helper_fallthrough(void) {
 }
 
 
+/// Verifies Phase 71F treats Irvine32 exit as an explicit terminator for procedure-fallthrough policy.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmProcedureFallthroughDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 1", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true},
+        {2U, 3U, false, true}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71F EXIT fallthrough regression test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "EXIT fallthrough regression program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "EXIT fallthrough regression metadata should configure");
+    failures += expect_status(vm_set_procedure_fallthrough_policy(&vm, VM_PROCEDURE_FALLTHROUGH_POLICY_ERROR), VM_EXEC_STATUS_OK, "EXIT fallthrough regression should configure error policy");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "selected-entry MOV before EXIT should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "Irvine32 EXIT should terminate explicitly without procedure-fallthrough error");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "Irvine32 EXIT should halt the VM");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after EXIT fallthrough regression should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after EXIT fallthrough regression should succeed"));
+    failures += expect_u32(eax, 1U, "instruction before EXIT should commit");
+    failures += expect_u32(ebx, 0U, "later procedure instruction after EXIT should not execute");
+
+    diagnostic = vm_last_procedure_fallthrough_diagnostic(&vm);
+    if (diagnostic != NULL && diagnostic->has_diagnostic) {
+        failures += record_failure("Irvine32 EXIT must not populate a procedure-fallthrough diagnostic");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_HALTED, "step after EXIT fallthrough regression should report halted");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5561,7 +5604,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 64.
+/// Runs all executor tests through Phase 71F.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -5664,6 +5707,7 @@ int main(void) {
     failures += test_phase71e_empty_selected_entry_succeeds_only_in_stop_mode();
     failures += test_phase71e_invalid_entry_end_mode_rejected();
     failures += test_phase71e_stop_mode_does_not_suppress_helper_fallthrough();
+    failures += test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -5674,6 +5718,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71E entry-procedure end-mode compatibility coverage passed.");
+    puts("Executor tests through Phase 71F fallthrough fixture migration coverage passed.");
     return 0;
 }

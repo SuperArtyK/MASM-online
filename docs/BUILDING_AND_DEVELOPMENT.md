@@ -13,13 +13,13 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
 
 Runtime/source-run MASM behavior phase:
 
 - Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
 
-Phase 71E advances runtime/source-run MASM behavior. The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution and adds opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion, including empty selected-entry procedures. `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent.
+Phase 71F advances project status with fallthrough fixture migration, opposite-mode regression coverage, documentation cleanup, and a narrow conformance fix that treats Irvine32 `exit` as an explicit terminator for procedure-fallthrough diagnostics. Runtime/source-run MASM behavior metadata remains Phase 71E because Phase 71F does not add accepted syntax, change terminal success/failure semantics, add browser settings, or change the source-run output-contract identifier.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 

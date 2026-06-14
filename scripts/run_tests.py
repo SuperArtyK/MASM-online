@@ -523,6 +523,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
+    assert_text_contains("README.md", "Phase 71F - Fallthrough Test Migration and Opposite Fixtures")
     assert_text_contains("README.md", "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
@@ -1748,7 +1749,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71E status, concise status surfaces, and implemented entry-end wording."""
+    """Verify Phase 71F status, concise status surfaces, and fallthrough fixture migration wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1768,12 +1769,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "Runtime/source-run MASM behavior phase",
             "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71E advances runtime/source-run MASM behavior",
-            "The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution",
-            "opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion",
+            "Phase 71F advances the current milestone with fallthrough fixture migration",
+            "Runtime/source-run MASM behavior metadata remains Phase 71E",
+            "opt-in `stop-at-entry-end` keeps selected-entry `ENDP` compatibility explicit",
             "`procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
@@ -1838,13 +1839,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71E advances runtime/source-run MASM behavior",
-            "The new `entryProcedureEndMode` setting defaults to realistic `code-stream` execution",
-            "opt-in `stop-at-entry-end` compatibility for successful selected-entry `ENDP` boundary completion",
-            "`procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent",
+            "Phase 71F advances project status with fallthrough fixture migration",
+            "Runtime/source-run MASM behavior metadata remains Phase 71E",
+            "does not add accepted syntax, change terminal success/failure semantics, add browser settings, or change the source-run output-contract identifier",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1891,7 +1891,10 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
+            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "Runtime/source-run MASM behavior phase:",
+            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71F adds migration and opposite-fixture coverage for fallthrough-sensitive tests",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -2093,14 +2096,14 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "Runtime/source-run MASM behavior phase:",
             "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71E advances runtime/source-run MASM behavior",
-            "Tests must cover `entryProcedureEndMode` default `code-stream`, opt-in `stop-at-entry-end`, selected-entry boundary completion",
-            "empty selected-entry completion, invalid setting values",
-            "root-code-stream RET default success does not read `[ESP]`",
-            "continued independence of `procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics",
+            "Phase 71F advances test and documentation coverage and verifies a narrow conformance fix",
+            "opposite fallthrough fixtures for default `code-stream` versus opt-in `stop-at-entry-end`",
+            "explicit Irvine32 `exit` termination in both entry-end modes",
+            "root `RET` independence from entry-end mode",
+            "static checks proving old implicit selected-entry `ENDP` success fixtures were migrated",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2115,7 +2118,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71E: Entry-Procedure Auto-Stop Compatibility Setting",
+            "Milestone 71F: Fallthrough Test Migration and Opposite Fixtures",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "procedure-fell-through",
@@ -2715,6 +2718,62 @@ def assert_subgroup_failure_reporting_contract() -> None:
         CURRENT_GROUP = previous_group
 
 
+
+def assert_phase71f_fallthrough_fixture_migration_checks() -> None:
+    """Verify Phase 71F fallthrough fixture migration and opposite-fixture inventory."""
+
+    source_run_text = read_file("tests/core/test_wasm_source_run.c")
+    required_source_fragments = [
+        "test_phase71f_fallthrough_opposite_fixtures_source_run",
+        "Phase 71F default opposite fixture should serialize code-stream mode",
+        "Phase 71F stop-at-entry-end opposite fixture should not execute later procedure text",
+        "Phase 71F empty-main code-stream fixture should report code-fell-off-end",
+        "Phase 71F empty-main stop-at-entry-end fixture should complete through named compatibility mode",
+        "Phase 71F warn-policy opposite fixture should emit a warning",
+        "Phase 71F off-policy opposite fixture should suppress only the fallthrough warning",
+        "Phase 71F error-policy opposite fixture should stop before destination procedure instruction",
+        "Phase 71F Irvine32 exit should terminate explicitly in code-stream mode",
+        "Phase 71F Irvine32 exit should terminate explicitly in stop-at-entry-end mode",
+        "Phase 71F compatible root RET should complete in code-stream mode",
+        "Phase 71F strict root RET should reject in stop-at-entry-end mode",
+    ]
+    for fragment in required_source_fragments:
+        if fragment not in source_run_text:
+            raise TestFailure("Phase 71F source-run fixture inventory missing: " + fragment)
+
+    active_test_paths = [
+        "tests/core/test_wasm_source_run.c",
+        "tests/core/test_vm_exec.c",
+        "tests/web/test_diagnostic_rendering.mjs",
+    ]
+    forbidden_fixture_phrases = [
+        "empty selected entry should complete",
+        "empty selected entry source should complete",
+        "empty selected entry should complete normally",
+        "selected-entry fallthrough should emit exactly one completion",
+        "should stop at selected entry ENDP boundary",
+        "selected main fallthrough should complete normally",
+        "implicit selected-entry ENDP success",
+        "selected-entry ENDP default success",
+    ]
+    for path in active_test_paths:
+        text = read_file(path)
+        for phrase in forbidden_fixture_phrases:
+            if phrase in text:
+                raise TestFailure(f"Phase 71F stale selected-entry ENDP fixture wording remains in {path}: {phrase}")
+
+    assert_all_text_contains(
+        "docs/TESTING_GUIDE.md",
+        [
+            "Phase 71F opposite fixtures cover default `code-stream` fallthrough from `main` into a later procedure",
+            "Phase 71F opposite fixtures cover empty selected-entry default `code-stream` `code-fell-off-end`",
+            "Phase 71F opposite fixtures cover `procedureFallthroughPolicy` values `warn`, `off`, and `error`",
+            "Phase 71F opposite fixtures cover explicit Irvine32 `exit` termination in both entry-end modes",
+            "Phase 71F opposite fixtures cover root `RET` behavior as governed by `rootRetMode`, not by `entryProcedureEndMode`",
+            "Phase 71F static checks reject active fixture descriptions that describe implicit selected-entry `ENDP` default success as current behavior",
+        ],
+    )
+
 def run_static_tests() -> None:
     """Run runner, documentation, and fixture-inventory consistency checks."""
 
@@ -2733,6 +2792,7 @@ def run_static_tests() -> None:
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase71b2_stale_milestone_context_checks()
     assert_phase71_current_status_and_harness_documented()
+    assert_phase71f_fallthrough_fixture_migration_checks()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()

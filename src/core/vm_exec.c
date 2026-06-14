@@ -333,7 +333,7 @@ static bool vm_exec_opcode_is_conditional_jump(VmIrOpcode opcode);
 /// @param before_ip Instruction pointer before execution.
 /// @param after_ip Instruction pointer after execution.
 /// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
-/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/taken branch.
+/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/EXIT/taken branch.
 static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip, bool conditional_branch_taken);
 
 /// Returns whether selected-entry root metadata is internally inconsistent.
@@ -484,12 +484,12 @@ static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary(const Vm *
 /// @param before_ip Instruction pointer before execution.
 /// @param after_ip Instruction pointer after execution.
 /// @param conditional_branch_taken Whether @p instruction was a taken conditional branch.
-/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/taken branch.
+/// @return true when the movement was ordinary fallthrough rather than CALL/JMP/RET/EXIT/taken branch.
 static bool vm_exec_step_was_fallthrough(const VmIrInstruction *instruction, size_t before_ip, size_t after_ip, bool conditional_branch_taken) {
     if (instruction == NULL || after_ip != before_ip + 1U) {
         return false;
     }
-    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET) {
+    if (instruction->opcode == VM_IR_OPCODE_JMP || instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET || instruction->opcode == VM_IR_OPCODE_EXIT) {
         return false;
     }
     if (conditional_branch_taken && vm_exec_opcode_is_conditional_jump(instruction->opcode)) {

@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 71E entry-procedure end-mode compatibility.
+ * @brief Tests for the Wasm-facing source execution API through Phase 71F fallthrough fixture migration coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -10970,6 +10970,305 @@ static int test_phase71e_entry_procedure_end_mode_source_run_behavior(void) {
     return failures;
 }
 
+
+/// Verifies Phase 71F fallthrough migration and opposite-mode fixture coverage.
+///
+/// @return Number of failures.
+static int test_phase71f_fallthrough_opposite_fixtures_source_run(void) {
+    static const char *fallthrough_source =
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 2\n"
+        "helper ENDP\n"
+        "END main\n";
+    static const char *empty_main_source =
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n";
+    static const char *exit_source =
+        "INCLUDE Irvine32.inc\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 5\n"
+        "    exit\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 9\n"
+        "helper ENDP\n"
+        "END main\n";
+    static const char *root_ret_source =
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "helper PROC\n"
+        "    mov ebx, 9\n"
+        "helper ENDP\n"
+        "END main\n";
+    char code_stream_copy[TEST_JSON_COPY_CAPACITY];
+    char stop_copy[TEST_JSON_COPY_CAPACITY];
+    char empty_code_stream_copy[TEST_JSON_COPY_CAPACITY];
+    char empty_stop_copy[TEST_JSON_COPY_CAPACITY];
+    char warn_copy[TEST_JSON_COPY_CAPACITY];
+    char off_copy[TEST_JSON_COPY_CAPACITY];
+    char error_copy[TEST_JSON_COPY_CAPACITY];
+    char exit_code_stream_copy[TEST_JSON_COPY_CAPACITY];
+    char exit_stop_copy[TEST_JSON_COPY_CAPACITY];
+    char root_compatible_code_stream_copy[TEST_JSON_COPY_CAPACITY];
+    char root_compatible_stop_copy[TEST_JSON_COPY_CAPACITY];
+    char root_strict_code_stream_copy[TEST_JSON_COPY_CAPACITY];
+    char root_strict_stop_copy[TEST_JSON_COPY_CAPACITY];
+    int failures = 0;
+
+    copy_source_run_json(code_stream_copy, sizeof(code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(code_stream_copy, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71F default opposite fixture should serialize code-stream mode");
+    failures += expect_json_contains(code_stream_copy, "\"ok\":false", "Phase 71F code-stream opposite fixture should fail at code end without implicit ENDP success");
+    failures += expect_json_contains(code_stream_copy, "\"code\":\"procedure-fell-through\"", "Phase 71F code-stream opposite fixture should warn at the main-to-helper boundary");
+    failures += expect_json_contains(code_stream_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F code-stream opposite fixture should report code-fell-off-end after helper body");
+    failures += expect_json_contains(code_stream_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "Phase 71F code-stream opposite fixture should execute later procedure text");
+
+    copy_source_run_json(stop_copy, sizeof(stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(stop_copy, "\"entryProcedureEndMode\":\"stop-at-entry-end\"", "Phase 71F compatibility opposite fixture should serialize stop-at-entry-end mode");
+    failures += expect_json_contains(stop_copy, "\"ok\":true", "Phase 71F stop-at-entry-end opposite fixture should complete at the selected-entry boundary");
+    failures += expect_json_contains(stop_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 71F stop-at-entry-end opposite fixture should not execute later procedure text");
+    failures += expect_json_not_contains(stop_copy, "\"code\":\"procedure-fell-through\"", "Phase 71F stop-at-entry-end opposite fixture should not warn at stopped selected-entry boundary");
+    failures += expect_json_not_contains(stop_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F stop-at-entry-end opposite fixture should not report code-end falloff");
+
+    copy_source_run_json(empty_code_stream_copy, sizeof(empty_code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        empty_main_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(empty_code_stream_copy, "\"ok\":false", "Phase 71F empty-main code-stream fixture should fail without implicit ENDP success");
+    failures += expect_json_contains(empty_code_stream_copy, "\"instructionCount\":0", "Phase 71F empty-main code-stream fixture should have no lowered instructions");
+    failures += expect_json_contains(empty_code_stream_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F empty-main code-stream fixture should report code-fell-off-end");
+
+    copy_source_run_json(empty_stop_copy, sizeof(empty_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        empty_main_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(empty_stop_copy, "\"ok\":true", "Phase 71F empty-main stop-at-entry-end fixture should complete through named compatibility mode");
+    failures += expect_json_contains(empty_stop_copy, "\"instructionCount\":0", "Phase 71F empty-main stop-at-entry-end fixture should not fabricate lowered instructions");
+    failures += expect_json_not_contains(empty_stop_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F empty-main stop-at-entry-end fixture should not report code-fell-off-end");
+
+    copy_source_run_json(warn_copy, sizeof(warn_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(warn_copy, "\"procedureFallthroughPolicy\":\"warn\"", "Phase 71F warn-policy opposite fixture should serialize warn mode");
+    failures += expect_json_contains(warn_copy, "\"kind\":\"simulator-warning\"", "Phase 71F warn-policy opposite fixture should emit a warning");
+    failures += expect_json_contains(warn_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "Phase 71F warn-policy opposite fixture should continue into the destination procedure");
+
+    copy_source_run_json(off_copy, sizeof(off_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_OFF,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(off_copy, "\"procedureFallthroughPolicy\":\"off\"", "Phase 71F off-policy opposite fixture should serialize off mode");
+    failures += expect_json_not_contains(off_copy, "\"code\":\"procedure-fell-through\"", "Phase 71F off-policy opposite fixture should suppress only the fallthrough warning");
+    failures += expect_json_contains(off_copy, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2}", "Phase 71F off-policy opposite fixture should continue into the destination procedure");
+    failures += expect_json_contains(off_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F off-policy opposite fixture should preserve code-fell-off-end");
+
+    copy_source_run_json(error_copy, sizeof(error_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        fallthrough_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_ERROR,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(error_copy, "\"procedureFallthroughPolicy\":\"error\"", "Phase 71F error-policy opposite fixture should serialize error mode");
+    failures += expect_json_contains(error_copy, "\"kind\":\"runtime-error\"", "Phase 71F error-policy opposite fixture should emit runtime-error fallthrough");
+    failures += expect_json_contains(error_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "Phase 71F error-policy opposite fixture should stop before destination procedure instruction");
+    failures += expect_json_not_contains(error_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F error-policy opposite fixture should stop before code-end falloff");
+
+    copy_source_run_json(exit_code_stream_copy, sizeof(exit_code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        exit_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(exit_code_stream_copy, "\"ok\":true", "Phase 71F Irvine32 exit should terminate explicitly in code-stream mode");
+    failures += expect_json_contains(exit_code_stream_copy, "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Phase 71F Irvine32 exit code-stream fixture should preserve earlier side effects");
+    failures += expect_json_not_contains(exit_code_stream_copy, "\"code\":\"procedure-fell-through\"", "Phase 71F Irvine32 exit code-stream fixture should not fall through");
+    failures += expect_json_not_contains(exit_code_stream_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F Irvine32 exit code-stream fixture should not report code-end falloff");
+
+    copy_source_run_json(exit_stop_copy, sizeof(exit_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        exit_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(exit_stop_copy, "\"ok\":true", "Phase 71F Irvine32 exit should terminate explicitly in stop-at-entry-end mode");
+    failures += expect_json_contains(exit_stop_copy, "\"EAX\":{\"hex\":\"00000005h\",\"unsigned\":5}", "Phase 71F Irvine32 exit stop-mode fixture should preserve earlier side effects");
+    failures += expect_json_not_contains(exit_stop_copy, "\"code\":\"procedure-fell-through\"", "Phase 71F Irvine32 exit stop-mode fixture should not fall through");
+    failures += expect_json_not_contains(exit_stop_copy, "\"code\":\"code-fell-off-end\"", "Phase 71F Irvine32 exit stop-mode fixture should not report code-end falloff");
+
+    copy_source_run_json(root_compatible_code_stream_copy, sizeof(root_compatible_code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        root_ret_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(root_compatible_code_stream_copy, "\"ok\":true", "Phase 71F compatible root RET should complete in code-stream mode");
+    failures += expect_json_contains(root_compatible_code_stream_copy, "\"rootRetMode\":\"masm32-compatible\"", "Phase 71F compatible root RET code-stream fixture should serialize rootRetMode");
+    failures += expect_json_not_contains(root_compatible_code_stream_copy, "invalid-address", "Phase 71F compatible root RET code-stream fixture should not read empty stack memory");
+
+    copy_source_run_json(root_compatible_stop_copy, sizeof(root_compatible_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        root_ret_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_MASM32_COMPATIBLE,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(root_compatible_stop_copy, "\"ok\":true", "Phase 71F compatible root RET should complete in stop-at-entry-end mode");
+    failures += expect_json_contains(root_compatible_stop_copy, "\"rootRetMode\":\"masm32-compatible\"", "Phase 71F compatible root RET stop fixture should serialize rootRetMode");
+    failures += expect_json_not_contains(root_compatible_stop_copy, "invalid-address", "Phase 71F compatible root RET stop fixture should not read empty stack memory");
+
+    copy_source_run_json(root_strict_code_stream_copy, sizeof(root_strict_code_stream_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        root_ret_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_STRICT_CALL_FRAME,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM
+    ));
+    failures += expect_json_contains(root_strict_code_stream_copy, "\"ok\":false", "Phase 71F strict root RET should reject in code-stream mode");
+    failures += expect_json_contains(root_strict_code_stream_copy, "\"code\":\"root-ret-disallowed-by-mode\"", "Phase 71F strict root RET code-stream fixture should use rootRetMode diagnostic");
+    failures += expect_json_not_contains(root_strict_code_stream_copy, "invalid-address", "Phase 71F strict root RET code-stream fixture should not read empty stack memory");
+
+    copy_source_run_json(root_strict_stop_copy, sizeof(root_strict_stop_copy), masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+        root_ret_source,
+        MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
+        MASM32_SIM_WASM_COMPATIBILITY_NOTICES_ON,
+        MASM32_SIM_WASM_STARTUP_REGISTER_FLAG_ZERO,
+        MASM32_SIM_WASM_UNINITIALIZED_STORAGE_VISIBLE_BYTE_ZERO,
+        0U,
+        1000000U,
+        MASM32_SIM_WASM_ROOT_RET_MODE_STRICT_CALL_FRAME,
+        MASM32_SIM_WASM_PROCEDURE_FALLTHROUGH_WARN,
+        MASM32_SIM_WASM_ENTRY_PROCEDURE_END_STOP_AT_ENTRY_END
+    ));
+    failures += expect_json_contains(root_strict_stop_copy, "\"ok\":false", "Phase 71F strict root RET should reject in stop-at-entry-end mode");
+    failures += expect_json_contains(root_strict_stop_copy, "\"code\":\"root-ret-disallowed-by-mode\"", "Phase 71F strict root RET stop fixture should use rootRetMode diagnostic");
+    failures += expect_json_not_contains(root_strict_stop_copy, "invalid-address", "Phase 71F strict root RET stop fixture should not read empty stack memory");
+
+    return failures;
+}
+
 /// Verifies Phase 71E runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
@@ -11293,11 +11592,11 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "main ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(empty_entry_copy, "\"ok\":true", "Phase 68B empty selected entry should complete");
-    failures += expect_json_contains(empty_entry_copy, "\"executedInstructionCount\":1", "Phase 68B empty selected entry should execute zero instructions");
-    failures += expect_json_contains(empty_entry_copy, "\"currentInstructionIndex\":0", "Phase 68B empty selected entry should not expose current instruction index");
-    failures += expect_json_contains(empty_entry_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B empty selected entry should not expose attempted next instruction");
-    failures += expect_json_contains(empty_entry_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "Phase 68B empty selected entry should display base pseudo-EIP");
+    failures += expect_json_contains(empty_entry_copy, "\"ok\":true", "Phase 68B explicit root RET selected-entry fixture should complete");
+    failures += expect_json_contains(empty_entry_copy, "\"executedInstructionCount\":1", "Phase 68B explicit root RET selected-entry fixture should execute the RET instruction");
+    failures += expect_json_contains(empty_entry_copy, "\"currentInstructionIndex\":0", "Phase 68B explicit root RET selected-entry fixture should expose the RET instruction index");
+    failures += expect_json_contains(empty_entry_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B explicit root RET selected-entry fixture should not expose attempted next instruction");
+    failures += expect_json_contains(empty_entry_copy, "\"EIP\":{\"hex\":\"00401004h\",\"unsigned\":4198404}", "Phase 68B explicit root RET selected-entry fixture should display the RET pseudo-EIP");
 
     copy_source_run_json(no_executable_copy, sizeof(no_executable_copy), masm32_sim_wasm_run_source_json(
         ".data\n"
@@ -11308,12 +11607,12 @@ static int test_phase68b_eip_pseudo_display_and_rejections(void) {
         "main ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(no_executable_copy, "\"ok\":true", "Phase 68B no-executable program should complete");
-    failures += expect_json_contains(no_executable_copy, "\"instructionCount\":1", "Phase 68B no-executable program should report zero lowered instructions");
-    failures += expect_json_contains(no_executable_copy, "\"executedInstructionCount\":1", "Phase 68B no-executable program should execute zero instructions");
-    failures += expect_json_contains(no_executable_copy, "\"currentInstructionIndex\":null", "Phase 68B no-executable program should not expose current instruction index");
+    failures += expect_json_contains(no_executable_copy, "\"ok\":true", "Phase 68B explicit root RET data-plus-code fixture should complete");
+    failures += expect_json_contains(no_executable_copy, "\"instructionCount\":1", "Phase 68B explicit root RET data-plus-code fixture should report one lowered instruction");
+    failures += expect_json_contains(no_executable_copy, "\"executedInstructionCount\":1", "Phase 68B explicit root RET data-plus-code fixture should execute the RET instruction");
+    failures += expect_json_contains(no_executable_copy, "\"currentInstructionIndex\":null", "Phase 68B explicit root RET data-plus-code fixture should expose no current instruction after halt");
     failures += expect_json_contains(no_executable_copy, "\"attemptedNextInstructionIndex\":null", "Phase 68B no-executable program should not expose attempted next instruction");
-    failures += expect_json_contains(no_executable_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B no-executable program should display base pseudo-EIP");
+    failures += expect_json_contains(no_executable_copy, "\"EIP\":{\"hex\":\"00401000h\",\"unsigned\":4198400}", "Phase 68B explicit root RET data-plus-code fixture should display base pseudo-EIP");
     failures += expect_json_not_contains(no_executable_copy, "runtime-error", "Phase 68B no-executable program should not emit a runtime error");
 
     copy_source_run_json(conditional_taken_copy, sizeof(conditional_taken_copy), masm32_sim_wasm_run_source_json(
@@ -11443,7 +11742,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
-    failures += expect_json_contains(before_copy, "\"code\":\"execution-complete\"", "selected main fallthrough should complete normally");
+    failures += expect_json_contains(before_copy, "\"code\":\"execution-complete\"", "selected main explicit RET should complete normally");
 
     copy_source_run_json(after_copy, sizeof(after_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -11457,10 +11756,10 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "END main\n"
     ));
     failures += expect_json_contains(after_copy, "\"ok\":true", "Phase 67A helper-after-entry source should execute");
-    failures += expect_json_contains(after_copy, "\"executedInstructionCount\":2", "Phase 67A should stop at selected entry ENDP boundary");
+    failures += expect_json_contains(after_copy, "\"executedInstructionCount\":2", "Phase 67A explicit RET should stop before later procedure text");
     failures += expect_json_contains(after_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1}", "selected main should set EAX once");
-    failures += expect_json_contains(after_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper after main must not execute by fallthrough");
-    failures += expect_json_contains_once(after_copy, "execution-complete", "selected-entry fallthrough should emit exactly one completion message");
+    failures += expect_json_contains(after_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper after main must not execute after explicit RET");
+    failures += expect_json_contains_once(after_copy, "execution-complete", "selected-entry explicit RET should emit exactly one completion message");
 
     copy_source_run_json(empty_copy, sizeof(empty_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -11475,11 +11774,11 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
         "after ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(empty_copy, "\"ok\":true", "Phase 67A empty entry source should complete successfully");
-    failures += expect_json_contains(empty_copy, "\"executedInstructionCount\":1", "empty selected entry should execute no instructions");
-    failures += expect_json_contains(empty_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "empty selected entry must not run later procedure");
-    failures += expect_json_contains(empty_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "empty selected entry must not run earlier procedure");
-    failures += expect_json_contains(empty_copy, "\"code\":\"execution-complete\"", "empty selected entry should complete normally");
+    failures += expect_json_contains(empty_copy, "\"ok\":true", "Phase 67A explicit root RET entry source should complete successfully");
+    failures += expect_json_contains(empty_copy, "\"executedInstructionCount\":1", "explicit root RET selected entry should execute the RET instruction");
+    failures += expect_json_contains(empty_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "explicit root RET selected entry must not run later procedure");
+    failures += expect_json_contains(empty_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "explicit root RET selected entry must not run earlier procedure");
+    failures += expect_json_contains(empty_copy, "\"code\":\"execution-complete\"", "explicit root RET selected entry should complete normally");
 
     copy_source_run_json(selected_copy, sizeof(selected_copy), masm32_sim_wasm_run_source_json(
         ".code\n"
@@ -14912,6 +15211,7 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase71_call_ret_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71_call_ret_source_run_behavior},
     {"test_phase71d_procedure_fallthrough_policy_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71d_procedure_fallthrough_policy_source_run_behavior},
     {"test_phase71e_entry_procedure_end_mode_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71e_entry_procedure_end_mode_source_run_behavior},
+    {"test_phase71f_fallthrough_opposite_fixtures_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71f_fallthrough_opposite_fixtures_source_run},
     {"test_phase71e_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71e_source_run_phase_metadata},
     {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
     {"test_phase68b_eip_pseudo_display_and_rejections", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68b_eip_pseudo_display_and_rejections},
