@@ -614,6 +614,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     int has_procedure_fallthrough_policy = 0;
     Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode = MASM32_SIM_WASM_ENTRY_PROCEDURE_END_CODE_STREAM;
     int has_entry_procedure_end_mode = 0;
+    uint32_t call_depth_limit = 64U;
+    int has_call_depth_limit = 0;
 
     if (source == NULL) {
         return diagnostic_json_producer_fail("source fixture was not loaded");
@@ -634,9 +636,12 @@ static int diagnostic_json_producer_emit_json(const char *source) {
     if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT", &instruction_limit, &has_instruction_limit) != 0) {
         return 1;
     }
+    if (diagnostic_json_producer_parse_u32_env("MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT", &call_depth_limit, &has_call_depth_limit) != 0) {
+        return 1;
+    }
 
-    if (has_root_ret_mode || has_procedure_fallthrough_policy || has_entry_procedure_end_mode) {
-        json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings(
+    if (has_call_depth_limit || has_root_ret_mode || has_procedure_fallthrough_policy || has_entry_procedure_end_mode) {
+        json = masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings(
             source,
             MASM32_SIM_WASM_MEMORY_RANGE_REGION_ONLY,
             MASM32_SIM_WASM_TEACHING_DIAGNOSTIC_WARN,
@@ -648,7 +653,8 @@ static int diagnostic_json_producer_emit_json(const char *source) {
             has_instruction_limit ? instruction_limit : 1000000U,
             root_ret_mode,
             procedure_fallthrough_policy,
-            entry_procedure_end_mode
+            entry_procedure_end_mode,
+            has_call_depth_limit ? call_depth_limit : 64U
         );
     } else if (has_instruction_limit) {
         json = masm32_sim_wasm_run_source_json_with_instruction_limit(source, instruction_limit);

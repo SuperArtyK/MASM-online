@@ -33,10 +33,10 @@ function test(name, body) {
 }
 
 test("ready message includes implemented phase and loaded wasm status", () => {
-  assert.equal(IMPLEMENTED_PHASE, 71);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "E");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
-  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-71e-entry-procedure-end-mode-output-contract-v1");
+  assert.equal(IMPLEMENTED_PHASE, 72);
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-72-call-depth-limit-output-contract-v1");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -46,10 +46,10 @@ test("ready message includes implemented phase and loaded wasm status", () => {
         sourceExecution: "available"
       },
       wasmTestValue: 32,
-      phase: 71,
-      phaseSuffix: "E",
-      phaseName: "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-      sourceRunOutputContract: "phase-71e-entry-procedure-end-mode-output-contract-v1"
+      phase: 72,
+      phaseSuffix: "",
+      phaseName: "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+      sourceRunOutputContract: "phase-72-call-depth-limit-output-contract-v1"
     }
   });
 });
@@ -65,10 +65,10 @@ test("ready message supports not-built wasm status", () => {
         message: "missing"
       },
       wasmTestValue: null,
-      phase: 71,
-      phaseSuffix: "E",
-      phaseName: "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-      sourceRunOutputContract: "phase-71e-entry-procedure-end-mode-output-contract-v1"
+      phase: 72,
+      phaseSuffix: "",
+      phaseName: "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+      sourceRunOutputContract: "phase-72-call-depth-limit-output-contract-v1"
     }
   });
 });
@@ -108,11 +108,12 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
           instructionLimit: 1000000,
           rootRetMode: 0,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
         return {
-          phase: 71,
-          phaseSuffix: "E",
+          phase: 72,
+          phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           registers: {
@@ -127,8 +128,8 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
   assert.deepEqual(response, {
     type: "RUN_RESULT",
     payload: {
-      phase: 71,
-      phaseSuffix: "E",
+      phase: 72,
+      phaseSuffix: "",
       sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
       ok: true,
       registers: {
@@ -168,7 +169,8 @@ test("RUN_SOURCE dispatches normalized diagnostic settings to runtime", () => {
           instructionLimit: 42,
           rootRetMode: 0,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -204,9 +206,10 @@ test("RUN_SOURCE dispatches Phase 71A root RET mode setting to runtime", () => {
           instructionLimit: 1000000,
           rootRetMode: 1,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
-        return { phase: 71, phaseSuffix: "E", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
+        return { phase: 72, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
       }
     }
   );
@@ -241,11 +244,12 @@ test("RUN_SOURCE dispatches Phase 71D procedure fallthrough policy setting to ru
           instructionLimit: 1000000,
           rootRetMode: 0,
           procedureFallthroughPolicy: 2,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
         return {
-          phase: 71,
-          phaseSuffix: "E",
+          phase: 72,
+          phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: false,
           simulatorMessages: [{ kind: "runtime-error", code: "procedure-fell-through" }]
@@ -284,11 +288,12 @@ test("RUN_SOURCE dispatches Phase 71E entry procedure end mode setting to runtim
           instructionLimit: 1000000,
           rootRetMode: 0,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 1
+          entryProcedureEndMode: 1,
+          callDepthLimit: 64
         });
         return {
-          phase: 71,
-          phaseSuffix: "E",
+          phase: 72,
+          phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: [{ kind: "info", code: "execution-complete" }]
@@ -299,6 +304,44 @@ test("RUN_SOURCE dispatches Phase 71E entry procedure end mode setting to runtim
 
   assert.equal(response.type, "RUN_RESULT");
   assert.equal(response.payload.ok, true);
+});
+
+test("RUN_SOURCE dispatches Phase 72 callDepthLimit setting to runtime", () => {
+  const response = handleWorkerRequest(
+    {
+      type: "RUN_SOURCE",
+      payload: {
+        source: ".code\nmain PROC\n    call helper\n    exit\nmain ENDP\nhelper PROC\n    ret\nhelper ENDP\nEND main\n",
+        diagnosticSettings: {
+          callDepthLimit: 1
+        }
+      }
+    },
+    {
+      runSource(source, backendSettings) {
+        assert.equal(source.includes("call helper"), true);
+        assert.deepEqual(backendSettings, {
+          memoryRange: 0,
+          uninitializedReads: 1,
+          undefinedFlagUse: 1,
+          compatibilityNotices: 1,
+          startupRegisterFlagMode: 0,
+          uninitializedStorageVisibleByteMode: 0,
+          startupStateSeed: 0,
+          instructionLimit: 1000000,
+          rootRetMode: 0,
+          procedureFallthroughPolicy: 1,
+          entryProcedureEndMode: 0,
+          callDepthLimit: 1
+        });
+        return { phase: 72, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "resource-limit-error", code: "call-depth-exceeded" }] };
+      }
+    }
+  );
+
+  assert.equal(response.type, "RUN_RESULT");
+  assert.equal(response.payload.ok, false);
+  assert.equal(response.payload.simulatorMessages[0].code, "call-depth-exceeded");
 });
 
 test("RUN_SOURCE dispatches Phase 57F startup settings to runtime", () => {
@@ -327,7 +370,8 @@ test("RUN_SOURCE dispatches Phase 57F startup settings to runtime", () => {
           instructionLimit: 1000000,
           rootRetMode: 0,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -364,7 +408,8 @@ test("RUN_SOURCE dispatches Phase 57G uninitialized-storage startup settings to 
           instructionLimit: 1000000,
           rootRetMode: 0,
           procedureFallthroughPolicy: 1,
-          entryProcedureEndMode: 0
+          entryProcedureEndMode: 0,
+          callDepthLimit: 64
         });
         return { ok: true, simulatorMessages: [] };
       }
@@ -451,6 +496,32 @@ test("RUN_SOURCE invalid instructionLimit setting returns renderable ui-error", 
   }
 });
 
+test("RUN_SOURCE invalid callDepthLimit setting returns renderable settings-error", () => {
+  for (const callDepthLimit of [0, -1, 4097, 1.5, "64", "abc", null, true, false]) {
+    const response = handleWorkerRequest(
+      {
+        type: "RUN_SOURCE",
+        payload: {
+          source: ".code\nmain PROC\nEND main\n",
+          diagnosticSettings: { callDepthLimit }
+        }
+      },
+      {
+        runSource() {
+          throw new Error("runtime should not be called for invalid callDepthLimit");
+        }
+      }
+    );
+
+    assert.equal(response.type, "RUN_RESULT");
+    assert.equal(response.payload.ok, false);
+    assert.equal(response.payload.status, "ui-error");
+    assert.equal(response.payload.simulatorMessages[0].kind, "settings-error");
+    assert.equal(response.payload.simulatorMessages[0].code, "invalid-call-depth-limit");
+    assert.equal(response.payload.simulatorMessages[0].setting, "callDepthLimit");
+  }
+});
+
 test("RUN_SOURCE marks stale Wasm artifacts", () => {
   const response = handleWorkerRequest(
     { type: "RUN_SOURCE", payload: { source: "COUNT = 4 * 3" } },
@@ -473,7 +544,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "stale-wasm-output-contract");
   assert.equal(response.payload.simulatorMessages[2].code, "unsupported-constant-expression");
@@ -500,8 +571,8 @@ test("RUN_SOURCE accepts matching runtime and output-contract metadata", () => {
     {
       runSource() {
         return {
-          phase: 71,
-          phaseSuffix: "E",
+          phase: 72,
+          phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: [
@@ -523,8 +594,8 @@ test("RUN_SOURCE rejects newer runtime phase metadata by default", () => {
     {
       runSource() {
         return {
-          phase: 72,
-          phaseSuffix: "E",
+          phase: 73,
+          phaseSuffix: "",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: []
@@ -538,7 +609,7 @@ test("RUN_SOURCE rejects newer runtime phase metadata by default", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 72E, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 73, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -563,7 +634,7 @@ test("RUN_SOURCE rejects mismatched runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -587,7 +658,7 @@ test("RUN_SOURCE rejects missing runtime phase metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -633,7 +704,7 @@ test("RUN_SOURCE rejects missing runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -665,13 +736,13 @@ test("RUN_SOURCE marks matching runtime phase with missing output-contract metad
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 71, phaseSuffix: "E", ok: true, simulatorMessages: [] };
+        return { phase: 72, phaseSuffix: "", ok: true, simulatorMessages: [] };
       }
     }
   );
 
   assert.equal(response.type, "RUN_RESULT");
-  assert.equal(response.payload.phase, 71);
+  assert.equal(response.payload.phase, 72);
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-output-contract");
   assert.equal(
     response.payload.simulatorMessages[0].message,
@@ -684,7 +755,7 @@ test("RUN_SOURCE marks matching runtime phase with stale output-contract metadat
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 71, phaseSuffix: "E", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
+        return { phase: 72, phaseSuffix: "", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -702,7 +773,7 @@ test("RUN_SOURCE treats non-string output-contract metadata as missing", () => {
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 71, phaseSuffix: "E", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
+        return { phase: 72, phaseSuffix: "", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -720,7 +791,7 @@ test("RUN_SOURCE creates stale-output-contract message when simulatorMessages is
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 71, phaseSuffix: "E", ok: true, simulatorMessages: "not an array" };
+        return { phase: 72, phaseSuffix: "", ok: true, simulatorMessages: "not an array" };
       }
     }
   );

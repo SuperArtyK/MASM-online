@@ -96,7 +96,8 @@ const PRODUCER_CONTROL_ENV_KEYS = [
   "MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT",
   "MASM32_DIAGNOSTIC_ROOT_RET_MODE",
   "MASM32_DIAGNOSTIC_PROCEDURE_FALLTHROUGH_POLICY",
-  "MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE"
+  "MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE",
+  "MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT"
 ];
 
 /**
@@ -395,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2510,7 +2511,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2553,7 +2554,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2590,9 +2591,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2618,8 +2619,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2645,8 +2646,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2670,8 +2671,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2694,8 +2695,8 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2720,8 +2721,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2761,7 +2762,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2792,8 +2793,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2838,8 +2839,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2865,7 +2866,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2889,7 +2890,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2913,7 +2914,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2938,7 +2939,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2962,7 +2963,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2986,7 +2987,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3011,9 +3012,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3039,9 +3040,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3067,9 +3068,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,9 +3095,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3122,7 +3123,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3147,7 +3148,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3171,7 +3172,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3388,7 +3389,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 71);
+    assert.equal(json.phase, 72);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3401,7 +3402,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 71);
+  assert.equal(duplicateResult.json.phase, 72);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3903,7 +3904,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3924,7 +3925,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5362,9 +5363,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5424,9 +5425,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5484,9 +5485,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5521,9 +5522,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5572,9 +5573,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5613,9 +5614,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 71);
-  assert.equal(defaultResult.json.phaseSuffix, "E");
-  assert.equal(defaultResult.json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(defaultResult.json.phase, 72);
+  assert.equal(defaultResult.json.phaseSuffix, "");
+  assert.equal(defaultResult.json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5635,9 +5636,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 71);
-  assert.equal(stopResult.json.phaseSuffix, "E");
-  assert.equal(stopResult.json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(stopResult.json.phase, 72);
+  assert.equal(stopResult.json.phaseSuffix, "");
+  assert.equal(stopResult.json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5661,6 +5662,73 @@ END main
 [info] execution-complete: Execution completed successfully.`);
 });
 
+test("renders Phase 72 call-depth-exceeded diagnostic exactly", () => {
+  const name = "phase72CallDepthExceeded";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    call Recur
+    exit
+main ENDP
+Recur PROC
+    call Recur
+    ret
+Recur ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.callDepthLimit, 1);
+  assertNoExecutionComplete(json.simulatorMessages);
+  const message = json.simulatorMessages[json.simulatorMessages.length - 1];
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "simulator-notice",
+    code: "startup-state-notice",
+    message: STARTUP_STATE_NOTICE_TEXT
+  });
+  assert.equal(message.kind, "resource-limit-error");
+  assert.equal(message.code, "call-depth-exceeded");
+  assert.equal(message.line, 8);
+  assert.equal(message.column, 5);
+  assert.equal(message.byteOffset, 86);
+  assert.equal(message.spanLength, 10);
+  assert.equal(message.currentCallDepth, 1);
+  assert.equal(message.attemptedCallDepth, 2);
+  assert.equal(message.callDepthLimit, 1);
+  assert.equal(message.targetProcedure, "Recur");
+  assert.equal(message.selectedEntryProcedure, "main");
+  assertRenderedEquals(name, source, rawJson, rendered, `${STARTUP_STATE_NOTICE_RENDERED}\n\n[resource-limit-error] call-depth-exceeded line 8, column 5, byte offset 86, span length 10: call-depth-exceeded: direct CALL to 'Recur' would enter call depth 2, exceeding callDepthLimit 1. Execution stopped before writing the return token or changing control flow.`);
+});
+
+test("renders Phase 72 invalid callDepthLimit diagnostic exactly", () => {
+  const name = "phase72InvalidCallDepthLimit";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    mov eax, 1
+    exit
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
+  assertRunStatus(json, false, "invalid-argument");
+  assert.equal(json.phase, 72);
+  assert.equal(json.callDepthLimit, 0);
+  assert.deepEqual(json.memoryChanges, []);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "settings-error",
+    code: "invalid-call-depth-limit",
+    message: "Invalid source-run setting 'callDepthLimit' value 0. Accepted values: 1..4096."
+  });
+  assert.equal(json.invalidSetting.setting, "callDepthLimit");
+  assert.equal(json.invalidSetting.value, 0);
+  assert.equal(json.invalidSetting.acceptedValues, "1..4096");
+  assertRenderedEquals(name, source, rawJson, rendered, "[settings-error] invalid-call-depth-limit: Invalid source-run setting 'callDepthLimit' value 0. Accepted values: 1..4096.");
+});
+
 test("renders Phase 71E default empty selected-entry fallthrough error exactly", () => {
   const name = "phase71cEmptySelectedEntryCodeStreamFalloff";
   const source = `.code
@@ -5673,9 +5741,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5707,9 +5775,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5797,9 +5865,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
-  assert.equal(json.phaseName, "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6794,8 +6862,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7075,8 +7143,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
-  assert.equal(json.phaseSuffix, "E");
+  assert.equal(json.phase, 72);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -7858,7 +7926,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 71);
+  assert.equal(json.phase, 72);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

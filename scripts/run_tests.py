@@ -523,8 +523,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 71F - Fallthrough Test Migration and Opposite Fixtures")
-    assert_text_contains("README.md", "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting")
+    assert_text_contains("README.md", "Phase 72 - Call Depth Limit and Call Trace Diagnostics")
+    assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
@@ -603,9 +603,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 71")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"E\"")
-    assert_text_contains("web/src/protocol.js", "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 72")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
+    assert_text_contains("web/src/protocol.js", "Phase 72 - Call Depth Limit and Call Trace Diagnostics")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -1749,7 +1749,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 71F status, concise status surfaces, and fallthrough fixture migration wording."""
+    """Verify Phase 72 status, concise status surfaces, and call-depth documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1769,13 +1769,13 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "Runtime/source-run MASM behavior phase",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71F advances the current milestone with fallthrough fixture migration",
-            "Runtime/source-run MASM behavior metadata remains Phase 71E",
-            "opt-in `stop-at-entry-end` keeps selected-entry `ENDP` compatibility explicit",
-            "`procedureFallthroughPolicy`, `code-fell-off-end`, root `RET`, helper `CALL`/`RET`, invalid return-token, parser, and memory diagnostics remain independent",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+            "Phase 72 adds deterministic call-depth resource protection",
+            "Source-run settings now include `callDepthLimit`",
+            "accepted range `1..4096`",
+            "`call-depth-exceeded` before writing the return token",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
             "selected-entry source-run startup from `END entryName`",
@@ -1839,12 +1839,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71F advances project status with fallthrough fixture migration",
-            "Runtime/source-run MASM behavior metadata remains Phase 71E",
-            "does not add accepted syntax, change terminal success/failure semantics, add browser settings, or change the source-run output-contract identifier",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+            "Phase 72 advances runtime/source-run behavior metadata",
+            "Source-run settings now include `callDepthLimit`",
+            "pre-execution `invalid-call-depth-limit` validation",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1868,7 +1868,6 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "Next runtime/source-run MASM behavior phase:",
         "Repository/archive milestone:",
         "Current source-run output-contract token:",
-        "source-run output-contract metadata",
         "Wasm API behavior",
         "browser behavior",
         "Phase 69C introduced the separate `sourceRunOutputContract` metadata field",
@@ -1891,10 +1890,10 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71F adds migration and opposite-fixture coverage for fallthrough-sensitive tests",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+            "Phase 72 adds deterministic call-depth resource protection",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -1943,9 +1942,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2063,6 +2062,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "## 75D. Phase 71D - Configurable Procedure-Fallthrough Diagnostic Policy",
             "## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2077,7 +2077,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "Runtime/source-run behavior metadata problems must be reported before source-run output-contract metadata problems",
             "The RET return-token pop has the same internal/public distinction as the Phase 69 CALL return-token push",
             "Phase 71 must check selected-entry root RET eligibility before attempting the Phase 70 DWORD read from `[ESP]`",
-            "procedure-fell-through",
+            "callDepthLimit",
             "invalid-root-termination-state",
             "do not claim checked-in `web/dist` is stale solely because `emcc` is unavailable",
         ],
@@ -2096,14 +2096,14 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "Runtime/source-run MASM behavior phase:",
-            "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
-            "Phase 71F advances test and documentation coverage and verifies a narrow conformance fix",
-            "opposite fallthrough fixtures for default `code-stream` versus opt-in `stop-at-entry-end`",
-            "explicit Irvine32 `exit` termination in both entry-end modes",
-            "root `RET` independence from entry-end mode",
-            "static checks proving old implicit selected-entry `ENDP` success fixtures were migrated",
+            "Phase 72 - Call Depth Limit and Call Trace Diagnostics",
+            "Phase 72 adds deterministic call-depth resource protection tests",
+            "`callDepthLimit` defaults and accepted range `1..4096`",
+            "runtime `call-depth-exceeded` diagnostics before rejected `CALL` mutation",
+            "absence of call-trace metadata",
+            "regressions for helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2118,12 +2118,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 71F: Fallthrough Test Migration and Opposite Fixtures",
+            "Milestone 72: Call Depth Limit and Call Trace Diagnostics",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
-            "procedure-fell-through",
-            "Default code-stream mode reports procedure-fell-through here",
-            "stop-at-entry-end mode stops before this helper text",
+            "callDepthLimit",
+            "Phase 72 counts committed direct helper CALL frames",
+            "Under default callDepthLimit = 64, this helper returns normally",
             "final-registers",
             "Program Console",
         ],
@@ -2171,7 +2171,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 71",
+            "IMPLEMENTED_PHASE = 72",
         ],
     )
     assert_all_text_not_contains(

@@ -310,6 +310,41 @@ const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_
     Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode
 );
 
+/// Parses and executes source using diagnostics, startup settings, instruction limit, root RET mode, procedure fallthrough policy, entry procedure end mode, and call-depth limit.
+///
+/// This Phase 72 browser/test-facing export extends the Phase 71E entry-end
+/// export with the source-run option named `callDepthLimit`.
+///
+/// @param source Null-terminated MASM-like source text to parse and execute.
+/// @param memory_range_setting Browser memory range validation selection.
+/// @param uninitialized_read_setting Browser uninitialized-read diagnostic selection.
+/// @param undefined_flag_use_setting Browser undefined-flag-use diagnostic selection.
+/// @param compatibility_notice_setting Browser compatibility-notice selection.
+/// @param startup_register_flag_mode Phase 57F register/flag startup mode.
+/// @param uninitialized_storage_visible_byte_mode Phase 57G uninitialized-storage visible-byte mode.
+/// @param startup_state_seed Deterministic startup-state seed.
+/// @param instruction_limit Positive maximum executed-VM-instruction count.
+/// @param root_ret_mode Phase 71A root-code-stream RET handling mode.
+/// @param procedure_fallthrough_policy Phase 71D ordinary procedure-fallthrough diagnostic policy.
+/// @param entry_procedure_end_mode Phase 71E selected-entry ENDP boundary behavior.
+/// @param call_depth_limit Phase 72 direct user-procedure CALL depth limit.
+/// @return Pointer to a null-terminated JSON result string.
+const char *masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings(
+    const char *source,
+    Masm32SimWasmMemoryRangeSetting memory_range_setting,
+    Masm32SimWasmTeachingDiagnosticSetting uninitialized_read_setting,
+    Masm32SimWasmTeachingDiagnosticSetting undefined_flag_use_setting,
+    Masm32SimWasmCompatibilityNoticeSetting compatibility_notice_setting,
+    Masm32SimWasmStartupRegisterFlagMode startup_register_flag_mode,
+    Masm32SimWasmUninitializedStorageVisibleByteMode uninitialized_storage_visible_byte_mode,
+    uint32_t startup_state_seed,
+    uint32_t instruction_limit,
+    Masm32SimWasmRootRetMode root_ret_mode,
+    Masm32SimWasmProcedureFallthroughPolicy procedure_fallthrough_policy,
+    Masm32SimWasmEntryProcedureEndMode entry_procedure_end_mode,
+    uint32_t call_depth_limit
+);
+
 /// Parses and executes source using Phase 53E browser diagnostic settings.
 ///
 /// This browser-facing export maps structured UI settings to already-existing

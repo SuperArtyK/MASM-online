@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 71;
+export const IMPLEMENTED_PHASE = 72;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "E";
+export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting";
+export const IMPLEMENTED_PHASE_NAME = "Phase 72 - Call Depth Limit and Call Trace Diagnostics";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-71e-entry-procedure-end-mode-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-72-call-depth-limit-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

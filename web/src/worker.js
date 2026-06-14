@@ -42,6 +42,7 @@ function createRunSourceFunction(moduleInstance) {
       ...defaultBackendSettings,
       ...(backendSettings || {})
     };
+    const hasCallDepthSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings === "function";
     const hasEntryProcedureEndSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings === "function";
     const hasProcedureFallthroughSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_and_procedure_fallthrough_settings === "function";
     const hasRootRetModeSettingsExport = typeof moduleInstance._masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_and_root_ret_settings === "function";
@@ -60,9 +61,26 @@ function createRunSourceFunction(moduleInstance) {
     const usesNonDefaultRootRetMode = settings.rootRetMode !== defaultBackendSettings.rootRetMode;
     const usesNonDefaultProcedureFallthroughPolicy = settings.procedureFallthroughPolicy !== defaultBackendSettings.procedureFallthroughPolicy;
     const usesNonDefaultEntryProcedureEndMode = settings.entryProcedureEndMode !== defaultBackendSettings.entryProcedureEndMode;
+    const usesNonDefaultCallDepthLimit = settings.callDepthLimit !== defaultBackendSettings.callDepthLimit;
     const usesNonDefaultStartupSettings = usesNonDefaultRegisterFlagStartupSettings || usesNonDefaultUninitializedStorageStartupSettings;
 
-    if (!hasEntryProcedureEndSettingsExport && usesNonDefaultEntryProcedureEndMode) {
+    if (!hasCallDepthSettingsExport && usesNonDefaultCallDepthLimit) {
+      return {
+        ok: false,
+        status: "ui-error",
+        simulatorMessages: [
+          {
+            kind: "ui-error",
+            code: "stale-wasm-artifact",
+            message: "The loaded Wasm artifact does not expose Phase 72 call-depth-limit settings required by the current Phase 72 protocol. Rebuild web/dist with the Emscripten build script."
+          }
+        ],
+        registers: {},
+        memoryChanges: []
+      };
+    }
+
+    if (!hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultEntryProcedureEndMode) {
       return {
         ok: false,
         status: "ui-error",
@@ -78,7 +96,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && usesNonDefaultProcedureFallthroughPolicy) {
+    if (!hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultProcedureFallthroughPolicy) {
       return {
         ok: false,
         status: "ui-error",
@@ -94,7 +112,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasRootRetModeSettingsExport && usesNonDefaultRootRetMode) {
+    if (!hasRootRetModeSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultRootRetMode) {
       return {
         ok: false,
         status: "ui-error",
@@ -110,7 +128,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && usesNonDefaultInstructionLimit) {
+    if (!hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultInstructionLimit) {
       return {
         ok: false,
         status: "ui-error",
@@ -126,7 +144,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasStartupStorageSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && usesNonDefaultUninitializedStorageStartupSettings) {
+    if (!hasStartupStorageSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultUninitializedStorageStartupSettings) {
       return {
         ok: false,
         status: "ui-error",
@@ -142,7 +160,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasStartupSettingsExport && !hasStartupStorageSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && usesNonDefaultRegisterFlagStartupSettings) {
+    if (!hasStartupSettingsExport && !hasStartupStorageSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && usesNonDefaultRegisterFlagStartupSettings) {
       return {
         ok: false,
         status: "ui-error",
@@ -158,7 +176,7 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    if (!hasStartupStorageSettingsExport && !hasStartupSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasUiSettingsExport && usesNonDefaultDiagnosticSettings) {
+    if (!hasStartupStorageSettingsExport && !hasStartupSettingsExport && !hasInstructionLimitSettingsExport && !hasRootRetModeSettingsExport && !hasProcedureFallthroughSettingsExport && !hasEntryProcedureEndSettingsExport && !hasCallDepthSettingsExport && !hasUiSettingsExport && usesNonDefaultDiagnosticSettings) {
       return {
         ok: false,
         status: "ui-error",
@@ -174,7 +192,9 @@ function createRunSourceFunction(moduleInstance) {
       };
     }
 
-    const exportName = hasEntryProcedureEndSettingsExport
+    const exportName = hasCallDepthSettingsExport
+      ? "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings"
+      : hasEntryProcedureEndSettingsExport
       ? "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings"
       : hasProcedureFallthroughSettingsExport
       ? "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_and_procedure_fallthrough_settings"
@@ -189,7 +209,9 @@ function createRunSourceFunction(moduleInstance) {
         : hasUiSettingsExport
           ? "masm32_sim_wasm_run_source_json_with_ui_settings"
           : "masm32_sim_wasm_run_source_json";
-    const argTypes = exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings"
+    const argTypes = exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings"
+      ? ["string", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number"]
+      : exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings"
       ? ["string", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number"]
       : exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_and_procedure_fallthrough_settings"
       ? ["string", "number", "number", "number", "number", "number", "number", "number", "number", "number", "number"]
@@ -204,7 +226,23 @@ function createRunSourceFunction(moduleInstance) {
         : exportName === "masm32_sim_wasm_run_source_json_with_ui_settings"
           ? ["string", "number", "number", "number", "number"]
           : ["string"];
-    const args = exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings"
+    const args = exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_entry_end_and_call_depth_settings"
+      ? [
+          source,
+          settings.memoryRange,
+          settings.uninitializedReads,
+          settings.undefinedFlagUse,
+          settings.compatibilityNotices,
+          settings.startupRegisterFlagMode,
+          settings.uninitializedStorageVisibleByteMode,
+          settings.startupStateSeed,
+          settings.instructionLimit,
+          settings.rootRetMode,
+          settings.procedureFallthroughPolicy,
+          settings.entryProcedureEndMode,
+          settings.callDepthLimit
+        ]
+      : exportName === "masm32_sim_wasm_run_source_json_with_ui_startup_storage_instruction_limit_root_ret_procedure_fallthrough_and_entry_end_settings"
       ? [
           source,
           settings.memoryRange,

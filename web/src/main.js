@@ -73,7 +73,7 @@ function renderRunResult(payload, simulatorMessages, finalRegisters, memoryChang
 }
 
 /**
- * Reads the selected diagnostic, Phase 71A root RET, Phase 71D fallthrough, and Phase 71E entry-end settings from the browser controls.
+ * Reads the selected diagnostic, Phase 71A root RET, Phase 71D fallthrough, Phase 71E entry-end, and Phase 72 default call-depth settings from the browser controls.
  *
  * @returns {import("./settings.js").DiagnosticSettings} Settings payload for RUN_SOURCE.
  */

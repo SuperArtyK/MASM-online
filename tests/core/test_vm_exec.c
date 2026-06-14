@@ -1,11 +1,11 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 71F fallthrough fixture migration coverage.
+ * @brief Unit tests for the VM executor through Phase 72 call-depth limit coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, and Phase 71F explicit-exit fallthrough regression coverage. They intentionally avoid
+ * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, and Phase 72 call-depth resource-limit coverage. They intentionally avoid
  * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
  * the Phase 42 virtual exit terminator.
  */
@@ -4664,9 +4664,11 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
     failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "helper fallthrough boundary metadata should configure");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL should transfer to helper");
     failures += expect_size(vm.instruction_pointer, 2U, "CALL should enter helper procedure");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "Phase 72 helper CALL should increment call depth before helper fallthrough");
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "default helper fallthrough should warn and continue");
     failures += expect_size(vm.halted ? 1U : 0U, 0U, "default helper fallthrough warning should not halt execution");
     failures += expect_size(vm.instruction_pointer, 3U, "default helper fallthrough should advance to code end");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "Phase 72 called-helper fallthrough should not decrement call depth");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after helper fallthrough should succeed"));
     failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "helper fallthrough should leave pending return token on the internal stack");
     failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after helper fallthrough should succeed"));
@@ -4692,6 +4694,7 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
     }
 
     failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CODE_FELL_OFF_END, "helper fallthrough should still reach code-end diagnostic on next fetch");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "Phase 72 code-end after called-helper fallthrough should preserve pending call depth");
 
     vm_deinit(&vm);
     return failures;
@@ -5175,6 +5178,201 @@ static int test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough(voi
     vm_deinit(&vm);
     return failures;
 }
+
+
+/// Verifies Phase 72 call-depth defaults, accepted bounds, and invalid-setting rejection.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72_call_depth_limit_settings(void) {
+    int failures = 0;
+    Vm vm;
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for call-depth limit settings test");
+    failures += expect_u32(VM_DEFAULT_CALL_DEPTH_LIMIT, 64U, "default call-depth limit macro should be 64");
+    failures += expect_u32(VM_MIN_CALL_DEPTH_LIMIT, 1U, "minimum call-depth limit macro should be one");
+    failures += expect_u32(VM_MAX_CALL_DEPTH_LIMIT, 4096U, "maximum call-depth limit macro should be 4096");
+    failures += expect_u32(vm_call_depth_limit(&vm), VM_DEFAULT_CALL_DEPTH_LIMIT, "fresh VM should default callDepthLimit to 64");
+    failures += expect_u32(vm_current_call_depth(&vm), 0U, "fresh VM should start with zero current call depth");
+    failures += expect_status(vm_set_call_depth_limit(&vm, VM_MIN_CALL_DEPTH_LIMIT), VM_EXEC_STATUS_OK, "minimum callDepthLimit should be accepted");
+    failures += expect_u32(vm_call_depth_limit(&vm), VM_MIN_CALL_DEPTH_LIMIT, "accepted minimum callDepthLimit should be stored");
+    failures += expect_status(vm_set_call_depth_limit(&vm, VM_DEFAULT_CALL_DEPTH_LIMIT), VM_EXEC_STATUS_OK, "default callDepthLimit should be accepted explicitly");
+    failures += expect_status(vm_set_call_depth_limit(&vm, VM_MAX_CALL_DEPTH_LIMIT), VM_EXEC_STATUS_OK, "maximum callDepthLimit should be accepted");
+    failures += expect_u32(vm_call_depth_limit(&vm), VM_MAX_CALL_DEPTH_LIMIT, "accepted maximum callDepthLimit should be stored");
+    failures += expect_status(vm_set_call_depth_limit(&vm, 0U), VM_EXEC_STATUS_INVALID_ARGUMENT, "zero callDepthLimit should be rejected");
+    failures += expect_u32(vm_call_depth_limit(&vm), VM_MAX_CALL_DEPTH_LIMIT, "invalid low callDepthLimit should leave existing value unchanged");
+    failures += expect_status(vm_set_call_depth_limit(&vm, VM_MAX_CALL_DEPTH_LIMIT + 1U), VM_EXEC_STATUS_INVALID_ARGUMENT, "oversized callDepthLimit should be rejected");
+    failures += expect_u32(vm_call_depth_limit(&vm), VM_MAX_CALL_DEPTH_LIMIT, "invalid high callDepthLimit should leave existing value unchanged");
+    failures += expect_status(vm_set_call_depth_limit(NULL, VM_DEFAULT_CALL_DEPTH_LIMIT), VM_EXEC_STATUS_INVALID_ARGUMENT, "NULL VM callDepthLimit setter should be rejected");
+    failures += expect_u32(vm_call_depth_limit(NULL), 0U, "NULL callDepthLimit getter should return zero");
+    failures += expect_u32(vm_current_call_depth(NULL), 0U, "NULL current-call-depth getter should return zero");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 72 enforces callDepthLimit before a rejected CALL mutates VM state.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72_call_depth_exceeded_rolls_back_rejected_call(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "call Nested", 2U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "ret", 3U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 13U, "ret", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for call-depth overflow rollback test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "call-depth overflow program should load");
+    failures += expect_status(vm_set_call_depth_limit(&vm, 1U), VM_EXEC_STATUS_OK, "call-depth overflow test should use limit one");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("flag setup before call-depth overflow should succeed");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "main.asm", 6U, 1U, 60U, 4U, "seed", 0U) ? 0 : record_failure("flag-validity setup before call-depth overflow should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first helper CALL at depth one should succeed");
+    failures += expect_size(vm.instruction_pointer, 2U, "first helper CALL should transfer to helper");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "first helper CALL should increment current call depth to one");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED, "nested CALL beyond limit should fail as call-depth-exceeded");
+    failures += expect_size(vm.instruction_pointer, 2U, "rejected nested CALL should not transfer instruction pointer");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "rejected nested CALL should not increment current call depth");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after rejected nested CALL should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "rejected nested CALL should not push another return token or mutate ESP");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "rejected nested CALL should preserve flags");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 6U, "rejected nested CALL should preserve flag-validity metadata");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL) {
+        failures += record_failure("rejected nested CALL should expose a last-step delta object");
+    } else {
+        failures += expect_size(delta->memory_change_count, 0U, "rejected nested CALL should not record memory changes");
+        failures += expect_size(delta->memory_access_count, 0U, "rejected nested CALL should not attempt a stack write after depth failure");
+        failures += expect_size(delta->register_change_count, 0U, "rejected nested CALL should not report register changes");
+        failures += expect_size(delta->flag_change_count, 0U, "rejected nested CALL should not report flag changes");
+    }
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("rejected nested CALL should populate call-depth diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED, "call-depth diagnostic should name call-depth-exceeded");
+        failures += expect_u32(diagnostic->instruction_index, 2U, "call-depth diagnostic should point at rejected CALL");
+        failures += expect_u32(diagnostic->current_call_depth, 1U, "call-depth diagnostic should include current depth");
+        failures += expect_u32(diagnostic->attempted_call_depth, 2U, "call-depth diagnostic should include attempted depth");
+        failures += expect_u32(diagnostic->call_depth_limit, 1U, "call-depth diagnostic should include configured limit");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED), "call-depth-exceeded") == 0 ? 1U : 0U, 1U, "executor status helper should name call-depth-exceeded");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 72 decrements committed CALL frames on ordinary helper RET.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72_call_depth_decrements_on_helper_ret(void) {
+    int failures = 0;
+    Vm vm;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "call Nested", 2U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "ret", 3U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 13U, "ret", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for call-depth decrement test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "call-depth decrement program should load");
+    failures += expect_status(vm_set_call_depth_limit(&vm, 2U), VM_EXEC_STATUS_OK, "call-depth decrement test should use limit two");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "outer CALL should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "outer CALL should set depth one");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "inner CALL at configured limit should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 2U, "inner CALL should set depth two");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "inner RET should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "inner RET should decrement depth to one");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "outer RET should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 0U, "outer RET should decrement depth to zero");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "post-helper EXIT should execute");
+    failures += expect_size(vm.halted ? 1U : 0U, 1U, "post-helper EXIT should halt after balanced calls");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 72 preserves call depth when helper RET validation fails.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72_call_depth_preserved_on_helper_ret_failures(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "ret", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid RET token depth test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "invalid RET token depth program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL before invalid RET token should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "CALL before invalid RET token should set depth one");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after CALL before invalid RET token should succeed"));
+    failures += (vm_memory_write_u32(&vm.memory, esp, 0x12345678U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("invalid RET token depth test should corrupt stack token"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_RETURN_ADDRESS, "invalid readable RET token should fail");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "invalid readable RET token should not decrement call depth");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for unreadable RET depth test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "unreadable RET depth program should load");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL before unreadable RET should execute");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "CALL before unreadable RET should set depth one");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP) ? 0 : record_failure("unreadable RET depth test should reset ESP to empty stack");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "unreadable RET stack slot should fail through checked memory");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "unreadable RET stack slot should not decrement call depth");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+/// Verifies Phase 72 preserves invalid-CALL-target and stack-write diagnostic precedence.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72_call_depth_preserves_call_precedence(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmIrInstruction invalid_target[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 99U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call MissingMetadata", 0U}
+    };
+    const VmIrInstruction stack_failure[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for call-depth precedence test");
+    failures += expect_status(vm_load_program(&vm, invalid_target, sizeof(invalid_target) / sizeof(invalid_target[0])), VM_EXEC_STATUS_OK, "invalid CALL target precedence program should load");
+    failures += expect_status(vm_set_call_depth_limit(&vm, 1U), VM_EXEC_STATUS_OK, "call-depth precedence test should accept limit one");
+    vm.current_call_depth = 1U;
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_CALL_TARGET, "invalid CALL target should win before call-depth checking");
+    failures += expect_u32(vm_current_call_depth(&vm), 1U, "invalid CALL target should preserve existing depth value");
+
+    vm_deinit(&vm);
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm reinit should succeed for stack-write precedence test");
+    failures += expect_status(vm_load_program(&vm, stack_failure, sizeof(stack_failure) / sizeof(stack_failure[0])), VM_EXEC_STATUS_OK, "CALL stack failure precedence program should load");
+    failures += expect_status(vm_set_call_depth_limit(&vm, 1U), VM_EXEC_STATUS_OK, "CALL stack failure precedence should use limit one");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0U) ? 0 : record_failure("ESP setup for CALL stack failure precedence should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "checked stack write failure should occur after successful depth check");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after CALL stack failure precedence should succeed"));
+    failures += expect_u32(esp, 0U, "CALL stack write failure should preserve ESP");
+    failures += expect_u32(vm_current_call_depth(&vm), 0U, "CALL stack write failure should not increment depth");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 
 
 /// Verifies Phase 61 invalid direct JMP metadata fails before mutation.
@@ -5708,6 +5906,11 @@ int main(void) {
     failures += test_phase71e_invalid_entry_end_mode_rejected();
     failures += test_phase71e_stop_mode_does_not_suppress_helper_fallthrough();
     failures += test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough();
+    failures += test_phase72_call_depth_limit_settings();
+    failures += test_phase72_call_depth_exceeded_rolls_back_rejected_call();
+    failures += test_phase72_call_depth_decrements_on_helper_ret();
+    failures += test_phase72_call_depth_preserved_on_helper_ret_failures();
+    failures += test_phase72_call_depth_preserves_call_precedence();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -5718,6 +5921,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 71F fallthrough fixture migration coverage passed.");
+    puts("Executor tests through Phase 72 call-depth limit coverage passed.");
     return 0;
 }

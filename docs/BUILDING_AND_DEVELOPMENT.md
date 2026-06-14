@@ -13,13 +13,13 @@ Source-of-truth rule:
 
 Current milestone:
 
-- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
-Phase 71F advances project status with fallthrough fixture migration, opposite-mode regression coverage, documentation cleanup, and a narrow conformance fix that treats Irvine32 `exit` as an explicit terminator for procedure-fallthrough diagnostics. Runtime/source-run MASM behavior metadata remains Phase 71E because Phase 71F does not add accepted syntax, change terminal success/failure semantics, add browser settings, or change the source-run output-contract identifier.
+Phase 72 advances runtime/source-run behavior metadata, source-run settings, and the source-run output-contract identifier because direct user-procedure `CALL` execution now has deterministic call-depth resource protection. Source-run settings now include `callDepthLimit`, default `64`, accepted integer range `1..4096`, pre-execution `invalid-call-depth-limit` validation, and runtime `call-depth-exceeded` diagnostics when a committed direct user-procedure `CALL` would exceed the configured limit.
 
 This file is a build and development reference. It does not define supported MASM syntax or runtime behavior. For current syntax and diagnostics, see [`SUPPORTED_SYNTAX.md`](SUPPORTED_SYNTAX.md). For product boundaries and stable behavior rules, see [`FULL_IMPLEMENTATION_SPEC.md`](FULL_IMPLEMENTATION_SPEC.md). For phase order and acceptance criteria, see [`INCREMENTAL_IMPLEMENTATION_GUIDE.md`](INCREMENTAL_IMPLEMENTATION_GUIDE.md). For milestone history, see [`MILESTONE_HISTORY.md`](MILESTONE_HISTORY.md).
 
@@ -33,7 +33,7 @@ Browser/Wasm artifact verification has separate levels:
 
 2. **Checked-in artifact-content verification**
 
-   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-71e-entry-procedure-end-mode-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
+   A binary-content scan of checked-in `web/dist/masm32_sim_core.wasm` may confirm that the artifact contains an expected output-contract string such as `phase-72-call-depth-limit-output-contract-v1`. This is useful stale-artifact evidence, but it is not a rebuild.
 
 3. **Emscripten rebuild verification**
 
@@ -357,7 +357,7 @@ Browser/Wasm artifact compatibility verified through the documented output-contr
 The C source-run JSON field is `sourceRunOutputContract`. Its value is a source-run output-contract version token for the public source-run JSON shape, ordering, serialization, and protocol interpretation. A token may include the milestone in which that output contract was introduced. For example:
 
 ```text
-phase-71e-entry-procedure-end-mode-output-contract-v1
+phase-72-call-depth-limit-output-contract-v1
 ```
 
 The example above is both the token expected by this source tree and an example of the naming convention. A phase-looking prefix in such a token is contract-version naming from the phase that introduced that specific output contract. It is not a separate repository/runtime status field or an absolute value that future output-contract-changing phases must keep.

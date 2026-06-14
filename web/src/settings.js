@@ -6,7 +6,7 @@
  * diagnostic policies through structured browser settings. Phases 57F and 57G
  * add test/protocol-facing startup settings, Phase 59 adds the
  * instructionLimit setting, and Phase 71A adds the optional browser-visible
- * rootRetMode teaching setting, Phase 71D adds procedureFallthroughPolicy, and Phase 71E adds entryProcedureEndMode.
+ * rootRetMode teaching setting, Phase 71D adds procedureFallthroughPolicy, Phase 71E adds entryProcedureEndMode, and Phase 72 adds callDepthLimit.
  * This module keeps the accepted string values, defaults, and
  * Wasm argument mapping in one place so the main thread, worker protocol,
  * and Node tests use the same rules.
@@ -71,9 +71,15 @@ export const ROOT_RET_MODE_STRICT_CALL_FRAME = "strict-call-frame";
 export const DEFAULT_INSTRUCTION_LIMIT = 1000000;
 /** Maximum accepted Phase 59 source-run instruction-count limit. */
 export const MAX_INSTRUCTION_LIMIT = 0xFFFFFFFF;
+/** Default Phase 72 direct user-procedure CALL depth limit. */
+export const DEFAULT_CALL_DEPTH_LIMIT = 64;
+/** Minimum accepted Phase 72 direct user-procedure CALL depth limit. */
+export const MIN_CALL_DEPTH_LIMIT = 1;
+/** Maximum accepted Phase 72 direct user-procedure CALL depth limit. */
+export const MAX_CALL_DEPTH_LIMIT = 4096;
 
-/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number, rootRetMode: string, procedureFallthroughPolicy: string, entryProcedureEndMode: string}} DiagnosticSettings */
-/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number, rootRetMode: number, procedureFallthroughPolicy: number, entryProcedureEndMode: number}} BackendDiagnosticSettings */
+/** @typedef {{memoryRange: string, uninitializedReads: string, undefinedFlagUse: string, compatibilityNotices: string, startupRegisterFlagMode: string, uninitializedStorageVisibleByteMode: string, startupStateSeed: number, instructionLimit: number, rootRetMode: string, procedureFallthroughPolicy: string, entryProcedureEndMode: string, callDepthLimit: number}} DiagnosticSettings */
+/** @typedef {{memoryRange: number, uninitializedReads: number, undefinedFlagUse: number, compatibilityNotices: number, startupRegisterFlagMode: number, uninitializedStorageVisibleByteMode: number, startupStateSeed: number, instructionLimit: number, rootRetMode: number, procedureFallthroughPolicy: number, entryProcedureEndMode: number, callDepthLimit: number}} BackendDiagnosticSettings */
 
 /** Default browser diagnostic and Phase 57F/57G startup settings. */
 export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
@@ -87,7 +93,8 @@ export const DEFAULT_DIAGNOSTIC_SETTINGS = Object.freeze({
   instructionLimit: DEFAULT_INSTRUCTION_LIMIT,
   rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
   procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN,
-  entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM
+  entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM,
+  callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
 });
 
 /** Accepted memory range setting values. */
@@ -266,6 +273,24 @@ function createInvalidInstructionLimitDiagnostic(value) {
 }
 
 /**
+ * Creates a structured UI diagnostic for an invalid Phase 72 call-depth limit.
+ *
+ * @param {unknown} value Invalid value supplied by the caller.
+ * @returns {{kind: string, code: string, message: string, setting: string, value: unknown, acceptedValues: string[]}} Structured UI diagnostic.
+ */
+function createInvalidCallDepthLimitDiagnostic(value) {
+  const acceptedValues = [`${MIN_CALL_DEPTH_LIMIT}..${MAX_CALL_DEPTH_LIMIT}`];
+  return {
+    kind: "settings-error",
+    code: "invalid-call-depth-limit",
+    message: `Invalid source-run setting 'callDepthLimit' value ${String(value)}. Accepted values: ${acceptedValues.join(", ")}.`,
+    setting: "callDepthLimit",
+    value,
+    acceptedValues
+  };
+}
+
+/**
  * Validates and normalizes one setting field.
  *
  * @param {Record<string, unknown>} source Source settings object.
@@ -330,6 +355,27 @@ function normalizeInstructionLimit(source) {
 }
 
 /**
+ * Normalizes the Phase 72 source-run direct user-procedure CALL depth limit.
+ *
+ * @param {Record<string, unknown>} source Source settings object.
+ * @returns {{ok: true, value: number} | {ok: false, diagnostic: ReturnType<typeof createInvalidCallDepthLimitDiagnostic>}} Normalization result.
+ */
+function normalizeCallDepthLimit(source) {
+  const value = Object.prototype.hasOwnProperty.call(source, "callDepthLimit")
+    ? source.callDepthLimit
+    : DEFAULT_DIAGNOSTIC_SETTINGS.callDepthLimit;
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < MIN_CALL_DEPTH_LIMIT || value > MAX_CALL_DEPTH_LIMIT) {
+    return {
+      ok: false,
+      diagnostic: createInvalidCallDepthLimitDiagnostic(value)
+    };
+  }
+
+  return { ok: true, value };
+}
+
+/**
  * Reads diagnostic settings from browser select controls.
  *
  * Collapsed panels keep their controls in the DOM, so hidden presentation state
@@ -363,6 +409,7 @@ export function readDiagnosticSettingsFromControls(
     uninitializedStorageVisibleByteMode: defaults.uninitializedStorageVisibleByteMode,
     startupStateSeed: defaults.startupStateSeed,
     instructionLimit: defaults.instructionLimit,
+    callDepthLimit: defaults.callDepthLimit,
     rootRetMode: rootRetModeControl && rootRetModeControl.value ? rootRetModeControl.value : defaults.rootRetMode,
     procedureFallthroughPolicy: procedureFallthroughPolicyControl && procedureFallthroughPolicyControl.value ? procedureFallthroughPolicyControl.value : defaults.procedureFallthroughPolicy,
     entryProcedureEndMode: entryProcedureEndModeControl && entryProcedureEndModeControl.value ? entryProcedureEndModeControl.value : defaults.entryProcedureEndMode
@@ -377,7 +424,7 @@ export function readDiagnosticSettingsFromControls(
  * Simulator Messages.
  *
  * @param {unknown} settings Candidate settings from a worker RUN_SOURCE payload.
- * @returns {{ok: true, settings: DiagnosticSettings, backendSettings: BackendDiagnosticSettings} | {ok: false, diagnostic: ReturnType<typeof createInvalidSettingDiagnostic> | ReturnType<typeof createInvalidStartupSettingDiagnostic> | ReturnType<typeof createInvalidInstructionLimitDiagnostic>}} Normalization result.
+ * @returns {{ok: true, settings: DiagnosticSettings, backendSettings: BackendDiagnosticSettings} | {ok: false, diagnostic: ReturnType<typeof createInvalidSettingDiagnostic> | ReturnType<typeof createInvalidStartupSettingDiagnostic> | ReturnType<typeof createInvalidInstructionLimitDiagnostic> | ReturnType<typeof createInvalidCallDepthLimitDiagnostic>}} Normalization result.
  */
 export function normalizeDiagnosticSettings(settings) {
   const source = settings === undefined || settings === null ? {} : settings;
@@ -434,6 +481,11 @@ export function normalizeDiagnosticSettings(settings) {
     return instructionLimit;
   }
 
+  const callDepthLimit = normalizeCallDepthLimit(source);
+  if (!callDepthLimit.ok) {
+    return callDepthLimit;
+  }
+
   const rootRetMode = normalizeField(source, "rootRetMode", DEFAULT_DIAGNOSTIC_SETTINGS.rootRetMode, ROOT_RET_MODE_VALUES);
   if (!rootRetMode.ok) {
     return rootRetMode;
@@ -458,6 +510,7 @@ export function normalizeDiagnosticSettings(settings) {
     uninitializedStorageVisibleByteMode: uninitializedStorageVisibleByteMode.value,
     startupStateSeed: startupStateSeed.value,
     instructionLimit: instructionLimit.value,
+    callDepthLimit: callDepthLimit.value,
     rootRetMode: rootRetMode.value,
     procedureFallthroughPolicy: procedureFallthroughPolicy.value,
     entryProcedureEndMode: entryProcedureEndMode.value
@@ -471,7 +524,7 @@ export function normalizeDiagnosticSettings(settings) {
 }
 
 /**
- * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, Phase 59 instruction-limit, Phase 71A root RET, Phase 71D procedure-fallthrough, and Phase 71E entry-procedure end-mode Wasm arguments.
+ * Converts normalized settings to Phase 53E diagnostic, Phase 57F/57G startup, Phase 59 instruction-limit, Phase 71A root RET, Phase 71D procedure-fallthrough, Phase 71E entry-procedure end-mode, and Phase 72 call-depth-limit Wasm arguments.
  *
  * @param {DiagnosticSettings} settings Normalized diagnostic settings.
  * @returns {BackendDiagnosticSettings} Integer enum values passed to the C/Wasm export.
@@ -493,6 +546,7 @@ export function diagnosticSettingsToBackendArguments(settings) {
     instructionLimit: normalized.instructionLimit >>> 0,
     rootRetMode: BACKEND_ROOT_RET_MODE[normalized.rootRetMode],
     procedureFallthroughPolicy: BACKEND_PROCEDURE_FALLTHROUGH_POLICY[normalized.procedureFallthroughPolicy],
-    entryProcedureEndMode: BACKEND_ENTRY_PROCEDURE_END_MODE[normalized.entryProcedureEndMode]
+    entryProcedureEndMode: BACKEND_ENTRY_PROCEDURE_END_MODE[normalized.entryProcedureEndMode],
+    callDepthLimit: normalized.callDepthLimit >>> 0
   };
 }

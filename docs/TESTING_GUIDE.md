@@ -6,13 +6,13 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
-Phase 71F advances test and documentation coverage and verifies a narrow conformance fix that treats Irvine32 `exit` as an explicit terminator for procedure-fallthrough diagnostics. Tests must cover opposite fallthrough fixtures for default `code-stream` versus opt-in `stop-at-entry-end`, all `procedureFallthroughPolicy` values, explicit Irvine32 `exit` termination in both entry-end modes, root `RET` independence from entry-end mode, and static checks proving old implicit selected-entry `ENDP` success fixtures were migrated or explicitly dispositioned.
+Phase 72 adds deterministic call-depth resource protection tests for direct user-procedure `CALL` chains. Tests must cover `callDepthLimit` defaults and accepted range `1..4096`, pre-execution `invalid-call-depth-limit` validation, runtime `call-depth-exceeded` diagnostics before rejected `CALL` mutation, structured source-run JSON fields, rendered Simulator Messages, protocol/settings normalization, absence of call-trace metadata, and regressions for helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`.
 
 
 
@@ -1222,7 +1222,7 @@ For stack/procedure diagnostics, tests must prove:
 - runtime/source-run MASM behavior metadata is advanced only when the target phase introduces or explicitly redefines accepted runtime/source-run behavior; project current-milestone status may advance for accepted fixture, documentation, or conformance-cleanup phases while preserving the prior runtime/source-run behavior phase.
 
 
-For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end mode, and Phase 71F fallthrough fixture migration specifically, tests must prove:
+For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end mode, Phase 71F fallthrough fixture migration, and Phase 72 call-depth resource protection specifically, tests must prove:
 
 - a source-run fixture where the selected entry procedure contains only `ret` completes successfully in default `rootRetMode = "masm32-compatible"`;
 - a source-run fixture where explicit `rootRetMode = "masm32-compatible"` preserves default root `RET` success;
@@ -1237,6 +1237,7 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - Phase 71F opposite fixtures cover explicit Irvine32 `exit` termination in both entry-end modes;
 - Phase 71F opposite fixtures cover root `RET` behavior as governed by `rootRetMode`, not by `entryProcedureEndMode`;
 - Phase 71F static checks reject active fixture descriptions that describe implicit selected-entry `ENDP` default success as current behavior;
+- Phase 72 call-depth tests cover default `callDepthLimit = 64`, accepted values `1`, `64`, and `4096`, rejected invalid values, `call-depth-exceeded`, `invalid-call-depth-limit`, mutation rollback for rejected calls, structured source-run JSON, rendered Simulator Messages, and absence of call-trace metadata;
 - a called non-entry procedure that falls through without RET reports `procedure-fell-through`;
 - root-code-stream RET default success does not read `[ESP]`;
 - root-code-stream RET reached after selected-entry procedure fallthrough also succeeds in compatible mode without reading `[ESP]`;
@@ -1298,7 +1299,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72, the expected token is `phase-72-call-depth-limit-output-contract-v1` because the phase changes source-run settings, runtime diagnostics, structured JSON, rendered Simulator Messages, and protocol interpretation for call-depth resource protection.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

@@ -2,13 +2,13 @@
 
 Current milestone:
 
-- Phase 71F - Fallthrough Test Migration and Opposite Fixtures
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
 Runtime/source-run MASM behavior phase:
 
-- Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting
+- Phase 72 - Call Depth Limit and Call Trace Diagnostics
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 71F adds migration and opposite-fixture coverage for fallthrough-sensitive tests, updates documentation to recommend explicit terminators before compatibility settings, and includes a narrow conformance fix so Irvine32 `exit` is not reported as procedure fallthrough. Phase 71E remains the active runtime/source-run behavior phase: `entryProcedureEndMode` is explicit, default `code-stream` does not treat selected-entry `ENDP` as a terminator, ordinary procedure-boundary fallthrough is governed by `procedureFallthroughPolicy`, and executable code that reaches the end without an explicit terminator reports `code-fell-off-end`.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 72 adds deterministic call-depth resource protection for direct user-procedure `CALL` chains. Source-run settings now include `callDepthLimit`, default `64`, accepted integer range `1..4096`, `invalid-call-depth-limit` validation before execution, and `call-depth-exceeded` runtime diagnostics before an over-limit `CALL` writes a return token or changes VM state. Phase 72 preserves the Phase 71E selected-entry `entryProcedureEndMode` behavior, Phase 71D `procedureFallthroughPolicy`, Phase 71C `code-fell-off-end`, Phase 71 root `RET`, helper `CALL`/`RET`, and Irvine32 `exit` behavior, and it does not expose call-trace metadata.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, and plain near `ret`/`RET` with no operands.
 
@@ -31,6 +31,8 @@ Implemented procedure and termination behavior for the active runtime/source-run
 
 The selected-entry `ENDP` success rule from pre-71C accepted behavior is no longer the default; selected-entry `ENDP` is not an implicit successful terminator. The default behavior is baseline VM code-stream fallthrough plus `procedureFallthroughPolicy` for procedure-boundary crossings and `code-fell-off-end` when executable code ends without an explicit terminator. Phase 71E provides opt-in `entryProcedureEndMode = "stop-at-entry-end"` for beginner-friendly selected-entry boundary completion without changing parser, semantic, root `RET`, or helper `CALL`/`RET` behavior. This behavior is simulator-owned; it must not be described as a native MASM diagnostic, a native x86 CPU trap, a PE loader behavior, a C runtime behavior, or Windows process termination.
 
+Phase 72 adds `callDepthLimit` as a source-run/protocol setting for direct user-procedure `CALL` chains. The setting defaults to `64`, accepts integer values from `1` through `4096`, and rejects invalid values with `invalid-call-depth-limit` before execution. The selected entry procedure itself is not counted as a call frame; committed direct helper calls increment the current call depth until a successfully validated ordinary helper `RET` returns. An over-limit direct `CALL` reports `call-depth-exceeded` before return-token stack writes, `ESP` mutation, IP transfer, flag changes, memory-change rows, Program Console output, or successful terminal status. Phase 72 emits no call trace metadata and no `call-trace-truncated` message.
+
 Source-level stack instructions, procedure frames, argument handling, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
 Implemented and planned fallthrough diagnostics and settings:
@@ -41,6 +43,9 @@ Implemented and planned fallthrough diagnostics and settings:
 | `the-front-fell-off` | 71D implemented | notice, required easter egg | Harmless notice emitted only after `code-fell-off-end` when the responsible procedure name is exactly `front` under ASCII case-insensitive comparison. |
 | `procedure-fell-through` | 71D implemented | warning by default; configurable `off`/`warn`/`error` | Ordinary sequential execution crossed from one procedure range into another without explicit supported control transfer or termination. |
 | `entryProcedureEndMode` | 71E implemented | default `code-stream`; opt-in `stop-at-entry-end` | Compatibility setting for selected-entry `ENDP` auto-stop behavior. |
+| `callDepthLimit` | 72 implemented | default `64`; accepted `1..4096` | Resource limit for committed direct user-procedure `CALL` frames that have not yet returned through a successfully validated ordinary helper `RET`. |
+| `invalid-call-depth-limit` | 72 implemented | settings error | Invalid `callDepthLimit` value rejected before source execution. |
+| `call-depth-exceeded` | 72 implemented | resource-limit-error | Direct user-procedure `CALL` rejected before mutation because the attempted call depth would exceed `callDepthLimit`. |
 
 The implemented `code-fell-off-end` text is:
 

@@ -7,7 +7,7 @@
  * test, inc, dec, and, or, xor, not, shl, sal, shr, sar, rol, ror,
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
- * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL,
+ * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL, Phase 72 call-depth resource protection,
  * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
@@ -106,6 +106,14 @@ static bool vm_exec_procedure_fallthrough_policy_is_valid(VmProcedureFallthrough
 static bool vm_exec_entry_procedure_end_mode_is_valid(VmEntryProcedureEndMode mode) {
     return mode == VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM ||
            mode == VM_ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END;
+}
+
+/// Returns whether a Phase 72 call-depth limit is accepted.
+///
+/// @param limit Candidate limit to inspect.
+/// @return true when @p limit is within the accepted inclusive range.
+static bool vm_exec_call_depth_limit_is_valid(uint32_t limit) {
+    return limit >= (uint32_t)VM_MIN_CALL_DEPTH_LIMIT && limit <= (uint32_t)VM_MAX_CALL_DEPTH_LIMIT;
 }
 
 /// Records one Phase 71D procedure-fallthrough event.
@@ -278,6 +286,30 @@ static void vm_exec_set_memory_diagnostic(
     }
 }
 
+/// Records structured Phase 72 call-depth diagnostic metadata.
+///
+/// @param vm VM whose diagnostic should be updated.
+/// @param instruction Rejected CALL instruction.
+/// @param current_depth Depth before the rejected CALL.
+/// @param attempted_depth Depth that the rejected CALL would have produced.
+/// @param limit Configured call-depth limit.
+static void vm_exec_set_call_depth_diagnostic(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    uint32_t current_depth,
+    uint32_t attempted_depth,
+    uint32_t limit
+) {
+    vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED, instruction);
+    if (vm == NULL) {
+        return;
+    }
+
+    vm->last_diagnostic.current_call_depth = current_depth;
+    vm->last_diagnostic.attempted_call_depth = attempted_depth;
+    vm->last_diagnostic.call_depth_limit = limit;
+}
+
 /// Clears root, helper-fallthrough, and code-falloff procedure metadata.
 ///
 /// @param vm VM instance to mutate. NULL is ignored.
@@ -291,6 +323,7 @@ static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
     vm->has_selected_entry_procedure = false;
     vm->selected_entry_procedure_index = 0U;
     vm->active_helper_return_count = 0U;
+    vm->current_call_depth = 0U;
     vm->root_code_stream_active = false;
     vm->selected_entry_end_stop_eligible = true;
     vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
@@ -3298,12 +3331,14 @@ static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruc
 
 /// Executes one Phase 69 direct user-procedure CALL stack write.
 ///
-/// The helper validates target metadata before mutation, computes the return
-/// token from parser-owned return-target metadata when present, falls back to
-/// the next lowered instruction for hand-authored native fixtures, writes that
-/// token to `ESP - 4` through checked memory, and updates ESP only after the
-/// write succeeds. The caller applies the instruction-pointer transfer after
-/// successful execution so accounting and deltas stay centralized in @ref vm_step.
+/// The helper validates target metadata before mutation, applies the Phase 72
+/// call-depth limit before the implicit stack write, computes the return token
+/// from parser-owned return-target metadata when present, falls back to the
+/// next lowered instruction for hand-authored native fixtures, writes that token
+/// to `ESP - 4` through checked memory, and updates ESP and call depth only
+/// after the write succeeds. The caller applies the instruction-pointer transfer
+/// after successful execution so accounting and deltas stay centralized in
+/// @ref vm_step.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction CALL instruction descriptor.
@@ -3315,6 +3350,8 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     uint32_t esp = 0U;
     uint32_t new_esp = 0U;
     uint32_t return_token = 0U;
+    uint32_t current_depth = 0U;
+    uint32_t attempted_depth = 0U;
 
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -3323,6 +3360,12 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     target_status = vm_exec_validate_call_target(vm, instruction);
     if (target_status != VM_EXEC_STATUS_OK) {
         return target_status;
+    }
+    current_depth = vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
+    attempted_depth = current_depth == UINT32_MAX ? UINT32_MAX : current_depth + 1U;
+    if (attempted_depth > vm->call_depth_limit) {
+        vm_exec_set_call_depth_diagnostic(vm, instruction, current_depth, attempted_depth, vm->call_depth_limit);
+        return VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED;
     }
     if (instruction->source.kind == VM_IR_OPERAND_BRANCH_TARGET) {
         if (!vm_exec_instruction_index_to_pseudo_eip((size_t)instruction->source.immediate, &return_token)) {
@@ -3349,6 +3392,9 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     }
     if (vm->active_helper_return_count < (size_t)UINT32_MAX) {
         vm->active_helper_return_count += 1U;
+    }
+    if (vm->current_call_depth < (size_t)UINT32_MAX) {
+        vm->current_call_depth += 1U;
     }
     vm->root_code_stream_active = false;
 
@@ -3411,6 +3457,9 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
     vm->instruction_pointer = return_index;
     if (vm->active_helper_return_count > 0U) {
         vm->active_helper_return_count -= 1U;
+    }
+    if (vm->current_call_depth > 0U) {
+        vm->current_call_depth -= 1U;
     }
     return VM_EXEC_STATUS_OK;
 }
@@ -3686,6 +3735,7 @@ VmExecStatus vm_init_with_layout_policy(Vm *vm, const VmLayoutPolicy *layout_pol
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
+    vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init_with_layout_policy(&vm->memory, layout_policy);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3723,6 +3773,7 @@ VmExecStatus vm_init(Vm *vm, const VmMemoryConfig *memory_config) {
     vm->root_ret_mode = VM_ROOT_RET_MODE_MASM32_COMPATIBLE;
     vm->procedure_fallthrough_policy = VM_PROCEDURE_FALLTHROUGH_POLICY_WARN;
     vm->entry_procedure_end_mode = VM_ENTRY_PROCEDURE_END_MODE_CODE_STREAM;
+    vm->call_depth_limit = VM_DEFAULT_CALL_DEPTH_LIMIT;
     vm_cpu_init(&vm->cpu);
     memory_status = vm_memory_init(&vm->memory, memory_config);
     if (memory_status != VM_MEMORY_STATUS_OK) {
@@ -3846,6 +3897,30 @@ VmExecStatus vm_set_entry_procedure_end_mode(Vm *vm, VmEntryProcedureEndMode mod
     vm->entry_procedure_end_mode = mode;
     vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
     return VM_EXEC_STATUS_OK;
+}
+
+VmExecStatus vm_set_call_depth_limit(Vm *vm, uint32_t limit) {
+    if (vm == NULL || !vm_exec_call_depth_limit_is_valid(limit)) {
+        if (vm != NULL) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
+        }
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    vm->call_depth_limit = limit;
+    vm_exec_clear_diagnostic(&vm->last_diagnostic, VM_EXEC_STATUS_OK);
+    return VM_EXEC_STATUS_OK;
+}
+
+uint32_t vm_call_depth_limit(const Vm *vm) {
+    return vm != NULL ? vm->call_depth_limit : 0U;
+}
+
+uint32_t vm_current_call_depth(const Vm *vm) {
+    if (vm == NULL) {
+        return 0U;
+    }
+    return vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
 }
 
 void vm_deinit(Vm *vm) {
@@ -4129,7 +4204,7 @@ VmExecStatus vm_step(Vm *vm) {
     before_cpu = vm->cpu;
     status = vm_exec_execute_instruction(vm, instruction);
     if (status != VM_EXEC_STATUS_OK) {
-        if (status != VM_EXEC_STATUS_MEMORY_ERROR) {
+        if (status != VM_EXEC_STATUS_MEMORY_ERROR && status != VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED) {
             vm_exec_set_diagnostic(vm, status, instruction);
         }
         return status;
@@ -4221,6 +4296,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "code-fell-off-end";
         case VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE:
             return "root-ret-disallowed-by-mode";
+        case VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED:
+            return "call-depth-exceeded";
         case VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE:
             return "invalid-root-termination-state";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:

@@ -7,7 +7,7 @@
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
- * signed relational conditional jumps, direct CALL, Phase 71 root/helper plain near RET,
+ * signed relational conditional jumps, direct CALL, Phase 72 call-depth resource protection, Phase 71 root/helper plain near RET,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream end-falloff
  * diagnostics, and Irvine32 exit forms over the currently supported
@@ -48,6 +48,15 @@
 
 /// Maximum procedure boundaries retained for root, helper-fallthrough, and code-falloff checks.
 #define VM_EXEC_MAX_PROCEDURE_BOUNDARIES 128U
+
+/// Default Phase 72 direct user-procedure CALL depth limit.
+#define VM_DEFAULT_CALL_DEPTH_LIMIT 64u
+
+/// Minimum accepted Phase 72 direct user-procedure CALL depth limit.
+#define VM_MIN_CALL_DEPTH_LIMIT 1u
+
+/// Maximum accepted Phase 72 direct user-procedure CALL depth limit.
+#define VM_MAX_CALL_DEPTH_LIMIT 4096u
 
 /// Canonical Phase 68B pseudo-code-address base for displayed EIP.
 #define VM_EXEC_PSEUDO_EIP_BASE 0x00401000U
@@ -92,6 +101,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_CODE_FELL_OFF_END,
     /// Optional Phase 71A strict root-RET mode rejected a root-code-stream RET.
     VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE,
+    /// A direct user-procedure CALL would exceed the configured Phase 72 call-depth limit.
+    VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED,
     /// The VM detected an impossible root/helper termination state.
     VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
@@ -247,6 +258,12 @@ typedef struct VmExecDiagnostic {
     VmMemoryStatus memory_status;
     /// Structured memory diagnostic when a checked memory operation failed.
     VmMemoryDiagnostic memory_diagnostic;
+    /// Current direct user-procedure CALL depth before a rejected CALL.
+    uint32_t current_call_depth;
+    /// Attempted direct user-procedure CALL depth for a rejected CALL.
+    uint32_t attempted_call_depth;
+    /// Configured direct user-procedure CALL depth limit for a rejected CALL.
+    uint32_t call_depth_limit;
 } VmExecDiagnostic;
 
 /// Captures the most recent Phase 71D procedure-fallthrough event.
@@ -297,6 +314,8 @@ typedef struct Vm {
     size_t selected_entry_procedure_index;
     /// Internal count of committed helper return tokens currently pending.
     size_t active_helper_return_count;
+    /// Phase 72 count of committed direct user-procedure CALL frames not yet returned by helper RET.
+    size_t current_call_depth;
     /// Whether execution is currently in the selected-entry root code stream rather than an explicit helper CALL.
     bool root_code_stream_active;
     /// Whether Phase 71E selected-entry boundary auto-stop remains eligible for this run.
@@ -307,6 +326,8 @@ typedef struct Vm {
     VmProcedureFallthroughPolicy procedure_fallthrough_policy;
     /// Selected Phase 71E selected-entry procedure end behavior.
     VmEntryProcedureEndMode entry_procedure_end_mode;
+    /// Configured Phase 72 direct user-procedure CALL depth limit.
+    uint32_t call_depth_limit;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
@@ -424,6 +445,30 @@ VmExecStatus vm_set_procedure_fallthrough_policy(Vm *vm, VmProcedureFallthroughP
 /// @param mode Entry procedure end behavior.
 /// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT for an invalid argument or mode.
 VmExecStatus vm_set_entry_procedure_end_mode(Vm *vm, VmEntryProcedureEndMode mode);
+
+/// Configures the Phase 72 direct user-procedure CALL depth limit.
+///
+/// Accepted values are @ref VM_MIN_CALL_DEPTH_LIMIT through
+/// @ref VM_MAX_CALL_DEPTH_LIMIT inclusive. The default is
+/// @ref VM_DEFAULT_CALL_DEPTH_LIMIT. Invalid values leave the previous limit
+/// unchanged and set an invalid-argument diagnostic.
+///
+/// @param vm VM instance to mutate.
+/// @param limit Maximum committed direct user-procedure CALL depth.
+/// @return VM_EXEC_STATUS_OK on success, or VM_EXEC_STATUS_INVALID_ARGUMENT.
+VmExecStatus vm_set_call_depth_limit(Vm *vm, uint32_t limit);
+
+/// Returns the configured Phase 72 direct user-procedure CALL depth limit.
+///
+/// @param vm VM instance to inspect.
+/// @return Configured limit, or zero when @p vm is NULL.
+uint32_t vm_call_depth_limit(const Vm *vm);
+
+/// Returns the current Phase 72 direct user-procedure CALL depth.
+///
+/// @param vm VM instance to inspect.
+/// @return Current depth, or zero when @p vm is NULL.
+uint32_t vm_current_call_depth(const Vm *vm);
 
 /// Returns the most recent Phase 71D procedure-fallthrough diagnostic metadata.
 ///

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   COMPATIBILITY_NOTICES_OFF,
   COMPATIBILITY_NOTICES_ON,
+  DEFAULT_CALL_DEPTH_LIMIT,
   MEMORY_RANGE_DECLARED_OBJECT_STRICT,
   MEMORY_RANGE_DECLARED_OBJECT_WARN,
   MEMORY_RANGE_REGION_ONLY,
@@ -61,7 +62,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     instructionLimit: 1000000,
     rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
     procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN,
-    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM
+    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
 
   const normalized = normalizeDiagnosticSettings(undefined);
@@ -78,7 +80,8 @@ test("defaults match Phase 57G teaching and startup profile", () => {
     instructionLimit: 1000000,
     rootRetMode: 0,
     procedureFallthroughPolicy: 1,
-    entryProcedureEndMode: 0
+    entryProcedureEndMode: 0,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
 });
 
@@ -100,7 +103,8 @@ test("partial settings fill missing values from defaults", () => {
     instructionLimit: 1000000,
     rootRetMode: ROOT_RET_MODE_MASM32_COMPATIBLE,
     procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_WARN,
-    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM
+    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_CODE_STREAM,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
   assert.deepEqual(normalized.backendSettings, {
     memoryRange: 1,
@@ -113,7 +117,8 @@ test("partial settings fill missing values from defaults", () => {
     instructionLimit: 1000000,
     rootRetMode: 0,
     procedureFallthroughPolicy: 1,
-    entryProcedureEndMode: 0
+    entryProcedureEndMode: 0,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
 });
 
@@ -145,7 +150,8 @@ test("all Phase 53E memory range settings map to backend enum values", () => {
       instructionLimit: 1000000,
       rootRetMode: 0,
       procedureFallthroughPolicy: 1,
-    entryProcedureEndMode: 0
+      entryProcedureEndMode: 0,
+      callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
     });
   }
 });
@@ -174,7 +180,8 @@ test("all teaching diagnostic and compatibility notice settings map to backend e
       instructionLimit: 1000000,
       rootRetMode: 0,
       procedureFallthroughPolicy: 1,
-    entryProcedureEndMode: 0
+      entryProcedureEndMode: 0,
+      callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
     });
   }
 });
@@ -229,6 +236,24 @@ test("invalid Phase 59 instruction limit returns source-run ui-error diagnostic"
   }
 });
 
+
+test("Phase 72 callDepthLimit maps to backend value and rejects invalid values", () => {
+  for (const callDepthLimit of [1, 64, 4096]) {
+    const normalized = normalizeDiagnosticSettings({ callDepthLimit });
+    assert.equal(normalized.ok, true);
+    assert.equal(normalized.settings.callDepthLimit, callDepthLimit);
+    assert.equal(normalized.backendSettings.callDepthLimit, callDepthLimit);
+  }
+
+  for (const callDepthLimit of [0, -1, 4097, 1.5, "64", "abc", null, true, false]) {
+    const normalized = normalizeDiagnosticSettings({ callDepthLimit });
+    assert.equal(normalized.ok, false);
+    assert.equal(normalized.diagnostic.kind, "settings-error");
+    assert.equal(normalized.diagnostic.code, "invalid-call-depth-limit");
+    assert.equal(normalized.diagnostic.setting, "callDepthLimit");
+    assert.deepEqual(normalized.diagnostic.acceptedValues, ["1..4096"]);
+  }
+});
 
 test("Phase 71A root RET mode maps to backend enum values", () => {
   const normalized = normalizeDiagnosticSettings({ rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME });
@@ -321,7 +346,8 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     instructionLimit: 1000000,
     rootRetMode: ROOT_RET_MODE_STRICT_CALL_FRAME,
     procedureFallthroughPolicy: PROCEDURE_FALLTHROUGH_POLICY_ERROR,
-    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END
+    entryProcedureEndMode: ENTRY_PROCEDURE_END_MODE_STOP_AT_ENTRY_END,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
   assert.deepEqual(diagnosticSettingsToBackendArguments(settings), {
     memoryRange: 5,
@@ -334,6 +360,7 @@ test("collapsed Diagnostic settings controls still produce RUN_SOURCE settings",
     instructionLimit: 1000000,
     rootRetMode: 1,
     procedureFallthroughPolicy: 2,
-    entryProcedureEndMode: 1
+    entryProcedureEndMode: 1,
+    callDepthLimit: DEFAULT_CALL_DEPTH_LIMIT
   });
 });
