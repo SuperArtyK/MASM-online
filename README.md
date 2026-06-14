@@ -6,10 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 72 - Call Depth Limit and Call Trace Diagnostics |
-| Runtime/source-run MASM behavior phase | Phase 72 - Call Depth Limit and Call Trace Diagnostics |
+| Current milestone | Phase 72A - PUSH and POP Stack Instructions |
 
-Phase 72 adds deterministic call-depth resource protection for direct user-procedure `CALL` chains. Source-run settings now include `callDepthLimit`, defaulting to `64` and accepting only integer values from `1` through `4096`; invalid values stop before execution with `invalid-call-depth-limit`. When a committed direct user-procedure `CALL` would exceed the configured limit, execution stops with `call-depth-exceeded` before writing the return token, mutating `ESP`, transferring control, changing flags, creating memory-change rows, or writing Program Console output. Existing helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, and Irvine32 `exit` behavior remain independent, and Phase 72 does not expose call-trace metadata.
+Phase 72A implements the first source-level 32-bit stack-transfer subset: `push` accepts 32-bit registers, 32-bit immediates, and DWORD memory sources; `pop` accepts 32-bit registers and DWORD memory destinations. These instructions use the checked VM memory path, preserve modeled flags, expose successful source-level `push` stack writes and `pop` memory-destination writes as `memoryChanges`, and preserve no-partial-mutation behavior on fatal stack read/write failures. Existing helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, call-depth limits, and Irvine32 `exit` behavior remain independent.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -33,6 +32,8 @@ At a high level, the current subset includes:
 - displayed `EIP` derived from VM pseudo-code-address control state and rejected as a source-level instruction operand or user symbol;
 - direct user-procedure `call ProcedureName` with checked internal pseudo-EIP return-token stack writes;
 - configurable `callDepthLimit` for direct user-procedure `CALL` chains, default `64` and accepted range `1..4096`, with over-limit `call-depth-exceeded` before rejected `CALL` mutation;
+- source-level 32-bit `push` for registers, immediates, and DWORD memory sources;
+- source-level 32-bit `pop` for registers and DWORD memory destinations;
 - plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer when a helper call return is pending;
 - root-code-stream `ret`/`RET` success by default without stack reads when no helper return is pending, including after ordinary fallthrough from the selected entry into later procedure text;
 - optional `rootRetMode = "strict-call-frame"` teaching mode, which rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`;
@@ -51,7 +52,6 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- source-level `push` and `pop`;
 - `leave` and `ret imm16`;
 - stack frames, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 72: Call Depth Limit and Call Trace Diagnostics.
+  Milestone 72A: PUSH and POP Stack Instructions.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,22 +18,22 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 72: Call Depth Limit and Call Trace Diagnostics</p>
+        <p class="muted">Milestone 72A: PUSH and POP Stack Instructions</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
 .data
-value DWORD 7
+first DWORD 11111111h
+second DWORD 22222222h
+result DWORD 0
 .code
 main PROC
-    call Helper       ; Phase 72 counts committed direct helper CALL frames
-    exit              ; Explicit Irvine32 terminator after the helper returns
+    push DWORD PTR first
+    push DWORD PTR second
+    pop eax
+    pop DWORD PTR result
+    exit
 main ENDP
-
-Helper PROC
-    mov eax, value    ; Under default callDepthLimit = 64, this helper returns normally
-    ret
-Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

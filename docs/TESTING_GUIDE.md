@@ -6,13 +6,9 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 72 - Call Depth Limit and Call Trace Diagnostics
+- Phase 72A - PUSH and POP Stack Instructions
 
-Runtime/source-run MASM behavior phase:
-
-- Phase 72 - Call Depth Limit and Call Trace Diagnostics
-
-Phase 72 adds deterministic call-depth resource protection tests for direct user-procedure `CALL` chains. Tests must cover `callDepthLimit` defaults and accepted range `1..4096`, pre-execution `invalid-call-depth-limit` validation, runtime `call-depth-exceeded` diagnostics before rejected `CALL` mutation, structured source-run JSON fields, rendered Simulator Messages, protocol/settings normalization, absence of call-trace metadata, and regressions for helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`.
+Phase 72A adds tests for source-level 32-bit `push` and `pop`. Tests must cover parser acceptance and rejection, executor stack semantics, ESP-sensitive timing, source-run `memoryChanges`, checked-memory diagnostics, rendered Simulator Messages, strict planned-access validation, no-partial-mutation behavior, and regressions for helper `CALL`/`RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`.
 
 
 
@@ -1250,7 +1246,7 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
-- static documentation checks continue to list RET imm16, RETF, LEAVE, source-level PUSH/POP, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
+- static documentation checks continue to list RET imm16, RETF, LEAVE, stack frames, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them.
 
 ## Current-status documentation clutter checks
 
@@ -1299,7 +1295,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72, the expected token is `phase-72-call-depth-limit-output-contract-v1` because the phase changes source-run settings, runtime diagnostics, structured JSON, rendered Simulator Messages, and protocol interpretation for call-depth resource protection.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72A, the expected token is `phase-72a-push-pop-stack-output-contract-v1` because the phase changes accepted syntax, runtime stack semantics, structured JSON memory-change rows, rendered Simulator Messages, and protocol interpretation for source-level PUSH/POP stack transfers.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

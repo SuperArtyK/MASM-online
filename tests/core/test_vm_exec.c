@@ -5704,6 +5704,115 @@ static int test_phase63_cmp_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 72A source-level PUSH and POP stack transfers.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_stack_transfers(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t value = 0U;
+    uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_PUSH, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "push eax", 0U},
+        {VM_IR_OPCODE_PUSH, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x22222222U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 2U, "push 22222222h", 1U},
+        {VM_IR_OPCODE_POP, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "pop ebx", 2U},
+        {VM_IR_OPCODE_POP, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "pop eax", 3U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 72A PUSH/POP test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "PUSH/POP program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x11111111U) ? 0 : record_failure("EAX setup should succeed for PUSH/POP test");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "push eax should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after push eax"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "push eax should decrement ESP by four");
+    failures += (vm_memory_read_u32(&vm.memory, esp, &value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("push eax stack readback should succeed"));
+    failures += expect_u32(value, 0x11111111U, "push eax should write source value to stack");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 0U, 4U, "push eax should expose four stack byte changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "push eax should preserve flags");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "push immediate should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after push immediate"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 8U, "second push should decrement ESP by four again");
+    failures += (vm_memory_read_u32(&vm.memory, esp, &value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("push immediate stack readback should succeed"));
+    failures += expect_u32(value, 0x22222222U, "push immediate should write immediate value to stack");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "pop ebx should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read should succeed after pop"));
+    failures += expect_u32(ebx, 0x22222222U, "first pop should read the last pushed value");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "register POP stack read should not expose memory-change rows");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "pop eax should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read should succeed after pop"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after final pop"));
+    failures += expect_u32(eax, 0x11111111U, "second pop should read the earlier pushed value");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "balanced PUSH/POP should restore ESP");
+
+    return failures;
+}
+
+/// Verifies Phase 72A ESP-sensitive POP timing and failure rollback.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_pop_esp_timing_and_rollback(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t value = 0U;
+    const VmExecDelta *delta = NULL;
+    const uint32_t original_esp = VM_MEMORY_DEFAULT_STACK_TOP - 8U;
+    const VmIrInstruction pop_esp_program[] = {
+        {VM_IR_OPCODE_POP, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_ESP, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "pop esp", 0U}
+    };
+    const VmIrInstruction pop_mem_esp_program[] = {
+        {VM_IR_OPCODE_POP, {VM_IR_OPERAND_MEMORY_REGISTER, 32U, 0U, VM_REGISTER_ESP, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "pop DWORD PTR [esp]", 0U}
+    };
+    const VmIrInstruction failed_push_program[] = {
+        {VM_IR_OPCODE_PUSH, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "push eax", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for pop esp timing");
+    failures += expect_status(vm_load_program(&vm, pop_esp_program, sizeof(pop_esp_program) / sizeof(pop_esp_program[0])), VM_EXEC_STATUS_OK, "pop esp program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, original_esp) ? 0 : record_failure("ESP setup should succeed for pop esp");
+    failures += (vm_memory_write_u32(&vm.memory, original_esp, 0x12345678U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("pop esp stack setup should write DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "pop esp should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after pop esp"));
+    failures += expect_u32(esp, 0x12345678U, "pop esp final ESP should be the popped value");
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm reinit should succeed for pop [esp] timing");
+    failures += expect_status(vm_load_program(&vm, pop_mem_esp_program, sizeof(pop_mem_esp_program) / sizeof(pop_mem_esp_program[0])), VM_EXEC_STATUS_OK, "pop [esp] program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, original_esp) ? 0 : record_failure("ESP setup should succeed for pop [esp]");
+    failures += (vm_memory_write_u32(&vm.memory, original_esp, 0xAABBCCDDU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("pop [esp] stack setup should write DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "pop DWORD PTR [esp] should execute");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after pop [esp]"));
+    failures += expect_u32(esp, original_esp + 4U, "pop DWORD PTR [esp] should leave ESP at original ESP plus four");
+    failures += (vm_memory_read_u32(&vm.memory, original_esp + 4U, &value, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("pop [esp] destination readback should succeed"));
+    failures += expect_u32(value, 0xAABBCCDDU, "pop DWORD PTR [esp] should write to post-pop ESP address");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 0U, 4U, "memory-destination POP should expose destination byte changes only");
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm reinit should succeed for failed PUSH rollback");
+    failures += expect_status(vm_load_program(&vm, failed_push_program, sizeof(failed_push_program) / sizeof(failed_push_program[0])), VM_EXEC_STATUS_OK, "failed push program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0U) ? 0 : record_failure("ESP setup should succeed for failed push");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("flag setup should succeed for failed push");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "push with ESP underflow should fail through checked memory helper");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after failed push"));
+    failures += expect_u32(esp, 0U, "failed push should leave ESP unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed push should preserve flags");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "failed push should not expose memory-change rows");
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "failed push should not report register mutation");
+
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5911,6 +6020,8 @@ int main(void) {
     failures += test_phase72_call_depth_decrements_on_helper_ret();
     failures += test_phase72_call_depth_preserved_on_helper_ret_failures();
     failures += test_phase72_call_depth_preserves_call_precedence();
+    failures += test_phase72a_push_pop_stack_transfers();
+    failures += test_phase72a_pop_esp_timing_and_rollback();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -5921,6 +6032,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 72 call-depth limit coverage passed.");
+    puts("Executor tests through Phase 72A PUSH/POP stack coverage passed.");
     return 0;
 }

@@ -81,17 +81,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 72 JSON consumers.
+/// Numeric runtime/source-run behavior phase reported for Phase 72A JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 72U
 
-/// Suffix for the current Phase 72 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
+/// Suffix for the current Phase 72A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
 
-/// Full name of the current Phase 72 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 72 - Call Depth Limit and Call Trace Diagnostics"
+/// Full name of the current Phase 72A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 72A - PUSH and POP Stack Instructions"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 72 call-depth resource diagnostics.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-72-call-depth-limit-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 72A stack-transfer diagnostics and memory changes.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-72a-push-pop-stack-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -1883,6 +1883,77 @@ static bool masm32_sim_wasm_collect_memory_change_for_operand(
     return false;
 }
 
+/// Collects the source-level PUSH stack-write memory change from the last-step delta.
+///
+/// Internal CALL return-token writes remain intentionally hidden from public
+/// source-run memory-change rows. Phase 72A exposes only explicit source-level
+/// PUSH stack writes through this helper.
+///
+/// @param storage Source-run storage to mutate.
+/// @param vm VM containing the latest execution delta and memory state.
+/// @param delta Latest execution delta containing changed memory bytes.
+/// @return true when a stack memory-change row was appended.
+static bool masm32_sim_wasm_collect_stack_push_memory_change(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    const VmExecDelta *delta
+) {
+    const VmMemoryRegion *stack_region = NULL;
+    uint32_t write_address = 0U;
+    uint8_t old_bytes[4] = {0U, 0U, 0U, 0U};
+    uint8_t new_bytes[4] = {0U, 0U, 0U, 0U};
+    uint8_t byte_index = 0U;
+    size_t change_index = 0U;
+    bool has_changed_byte = false;
+
+    if (storage == NULL || vm == NULL || delta == NULL || delta->instruction.opcode != VM_IR_OPCODE_PUSH ||
+        storage->memory_change_count >= (size_t)MASM32_SIM_WASM_MAX_SYMBOLIC_MEMORY_CHANGES ||
+        !masm32_sim_wasm_delta_write_address(delta, &write_address)) {
+        return false;
+    }
+
+    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL || write_address < stack_region->base || write_address + 4U > stack_region->base + stack_region->size) {
+        return false;
+    }
+
+    for (byte_index = 0U; byte_index < 4U; byte_index += 1U) {
+        uint8_t current_byte = 0U;
+        (void)vm_memory_read_u8(&vm->memory, write_address + byte_index, &current_byte, NULL);
+        old_bytes[byte_index] = current_byte;
+        new_bytes[byte_index] = current_byte;
+    }
+
+    for (change_index = 0U; change_index < delta->memory_change_count; change_index += 1U) {
+        const VmMemoryByteChange *byte_change = &delta->memory_changes[change_index];
+        if (byte_change->address >= write_address && byte_change->address < write_address + 4U) {
+            uint8_t relative = (uint8_t)(byte_change->address - write_address);
+            old_bytes[relative] = byte_change->old_value;
+            new_bytes[relative] = byte_change->new_value;
+            has_changed_byte = true;
+        }
+    }
+
+    if (has_changed_byte) {
+        Masm32SimSymbolicMemoryChange *change = &storage->memory_changes[storage->memory_change_count];
+        change->symbol_name = "stack";
+        change->data_type_name = "DWORD";
+        change->address = write_address;
+        change->byte_offset = write_address - stack_region->base;
+        change->has_element_index = false;
+        change->element_index = 0U;
+        change->width_bits = 32U;
+        change->old_value = masm32_sim_wasm_decode_u32(old_bytes, 4U);
+        change->new_value = masm32_sim_wasm_decode_u32(new_bytes, 4U);
+        change->source_line = delta->instruction.source_line;
+        change->source_text = delta->instruction.source_text;
+        storage->memory_change_count += 1U;
+        return true;
+    }
+
+    return false;
+}
+
 /// Collects one symbol-aware logical memory write from the last-step delta.
 ///
 /// @param storage Source-run storage to mutate.
@@ -1897,6 +1968,10 @@ static void masm32_sim_wasm_collect_memory_change(Masm32SimWasmRunStorage *stora
 
     delta = vm_last_delta(vm);
     if (delta == NULL || !delta->has_instruction || delta->memory_change_count == 0U) {
+        return;
+    }
+
+    if (masm32_sim_wasm_collect_stack_push_memory_change(storage, vm, delta)) {
         return;
     }
 
@@ -2656,6 +2731,38 @@ static void masm32_sim_wasm_mark_initialized_writes(Masm32SimWasmRunStorage *sto
     }
 }
 
+/// Returns whether an access range is wholly inside the active stack region.
+///
+/// Allocated-object validation describes declared data objects. Until a later
+/// phase defines stack-object metadata, strict declared-object validation must
+/// not reject valid implicit stack accesses merely because they are outside
+/// `.data`, `.DATA?`, or `.CONST` objects.
+///
+/// @param layout_policy Selected layout policy, or NULL for fixed default.
+/// @param address First byte of the access range.
+/// @param size_bytes Number of bytes in the access range.
+/// @return true when the range starts and ends inside the stack region.
+static bool masm32_sim_wasm_access_range_is_stack(
+    const VmLayoutPolicy *layout_policy,
+    uint32_t address,
+    uint32_t size_bytes
+) {
+    VmLayoutRegionKind region = VM_LAYOUT_REGION_COUNT;
+    uint32_t region_base = 0U;
+    uint32_t region_limit = 0U;
+    uint32_t access_end = 0U;
+
+    if (size_bytes == 0U || !vm_object_map_inclusive_end(address, size_bytes, &access_end)) {
+        return false;
+    }
+    if (!masm32_sim_wasm_find_start_region(layout_policy, address, &region, &region_base, &region_limit)) {
+        return false;
+    }
+
+    (void)region_base;
+    return region == VM_LAYOUT_REGION_STACK && access_end < region_limit;
+}
+
 /// Applies allocated-object validation to all accesses from the last instruction.
 ///
 /// @param storage Source-run storage to mutate.
@@ -2682,10 +2789,19 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses(
     }
 
     for (index = 0U; index < delta->memory_access_count; index += 1U) {
+        const VmExecMemoryAccess *access = &delta->memory_accesses[index];
+        uint32_t size_bytes = 0U;
+
         if (delta->instruction.opcode == VM_IR_OPCODE_CALL || delta->instruction.opcode == VM_IR_OPCODE_RET) {
             continue;
         }
-        if (!masm32_sim_wasm_validate_object_access(storage, &delta->instruction, &delta->memory_accesses[index], validation_mode, layout_policy)) {
+        if (access->width_bits != 0U && (access->width_bits % 8U) == 0U) {
+            size_bytes = (uint32_t)(access->width_bits / 8U);
+            if (masm32_sim_wasm_access_range_is_stack(layout_policy, access->address, size_bytes)) {
+                continue;
+            }
+        }
+        if (!masm32_sim_wasm_validate_object_access(storage, &delta->instruction, access, validation_mode, layout_policy)) {
             return VM_EXEC_STATUS_MEMORY_ERROR;
         }
     }
@@ -2948,6 +3064,16 @@ static size_t masm32_sim_wasm_collect_planned_reads(
                 masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
             }
             break;
+        case VM_IR_OPCODE_PUSH:
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &instruction->source, width_bits);
+            }
+            break;
+        case VM_IR_OPCODE_POP: {
+            VmIrOperand stack_read = vm_ir_operand_memory_register(VM_REGISTER_ESP, 0, 0U, 32U);
+            masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &stack_read, 32U);
+            break;
+        }
         case VM_IR_OPCODE_RET: {
             VmIrOperand stack_read = vm_ir_operand_memory_register(VM_REGISTER_ESP, 0, 0U, 32U);
             masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &stack_read, 32U);
@@ -3074,6 +3200,26 @@ static size_t masm32_sim_wasm_collect_planned_object_accesses(
                 masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
             }
             break;
+        case VM_IR_OPCODE_PUSH: {
+            VmIrOperand stack_write = vm_ir_operand_memory_register(VM_REGISTER_ESP, -4, 0U, 32U);
+            if (masm32_sim_wasm_operand_width(&instruction->source, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &instruction->source, VM_EXEC_MEMORY_ACCESS_READ, width_bits);
+            }
+            masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &stack_write, VM_EXEC_MEMORY_ACCESS_WRITE, 32U);
+            break;
+        }
+        case VM_IR_OPCODE_POP: {
+            VmIrOperand stack_read = vm_ir_operand_memory_register(VM_REGISTER_ESP, 0, 0U, 32U);
+            VmIrOperand destination = instruction->destination;
+            masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &stack_read, VM_EXEC_MEMORY_ACCESS_READ, 32U);
+            if (destination.kind == VM_IR_OPERAND_MEMORY_REGISTER && destination.reg == VM_REGISTER_ESP) {
+                destination.immediate += 4U;
+            }
+            if (masm32_sim_wasm_operand_width(&destination, &width_bits)) {
+                masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &destination, VM_EXEC_MEMORY_ACCESS_WRITE, width_bits);
+            }
+            break;
+        }
         case VM_IR_OPCODE_CALL: {
             VmIrOperand stack_write = vm_ir_operand_memory_register(VM_REGISTER_ESP, -4, 0U, 32U);
             masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &stack_write, VM_EXEC_MEMORY_ACCESS_WRITE, 32U);
@@ -3178,6 +3324,9 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses_before_step(
             continue;
         }
         size_bytes = (uint32_t)(accesses[index].width_bits / 8U);
+        if (masm32_sim_wasm_access_range_is_stack(layout_policy, address, size_bytes)) {
+            continue;
+        }
         if (!masm32_sim_wasm_planned_access_passes_level1(vm, address, size_bytes, accesses[index].kind)) {
             continue;
         }

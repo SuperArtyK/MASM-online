@@ -3046,7 +3046,7 @@ static int test_phase53d_compatibility_notice_parser_paths(void) {
     failures += expect_string_contains(buffers.diagnostics[4].message, "TITLE is accepted", "Listing notice should name TITLE");
     failures += expect_string_contains(buffers.diagnostics[5].message, "SUBTITLE is accepted", "Listing notice should name SUBTITLE");
     failures += expect_string_contains(buffers.diagnostics[6].message, "PAGE is accepted", "Listing notice should name PAGE");
-    failures += expect_string_contains(buffers.diagnostics[2].message, "runtime stack instructions", ".stack notice should describe deferred runtime stack behavior");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "source-level PUSH/POP stack transfers", ".stack notice should describe Phase 72A stack-transfer support");
     failures += expect_string_contains(buffers.diagnostics[3].message, "macro expansion", "Macros.inc notice should describe macro expansion limitation");
 
     return failures;
@@ -6456,6 +6456,97 @@ static int test_phase57m_segment_symbol_casemap_and_regressions(void) {
 /// Verifies metadata helper behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
+/// Verifies Phase 72A source-level PUSH and POP accepted forms parse to IR.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_parse_to_ir(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *source =
+        ".data\n"
+        "value DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    push eax\n"
+        "    push 1234h\n"
+        "    push -1\n"
+        "    push DWORD PTR value\n"
+        "    push DWORD PTR [esp]\n"
+        "    pop eax\n"
+        "    pop esp\n"
+        "    pop DWORD PTR value\n"
+        "    pop DWORD PTR [esp]\n"
+        "main ENDP\n"
+        "END main\n";
+
+    memset(&result, 0, sizeof(result));
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 72A PUSH/POP accepted forms should parse");
+    failures += expect_size(result.instruction_count, 9U, "Phase 72A accepted source should emit nine instructions");
+    if (result.instruction_count >= 9U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_PUSH, "push eax should emit PUSH");
+        failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_PUSH, "push immediate should emit PUSH");
+        failures += expect_u32(buffers.instructions[1].source.width_bits, 32U, "push immediate should normalize to 32-bit width");
+        failures += expect_u32((uint32_t)buffers.instructions[4].opcode, (uint32_t)VM_IR_OPCODE_PUSH, "push DWORD PTR [esp] should emit PUSH");
+        failures += expect_u32((uint32_t)buffers.instructions[5].opcode, (uint32_t)VM_IR_OPCODE_POP, "pop eax should emit POP");
+        failures += expect_u32((uint32_t)buffers.instructions[6].opcode, (uint32_t)VM_IR_OPCODE_POP, "pop esp should emit POP");
+        failures += expect_u32((uint32_t)buffers.instructions[8].opcode, (uint32_t)VM_IR_OPCODE_POP, "pop DWORD PTR [esp] should emit POP");
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 72A rejects unsupported PUSH and POP forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_parse_error_paths(void) {
+    int failures = 0;
+    size_t index = 0U;
+    static const struct {
+        const char *source_line;
+        VmParserDiagnosticCode expected_code;
+        const char *message_fragment;
+    } cases[] = {
+        {"push", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "one operand"},
+        {"pop", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "one operand"},
+        {"push ax", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"push al", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"push BYTE PTR [esp]", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"push WORD PTR [esp]", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"push QWORD PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, ""},
+        {"push SQWORD PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, ""},
+        {"push FAR PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, ""},
+        {"pop ax", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"pop al", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"pop BYTE PTR [esp]", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"pop WORD PTR [esp]", VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, "32-bit"},
+        {"pop QWORD PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, ""},
+        {"pop SQWORD PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, ""},
+        {"pop FAR PTR value", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, ""},
+        {"pop 1234h", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, ""},
+        {"pop OFFSET value", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, ""},
+        {"pop [esp]", VM_PARSER_DIAGNOSTIC_AMBIGUOUS_MEMORY_WIDTH, ""}
+    };
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        ParserTestBuffers buffers;
+        VmParserResult result;
+        char source[256];
+        memset(&result, 0, sizeof(result));
+        (void)snprintf(
+            source,
+            sizeof(source),
+            ".data\nvalue DWORD 0\n.code\nmain PROC\n    %s\nmain ENDP\nEND main\n",
+            cases[index].source_line
+        );
+        failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid PUSH/POP form should produce diagnostic status");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].expected_code, "invalid PUSH/POP diagnostic code should match");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "invalid PUSH/POP diagnostic wording should explain the rejected form");
+    }
+
+    return failures;
+}
+
 static int test_metadata_helpers(void) {
     int failures = 0;
 
@@ -7324,6 +7415,8 @@ int main(void) {
     failures += test_phase57m_segment_symbol_reference_diagnostics();
     failures += test_phase57m_segment_symbol_definition_diagnostics();
     failures += test_phase57m_segment_symbol_casemap_and_regressions();
+    failures += test_phase72a_push_pop_parse_to_ir();
+    failures += test_phase72a_push_pop_parse_error_paths();
     failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 
@@ -7332,6 +7425,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Minimal parser tests passed.\n");
+    printf("Parser tests through Phase 72A PUSH/POP stack coverage passed.\n");
     return 0;
 }

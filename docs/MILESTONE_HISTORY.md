@@ -18,10 +18,10 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 72 - Call Depth Limit and Call Trace Diagnostics
+Phase 72A - PUSH and POP Stack Instructions
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 72 - Call Depth Limit and Call Trace Diagnostics
+Phase 72A - PUSH and POP Stack Instructions
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
@@ -31,7 +31,7 @@ Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository
 
 Phase 69B was output/message-ordering cleanup only. At its completion it kept Phase 69 as the latest runtime/source-run MASM behavior phase while adding explicit final-register display separators and ensuring the startup-state notice is serialized/rendered first whenever execution begins and startup notices are enabled. Phase 70 has since advanced the runtime/source-run MASM behavior phase.
 
-Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The latest recorded source tree for this history entry expects `phase-72-call-depth-limit-output-contract-v1`. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
+Phase 69C is artifact/test-infrastructure cleanup only. It adds the separate `sourceRunOutputContract` JSON field, corresponding browser/protocol stale-output-contract detection, and tests for matching, missing, and stale contract metadata. The latest recorded source tree for this history entry now expects `phase-72a-push-pop-stack-output-contract-v1`; historical Phase 69C evidence may still mention older contract tokens from the milestone when they were current. Phase 69C does not change accepted MASM syntax, rejected MASM syntax, parser behavior, VM instruction semantics, Program Console output, memory values, register values, public source-run memory-change rows, or the runtime/source-run MASM behavior phase. Phase 70A builds on that protocol/artifact boundary by requiring exact runtime/source-run behavior metadata; older, newer, missing, malformed, or suffix-mismatched runtime metadata now produces the existing stale-artifact diagnostic by default.
 
 Phase 69 implements direct near `CALL` instructions to user `PROC` entries. Successful direct user-procedure `CALL` writes the pseudo-EIP return token to the simulated stack through checked VM memory helpers, updates `ESP`, preserves modeled flags and flag-validity metadata, and transfers control to the target procedure entry. That stack write is internal VM execution state; current public source-run JSON does not expose it as a visible `memoryChanges` row. Failed internal stack writes use the central checked-memory diagnostic path and stop before committing the call transfer.
 
@@ -45,8 +45,13 @@ Phase 68B displayed `EIP` behavior remains active: displayed `EIP` is derived VM
 
 Phase 68A `ESP` startup remains active: `ESP` initializes from the active stack region when a program is loaded, direct supported writes to `ESP` remain legal, and direct user-procedure `CALL` uses the active `ESP` value for its checked return-token stack write.
 
-Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. Phase 71 adds selected-entry root RET termination and called non-entry procedure fallthrough diagnostics. Source-level PUSH/POP, procedure frames, Irvine32 routine dispatch beyond virtual `exit`, `INVOKE`, `PROTO`, `LOCAL`, `USES`, and `ADDR` remain future-owned.
+Phase 70 preserves Phase 67A selected-entry source-run behavior, Phase 68 call-target metadata, Phase 68B pseudo-EIP display tokens, and Phase 69 direct CALL mechanics. Phase 71 adds selected-entry root RET termination and called non-entry procedure fallthrough diagnostics. Phase 72A adds source-level 32-bit PUSH/POP stack transfers. Procedure frames, Irvine32 routine dispatch beyond virtual `exit`, `INVOKE`, `PROTO`, `LOCAL`, `USES`, and `ADDR` remain future-owned.
 
+
+
+## Phase 72A - PUSH and POP Stack Instructions
+
+Phase 72A implements the first source-level 32-bit stack-transfer subset. `push` accepts 32-bit registers, 32-bit immediates, and DWORD memory sources; `pop` accepts 32-bit registers and DWORD memory destinations. The executor routes stack reads/writes through checked VM memory helpers, preserves modeled flags, handles `push esp`, `pop esp`, and `pop DWORD PTR [esp]` timing explicitly, and preserves no-partial-mutation behavior on fatal failures. Source-run metadata advances to `phase-72a-push-pop-stack-output-contract-v1`; successful source-level PUSH stack writes and POP memory-destination writes are exposed as public `memoryChanges`, while internal CALL/RET return-token stack mechanics remain hidden. Procedure frames, `RET imm16`, `LEAVE`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, calling conventions, and Irvine32 routine dispatch remain future-owned.
 
 ## Phase 72 - Call Depth Limit and Call Trace Diagnostics
 

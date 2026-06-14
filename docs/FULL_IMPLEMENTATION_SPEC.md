@@ -3555,7 +3555,7 @@ The required staging is:
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
-Procedure and stack phases must not weaken the project-wide memory-access invariant. Any feature that performs an implicit stack read or write must compute the final effective address and final byte range before mutation and route the access through the central checked VM memory helpers. This includes CALL return-token writes, RET return-token reads, future source-level PUSH and POP, frame setup, frame teardown, PROC USES saves/restores, LOCAL allocation, RET imm16 cleanup, and Irvine32 routine stack effects.
+Procedure and stack phases must not weaken the project-wide memory-access invariant. Any feature that performs an implicit stack read or write must compute the final effective address and final byte range before mutation and route the access through the central checked VM memory helpers. This includes CALL return-token writes, RET return-token reads, source-level PUSH and POP, frame setup, frame teardown, PROC USES saves/restores, LOCAL allocation, RET imm16 cleanup, and Irvine32 routine stack effects.
 
 Mandatory Level 1 VM memory safety always applies to implicit stack accesses. Address arithmetic overflow detection, byte-range containment, region permission checks, `.CONST` write protection, invalid-region diagnostics, invalid-range diagnostics, permission diagnostics, and no-partial-mutation behavior remain mandatory.
 
@@ -5830,7 +5830,7 @@ A realistic unsupported program should produce a concise set of structured diagn
 - MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
 - high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
 - unsupported `CALL` forms beyond direct user-procedure CALL, such as Irvine32 routine calls, external/API calls, ordinary-label targets, register targets, memory targets, and indirect calls;
-- `RET imm16`, `RETF`, `LEAVE`, source-level stack instructions, procedure frames, and Irvine32 callable routine dispatch until their owning phases implement those features;
+- `RET imm16`, `RETF`, `LEAVE`, stack frames, and Irvine32 callable routine dispatch until their owning phases implement those features;
 - loop-family instructions, indirect/register/memory/immediate branch targets, and branch distance/type overrides until their owning phases are implemented.
 
 Already-implemented branch forms must not be described as unsupported in current source-of-truth text. Direct `jmp label`, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps are current implemented behavior and should follow their implemented diagnostics and execution rules.

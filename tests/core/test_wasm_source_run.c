@@ -17,7 +17,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-72-call-depth-limit-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-72a-push-pop-stack-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -8500,7 +8500,7 @@ static int test_phase53d_default_compatibility_notices_continue_execution(void) 
     failures += expect_json_contains(json, "compatibility-metadata-only", ".stack compatibility notice should use compatibility-metadata-only");
     failures += expect_json_contains(json, "compatibility-limited", ".model and Macros.inc compatibility notices should use compatibility-limited");
     failures += expect_json_contains(json, ".686 is accepted for MASM compatibility", "Processor notice should name the accepted directive");
-    failures += expect_json_contains(json, "runtime stack instructions", ".stack notice should explain deferred source-level stack instruction behavior");
+    failures += expect_json_contains(json, "source-level PUSH/POP stack transfers", ".stack notice should explain Phase 72A stack-transfer support");
     failures += expect_json_contains(json, "macro expansion", "Macros.inc notice should explain macro expansion limitation");
     failures += expect_json_contains(json, "TITLE is accepted as a listing/documentation directive", "Listing notice should name TITLE");
     failures += expect_json_contains(json, "PAGE is accepted as a listing/documentation directive", "Listing notice should name PAGE");
@@ -9456,7 +9456,7 @@ static int test_phase58_label_source_run_behavior(void) {
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":72", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":3", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -9569,7 +9569,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":72", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9823,7 +9823,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":72", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -10187,7 +10187,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":72", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -10399,8 +10399,8 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":72", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
-    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72 should report current output-contract metadata");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "current source-run output contract should be reported");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
     failures += expect_json_contains(success_copy, "\"ESP\":{\"hex\":\"00900000h\",\"unsigned\":9437184}", "CALL/RET should restore ESP to the empty-stack top");
@@ -11269,10 +11269,10 @@ static int test_phase71f_fallthrough_opposite_fixtures_source_run(void) {
     return failures;
 }
 
-/// Verifies Phase 71E runtime/source-run status metadata is emitted by source-run JSON.
+/// Verifies current Phase 72A runtime/source-run status metadata is emitted by source-run JSON.
 ///
 /// @return Number of failures.
-static int test_phase71e_source_run_phase_metadata(void) {
+static int test_current_source_run_phase_metadata(void) {
     const char *json = masm32_sim_wasm_run_source_json(
         ".code\n"
         "main PROC\n"
@@ -11282,9 +11282,9 @@ static int test_phase71e_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":72", "Runtime metadata should report numeric Phase 72 metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 72 should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Phase 72 should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72 should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 72A should report the suffix field");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Phase 72A should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72A should report separate source-run output-contract metadata");
     failures += expect_json_contains(json, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71E should serialize the default entry procedure end mode");
 
     return failures;
@@ -11738,7 +11738,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":72", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"\"", "Helper-before-entry source should report current suffix metadata");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"A\"", "Helper-before-entry source should report current suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
@@ -12842,7 +12842,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"\"", ".CONST ? fixture should report the current runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -13562,7 +13562,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"\"", ".code read should report the current runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -13755,7 +13755,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"\"", "segment diagnostics should report the current runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -14380,7 +14380,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":72", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Phase 72 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Phase 72A should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":3", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":3", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -14995,6 +14995,169 @@ static const char *run_source_with_call_depth_limit(const char *source, unsigned
     );
 }
 
+/// Verifies Phase 72A source-level PUSH/POP source-run semantics and memory-change rows.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_source_run_stack_semantics(void) {
+    int failures = 0;
+    char json[TEST_JSON_COPY_CAPACITY];
+    copy_source_run_json(json, sizeof(json), masm32_sim_wasm_run_source_json(
+        ".data\n"
+        "value DWORD 33333333h\n"
+        "out DWORD 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 11111111h\n"
+        "    push eax\n"
+        "    push 22222222h\n"
+        "    push DWORD PTR value\n"
+        "    pop ecx\n"
+        "    pop DWORD PTR out\n"
+        "    pop ebx\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+
+    failures += expect_json_contains(json, "\"ok\":true", "Phase 72A PUSH/POP source-run program should complete");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 72A PUSH/POP source-run should report suffix metadata");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72A PUSH/POP source-run should report current output contract");
+    failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"11111111h\"", "PUSH/POP source-run should leave EAX source value intact");
+    failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"11111111h\"", "PUSH/POP source-run should pop first pushed value last");
+    failures += expect_json_contains(json, "\"ECX\":{\"hex\":\"33333333h\"", "PUSH/POP source-run should pop DWORD memory source value first");
+    failures += expect_json_contains(json, "\"ESP\":{\"hex\":\"00900000h\"", "Balanced PUSH/POP source-run should restore ESP");
+    failures += expect_json_contains(json, "\"symbol\":\"stack\"", "Source-level PUSH should expose stack memory-change rows");
+    failures += expect_json_contains(json, "\"sourceText\":\"push eax\"", "PUSH stack memory-change row should preserve source text");
+    failures += expect_json_contains(json, "\"sourceText\":\"push DWORD PTR value\"", "PUSH memory-source stack row should preserve source text");
+    failures += expect_json_contains(json, "\"symbol\":\"out\"", "POP memory destination should expose destination memory-change row");
+    failures += expect_json_contains(json, "\"sourceText\":\"pop DWORD PTR out\"", "POP memory destination row should preserve source text");
+
+    return failures;
+}
+
+/// Verifies Phase 72A source-level PUSH/POP error paths preserve no-partial-mutation behavior.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_source_run_error_paths(void) {
+    int failures = 0;
+    char width_json[TEST_JSON_COPY_CAPACITY];
+    char empty_pop_json[TEST_JSON_COPY_CAPACITY];
+    char invalid_push_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(width_json, sizeof(width_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    push ax\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(width_json, "\"ok\":false", "unsupported PUSH width should fail source-run parsing");
+    failures += expect_json_contains(width_json, "invalid-operand-size", "unsupported PUSH width should report structured diagnostic code");
+    failures += expect_json_contains(width_json, "32-bit source-level stack transfers", "unsupported PUSH width should render explanatory diagnostic wording");
+
+    copy_source_run_json(empty_pop_json, sizeof(empty_pop_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    pop eax\n"
+        "    mov ebx, 12345678h\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(empty_pop_json, "\"ok\":false", "empty-stack POP should fail through checked memory");
+    failures += expect_json_contains(empty_pop_json, "invalid-address", "empty-stack POP should report checked-memory diagnostic code");
+    failures += expect_json_contains(empty_pop_json, "\"EAX\":{\"hex\":\"00000000h\"", "empty-stack POP should not mutate EAX");
+    failures += expect_json_contains(empty_pop_json, "\"EBX\":{\"hex\":\"00000000h\"", "empty-stack POP should stop before following instruction");
+    failures += expect_json_contains(empty_pop_json, "\"ESP\":{\"hex\":\"00900000h\"", "empty-stack POP should preserve ESP");
+    failures += expect_json_contains(empty_pop_json, "\"memoryChanges\":[]", "empty-stack POP should not expose memory-change rows");
+
+    copy_source_run_json(invalid_push_json, sizeof(invalid_push_json), masm32_sim_wasm_run_source_json(
+        ".code\n"
+        "main PROC\n"
+        "    mov esp, 0\n"
+        "    mov eax, 12345678h\n"
+        "    push eax\n"
+        "    mov ebx, 87654321h\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(invalid_push_json, "\"ok\":false", "invalid-stack PUSH should fail through checked memory");
+    failures += expect_json_contains(invalid_push_json, "invalid-address", "invalid-stack PUSH should report checked-memory diagnostic code");
+    failures += expect_json_contains(invalid_push_json, "\"EAX\":{\"hex\":\"12345678h\"", "failed PUSH should preserve source register");
+    failures += expect_json_contains(invalid_push_json, "\"EBX\":{\"hex\":\"00000000h\"", "failed PUSH should stop before following instruction");
+    failures += expect_json_contains(invalid_push_json, "\"ESP\":{\"hex\":\"00000000h\"", "failed PUSH should preserve externally visible ESP");
+    failures += expect_json_contains(invalid_push_json, "\"memoryChanges\":[]", "failed PUSH should not expose memory-change rows");
+
+    return failures;
+}
+
+/// Verifies Phase 72A PUSH/POP participate in strict planned-access policies before mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase72a_push_pop_source_run_planned_access_policies(void) {
+    int failures = 0;
+    char push_uninitialized_json[TEST_JSON_COPY_CAPACITY];
+    char stack_object_json[TEST_JSON_COPY_CAPACITY];
+    char pop_object_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(push_uninitialized_json, sizeof(push_uninitialized_json), masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data?\n"
+        "value DWORD ?\n"
+        ".code\n"
+        "main PROC\n"
+        "    push DWORD PTR value\n"
+        "    mov eax, 12345678h\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_UNINITIALIZED_READ_STRICT
+    ));
+    failures += expect_json_contains(push_uninitialized_json, "\"ok\":false", "strict uninitialized PUSH source should stop before execution");
+    failures += expect_json_contains(push_uninitialized_json, "uninitialized-read", "PUSH memory source should participate in planned-read diagnostics");
+    failures += expect_json_contains(push_uninitialized_json, "\"instructionCount\":0", "strict PUSH planned-read failure should stop before stepping PUSH");
+    failures += expect_json_contains(push_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\"", "strict PUSH planned-read failure should not execute following instruction");
+    failures += expect_json_contains(push_uninitialized_json, "\"ESP\":{\"hex\":\"00900000h\"", "strict PUSH planned-read failure should preserve ESP");
+    failures += expect_json_contains(push_uninitialized_json, "\"memoryChanges\":[]", "strict PUSH planned-read failure should not expose stack memory changes");
+
+    copy_source_run_json(stack_object_json, sizeof(stack_object_json), masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 11223344h\n"
+        "    push eax\n"
+        "    pop ebx\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    ));
+    failures += expect_json_contains(stack_object_json, "\"ok\":true", "strict object validation should not reject valid stack PUSH/POP transfers");
+    failures += expect_json_not_contains(stack_object_json, "object-bounds-violation", "valid stack PUSH/POP should not reuse declared-object diagnostics as stack-object validation");
+    failures += expect_json_contains(stack_object_json, "\"EBX\":{\"hex\":\"11223344h\"", "strict object validation should allow PUSH then POP to transfer the value");
+    failures += expect_json_contains(stack_object_json, "\"ESP\":{\"hex\":\"00900000h\"", "strict object validation should allow balanced PUSH/POP to restore ESP");
+    failures += expect_json_contains(stack_object_json, "\"symbol\":\"stack\"", "allowed stack PUSH should still expose a stack memory-change row");
+
+    copy_source_run_json(pop_object_json, sizeof(pop_object_json), masm32_sim_wasm_run_source_json_with_memory_validation_mode(
+        ".data\n"
+        "slot DWORD 11223344h\n"
+        "tiny BYTE 0\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov esp, OFFSET slot\n"
+        "    pop DWORD PTR tiny\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT
+    ));
+    failures += expect_json_contains(pop_object_json, "\"ok\":false", "strict object POP destination should stop before mutation");
+    failures += expect_json_contains(pop_object_json, "object-bounds-violation", "POP memory destination should participate in planned-write diagnostics");
+    failures += expect_json_contains(pop_object_json, "\"instructionCount\":1", "strict POP planned-write failure should stop before stepping POP");
+    failures += expect_json_contains(pop_object_json, "\"ESP\":{\"hex\":\"00500000h\"", "strict POP planned-write failure should leave ESP at original POP value");
+    failures += expect_json_contains(pop_object_json, "\"EAX\":{\"hex\":\"00000000h\"", "strict POP planned-write failure should not execute following instruction");
+    failures += expect_json_contains(pop_object_json, "\"memoryChanges\":[]", "strict POP planned-write failure should not expose destination memory change");
+    failures += expect_json_not_contains(pop_object_json, "\"symbol\":\"tiny\"", "strict POP planned-write failure should not expose destination memory change");
+
+    return failures;
+}
+
 /// Verifies Phase 72 source-run metadata exposes the default callDepthLimit.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -15010,9 +15173,9 @@ static int test_phase72_call_depth_source_run_default_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":72", "Phase 72 default source-run metadata should report numeric phase");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 72 default source-run metadata should report empty phase suffix");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72 - Call Depth Limit and Call Trace Diagnostics\"", "Phase 72 default source-run metadata should report full phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72 default source-run metadata should report call-depth output contract");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 72 default source-run metadata should report Phase 72A suffix");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 72A - PUSH and POP Stack Instructions\"", "Phase 72 default source-run metadata should report full phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72A default source-run metadata should report PUSH/POP output contract");
     failures += expect_json_contains(json, "\"callDepthLimit\":64", "default source-run JSON should expose callDepthLimit 64");
     failures += expect_json_not_contains(json, "call-trace-truncated", "default Phase 72 source-run JSON should not emit call trace metadata");
 
@@ -15435,12 +15598,15 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase71d_procedure_fallthrough_policy_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71d_procedure_fallthrough_policy_source_run_behavior},
     {"test_phase71e_entry_procedure_end_mode_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71e_entry_procedure_end_mode_source_run_behavior},
     {"test_phase71f_fallthrough_opposite_fixtures_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71f_fallthrough_opposite_fixtures_source_run},
+    {"test_phase72a_push_pop_source_run_stack_semantics", SOURCE_RUN_TEST_CORE, test_phase72a_push_pop_source_run_stack_semantics},
+    {"test_phase72a_push_pop_source_run_error_paths", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase72a_push_pop_source_run_error_paths},
+    {"test_phase72a_push_pop_source_run_planned_access_policies", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase72a_push_pop_source_run_planned_access_policies},
     {"test_phase72_call_depth_source_run_default_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase72_call_depth_source_run_default_metadata},
     {"test_phase72_recursive_call_depth_limit_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase72_recursive_call_depth_limit_source_run},
     {"test_phase72_valid_call_depth_limit_bounds_and_root_ret_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase72_valid_call_depth_limit_bounds_and_root_ret_source_run},
     {"test_phase72_exact_call_depth_limit_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase72_exact_call_depth_limit_source_run},
     {"test_phase72_invalid_call_depth_limit_source_run", SOURCE_RUN_TEST_SETTINGS, test_phase72_invalid_call_depth_limit_source_run},
-    {"test_phase71e_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_phase71e_source_run_phase_metadata},
+    {"test_current_source_run_phase_metadata", SOURCE_RUN_TEST_MEMORY_LAYOUT, test_current_source_run_phase_metadata},
     {"test_phase71b_source_run_diagnostic_wording_cleanup", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase71b_source_run_diagnostic_wording_cleanup},
     {"test_phase68b_eip_pseudo_display_and_rejections", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase68b_eip_pseudo_display_and_rejections},
     {"test_phase67a_entry_procedure_runtime_boundary_source_run", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase67a_entry_procedure_runtime_boundary_source_run},
@@ -15544,7 +15710,7 @@ int main(int argc, char **argv) {
     if (has_filter) {
         printf("Source-run %s fixture-family tests passed (%lu fixtures).\n", source_run_family_name(requested_family), (unsigned long)selected_count);
     } else {
-        puts("Source execution tests for current source-run parser, runtime, memory, diagnostics, procedure metadata, stack-startup, and pseudo-EIP behavior passed.");
+        puts("Source execution tests through Phase 72A PUSH/POP stack behavior passed.");
     }
     return 0;
 }

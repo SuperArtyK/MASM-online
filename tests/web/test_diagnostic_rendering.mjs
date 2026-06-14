@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72A - PUSH and POP Stack Instructions. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72 - Call Depth Limit and Call Trace Diagnostics. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 72A - PUSH and POP Stack Instructions. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2592,8 +2592,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2620,7 +2620,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2647,7 +2647,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2672,7 +2672,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2696,7 +2696,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2722,7 +2722,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2794,7 +2794,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2840,7 +2840,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3013,8 +3013,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3041,8 +3041,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,8 +3069,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3096,8 +3096,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -5364,8 +5364,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5426,8 +5426,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5486,8 +5486,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5523,8 +5523,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5574,8 +5574,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5615,8 +5615,8 @@ END main
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
   assert.equal(defaultResult.json.phase, 72);
-  assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(defaultResult.json.phaseSuffix, "A");
+  assert.equal(defaultResult.json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5637,8 +5637,8 @@ END main
   });
   assertRunStatus(stopResult.json, true, "ok");
   assert.equal(stopResult.json.phase, 72);
-  assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(stopResult.json.phaseSuffix, "A");
+  assert.equal(stopResult.json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5679,7 +5679,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
   const message = json.simulatorMessages[json.simulatorMessages.length - 1];
@@ -5742,8 +5742,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5776,8 +5776,8 @@ END front
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5866,8 +5866,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 72 - Call Depth Limit and Call Trace Diagnostics");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 72A - PUSH and POP Stack Instructions");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6863,7 +6863,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7144,7 +7144,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 72);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -7616,7 +7616,7 @@ END main
     {
       kind: "simulator-notice",
       code: "compatibility-metadata-only",
-      message: ".stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
+      message: ".stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
       line: 3,
       column: 1,
       byteOffset: 26,
@@ -7658,7 +7658,7 @@ END main
   assertRenderedEquals("phase53d-compatibility-notices", source, rawJson, rendered, [
     "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
     "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
-    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
@@ -7700,7 +7700,7 @@ END main
     "",
     "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
     "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
-    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
@@ -8698,6 +8698,50 @@ END main
   });
   assertNoExecutionComplete(json.simulatorMessages);
   assertRenderedEquals("phase57corr2-compact-negative-advanced-rejection", source, rawJson, rendered, "[unsupported-feature] unsupported-scaled-index line 6, column 30, byte offset 86, span length 1: Scaled-index memory operands are not supported yet.");
+});
+
+
+test("Phase 72A renders PUSH/POP stack-transfer diagnostics", () => {
+  const widthSource = `.code
+main PROC
+    push ax
+main ENDP
+END main
+`;
+  const widthFixture = runFixture("phase72a-push-width-diagnostic", widthSource);
+  assert.equal(widthFixture.json.ok, false, widthFixture.rawJson);
+  assert.equal(widthFixture.rendered.includes("[assembly-error] invalid-operand-size line 3"), true);
+  assert.equal(widthFixture.rendered.includes("PUSH supports only 32-bit source-level stack transfers"), true);
+
+  const popSource = `.code
+main PROC
+    pop eax
+    mov ebx, 12345678h
+main ENDP
+END main
+`;
+  const popFixture = runFixture("phase72a-empty-pop-diagnostic", popSource);
+  assert.equal(popFixture.json.ok, false, popFixture.rawJson);
+  assert.equal(popFixture.rendered.includes("[runtime-error] invalid-address line 3"), true);
+  assert.equal(popFixture.rendered.includes("Invalid memory read at 00900000h for 4 bytes"), true);
+  assert.equal(popFixture.rawJson.includes("\"memoryChanges\":[]"), true);
+
+  const plannedReadSource = `.data?
+value DWORD ?
+.code
+main PROC
+    push DWORD PTR value
+    mov eax, 12345678h
+main ENDP
+END main
+`;
+  const plannedReadFixture = runFixture("phase72a-push-planned-read-diagnostic", plannedReadSource, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-strict"
+  });
+  assert.equal(plannedReadFixture.json.ok, false, plannedReadFixture.rawJson);
+  assert.equal(plannedReadFixture.rendered.includes("[runtime-error] uninitialized-read line 5"), true);
+  assert.equal(plannedReadFixture.rendered.includes("reads 4 bytes from value + 0"), true);
+  assert.equal(plannedReadFixture.rawJson.includes("\"memoryChanges\":[]"), true);
 });
 
 

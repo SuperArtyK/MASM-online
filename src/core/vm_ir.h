@@ -138,6 +138,10 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_CALL,
     /// Plain near RET that consumes a checked pseudo-EIP return token from the stack.
     VM_IR_OPCODE_RET,
+    /// Source-level 32-bit PUSH stack transfer.
+    VM_IR_OPCODE_PUSH,
+    /// Source-level 32-bit POP stack transfer.
+    VM_IR_OPCODE_POP,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

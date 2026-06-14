@@ -9,8 +9,8 @@
  * current executor. Conditional control-flow transfer is implemented for direct
  * labels and procedure-entry labels; direct CALL is implemented only for user
  * procedure entries, and no-operand plain RET is lowered for the executor's
- * helper/root semantics. Source-level stack instructions, RET imm16, stack
- * frames, scaled-index addressing, Irvine32 routine bodies, and full MASM
+ * helper/root semantics. Phase 72A source-level PUSH/POP stack transfers
+ * are supported; RET imm16, stack frames, scaled-index addressing, Irvine32 routine bodies, and full MASM
  * expression parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
@@ -4447,6 +4447,14 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_RET;
         return true;
     }
+    if (vm_parser_token_equals(token, "push")) {
+        *out_opcode = VM_IR_OPCODE_PUSH;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "pop")) {
+        *out_opcode = VM_IR_OPCODE_POP;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4665,6 +4673,8 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_RET ||
            opcode == VM_IR_OPCODE_EXIT;
 }
+
+
 
 /// Returns whether an opcode uses sign/zero-extension width rules.
 ///
@@ -8392,6 +8402,187 @@ static bool vm_parser_emit_instruction(
     return true;
 }
 
+/// Returns whether an opcode is a Phase 72A source-level stack transfer.
+///
+/// @param opcode Opcode to inspect.
+/// @return true for PUSH and POP.
+static bool vm_parser_opcode_is_stack_transfer(VmIrOpcode opcode) {
+    return opcode == VM_IR_OPCODE_PUSH || opcode == VM_IR_OPCODE_POP;
+}
+
+/// Returns the uppercase mnemonic for a Phase 72A stack-transfer instruction.
+///
+/// @param opcode Opcode to inspect.
+/// @return "PUSH", "POP", or "stack instruction" for invalid input.
+static const char *vm_parser_stack_transfer_mnemonic(VmIrOpcode opcode) {
+    if (opcode == VM_IR_OPCODE_PUSH) {
+        return "PUSH";
+    }
+    if (opcode == VM_IR_OPCODE_POP) {
+        return "POP";
+    }
+    return "stack instruction";
+}
+
+/// Reports the Phase 72A unsupported stack operand-width diagnostic.
+///
+/// @param state Parser state to mutate.
+/// @param opcode Stack-transfer opcode being parsed.
+/// @param token Token associated with the unsupported width.
+static void vm_parser_report_unsupported_stack_width(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *token) {
+    char message[192];
+    (void)snprintf(
+        message,
+        sizeof(message),
+        "%s supports only 32-bit source-level stack transfers in MASM32 Educational Mode. Use a 32-bit register, immediate, or DWORD memory operand.",
+        vm_parser_stack_transfer_mnemonic(opcode)
+    );
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_OPERAND_SIZE, token, message);
+}
+
+/// Validates a Phase 72A PUSH source operand.
+///
+/// PUSH accepts one 32-bit register, one 32-bit immediate, or one DWORD memory
+/// source. Untyped register-indirect memory must already have been rejected by
+/// unary memory-width resolution before this helper is called.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param source Source operand to validate and normalize.
+/// @param source_token Token associated with the source operand.
+/// @return true when the PUSH source is accepted.
+static bool vm_parser_validate_push_operand(VmParserState *state, VmIrOperand *source, const VmLexerToken *source_token) {
+    uint8_t width_bits = 0U;
+
+    if (state == NULL || source == NULL) {
+        return false;
+    }
+
+    if (source->kind == VM_IR_OPERAND_IMMEDIATE) {
+        source->width_bits = 32U;
+        return true;
+    }
+
+    if (source->kind == VM_IR_OPERAND_REGISTER || vm_parser_operand_is_memory(source)) {
+        if (!vm_parser_resolve_operand_width(source, &width_bits)) {
+            vm_parser_report_ambiguous_memory_width(state, source_token);
+            return false;
+        }
+        if (width_bits != 32U) {
+            vm_parser_report_unsupported_stack_width(state, VM_IR_OPCODE_PUSH, source_token);
+            return false;
+        }
+        return true;
+    }
+
+    vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, source_token, "PUSH requires a 32-bit register, immediate, or DWORD memory source.");
+    return false;
+}
+
+/// Validates a Phase 72A POP destination operand.
+///
+/// POP accepts one 32-bit register or one DWORD memory destination. Immediate,
+/// OFFSET, byte, word, QWORD, and SQWORD forms remain outside this phase.
+///
+/// @param state Parser state to mutate when diagnostics are needed.
+/// @param destination Destination operand to validate.
+/// @param destination_token Token associated with the destination operand.
+/// @return true when the POP destination is accepted.
+static bool vm_parser_validate_pop_operand(VmParserState *state, const VmIrOperand *destination, const VmLexerToken *destination_token) {
+    uint8_t width_bits = 0U;
+
+    if (state == NULL || destination == NULL) {
+        return false;
+    }
+
+    if (destination->kind != VM_IR_OPERAND_REGISTER && !vm_parser_operand_is_memory(destination)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, destination_token, "POP requires a 32-bit register or DWORD memory destination.");
+        return false;
+    }
+
+    if (!vm_parser_resolve_operand_width(destination, &width_bits)) {
+        vm_parser_report_ambiguous_memory_width(state, destination_token);
+        return false;
+    }
+    if (width_bits != 32U) {
+        vm_parser_report_unsupported_stack_width(state, VM_IR_OPCODE_POP, destination_token);
+        return false;
+    }
+
+    return true;
+}
+
+/// Parses one Phase 72A source-level PUSH or POP instruction.
+///
+/// The parser keeps PUSH as a source operand and POP as a destination operand so
+/// existing IR read/write helpers and diagnostics retain their source spans and
+/// memory-width behavior. Extra operands are rejected with stack-specific wording.
+///
+/// @param state Parser state to mutate.
+/// @param opcode Stack-transfer opcode being parsed.
+/// @param mnemonic_token Source mnemonic token used for emitted metadata.
+/// @return true when the instruction was parsed and emitted.
+static bool vm_parser_parse_stack_transfer_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token) {
+    VmIrOperand destination = vm_ir_operand_none();
+    VmIrOperand source = vm_ir_operand_none();
+    const VmLexerToken *operand_token = vm_parser_current_token(state);
+    const char *mnemonic = vm_parser_stack_transfer_mnemonic(opcode);
+    char message[96];
+
+    if (state == NULL || mnemonic_token == NULL || !vm_parser_opcode_is_stack_transfer(opcode)) {
+        return false;
+    }
+
+    if (vm_parser_is_line_end_token(operand_token)) {
+        (void)snprintf(message, sizeof(message), "%s takes exactly one operand.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, mnemonic_token, message);
+        return false;
+    }
+
+    if (opcode == VM_IR_OPCODE_PUSH) {
+        if (!vm_parser_parse_source_operand(state, &source)) {
+            return false;
+        }
+        if (vm_parser_resolve_unary_memory_width(state, opcode, &source, operand_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
+        if (!vm_parser_validate_push_operand(state, &source, operand_token)) {
+            return false;
+        }
+    } else {
+        if (operand_token != NULL &&
+            (operand_token->kind == VM_LEXER_TOKEN_NUMBER || operand_token->kind == VM_LEXER_TOKEN_CHARACTER ||
+             operand_token->kind == VM_LEXER_TOKEN_PLUS || operand_token->kind == VM_LEXER_TOKEN_MINUS ||
+             operand_token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
+             (operand_token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(operand_token, "OFFSET")))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, operand_token, "POP does not accept an immediate operand. Use a 32-bit register or DWORD memory destination.");
+            return false;
+        }
+        if (!vm_parser_parse_destination_operand(state, &destination)) {
+            return false;
+        }
+        if (vm_parser_resolve_unary_memory_width(state, opcode, &destination, operand_token) != VM_PARSER_MEMORY_WIDTH_RESOLVED) {
+            return false;
+        }
+        if (!vm_parser_validate_pop_operand(state, &destination, operand_token)) {
+            return false;
+        }
+        if (!vm_parser_reject_static_const_write(state, opcode, &destination, &source, operand_token, NULL)) {
+            return false;
+        }
+    }
+
+    if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        (void)snprintf(message, sizeof(message), "%s takes exactly one operand.", mnemonic);
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), message);
+        return false;
+    }
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+}
+
 /// Returns whether a token names the Irvine32 `exit` virtual terminator.
 ///
 /// @param token Token to inspect.
@@ -8556,6 +8747,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
 
     if (opcode == VM_IR_OPCODE_IMUL) {
         return vm_parser_parse_imul_instruction(state, mnemonic_token);
+    }
+
+    if (vm_parser_opcode_is_stack_transfer(opcode)) {
+        return vm_parser_parse_stack_transfer_instruction(state, opcode, mnemonic_token);
     }
 
     if (vm_parser_opcode_is_implicit_accumulator_source(opcode)) {
@@ -9482,7 +9677,7 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
         state,
         VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
         stack_token,
-        ".stack size is recorded as parser metadata and contributes to ESP startup in layout-policy runs; runtime stack instructions and procedure frames remain deferred."
+        ".stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred."
     );
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);

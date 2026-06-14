@@ -8,14 +8,14 @@
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL, Phase 72 call-depth resource protection,
- * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination,
+ * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
  * end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
- * stack region at startup; source-level stack instructions, procedure frames,
+ * stack region at startup; source-level PUSH/POP is supported, while procedure frames,
  * RET imm16, and non-exit Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -876,6 +876,249 @@ static VmExecStatus vm_exec_write_operand(
 ///
 /// @param operand Operand to inspect.
 /// @return true for register and memory-address operands.
+
+
+/// Reads a checked 32-bit value from an absolute simulated memory address.
+///
+/// @param vm VM instance whose memory should be read.
+/// @param instruction Instruction associated with diagnostics.
+/// @param address Effective simulated address to read.
+/// @param out_value Receives the DWORD value on success.
+/// @return Executor status for the checked read.
+static VmExecStatus vm_exec_read_u32_at_address(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    uint32_t address,
+    uint32_t *out_value
+) {
+    VmMemoryDiagnostic memory_diagnostic;
+    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+
+    if (vm == NULL || out_value == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+    memory_status = vm_memory_read_u32(&vm->memory, address, out_value, &memory_diagnostic);
+    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, address, 32U, memory_status);
+    if (!vm_memory_status_succeeded(memory_status)) {
+        vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
+        return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Writes a checked 32-bit value to an absolute simulated memory address.
+///
+/// @param vm VM instance whose memory should be written.
+/// @param instruction Instruction associated with diagnostics.
+/// @param address Effective simulated address to write.
+/// @param value DWORD value to write.
+/// @return Executor status for the checked write.
+static VmExecStatus vm_exec_write_u32_at_address(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    uint32_t address,
+    uint32_t value
+) {
+    VmMemoryDiagnostic memory_diagnostic;
+    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+
+    if (vm == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+    memory_status = vm_memory_write_u32(&vm->memory, address, value, &memory_diagnostic);
+    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_WRITE, address, 32U, memory_status);
+    if (!vm_memory_status_succeeded(memory_status)) {
+        vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
+        return VM_EXEC_STATUS_MEMORY_ERROR;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Resolves a memory operand while optionally substituting a post-POP ESP value.
+///
+/// Phase 72A POP memory destinations that use ESP as the base register compute
+/// their effective address from post-pop ESP while remaining externally atomic.
+/// This helper mirrors normal flat 32-bit effective-address arithmetic and
+/// changes only the ESP base value used for that address computation.
+///
+/// @param vm VM whose CPU supplies non-ESP base registers.
+/// @param operand Memory operand to resolve.
+/// @param esp_override Value to use when @p operand is based on ESP.
+/// @param use_esp_override Whether ESP should be substituted.
+/// @param out_address Receives the effective address.
+/// @return true when the address could be resolved.
+static bool vm_exec_resolve_memory_address_with_esp_override(
+    const Vm *vm,
+    const VmIrOperand *operand,
+    uint32_t esp_override,
+    bool use_esp_override,
+    uint32_t *out_address
+) {
+    uint32_t base_value = 0U;
+
+    if (vm == NULL || operand == NULL || out_address == NULL) {
+        return false;
+    }
+
+    if (operand->kind == VM_IR_OPERAND_MEMORY_ADDRESS) {
+        *out_address = operand->address;
+        return true;
+    }
+
+    if (operand->kind != VM_IR_OPERAND_MEMORY_REGISTER) {
+        return false;
+    }
+
+    if (use_esp_override && operand->reg == VM_REGISTER_ESP) {
+        base_value = esp_override;
+    } else if (!vm_cpu_read_register(&vm->cpu, operand->reg, &base_value)) {
+        return false;
+    }
+
+    *out_address = operand->address + base_value + operand->immediate;
+    return true;
+}
+
+/// Returns whether a Phase 72A stack operand is an accepted 32-bit general register.
+///
+/// @param operand Operand to inspect.
+/// @return true when @p operand is a 32-bit register operand.
+static bool vm_exec_operand_is_32bit_register(const VmIrOperand *operand) {
+    return operand != NULL &&
+           operand->kind == VM_IR_OPERAND_REGISTER &&
+           vm_cpu_register_width_bits(operand->reg) == 32U &&
+           (operand->width_bits == 0U || operand->width_bits == 32U);
+}
+
+/// Returns whether a Phase 72A stack operand is an accepted 32-bit memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true when @p operand is a memory operand with DWORD width metadata.
+static bool vm_exec_operand_is_32bit_memory(const VmIrOperand *operand) {
+    return vm_exec_operand_is_memory(operand) && operand->width_bits == 32U;
+}
+
+/// Executes one Phase 72A source-level PUSH instruction.
+///
+/// PUSH accepts a 32-bit register, immediate, or memory source. The pushed value
+/// is resolved before the checked stack write, and ESP is committed only after
+/// the write succeeds so fatal stack-write failures leave externally visible CPU
+/// and memory state unchanged except for the recorded diagnostic metadata.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction PUSH instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_push(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t esp = 0U;
+    uint32_t stack_address = 0U;
+    uint32_t value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!(vm_exec_operand_is_32bit_register(&instruction->source) ||
+          vm_exec_operand_is_32bit_memory(&instruction->source) ||
+          (instruction->source.kind == VM_IR_OPERAND_IMMEDIATE &&
+           (instruction->source.width_bits == 0U || instruction->source.width_bits == 32U)))) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    status = vm_exec_read_operand(vm, instruction, &instruction->source, 32U, &value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    stack_address = esp - 4U;
+    status = vm_exec_write_u32_at_address(vm, instruction, stack_address, value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, stack_address)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Executes one Phase 72A source-level POP instruction.
+///
+/// POP reads DWORD `[original ESP]` first, validates and commits the destination,
+/// and then commits the appropriate final ESP value. Memory destinations that
+/// use ESP as their base compute their address using post-pop ESP; `pop esp`
+/// leaves ESP equal to the popped value. Fatal failures leave visible state
+/// externally atomic.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction POP instruction descriptor.
+/// @return Executor status.
+static VmExecStatus vm_exec_execute_pop(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t original_esp = 0U;
+    uint32_t post_pop_esp = 0U;
+    uint32_t popped_value = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!(vm_exec_operand_is_32bit_register(&instruction->destination) || vm_exec_operand_is_32bit_memory(&instruction->destination))) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &original_esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    post_pop_esp = original_esp + 4U;
+
+    status = vm_exec_read_u32_at_address(vm, instruction, original_esp, &popped_value);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+
+    if (instruction->destination.kind == VM_IR_OPERAND_REGISTER) {
+        if (instruction->destination.reg == VM_REGISTER_ESP) {
+            return vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, popped_value) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        if (!vm_cpu_write_register(&vm->cpu, instruction->destination.reg, popped_value)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        return vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, post_pop_esp) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    {
+        uint32_t destination_address = 0U;
+        if (!vm_exec_resolve_memory_address_with_esp_override(
+                vm,
+                &instruction->destination,
+                post_pop_esp,
+                true,
+                &destination_address)) {
+            return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+        }
+        status = vm_exec_write_u32_at_address(vm, instruction, destination_address, popped_value);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
+
+    return vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, post_pop_esp) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT;
+}
+
 static bool vm_exec_operand_is_destination(const VmIrOperand *operand) {
     if (operand == NULL) {
         return false;
@@ -3627,6 +3870,10 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_call(vm, instruction);
         case VM_IR_OPCODE_RET:
             return vm_exec_execute_ret(vm, instruction);
+        case VM_IR_OPCODE_PUSH:
+            return vm_exec_execute_push(vm, instruction);
+        case VM_IR_OPCODE_POP:
+            return vm_exec_execute_pop(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:
