@@ -1,14 +1,15 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 71B diagnostic wording cleanup.
+ * @brief Unit and integration tests for parser behavior through Phase 73 LEAVE coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
  * parsing and target classification, Phase 63 CMP memory operand parsing, Phase 64 equality conditional jump parsing,
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
- * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL, Phase 70 plain near RET, unsupported syntax,
- * INCLUDELIB non-goal diagnostics, INVOKE/ADDR
- * external-routine diagnostics, and integration with the current executor
+ * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
+ * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
+ * LEAVE syntax, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
 
@@ -6547,6 +6548,57 @@ static int test_phase72a_push_pop_parse_error_paths(void) {
     return failures;
 }
 
+/// Verifies Phase 73 LEAVE accepted and rejected parser forms.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase73_leave_parse_paths(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const char *accepted_source =
+        ".code\n"
+        "main PROC\n"
+        "    leave\n"
+        "    LEAVE\n"
+        "main ENDP\n"
+        "END main\n";
+    static const struct {
+        const char *source_line;
+        VmParserDiagnosticCode expected_code;
+        const char *message_fragment;
+    } rejected_cases[] = {
+        {"leave eax", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "does not take operands"},
+        {"leave eax, ebx", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "does not take operands"},
+        {"enter 8, 0", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "Unsupported instruction"},
+        {"ret 4", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET operand forms"}
+    };
+    size_t index = 0U;
+
+    memset(&result, 0, sizeof(result));
+    failures += expect_parser_status(parse_for_test(accepted_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 73 LEAVE accepted forms should parse");
+    failures += expect_size(result.instruction_count, 2U, "Phase 73 accepted source should emit two LEAVE instructions");
+    if (result.instruction_count >= 2U) {
+        failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_LEAVE, "leave should emit LEAVE opcode");
+        failures += expect_u32((uint32_t)buffers.instructions[1].opcode, (uint32_t)VM_IR_OPCODE_LEAVE, "uppercase LEAVE should emit LEAVE opcode");
+    }
+
+    for (index = 0U; index < sizeof(rejected_cases) / sizeof(rejected_cases[0]); index += 1U) {
+        char source[256];
+        memset(&result, 0, sizeof(result));
+        (void)snprintf(
+            source,
+            sizeof(source),
+            ".code\nmain PROC\n    %s\nmain ENDP\nEND main\n",
+            rejected_cases[index].source_line
+        );
+        failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid LEAVE/future frame form should produce diagnostic status");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, rejected_cases[index].expected_code, "invalid LEAVE/future frame diagnostic code should match");
+        failures += expect_string_contains(buffers.diagnostics[0].message, rejected_cases[index].message_fragment, "invalid LEAVE/future frame diagnostic wording should explain the rejected form");
+    }
+
+    return failures;
+}
+
 static int test_metadata_helpers(void) {
     int failures = 0;
 
@@ -7417,6 +7469,7 @@ int main(void) {
     failures += test_phase57m_segment_symbol_casemap_and_regressions();
     failures += test_phase72a_push_pop_parse_to_ir();
     failures += test_phase72a_push_pop_parse_error_paths();
+    failures += test_phase73_leave_parse_paths();
     failures += test_phase53a_symbol_offset_cross_object_parse_to_ir();
     failures += test_metadata_helpers();
 
@@ -7425,6 +7478,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 72A PUSH/POP stack coverage passed.\n");
+    printf("Parser tests through Phase 73 LEAVE coverage passed.\n");
     return 0;
 }

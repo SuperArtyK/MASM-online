@@ -523,9 +523,12 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 72A - PUSH and POP Stack Instructions")
+    assert_text_contains("README.md", "Phase 73 - LEAVE Instruction")
+    assert_text_contains("README.md", "Phase 73 implements source-level `leave`/`LEAVE` as validation-first stack-frame teardown shorthand")
+    assert_text_contains("README.md", "source-level `leave`/`LEAVE` frame teardown shorthand")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
+    assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -603,9 +606,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 72")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
-    assert_text_contains("web/src/protocol.js", "Phase 72A - PUSH and POP Stack Instructions")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 73")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
+    assert_text_contains("web/src/protocol.js", "Phase 73 - LEAVE Instruction")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -673,7 +676,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 72A PUSH/POP stack behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 73 LEAVE behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1748,8 +1751,8 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
         raise TestFailure("stale active milestone-context wording found:\n" + "\n".join(violations))
 
 
-def assert_phase71_current_status_and_harness_documented() -> None:
-    """Verify Phase 72 status, concise status surfaces, and call-depth documentation wording."""
+def assert_current_status_and_harness_documented() -> None:
+    """Verify Phase 73 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1769,11 +1772,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 72A - PUSH and POP Stack Instructions",
-            "Phase 72A implements the first source-level 32-bit stack-transfer subset",
-            "`push` accepts 32-bit registers",
-            "`pop` accepts 32-bit registers",
-            "successful source-level `push` stack writes",
+            "Phase 73 - LEAVE Instruction",
+            "Phase 73 implements source-level `leave`/`LEAVE` as validation-first stack-frame teardown shorthand",
+            "reads saved `EBP` from DWORD `[EBP]`",
+            "creates no public `memoryChanges` rows",
+            "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
+            "source-level 32-bit `pop` for registers and DWORD memory destinations",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
             "For build and artifact verification details",
             "selected-entry source-run startup from `END entryName`",
@@ -1837,10 +1841,10 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 72A - PUSH and POP Stack Instructions",
-            "Phase 72A advances runtime/source-run behavior metadata",
-            "source-level 32-bit `push` and `pop`",
-            "successful source-level PUSH stack writes",
+            "Phase 73 - LEAVE Instruction",
+            "Phase 73 advances runtime/source-run behavior metadata",
+            "source-level `leave`/`LEAVE` frame teardown",
+            "no public `memoryChanges` rows",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1886,8 +1890,8 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 72A - PUSH and POP Stack Instructions",
-            "Phase 72A adds source-level 32-bit `push` and `pop`",
+            "Phase 73 - LEAVE Instruction",
+            "Phase 73 adds source-level `leave`/`LEAVE` frame teardown shorthand",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -1936,9 +1940,9 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 72A - PUSH and POP Stack Instructions",
+            "Phase 73 - LEAVE Instruction",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 72A - PUSH and POP Stack Instructions",
+            "Phase 73 - LEAVE Instruction",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2007,7 +2011,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "native process execution, or full macro-system compatibility",
             "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
             "accepted MASM32-compatible root RET default behavior",
-            "`RET imm16`, `RETF`, `LEAVE`, stack frames, and Irvine32 callable routine dispatch",
+            "`RET imm16`, `RETF`, stack-frame creation, and Irvine32 callable routine dispatch",
         ],
     )
     assert_all_text_not_contains(
@@ -2057,7 +2061,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "## 75E. Phase 71E - Entry-Procedure Auto-Stop Compatibility Setting",
             "## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics",
-            "## 76A. Phase 72A - PUSH and POP Stack Instructions",
+            "## 77. Phase 73 - LEAVE Instruction",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2090,12 +2094,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 72A - PUSH and POP Stack Instructions",
-            "Phase 72A adds tests for source-level 32-bit `push` and `pop`",
+            "Phase 73 - LEAVE Instruction",
+            "Phase 73 adds tests for source-level `leave`/`LEAVE`",
             "parser acceptance and rejection",
             "checked-memory diagnostics",
-            "source-run `memoryChanges`",
-            "regressions for helper `CALL`/`RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
+            "no-public-`memoryChanges` behavior",
+            "regressions for Phase 72A `PUSH`/`POP`, helper `CALL`/`RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2110,11 +2114,12 @@ def assert_phase71_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 72A: PUSH and POP Stack Instructions",
+            "Milestone 73: LEAVE Instruction",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
-            "push DWORD PTR first",
-            "pop DWORD PTR result",
+            "push ebp",
+            "mov ebp, esp",
+            "leave",
             "final-registers",
             "Program Console",
         ],
@@ -2162,7 +2167,7 @@ def assert_phase71_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 72",
+            "IMPLEMENTED_PHASE = 73",
         ],
     )
     assert_all_text_not_contains(
@@ -2782,7 +2787,7 @@ def run_static_tests() -> None:
     assert_subgroup_failure_reporting_contract()
     assert_live_text_avoids_milestone_relative_wording()
     assert_phase71b2_stale_milestone_context_checks()
-    assert_phase71_current_status_and_harness_documented()
+    assert_current_status_and_harness_documented()
     assert_phase71f_fallthrough_fixture_migration_checks()
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()

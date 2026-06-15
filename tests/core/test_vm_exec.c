@@ -1,13 +1,15 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 72 call-depth limit coverage.
+ * @brief Unit tests for the VM executor through Phase 73 LEAVE coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
- * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, and Phase 72 call-depth resource-limit coverage. They intentionally avoid
- * parser, stack, Irvine32 routine bodies, and browser UI behavior except for
- * the Phase 42 virtual exit terminator.
+ * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
+ * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP, and
+ * Phase 73 LEAVE frame teardown. They intentionally avoid parser, Irvine32
+ * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
+ * terminator.
  */
 
 #include <stdbool.h>
@@ -5813,6 +5815,74 @@ static int test_phase72a_pop_esp_timing_and_rollback(void) {
     return failures;
 }
 
+/// Verifies Phase 73 LEAVE frame teardown, rollback, and edge cases.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase73_leave_frame_teardown(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    uint32_t ebp = 0U;
+    const VmExecDelta *delta = NULL;
+    const uint32_t frame_base = VM_MEMORY_DEFAULT_STACK_TOP - 16U;
+    const VmIrInstruction leave_program[] = {
+        {VM_IR_OPCODE_LEAVE, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 1U, "leave", 0U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 73 LEAVE test");
+    failures += expect_status(vm_load_program(&vm, leave_program, sizeof(leave_program) / sizeof(leave_program[0])), VM_EXEC_STATUS_OK, "LEAVE program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0x12345678U) ? 0 : record_failure("ESP setup should succeed before LEAVE");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, frame_base) ? 0 : record_failure("EBP setup should succeed before LEAVE");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("CF setup should succeed before LEAVE");
+    failures += vm_cpu_clear_flag(&vm.cpu, VM_FLAG_ZF) ? 0 : record_failure("ZF setup should succeed before LEAVE");
+    failures += vm_cpu_mark_flag_undefined(&vm.cpu, VM_FLAG_OF, "seed-invalid", "seed", "seed.asm", 9U, 1U, 90U, 4U, "seed", 0U) ? 0 : record_failure("OF invalidity setup should succeed before LEAVE");
+    failures += (vm_memory_write_u32(&vm.memory, frame_base, 0xCAFEBABEU, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("saved EBP setup should write DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "LEAVE should execute");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after LEAVE");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read should succeed after LEAVE");
+    failures += expect_u32(esp, frame_base + 4U, "LEAVE should commit ESP to old EBP plus four");
+    failures += expect_u32(ebp, 0xCAFEBABEU, "LEAVE should restore saved EBP from DWORD [old EBP]");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "LEAVE should preserve CF bit");
+    failures += expect_flag(&vm.cpu, VM_FLAG_ZF, false, "LEAVE should preserve ZF bit");
+    failures += expect_flag_validity(&vm.cpu, VM_FLAG_OF, false, "seed-invalid", "seed", 9U, "LEAVE should preserve OF validity metadata");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->register_change_count : 0U, 2U, "LEAVE should report ESP and EBP register changes");
+    failures += expect_size(delta != NULL ? delta->flag_change_count : 1U, 0U, "LEAVE should not report flag changes");
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "LEAVE should not expose memory-change rows");
+    failures += expect_size(delta != NULL ? delta->memory_access_count : 0U, 1U, "LEAVE should record one checked memory read access");
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm reinit should succeed for invalid EBP LEAVE rollback");
+    failures += expect_status(vm_load_program(&vm, leave_program, sizeof(leave_program) / sizeof(leave_program[0])), VM_EXEC_STATUS_OK, "LEAVE rollback program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, 0xAABBCCDDU) ? 0 : record_failure("ESP setup should succeed before failed LEAVE");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0U) ? 0 : record_failure("EBP setup should succeed before failed LEAVE");
+    failures += vm_cpu_set_flag(&vm.cpu, VM_FLAG_CF) ? 0 : record_failure("CF setup should succeed before failed LEAVE");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_MEMORY_ERROR, "LEAVE with unreadable [EBP] should fail through checked memory helper");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after failed LEAVE");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read should succeed after failed LEAVE");
+    failures += expect_u32(esp, 0xAABBCCDDU, "failed LEAVE should leave ESP unchanged");
+    failures += expect_u32(ebp, 0U, "failed LEAVE should leave EBP unchanged");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "failed LEAVE should preserve flags");
+    delta = vm_last_delta(&vm);
+    failures += expect_size(delta != NULL ? delta->memory_change_count : 1U, 0U, "failed LEAVE should not expose memory-change rows");
+    failures += expect_size(delta != NULL ? delta->register_change_count : 1U, 0U, "failed LEAVE should not report register mutation");
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm reinit should succeed for LEAVE edge read");
+    failures += expect_status(vm_load_program(&vm, leave_program, sizeof(leave_program) / sizeof(leave_program[0])), VM_EXEC_STATUS_OK, "LEAVE edge program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("EBP setup at last readable DWORD should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, 0U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("edge saved EBP setup should write DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "LEAVE should read last readable stack DWORD");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read should succeed after edge LEAVE");
+    failures += vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read should succeed after edge LEAVE");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "edge LEAVE should set ESP to stack top boundary");
+    failures += expect_u32(ebp, 0U, "edge LEAVE should accept saved EBP value without validating it as a stack pointer");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies metadata helper edge cases.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5882,6 +5952,9 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_EXIT), "exit") != 0) {
         failures += record_failure("EXIT opcode name should be exit");
     }
+    if (strcmp(vm_ir_opcode_name(VM_IR_OPCODE_LEAVE), "leave") != 0) {
+        failures += record_failure("LEAVE opcode name should be leave");
+    }
     if (vm_ir_opcode_name((VmIrOpcode)99) != NULL) {
         failures += record_failure("invalid opcode name should be NULL");
     }
@@ -5911,7 +5984,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 71F.
+/// Runs all executor tests through Phase 73 LEAVE coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -6022,6 +6095,7 @@ int main(void) {
     failures += test_phase72_call_depth_preserves_call_precedence();
     failures += test_phase72a_push_pop_stack_transfers();
     failures += test_phase72a_pop_esp_timing_and_rollback();
+    failures += test_phase73_leave_frame_teardown();
     failures += test_phase61_invalid_jmp_metadata();
     failures += test_phase67_arithmetic_fault_no_partial_mutation_harness();
     failures += test_phase67_conditional_branch_invalid_metadata_harness();
@@ -6032,6 +6106,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 72A PUSH/POP stack coverage passed.");
+    puts("Executor tests through Phase 73 LEAVE coverage passed.");
     return 0;
 }

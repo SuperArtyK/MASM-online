@@ -9,9 +9,10 @@
  * current executor. Conditional control-flow transfer is implemented for direct
  * labels and procedure-entry labels; direct CALL is implemented only for user
  * procedure entries, and no-operand plain RET is lowered for the executor's
- * helper/root semantics. Phase 72A source-level PUSH/POP stack transfers
- * are supported; RET imm16, stack frames, scaled-index addressing, Irvine32 routine bodies, and full MASM
- * expression parsing remain later milestones. The parser records
+ * helper/root semantics. Phase 72A source-level PUSH/POP stack transfers and Phase 73 LEAVE
+ * frame teardown are supported; RET imm16, ENTER, stack-frame creation,
+ * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
+ * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
  * MASM constructs outside the implemented subset are classified with explicit
@@ -4455,6 +4456,10 @@ static bool vm_parser_parse_opcode(const VmLexerToken *token, VmIrOpcode *out_op
         *out_opcode = VM_IR_OPCODE_POP;
         return true;
     }
+    if (vm_parser_token_equals(token, "leave")) {
+        *out_opcode = VM_IR_OPCODE_LEAVE;
+        return true;
+    }
     if (vm_parser_token_equals(token, "mul")) {
         *out_opcode = VM_IR_OPCODE_MUL;
         return true;
@@ -4660,7 +4665,7 @@ static bool vm_parser_token_is_nop_register_encoding_operand(const VmLexerToken 
 /// Returns whether an opcode uses no explicit source operands.
 ///
 /// @param opcode Opcode to inspect.
-/// @return true for accumulator conversion, NOP, carry-control, RET, and EXIT instructions.
+/// @return true for accumulator conversion, NOP, carry-control, RET, LEAVE, and EXIT instructions.
 static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
     return opcode == VM_IR_OPCODE_CBW ||
            opcode == VM_IR_OPCODE_CWDE ||
@@ -4671,6 +4676,7 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_STC ||
            opcode == VM_IR_OPCODE_CMC ||
            opcode == VM_IR_OPCODE_RET ||
+           opcode == VM_IR_OPCODE_LEAVE ||
            opcode == VM_IR_OPCODE_EXIT;
 }
 
@@ -8686,6 +8692,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
         }
         if (opcode == VM_IR_OPCODE_RET && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, vm_parser_current_token(state), "RET operand forms are not implemented. This simulator accepts plain near RET with no operands.");
+            return false;
+        }
+        if (opcode == VM_IR_OPCODE_LEAVE && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "LEAVE does not take operands.");
             return false;
         }
         if ((opcode == VM_IR_OPCODE_CLC || opcode == VM_IR_OPCODE_STC || opcode == VM_IR_OPCODE_CMC) &&

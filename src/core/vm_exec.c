@@ -8,15 +8,16 @@
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL, Phase 72 call-depth resource protection,
- * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP,
+ * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
  * end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
- * stack region at startup; source-level PUSH/POP is supported, while procedure frames,
- * RET imm16, and non-exit Irvine32 routines remain later milestones. Phase 69
+ * stack region at startup; source-level PUSH/POP and LEAVE are supported,
+ * while RET imm16, ENTER, procedure-frame creation, and non-exit Irvine32
+ * routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
  * treats an eligible root-code-stream RET as successful termination. Phase 68B
@@ -1117,6 +1118,46 @@ static VmExecStatus vm_exec_execute_pop(Vm *vm, const VmIrInstruction *instructi
     }
 
     return vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, post_pop_esp) ? VM_EXEC_STATUS_OK : VM_EXEC_STATUS_INVALID_ARGUMENT;
+}
+
+/// Executes one Phase 73 LEAVE stack-frame teardown instruction.
+///
+/// LEAVE is modeled as the atomic, validation-first equivalent of `mov esp,
+/// ebp` followed by `pop ebp`: it checks DWORD `[EBP]` through the central
+/// memory helper, and only after a successful read commits `ESP = EBP + 4` and
+/// `EBP = savedEBP`. Flags, call-depth metadata, Program Console state, and
+/// public memory-change rows are intentionally unchanged.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction LEAVE instruction descriptor.
+/// @return Executor status for the checked saved-EBP read.
+static VmExecStatus vm_exec_execute_leave(Vm *vm, const VmIrInstruction *instruction) {
+    uint32_t ebp = 0U;
+    uint32_t saved_ebp = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+        return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EBP, &ebp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    status = vm_exec_read_u32_at_address(vm, instruction, ebp, &saved_ebp);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, ebp + 4U)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_EBP, saved_ebp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    return VM_EXEC_STATUS_OK;
 }
 
 static bool vm_exec_operand_is_destination(const VmIrOperand *operand) {
@@ -3874,6 +3915,8 @@ static VmExecStatus vm_exec_execute_instruction(Vm *vm, const VmIrInstruction *i
             return vm_exec_execute_push(vm, instruction);
         case VM_IR_OPCODE_POP:
             return vm_exec_execute_pop(vm, instruction);
+        case VM_IR_OPCODE_LEAVE:
+            return vm_exec_execute_leave(vm, instruction);
         case VM_IR_OPCODE_MUL:
             return vm_exec_execute_mul(vm, instruction);
         case VM_IR_OPCODE_IMUL:

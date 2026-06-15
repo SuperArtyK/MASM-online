@@ -233,6 +233,8 @@ const char *vm_ir_opcode_name(VmIrOpcode opcode) {
             return "push";
         case VM_IR_OPCODE_POP:
             return "pop";
+        case VM_IR_OPCODE_LEAVE:
+            return "leave";
         case VM_IR_OPCODE_EXIT:
             return "exit";
         default:

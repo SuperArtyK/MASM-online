@@ -18,7 +18,8 @@
  * helper RET execution, Phase 71 root RET termination, Phase 71A optional
  * strict root-code-stream RET diagnostics, Phase 71C code-stream fallthrough
  * and code-end diagnostics, Phase 71D configurable procedure-fallthrough
- * diagnostics, Phase 72 call-depth resource-limit diagnostics, and
+ * diagnostics, Phase 72 call-depth resource-limit diagnostics, Phase 72A
+ * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, and
  * recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
@@ -81,17 +82,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 72A JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 72U
+/// Numeric runtime/source-run behavior phase reported for Phase 73 JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 73U
 
-/// Suffix for the current Phase 72A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
+/// Suffix for the current Phase 73 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 72A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 72A - PUSH and POP Stack Instructions"
+/// Full name of the current Phase 73 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 73 - LEAVE Instruction"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 72A stack-transfer diagnostics and memory changes.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-72a-push-pop-stack-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 73 LEAVE diagnostics and stack-frame teardown state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-73-leave-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -3079,6 +3080,11 @@ static size_t masm32_sim_wasm_collect_planned_reads(
             masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &stack_read, 32U);
             break;
         }
+        case VM_IR_OPCODE_LEAVE: {
+            VmIrOperand frame_read = vm_ir_operand_memory_register(VM_REGISTER_EBP, 0, 0U, 32U);
+            masm32_sim_wasm_add_planned_read(reads, read_capacity, &read_count, &frame_read, 32U);
+            break;
+        }
         default:
             /* TODO(Phase-owned future instruction milestones): add each future memory-reading opcode here when that opcode is implemented. */
             break;
@@ -3228,6 +3234,11 @@ static size_t masm32_sim_wasm_collect_planned_object_accesses(
         case VM_IR_OPCODE_RET: {
             VmIrOperand stack_read = vm_ir_operand_memory_register(VM_REGISTER_ESP, 0, 0U, 32U);
             masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &stack_read, VM_EXEC_MEMORY_ACCESS_READ, 32U);
+            break;
+        }
+        case VM_IR_OPCODE_LEAVE: {
+            VmIrOperand frame_read = vm_ir_operand_memory_register(VM_REGISTER_EBP, 0, 0U, 32U);
+            masm32_sim_wasm_add_planned_object_access(accesses, access_capacity, &access_count, &frame_read, VM_EXEC_MEMORY_ACCESS_READ, 32U);
             break;
         }
         default:

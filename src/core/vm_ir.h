@@ -142,6 +142,8 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_PUSH,
     /// Source-level 32-bit POP stack transfer.
     VM_IR_OPCODE_POP,
+    /// Stack-frame teardown shorthand that reads saved EBP from DWORD [EBP].
+    VM_IR_OPCODE_LEAVE,
     /// Terminate execution successfully for Irvine32 `exit`.
     VM_IR_OPCODE_EXIT,
     /// Number of currently supported operation codes.

@@ -7,7 +7,7 @@
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
- * signed relational conditional jumps, direct CALL, Phase 72 call-depth resource protection, Phase 71 root/helper plain near RET, Phase 72A source-level PUSH/POP,
+ * signed relational conditional jumps, direct CALL, Phase 72 call-depth resource protection, Phase 71 root/helper plain near RET, Phase 72A source-level PUSH/POP, Phase 73 LEAVE,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream end-falloff
  * diagnostics, and Irvine32 exit forms over the currently supported
@@ -15,8 +15,8 @@
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
- * source-level PUSH/POP stack transfers, procedure frames, RET imm16, and non-exit
- * Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * source-level PUSH/POP and LEAVE are supported, while RET imm16, ENTER,
+ * procedure-frame creation, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and

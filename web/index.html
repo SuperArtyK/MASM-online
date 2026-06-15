@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 72A: PUSH and POP Stack Instructions.
+  Milestone 73: LEAVE Instruction.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,20 +18,16 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 72A: PUSH and POP Stack Instructions</p>
+        <p class="muted">Milestone 73: LEAVE Instruction</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
-.data
-first DWORD 11111111h
-second DWORD 22222222h
-result DWORD 0
 .code
 main PROC
-    push DWORD PTR first
-    push DWORD PTR second
-    pop eax
-    pop DWORD PTR result
+    push ebp
+    mov ebp, esp
+    mov eax, 123
+    leave
     exit
 main ENDP
 END main</textarea>
