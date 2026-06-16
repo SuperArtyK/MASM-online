@@ -16,8 +16,8 @@
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
  * virtual Irvine32 registry metadata, Phase 68 call-target classification
  * metadata used by Phase 69 direct user-procedure CALL lowering, Phase 70
- * plain near RET lowering, Phase 74 RET imm16 lowering, and Phase 75
- * PROC metadata diagnostics.
+ * plain near RET lowering, Phase 74 RET imm16 lowering, Phase 75
+ * PROC metadata diagnostics, and Phase 76 PROC USES parsing metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -246,6 +246,12 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME,
     /// A PROC declaration used an unsupported attribute, parameter, language, visibility, frame, or distance token.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE,
+    /// A PROC USES declaration omitted or malformed the required register list.
+    VM_PARSER_DIAGNOSTIC_EXPECTED_PROC_USES_REGISTER,
+    /// A PROC USES declaration named a register outside the Phase 76 accepted set.
+    VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER,
+    /// A PROC USES declaration repeated a register in the same save list.
+    VM_PARSER_DIAGNOSTIC_DUPLICATE_PROC_USES_REGISTER,
     /// A PROC declaration used malformed syntax after the PROC marker.
     VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION,
     /// An ENDP declaration named a procedure other than the currently open PROC.
@@ -323,6 +329,9 @@ typedef struct VmCodeLabel {
 } VmCodeLabel;
 
 
+/// Maximum number of Phase 76 PROC USES registers preserved on one procedure metadata record.
+#define VM_PROCEDURE_USES_REGISTER_CAPACITY 6U
+
 /// Maximum number of rejected PROC attributes preserved on one procedure metadata record.
 #define VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_CAPACITY 4U
 
@@ -355,6 +364,10 @@ typedef struct VmProcedureRange {
     VmLexerSourceLocation source_location;
     /// Source span length of the procedure name in bytes.
     size_t source_span_length;
+    /// Number of Phase 76 accepted PROC USES registers stored in declared order.
+    size_t uses_register_count;
+    /// Canonical Phase 76 PROC USES register identities in declared order.
+    VmRegister uses_registers[VM_PROCEDURE_USES_REGISTER_CAPACITY];
     /// Number of unsupported PROC attributes recorded for this procedure metadata entry.
     size_t unsupported_attribute_count;
     /// Reserved parser-owned unsupported-attribute metadata slots for future accepted PROC attribute phases.

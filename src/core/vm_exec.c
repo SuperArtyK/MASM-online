@@ -16,8 +16,9 @@
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * while ENTER, procedure-frame creation, far returns, and non-exit Irvine32
- * routines remain later milestones. Phase 69
+ * and Phase 76 blocks runtime entry into PROC USES metadata before Phase 77
+ * save/restore. ENTER, procedure-frame creation, far returns, and non-exit
+ * Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
  * treats an eligible root-code-stream RET as successful termination. Phase 68B
@@ -510,6 +511,50 @@ static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary(const Vm *
     }
 
     return NULL;
+}
+
+/// Finds the procedure boundary that starts at an instruction index.
+///
+/// @param vm VM instance containing configured procedure boundaries.
+/// @param instruction_index Candidate procedure-entry instruction index.
+/// @return Pointer to the matching boundary, or NULL when none starts there.
+static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary_starting_at(const Vm *vm, size_t instruction_index) {
+    size_t index = 0U;
+
+    if (vm == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < vm->procedure_boundary_count; index += 1U) {
+        const VmExecProcedureBoundary *boundary = &vm->procedure_boundaries[index];
+        if (vm_exec_procedure_boundary_is_valid(vm, boundary) &&
+            boundary->start_instruction_index == instruction_index) {
+            return boundary;
+        }
+    }
+
+    return NULL;
+}
+
+/// Returns whether the current instruction would enter a procedure with PROC USES metadata.
+///
+/// Phase 76 stores PROC USES metadata but does not implement the Phase 77
+/// save/restore runtime behavior. This guard prevents execution paths such as
+/// selected-entry startup, direct branch targets, or ordinary fallthrough from
+/// silently running the first lowered instruction of a USES procedure. Direct
+/// CALL validates the same metadata before mutating the stack.
+///
+/// @param vm VM instance containing configured procedure boundaries.
+/// @return true when execution is positioned at a USES procedure entry.
+static bool vm_exec_current_instruction_starts_uses_procedure(const Vm *vm) {
+    const VmExecProcedureBoundary *boundary = NULL;
+
+    if (vm == NULL || vm->instruction_pointer >= vm->program_count) {
+        return false;
+    }
+
+    boundary = vm_exec_find_procedure_boundary_starting_at(vm, vm->instruction_pointer);
+    return boundary != NULL && boundary->uses_register_count > 0U;
 }
 
 /// Returns whether a committed step moved by ordinary fallthrough.
@@ -3645,6 +3690,14 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     if (target_status != VM_EXEC_STATUS_OK) {
         return target_status;
     }
+    {
+        const VmExecProcedureBoundary *target_boundary =
+            vm_exec_find_procedure_boundary_starting_at(vm, (size_t)instruction->destination.immediate);
+        if (target_boundary != NULL && target_boundary->uses_register_count > 0U) {
+            return VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME;
+        }
+    }
+
     current_depth = vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
     attempted_depth = current_depth == UINT32_MAX ? UINT32_MAX : current_depth + 1U;
     if (attempted_depth > vm->call_depth_limit) {
@@ -4533,6 +4586,10 @@ VmExecStatus vm_step(Vm *vm) {
     vm_exec_refresh_root_code_stream_state(vm);
     instruction_pointer_before_step = vm->instruction_pointer;
     instruction = &vm->program[vm->instruction_pointer];
+    if (vm_exec_current_instruction_starts_uses_procedure(vm)) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, instruction);
+        return VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME;
+    }
     before_cpu = vm->cpu;
     status = vm_exec_execute_instruction(vm, instruction);
     if (status != VM_EXEC_STATUS_OK) {
@@ -4636,6 +4693,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-root-termination-state";
         case VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED:
             return "branch-runtime-deferred";
+        case VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME:
+            return "unsupported-proc-uses-runtime";
         default:
             return NULL;
     }
@@ -4675,7 +4734,7 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         }
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 3U, true, true}
+        {0U, 3U, true, true, 0U}
     };
 
     if (out_eax == NULL) {

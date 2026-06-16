@@ -15,7 +15,8 @@
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
- * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, while ENTER,
+ * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, and Phase 76
+ * blocks runtime entry into PROC USES metadata until Phase 77 save/restore. ENTER,
  * procedure-frame creation, far returns, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
@@ -108,7 +109,9 @@ typedef enum VmExecStatus {
     /// The VM detected an impossible root/helper termination state.
     VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
-    VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED
+    VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED,
+    /// Execution attempted to enter a procedure with PROC USES metadata before runtime save/restore exists.
+    VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME
 } VmExecStatus;
 
 
@@ -122,6 +125,8 @@ typedef struct VmExecProcedureBoundary {
     bool is_selected_entry;
     /// Whether the procedure contains at least one executable instruction.
     bool has_executable_instruction;
+    /// Number of Phase 76 PROC USES registers attached to this procedure.
+    size_t uses_register_count;
 } VmExecProcedureBoundary;
 
 

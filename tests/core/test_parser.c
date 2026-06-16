@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 75 PROC diagnostics coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 76 PROC USES metadata coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -3289,7 +3289,6 @@ static int test_phase35a_casemap_parser_policy(void) {
 /// @return Zero on success, otherwise a positive failure count.
 static int test_phase75_proc_metadata_and_attribute_diagnostics(void) {
     static const char *const unsupported_sources[] = {
-        ".code\nMyProc PROC USES eax ebx\nMyProc ENDP\nEND MyProc\n",
         ".code\nMyProc PROC arg1:DWORD\nMyProc ENDP\nEND MyProc\n",
         ".code\nMyProc PROC C\nMyProc ENDP\nEND MyProc\n",
         ".code\nMyProc PROC STDCALL\nMyProc ENDP\nEND MyProc\n",
@@ -3373,6 +3372,100 @@ static int test_phase75_proc_metadata_and_attribute_diagnostics(void) {
     failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE, "duplicate procedure should use duplicate-procedure");
     failures += expect_size(buffers.diagnostics[0].location.line, 4U, "duplicate procedure diagnostic should point at second declaration");
     failures += expect_size(buffers.diagnostics[0].related_location.line, 2U, "duplicate procedure diagnostic should carry prior declaration line");
+
+    return failures;
+}
+
+
+/// Verifies Phase 76 accepts PROC USES metadata and rejects invalid USES lists.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase76_proc_uses_parsing_and_metadata(void) {
+    typedef struct InvalidUsesCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        uint32_t column;
+        size_t span_length;
+        const char *message_fragment;
+    } InvalidUsesCase;
+    static const InvalidUsesCase invalid_cases[] = {
+        {".code\nMyProc PROC USES\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_EXPECTED_PROC_USES_REGISTER, 13U, 4U, "requires at least one register"},
+        {".code\nMyProc PROC USES esp\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 18U, 3U, "accepted PROC USES registers"},
+        {".code\nMyProc PROC USES ebp\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 18U, 3U, "ESP, EBP"},
+        {".code\nMyProc PROC USES ax\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 18U, 2U, "16-bit aliases"},
+        {".code\nMyProc PROC USES al\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 18U, 2U, "8-bit aliases"},
+        {".code\nMyProc PROC USES unknownReg\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 18U, 10U, "unknown names"},
+        {".code\nMyProc PROC USES eax EAX\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_DUPLICATE_PROC_USES_REGISTER, 22U, 3U, "Duplicate PROC USES register"},
+        {".code\nMyProc PROC USES eax, ebx\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 21U, 1U, "punctuation"},
+        {".code\nMyProc PROC USES eax C\nMyProc ENDP\nEND MyProc\n", VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER, 22U, 1U, "Invalid PROC USES register"}
+    };
+    int failures = 0;
+    size_t index = 0U;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "MyProc PROC USES eax ebx ecx\n"
+        "    mov eax, 1\n"
+        "MyProc ENDP\n"
+        "END MyProc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 76 PROC USES register list should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "valid PROC USES fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 1U, "valid PROC USES should publish procedure metadata");
+    failures += expect_size(buffers.procedure_ranges[0].uses_register_count, 3U, "valid PROC USES should record three registers");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[0], (uint32_t)VM_REGISTER_EAX, "PROC USES should preserve first declared register");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[1], (uint32_t)VM_REGISTER_EBX, "PROC USES should preserve second declared register");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[2], (uint32_t)VM_REGISTER_ECX, "PROC USES should preserve third declared register");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION CASEMAP:NONE\n"
+        ".code\n"
+        "MyProc PROC USES EAX ebx ESI EDI\n"
+        "MyProc ENDP\n"
+        "END MyProc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "PROC USES register recognition should be case-insensitive under CASEMAP:NONE");
+    failures += expect_size(buffers.procedure_ranges[0].uses_register_count, 4U, "mixed-case PROC USES should record four registers");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[0], (uint32_t)VM_REGISTER_EAX, "mixed-case PROC USES should canonicalize EAX");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[1], (uint32_t)VM_REGISTER_EBX, "mixed-case PROC USES should canonicalize EBX");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[2], (uint32_t)VM_REGISTER_ESI, "mixed-case PROC USES should canonicalize ESI");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[3], (uint32_t)VM_REGISTER_EDI, "mixed-case PROC USES should canonicalize EDI");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "Bare PROC\n"
+        "Bare ENDP\n"
+        "END Bare\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "bare PROC should remain accepted after Phase 76");
+    failures += expect_size(buffers.procedure_ranges[0].uses_register_count, 0U, "bare PROC should have no USES metadata");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "MyProc PROC USES eax ebx ecx edx esi edi\n"
+        "MyProc ENDP\n"
+        "END MyProc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "maximum Phase 76 PROC USES register list should parse");
+    failures += expect_size(buffers.procedure_ranges[0].uses_register_count, 6U, "maximum PROC USES list should record all six accepted registers");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].uses_registers[5], (uint32_t)VM_REGISTER_EDI, "maximum PROC USES list should preserve last register");
+
+    for (index = 0U; index < sizeof(invalid_cases) / sizeof(invalid_cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(invalid_cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid PROC USES fixture should be rejected");
+        failures += expect_size(result.diagnostic_count, 1U, "invalid PROC USES fixture should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, invalid_cases[index].code, "invalid PROC USES fixture should use targeted diagnostic code");
+        failures += expect_size(buffers.diagnostics[0].location.line, 2U, "invalid PROC USES diagnostic should point at PROC line");
+        failures += expect_size(buffers.diagnostics[0].location.column, invalid_cases[index].column, "invalid PROC USES diagnostic should point at offending token");
+        failures += expect_size(buffers.diagnostics[0].lexeme_length, invalid_cases[index].span_length, "invalid PROC USES diagnostic should preserve offending token span");
+        failures += expect_string_contains(buffers.diagnostics[0].message, invalid_cases[index].message_fragment, "invalid PROC USES diagnostic should explain rejection");
+        failures += expect_size(result.procedure_range_count, 0U, "rejected PROC USES declaration should not publish procedure metadata");
+    }
 
     return failures;
 }
@@ -7454,6 +7547,7 @@ int main(void) {
     failures += test_phase68_call_target_classifier_metadata();
     failures += test_phase68_call_target_classifier_casemap_policy();
     failures += test_phase75_proc_metadata_and_attribute_diagnostics();
+    failures += test_phase76_proc_uses_parsing_and_metadata();
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
     failures += test_phase70_plain_ret_parses_to_ir();
@@ -7564,6 +7658,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 75 PROC diagnostics coverage passed.\n");
+    printf("Parser tests through Phase 76 PROC USES metadata coverage passed.\n");
     return 0;
 }

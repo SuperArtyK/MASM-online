@@ -10,10 +10,10 @@
  * labels and procedure-entry labels; direct CALL is implemented only for user
  * procedure entries, and plain near RET plus near RET imm16 are lowered for the
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
- * frame teardown, Phase 74 RET imm16 cleanup, and Phase 75 PROC
- * metadata diagnostics are supported; accepted PROC remains metadata-only,
- * unsupported PROC tails are rejected with targeted diagnostics, and ENTER,
- * stack-frame creation,
+ * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
+ * metadata diagnostics, and Phase 76 PROC USES parsing metadata are
+ * supported; accepted PROC remains metadata-only, unsupported non-USES PROC
+ * tails are rejected with targeted diagnostics, and ENTER, stack-frame creation,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -9450,13 +9450,159 @@ static bool vm_parser_token_is_unsupported_proc_attribute(const VmLexerToken *to
         token->kind == VM_LEXER_TOKEN_DIRECTIVE;
 }
 
-/// Validates that a PROC declaration uses the currently accepted bare form.
+/// Reports whether one register identity is accepted in a Phase 76 PROC USES list.
+///
+/// @param reg Canonical or alias register identity to inspect.
+/// @return true when @p reg is one of EAX, EBX, ECX, EDX, ESI, or EDI.
+static bool vm_parser_proc_uses_register_is_supported(VmRegister reg) {
+    return reg == VM_REGISTER_EAX || reg == VM_REGISTER_EBX ||
+           reg == VM_REGISTER_ECX || reg == VM_REGISTER_EDX ||
+           reg == VM_REGISTER_ESI || reg == VM_REGISTER_EDI;
+}
+
+/// Reports whether a Phase 76 PROC USES list already contains one register.
+///
+/// @param registers Register identities parsed so far.
+/// @param count Number of valid entries in @p registers.
+/// @param reg Register identity to search for.
+/// @return true when @p reg is already present.
+static bool vm_parser_proc_uses_contains_register(const VmRegister *registers, size_t count, VmRegister reg) {
+    size_t index = 0U;
+
+    if (registers == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < count; index += 1U) {
+        if (registers[index] == reg) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Validates a Phase 76 PROC USES register token and appends its canonical identity.
+///
+/// @param state Parser state used for diagnostics.
+/// @param token Candidate register token from the USES list.
+/// @param registers Register identities parsed so far.
+/// @param in_out_count Number of parsed registers; incremented on success.
+/// @return true when @p token is accepted for the USES list.
+static bool vm_parser_parse_proc_uses_register(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmRegister *registers,
+    size_t *in_out_count
+) {
+    const char *register_name = NULL;
+
+    if (state == NULL || token == NULL || registers == NULL || in_out_count == NULL) {
+        return false;
+    }
+
+    if (token->kind != VM_LEXER_TOKEN_REGISTER ||
+        !vm_parser_proc_uses_register_is_supported(token->register_id)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER,
+            token,
+            "Invalid PROC USES register `%.*s`; accepted PROC USES registers are EAX, EBX, ECX, EDX, ESI, and EDI. ESP, EBP, 8-bit aliases, 16-bit aliases, punctuation, and unknown names are not accepted in PROC USES metadata.",
+            (int)token->lexeme_length,
+            token->lexeme != NULL ? token->lexeme : ""
+        );
+        return false;
+    }
+
+    register_name = vm_cpu_register_name(token->register_id);
+    if (vm_parser_proc_uses_contains_register(registers, *in_out_count, token->register_id)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_PROC_USES_REGISTER,
+            token,
+            "Duplicate PROC USES register `%s`; each register may appear at most once in a PROC USES list.",
+            register_name != NULL ? register_name : "register"
+        );
+        return false;
+    }
+
+    if (*in_out_count >= VM_PROCEDURE_USES_REGISTER_CAPACITY) {
+        (void)vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER,
+            token,
+            "PROC USES accepts at most EAX, EBX, ECX, EDX, ESI, and EDI once each."
+        );
+        return false;
+    }
+
+    registers[*in_out_count] = token->register_id;
+    *in_out_count += 1U;
+    return true;
+}
+
+/// Validates the optional Phase 76 PROC declaration tail.
+///
+/// Bare `name PROC` remains accepted. `name PROC USES reg...` is accepted only
+/// for whitespace-separated EAX, EBX, ECX, EDX, ESI, and EDI, preserving source
+/// order as canonical register metadata. Other PROC attributes remain deferred.
 ///
 /// @param state Parser state used for diagnostics.
 /// @param tail_token Token following the PROC marker.
-/// @return true when the declaration tail is empty.
-static bool vm_parser_validate_proc_tail(VmParserState *state, const VmLexerToken *tail_token) {
+/// @param out_uses_registers Receives parsed USES registers in declared order.
+/// @param out_uses_register_count Receives the number of parsed USES registers.
+/// @param out_tail_token_count Receives tokens consumed after PROC before line end.
+/// @return true when the declaration tail is accepted.
+static bool vm_parser_validate_proc_tail(
+    VmParserState *state,
+    const VmLexerToken *tail_token,
+    VmRegister *out_uses_registers,
+    size_t *out_uses_register_count,
+    size_t *out_tail_token_count
+) {
+    const VmLexerToken *token = tail_token;
+    size_t relative_index = 2U;
+    size_t uses_count = 0U;
+    size_t token_count = 0U;
+
+    if (out_uses_register_count != NULL) {
+        *out_uses_register_count = 0U;
+    }
+    if (out_tail_token_count != NULL) {
+        *out_tail_token_count = 0U;
+    }
+
+    if (state == NULL || out_uses_registers == NULL || out_uses_register_count == NULL || out_tail_token_count == NULL) {
+        return false;
+    }
+
     if (vm_parser_is_line_end_token(tail_token)) {
+        return true;
+    }
+
+    if (tail_token != NULL && vm_parser_token_equals(tail_token, "USES")) {
+        token_count = 1U;
+        token = vm_parser_peek_token(state, relative_index + token_count);
+        if (vm_parser_is_line_end_token(token)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_EXPECTED_PROC_USES_REGISTER,
+                tail_token,
+                "PROC USES requires at least one register. Accepted registers are whitespace-separated EAX, EBX, ECX, EDX, ESI, and EDI."
+            );
+            return false;
+        }
+
+        while (!vm_parser_is_line_end_token(token)) {
+            if (!vm_parser_parse_proc_uses_register(state, token, out_uses_registers, &uses_count)) {
+                return false;
+            }
+            token_count += 1U;
+            token = vm_parser_peek_token(state, relative_index + token_count);
+        }
+
+        *out_uses_register_count = uses_count;
+        *out_tail_token_count = token_count;
         return true;
     }
 
@@ -9465,7 +9611,7 @@ static bool vm_parser_validate_proc_tail(VmParserState *state, const VmLexerToke
             state,
             VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE,
             tail_token,
-            "PROC attribute or parameter `%.*s` is not supported yet; the simulator currently accepts only bare PROC declarations and leaves USES, parameters, language attributes, visibility/export attributes, FRAME, NEAR, and FAR deferred.",
+            "PROC attribute or parameter `%.*s` is not supported yet; the simulator currently accepts bare PROC declarations and `PROC USES reglist` metadata only. Parameters, language attributes, visibility/export attributes, FRAME, NEAR, and FAR remain deferred.",
             (int)tail_token->lexeme_length,
             tail_token->lexeme
         );
@@ -9476,7 +9622,7 @@ static bool vm_parser_validate_proc_tail(VmParserState *state, const VmLexerToke
         state,
         VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION,
         tail_token,
-        "Invalid PROC declaration syntax after PROC; the simulator currently accepts only the bare form `name PROC`."
+        "Invalid PROC declaration syntax after PROC; the simulator currently accepts `name PROC` or `name PROC USES reglist`."
     );
     return false;
 }
@@ -9489,6 +9635,11 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
     const VmLexerToken *name_token = vm_parser_current_token(state);
     const VmLexerToken *proc_token = vm_parser_peek_token(state, 1U);
     const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
+    VmRegister uses_registers[VM_PROCEDURE_USES_REGISTER_CAPACITY];
+    size_t uses_register_count = 0U;
+    size_t proc_tail_token_count = 0U;
+
+    memset(uses_registers, 0, sizeof(uses_registers));
 
     if (name_token == NULL || proc_token == NULL || !vm_parser_token_equals(proc_token, "PROC")) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_PROC, name_token, "Expected procedure name followed by PROC.");
@@ -9503,7 +9654,7 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
         return false;
     }
 
-    if (!vm_parser_validate_proc_tail(state, tail_token)) {
+    if (!vm_parser_validate_proc_tail(state, tail_token, uses_registers, &uses_register_count, &proc_tail_token_count)) {
         return false;
     }
 
@@ -9515,6 +9666,15 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
         if (!vm_parser_add_procedure_range(state, name_token, &procedure_range_index)) {
             return false;
         }
+        if (state->config != NULL && state->config->procedure_ranges != NULL &&
+            procedure_range_index != (size_t)-1 && procedure_range_index < state->config->procedure_range_capacity) {
+            VmProcedureRange *range = &state->config->procedure_ranges[procedure_range_index];
+            size_t uses_index = 0U;
+            range->uses_register_count = uses_register_count;
+            for (uses_index = 0U; uses_index < uses_register_count; uses_index += 1U) {
+                range->uses_registers[uses_index] = uses_registers[uses_index];
+            }
+        }
 
         state->open_procedure.lexeme = name_token->lexeme;
         state->open_procedure.length = name_token->lexeme_length;
@@ -9524,6 +9684,12 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
 
     vm_parser_advance(state);
     vm_parser_advance(state);
+    {
+        size_t advance_index = 0U;
+        for (advance_index = 0U; advance_index < proc_tail_token_count; advance_index += 1U) {
+            vm_parser_advance(state);
+        }
+    }
     return vm_parser_expect_line_end(state);
 }
 
@@ -11262,6 +11428,12 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-procedure-name";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE:
             return "unsupported-proc-attribute";
+        case VM_PARSER_DIAGNOSTIC_EXPECTED_PROC_USES_REGISTER:
+            return "expected-proc-uses-register";
+        case VM_PARSER_DIAGNOSTIC_INVALID_PROC_USES_REGISTER:
+            return "invalid-proc-uses-register";
+        case VM_PARSER_DIAGNOSTIC_DUPLICATE_PROC_USES_REGISTER:
+            return "duplicate-proc-uses-register";
         case VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION:
             return "invalid-proc-declaration";
         case VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH:

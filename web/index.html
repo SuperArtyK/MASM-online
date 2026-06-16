@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 75: PROC Metadata Baseline and Attribute Diagnostics.
+  Milestone 76: PROC USES Parsing and Metadata.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,7 +18,7 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 75: PROC Metadata Baseline and Attribute Diagnostics</p>
+        <p class="muted">Milestone 76: PROC USES Parsing and Metadata</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
@@ -30,9 +30,13 @@ main PROC
 main ENDP
 
 Helper PROC
-    mov ebx, 75
+    mov ebx, 76
     ret
 Helper ENDP
+
+Preserved PROC USES ebx esi
+    ret
+Preserved ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

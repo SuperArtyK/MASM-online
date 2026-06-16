@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 75 - PROC Metadata Baseline and Attribute Diagnostics |
+| Current milestone | Phase 76 - PROC USES Parsing and Metadata |
 
-Phase 75 preserves accepted bare `PROC`/`ENDP` procedure metadata and adds targeted parser/source-run diagnostics for unsupported `PROC` attributes or parameters, malformed `PROC` declarations, mismatched `ENDP` names, and duplicate procedures. 
+Phase 76 accepts whitespace-separated `PROC USES` metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, preserves declared order on procedure records, rejects invalid, duplicate, alias, comma, and malformed `USES` lists with targeted diagnostics, and reports `unsupported-proc-uses-runtime` when execution enters or calls a `USES` procedure before Phase 77 runtime save/restore.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -45,6 +45,7 @@ At a high level, the current subset includes:
 - baseline VM code-stream fallthrough across procedure boundaries when execution reaches later lowered instructions without an explicit terminator or transfer;
 - `code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`;
 - procedure-entry and call-target classification metadata for parser/tests;
+- `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -54,7 +55,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- stack-frame creation, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
+- stack-frame creation, `PROC USES` runtime save/restore, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

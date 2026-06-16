@@ -490,7 +490,7 @@ Procedure-boundary fallthrough diagnostics and optional beginner compatibility s
 
 The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, `PROC USES` runtime save/restore, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
 
 #### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
@@ -1632,7 +1632,7 @@ Extended loop helpers:
 Stack/procedure convenience:
 
 - `ENTER`/automatic frame setup
-- `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
+- `PROC USES` runtime save/restore, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
 
 Conditional byte set:
 
@@ -3533,7 +3533,7 @@ A separate call-depth watchdog may be provided for clearer recursion diagnostics
 
 ### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
 
-CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, near `RET imm16`, USES, LOCAL, PROTO, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
+CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, near `RET imm16`, `PROC USES` parsing/runtime behavior, LOCAL, PROTO, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
 
 The required staging is:
 
@@ -3541,7 +3541,7 @@ The required staging is:
 
 2. **Procedure target metadata.** User procedure entries, ordinary executable code labels, data symbols, numeric equates, reserved words, recognized Irvine32 registry entries, external/API/linker non-goal names, malformed target expressions, and unknown symbols are classified separately. This metadata supports later CALL and INVOKE phases but does not itself execute CALL, RET, INVOKE, stack mutation, root return, Irvine32 routine dispatch, or procedure-frame behavior.
 
-3. **Stack startup contract.** The runtime stack region is initialized, and `ESP` has a documented startup value derived from the active memory-layout mode. This stage initializes empty-stack state only. It does not implement source-level `PUSH`, source-level `POP`, CALL, RET, stack-overflow diagnostics, stack-underflow diagnostics, stack-frame metadata, PROC USES, LOCAL, or Irvine32 stack behavior.
+3. **Stack startup contract.** The runtime stack region is initialized, and `ESP` has a documented startup value derived from the active memory-layout mode. This stage initializes empty-stack state only. It does not implement source-level `PUSH`, source-level `POP`, CALL, RET, stack-overflow diagnostics, stack-underflow diagnostics, stack-frame metadata, PROC USES runtime save/restore, LOCAL, or Irvine32 stack behavior.
 
 4. **EIP pseudo-code-address correction.** Displayed `EIP` is derived from the VM instruction pointer using the documented pseudo-code-address model. Source code must not read, write, or address through `EIP` as an ordinary source operand. This correction must be complete before executable CALL or RET stores, reads, displays, or validates return tokens.
 
@@ -3551,7 +3551,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, and near `RET imm16` are implemented in their owning phases. Remaining expanded features such as PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, and near `RET imm16` are implemented in their owning phases. Remaining expanded features such as PROC USES runtime save/restore, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3561,7 +3561,7 @@ Mandatory Level 1 VM memory safety always applies to implicit stack accesses. Ad
 
 Optional educational validation policies apply to implicit stack accesses only when the relevant policy has an applicable stack model. Data-section declared-object validation must not be accidentally reused as stack-frame validation. Before a phase explicitly defines stack-section object metadata, stack-frame metadata, local-variable metadata, argument metadata, saved-register metadata, return-token-slot metadata, or synthetic stack-object metadata, declared-object validation must not reject an otherwise valid CALL, RET, PUSH, POP, frame, or Irvine32 stack access merely because that stack address is outside every `.data`, `.DATA?`, or `.CONST` declared object.
 
-Current `LEAVE` is implemented as validation-first frame teardown shorthand. It reads saved `EBP` from DWORD `[EBP]` through the central checked memory helpers, then commits `ESP = old EBP + 4` and `EBP = saved EBP` only after that read succeeds. The read is internal VM stack/frame state and must not create a public `memoryChanges` row. A failed `[EBP]` read must report the existing checked-memory diagnostic on the `LEAVE` source span before mutating `ESP`, `EBP`, flags, memory, Program Console output, terminal state, or public memory-change rows. `LEAVE` does not imply automatic frame creation, `ENTER`, `PROC USES`, `LOCAL`, argument metadata, calling-convention inference, or Irvine32 callable routine dispatch.
+Current `LEAVE` is implemented as validation-first frame teardown shorthand. It reads saved `EBP` from DWORD `[EBP]` through the central checked memory helpers, then commits `ESP = old EBP + 4` and `EBP = saved EBP` only after that read succeeds. The read is internal VM stack/frame state and must not create a public `memoryChanges` row. A failed `[EBP]` read must report the existing checked-memory diagnostic on the `LEAVE` source span before mutating `ESP`, `EBP`, flags, memory, Program Console output, terminal state, or public memory-change rows. `LEAVE` does not imply automatic frame creation, `ENTER`, `PROC USES` runtime save/restore, `LOCAL`, argument metadata, calling-convention inference, or Irvine32 callable routine dispatch.
 
 Once a later phase defines stack-object, stack-frame, local, argument, saved-register, return-token, or synthetic stack metadata, that later phase may add warning-mode or strict-mode validation for stack accesses. That validation must be defined as stack validation, with its own applicability rules and tests. It must not silently reuse data-section object rules without a documented mapping from stack addresses to stack objects.
 
@@ -3609,7 +3609,7 @@ The root terminal mechanism must not be exposed as:
 - a public source-run JSON `memoryChanges` row;
 - source-level PUSH/POP behavior;
 - stack-frame support;
-- LOCAL, USES, PROTO, INVOKE, ADDR, or calling-convention support;
+- LOCAL, PROC USES runtime save/restore, PROTO, INVOKE, ADDR, or calling-convention support;
 - Irvine32 callable routine dispatch;
 - permission to return to arbitrary pseudo-EIP values;
 - permission to execute outside the selected source program.

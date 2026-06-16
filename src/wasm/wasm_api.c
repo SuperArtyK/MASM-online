@@ -20,8 +20,8 @@
  * and code-end diagnostics, Phase 71D configurable procedure-fallthrough
  * diagnostics, Phase 72 call-depth resource-limit diagnostics, Phase 72A
  * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
- * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, and
- * recovered unsupported-feature diagnostics, then
+ * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, Phase 76 PROC USES
+ * parsing metadata with runtime save/restore deferral, and recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -83,17 +83,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 75 JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 75U
+/// Numeric runtime/source-run behavior phase reported for Phase 76 JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 76U
 
-/// Suffix for the current Phase 75 runtime/source-run behavior phase.
+/// Suffix for the current Phase 76 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 75 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics"
+/// Full name of the current Phase 76 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 76 - PROC USES Parsing and Metadata"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 75 PROC diagnostic metadata state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-75-proc-metadata-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 76 PROC USES metadata state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-76-proc-uses-metadata-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -6602,6 +6602,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
                    status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_INVALID_CALL_TARGET ||
                    status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS ||
                    status == VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE ||
+                   status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME ||
                    status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH ||
                    status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
@@ -6647,6 +6648,9 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     } else if (status == VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE) {
         message_code = "ret-stack-cleanup-out-of-range";
         message_text = "RET imm16 cleanup would leave ESP outside the active stack region or empty-stack boundary. Execution stopped before changing ESP or transferring control.";
+    } else if (status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME) {
+        message_code = "unsupported-proc-uses-runtime";
+        message_text = "PROC USES metadata parsed successfully, but runtime register save/restore begins in Phase 77. Execution stopped before entering the procedure so the simulator does not silently ignore USES.";
     } else if (status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH) {
         message_code = "procedure-fell-through";
         message_text = "Execution fell through out of a procedure without RET, JMP, exit, or another explicit control-transfer or termination instruction.";
@@ -7703,6 +7707,7 @@ static VmExecStatus masm32_sim_wasm_configure_exec_procedure_boundaries(
         boundaries[index].start_instruction_index = range->start_instruction_index;
         boundaries[index].end_instruction_index = range->end_instruction_index;
         boundaries[index].has_executable_instruction = range->has_executable_instruction;
+        boundaries[index].uses_register_count = range->uses_register_count;
         boundaries[index].is_selected_entry = parser_result->has_selected_entry_procedure &&
             index == parser_result->selected_entry_procedure_index;
     }
