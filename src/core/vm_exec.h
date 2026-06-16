@@ -7,7 +7,7 @@
  * xchg, neg, nop, adc, sbb, clc, stc, cmc, test, inc, dec, and, or, xor,
  * not, shl, sal, shr, sar, rol, ror, lea, mul, imul, div, idiv, Phase 61
  * direct-JMP runtime transfer, Phase 64 equality conditional jumps, Phase 65
- * signed relational conditional jumps, direct CALL, Phase 72 call-depth resource protection, Phase 71 root/helper plain near RET, Phase 72A source-level PUSH/POP, Phase 73 LEAVE,
+ * signed relational conditional jumps, direct CALL, Phase 72 call-depth resource protection, Phase 71 root/helper plain near RET, Phase 72A source-level PUSH/POP, Phase 73 LEAVE, Phase 74 RET imm16 cleanup,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream end-falloff
  * diagnostics, and Irvine32 exit forms over the currently supported
@@ -15,8 +15,8 @@
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
- * source-level PUSH/POP and LEAVE are supported, while RET imm16, ENTER,
- * procedure-frame creation, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, while ENTER,
+ * procedure-frame creation, far returns, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and
@@ -95,6 +95,8 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_CALL_TARGET,
     /// A checked RET return token did not map to an executable pseudo-EIP instruction target.
     VM_EXEC_STATUS_INVALID_RETURN_ADDRESS,
+    /// A Phase 74 RET imm16 cleanup would leave ESP outside the active stack boundary.
+    VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE,
     /// Execution crossed or left a procedure range without an explicit supported terminator or transfer.
     VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH,
     /// Execution reached the end of the lowered executable code stream without an explicit terminator.

@@ -523,12 +523,13 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 73 - LEAVE Instruction")
-    assert_text_contains("README.md", "Phase 73 implements source-level `leave`/`LEAVE` as validation-first stack-frame teardown shorthand")
-    assert_text_contains("README.md", "source-level `leave`/`LEAVE` frame teardown shorthand")
+    assert_text_contains("README.md", "Phase 74 - RET imm16 Instruction")
+    assert_text_contains("README.md", "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior")
+    assert_text_contains("README.md", "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
+    assert_text_not_contains("README.md", "- `ret imm16`;")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Diagnostic recovery behavior")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "Recognized unsupported features")
     assert_text_contains("docs/SUPPORTED_SYNTAX.md", "SBYTE")
@@ -606,9 +607,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 73")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 74")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 73 - LEAVE Instruction")
+    assert_text_contains("web/src/protocol.js", "Phase 74 - RET imm16 Instruction")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -676,7 +677,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 73 LEAVE behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 74 RET imm16 behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1752,7 +1753,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify Phase 73 status, concise status surfaces, and harness documentation wording."""
+    """Verify Phase 74 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1772,10 +1773,10 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 73 - LEAVE Instruction",
-            "Phase 73 implements source-level `leave`/`LEAVE` as validation-first stack-frame teardown shorthand",
-            "reads saved `EBP` from DWORD `[EBP]`",
-            "creates no public `memoryChanges` rows",
+            "Phase 74 - RET imm16 Instruction",
+            "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior",
+            "pops and validates the pseudo-EIP return token first",
+            "skipped argument bytes are not read or cleared",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
             "source-level 32-bit `pop` for registers and DWORD memory destinations",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
@@ -1841,9 +1842,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 73 - LEAVE Instruction",
-            "Phase 73 advances runtime/source-run behavior metadata",
-            "source-level `leave`/`LEAVE` frame teardown",
+            "Phase 74 - RET imm16 Instruction",
+            "Phase 74 advances runtime/source-run behavior metadata",
+            "near `ret imm16` caller-cleanup returns are now executable",
             "no public `memoryChanges` rows",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
@@ -1890,8 +1891,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 73 - LEAVE Instruction",
-            "Phase 73 adds source-level `leave`/`LEAVE` frame teardown shorthand",
+            "Phase 74 - RET imm16 Instruction",
+            "Phase 74 adds near `ret imm16`/`RET imm16` caller-cleanup returns",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -1899,6 +1900,7 @@ def assert_current_status_and_harness_documented() -> None:
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
+            "Near `RET imm16` reads and validates the helper return token exactly like plain helper `RET`",
             "Root-code-stream `RET` succeeds by default in MASM32-compatible root RET mode",
             "Optional strict root RET mode rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`",
             "Called helper procedure fallthrough while a helper return token is pending is mapped to `procedure-fell-through`",
@@ -1940,9 +1942,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 73 - LEAVE Instruction",
+            "Phase 74 - RET imm16 Instruction",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 73 - LEAVE Instruction",
+            "Phase 74 - RET imm16 Instruction",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2011,7 +2013,7 @@ def assert_current_status_and_harness_documented() -> None:
             "native process execution, or full macro-system compatibility",
             "Implicit VM-internal memory accesses performed by simulator control-flow machinery",
             "accepted MASM32-compatible root RET default behavior",
-            "`RET imm16`, `RETF`, stack-frame creation, and Irvine32 callable routine dispatch",
+            "`RETF`, stack-frame creation, and Irvine32 callable routine dispatch",
         ],
     )
     assert_all_text_not_contains(
@@ -2024,7 +2026,7 @@ def assert_current_status_and_harness_documented() -> None:
             "The current Phase 69C identifier is:",
             "Phase 75 `PROC USES`; Phase 76 `LOCAL`; Phase 77 `PROTO`; Phase 78 `INVOKE`; Phase 79 `ADDR`; and Phase 80 Irvine32 callable routine dispatch",
             "Phase 70A is protocol/artifact compatibility cleanup only and must not implement root `RET` or any other MASM runtime behavior. If the guide uses corrective non-renumbering phases",
-            "root `RET` termination, `RET imm16`, `RETF`, `LEAVE",
+            "root `RET` termination, `RETF`, `LEAVE",
             "root `RET`, Irvine32 routine dispatch, and other CALL/RET forms remain future-owned",
             "Optional `the-front-fell-off` Diagnostic Easter Egg",
             "It is optional unless the owning phase explicitly makes it required",
@@ -2062,6 +2064,7 @@ def assert_current_status_and_harness_documented() -> None:
             "## 75F. Phase 71F - Fallthrough Test Migration and Opposite Fixtures",
             "## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "## 77. Phase 73 - LEAVE Instruction",
+            "## 78. Phase 74 - RET imm16 Instruction",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2094,12 +2097,12 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 73 - LEAVE Instruction",
-            "Phase 73 adds tests for source-level `leave`/`LEAVE`",
+            "Phase 74 - RET imm16 Instruction",
+            "Phase 74 adds tests for near `ret imm16`/`RET imm16`",
             "parser acceptance and rejection",
             "checked-memory diagnostics",
-            "no-public-`memoryChanges` behavior",
-            "regressions for Phase 72A `PUSH`/`POP`, helper `CALL`/`RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
+            "return-token validation before cleanup",
+            "regressions for Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2114,12 +2117,12 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 73: LEAVE Instruction",
+            "Milestone 74: RET imm16 Instruction",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
-            "push ebp",
-            "mov ebp, esp",
-            "leave",
+            "push 2222h",
+            "call Callee",
+            "ret 8",
             "final-registers",
             "Program Console",
         ],
@@ -2167,7 +2170,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 73",
+            "IMPLEMENTED_PHASE = 74",
         ],
     )
     assert_all_text_not_contains(

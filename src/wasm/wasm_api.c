@@ -19,8 +19,8 @@
  * strict root-code-stream RET diagnostics, Phase 71C code-stream fallthrough
  * and code-end diagnostics, Phase 71D configurable procedure-fallthrough
  * diagnostics, Phase 72 call-depth resource-limit diagnostics, Phase 72A
- * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, and
- * recovered unsupported-feature diagnostics, then
+ * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
+ * RET imm16 caller cleanup, and recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -82,17 +82,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 73 JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 73U
+/// Numeric runtime/source-run behavior phase reported for Phase 74 JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 74U
 
-/// Suffix for the current Phase 73 runtime/source-run behavior phase.
+/// Suffix for the current Phase 74 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 73 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 73 - LEAVE Instruction"
+/// Full name of the current Phase 74 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 74 - RET imm16 Instruction"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 73 LEAVE diagnostics and stack-frame teardown state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-73-leave-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 74 RET imm16 cleanup state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-74-ret-imm16-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -6600,6 +6600,7 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
                    status == VM_EXEC_STATUS_DIVIDE_BY_ZERO || status == VM_EXEC_STATUS_QUOTIENT_OVERFLOW ||
                    status == VM_EXEC_STATUS_INVALID_BRANCH_TARGET || status == VM_EXEC_STATUS_INVALID_CALL_TARGET ||
                    status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS ||
+                   status == VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE ||
                    status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH ||
                    status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
@@ -6642,6 +6643,9 @@ static bool masm32_sim_json_append_exec_message(Masm32SimJsonWriter *writer, con
     } else if (status == VM_EXEC_STATUS_INVALID_RETURN_ADDRESS) {
         message_code = "invalid-return-address";
         message_text = "RET read a return token that does not map to an executable pseudo-EIP instruction target. Execution stopped before changing ESP or transferring control.";
+    } else if (status == VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE) {
+        message_code = "ret-stack-cleanup-out-of-range";
+        message_text = "RET imm16 cleanup would leave ESP outside the active stack region or empty-stack boundary. Execution stopped before changing ESP or transferring control.";
     } else if (status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH) {
         message_code = "procedure-fell-through";
         message_text = "Execution fell through out of a procedure without RET, JMP, exit, or another explicit control-transfer or termination instruction.";

@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 73 LEAVE coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 74 RET imm16 coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -1243,81 +1243,73 @@ static int test_phase70_plain_ret_parses_to_ir(void) {
     return failures;
 }
 
-/// Verifies Phase 70 rejects future RET forms without enabling stack-frame features.
+/// Verifies Phase 74 accepts RET imm16 and still rejects non-immediate return forms.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase70_ret_form_rejections(void) {
+static int test_phase74_ret_imm16_forms(void) {
     int failures = 0;
     ParserTestBuffers buffers;
     VmParserResult result;
+    static const struct {
+        const char *source_line;
+        uint32_t expected_value;
+    } accepted_cases[] = {
+        {"ret 0", 0U},
+        {"ret 4", 4U},
+        {"ret 8", 8U},
+        {"ret 16", 16U},
+        {"ret 0010h", 16U},
+        {"ret 65535", 65535U}
+    };
+    static const struct {
+        const char *source_line;
+        VmParserDiagnosticCode expected_code;
+        const char *message_fragment;
+    } rejected_cases[] = {
+        {"ret -1", VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "unsigned 16-bit"},
+        {"ret 10000h", VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, "unsigned 16-bit"},
+        {"ret eax", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "unsigned 16-bit immediate"},
+        {"ret DWORD PTR [esp]", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "register, memory, and far-return"},
+        {"ret 4, 8", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "exactly one"},
+        {"retf", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "Far RET forms are not implemented"},
+        {"retf 4", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "Far RET forms are not implemented"}
+    };
+    size_t index = 0U;
 
-    failures += expect_parser_status(parse_for_test(
-        ".code\n"
-        "main PROC\n"
-        "    ret 4\n"
-        "main ENDP\n"
-        "END main\n",
-        &buffers,
-        &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET imm16 should remain deferred");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET imm16 should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET imm16 diagnostic should use stable simulator boundary wording");
-    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET imm16 diagnostic should preserve operand line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET imm16 diagnostic should preserve operand column");
-    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET imm16 diagnostic should preserve operand byte offset");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 1U, "RET imm16 diagnostic should span immediate token");
-    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET imm16 diagnostic must not use milestone-relative wording");
+    for (index = 0U; index < sizeof(accepted_cases) / sizeof(accepted_cases[0]); index += 1U) {
+        char source[256];
+        memset(&result, 0, sizeof(result));
+        (void)snprintf(
+            source,
+            sizeof(source),
+            ".code\nmain PROC\n    %s\nmain ENDP\nEND main\n",
+            accepted_cases[index].source_line
+        );
+        failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "RET imm16 accepted form should parse");
+        failures += expect_size(result.instruction_count, 1U, "RET imm16 accepted form should emit one instruction");
+        if (result.instruction_count >= 1U) {
+            failures += expect_u32((uint32_t)buffers.instructions[0].opcode, (uint32_t)VM_IR_OPCODE_RET, "RET imm16 should lower to RET opcode");
+            failures += expect_u32((uint32_t)buffers.instructions[0].destination.kind, (uint32_t)VM_IR_OPERAND_NONE, "RET imm16 destination should be empty");
+            failures += expect_u32((uint32_t)buffers.instructions[0].source.kind, (uint32_t)VM_IR_OPERAND_IMMEDIATE, "RET imm16 source should be immediate");
+            failures += expect_u32(buffers.instructions[0].source.width_bits, 16U, "RET imm16 source should be 16-bit metadata");
+            failures += expect_u32(buffers.instructions[0].source.immediate, accepted_cases[index].expected_value, "RET imm16 immediate value should match source");
+        }
+    }
 
-    failures += expect_parser_status(parse_for_test(
-        ".code\n"
-        "main PROC\n"
-        "    ret eax\n"
-        "main ENDP\n"
-        "END main\n",
-        &buffers,
-        &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET register operand should remain unsupported");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET register operand should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET register diagnostic should use stable simulator boundary wording");
-    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET register diagnostic should preserve operand line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET register diagnostic should preserve operand column");
-    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET register diagnostic should preserve operand byte offset");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "RET register diagnostic should span register token");
-    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET register diagnostic must not use milestone-relative wording");
-
-    failures += expect_parser_status(parse_for_test(
-        ".code\n"
-        "main PROC\n"
-        "    ret WORD PTR [esp]\n"
-        "main ENDP\n"
-        "END main\n",
-        &buffers,
-        &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RET memory operand should remain unsupported");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET memory operand should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "RET operand forms are not implemented", "RET memory diagnostic should use stable simulator boundary wording");
-    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RET memory diagnostic should preserve operand line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 9U, "RET memory diagnostic should preserve operand column");
-    failures += expect_size(buffers.diagnostics[0].location.offset, 24U, "RET memory diagnostic should preserve operand byte offset");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "RET memory diagnostic should span PTR width token");
-    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RET memory diagnostic must not use milestone-relative wording");
-
-    failures += expect_parser_status(parse_for_test(
-        ".code\n"
-        "main PROC\n"
-        "    retf\n"
-        "main ENDP\n"
-        "END main\n",
-        &buffers,
-        &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "RETF far return should remain unsupported");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RETF should use unsupported-instruction-form");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "Far RET forms are not implemented", "RETF diagnostic should use stable simulator boundary wording");
-    failures += expect_size(buffers.diagnostics[0].location.line, 3U, "RETF diagnostic should preserve mnemonic line");
-    failures += expect_size(buffers.diagnostics[0].location.column, 5U, "RETF diagnostic should preserve mnemonic column");
-    failures += expect_size(buffers.diagnostics[0].location.offset, 20U, "RETF diagnostic should preserve mnemonic byte offset");
-    failures += expect_size(buffers.diagnostics[0].lexeme_length, 4U, "RETF diagnostic should span mnemonic token");
-    failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "RETF diagnostic must not use milestone-relative wording");
+    for (index = 0U; index < sizeof(rejected_cases) / sizeof(rejected_cases[0]); index += 1U) {
+        char source[256];
+        memset(&result, 0, sizeof(result));
+        (void)snprintf(
+            source,
+            sizeof(source),
+            ".code\nmain PROC\n    %s\nmain ENDP\nEND main\n",
+            rejected_cases[index].source_line
+        );
+        failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid RET form should produce diagnostic status");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, rejected_cases[index].expected_code, "invalid RET diagnostic code should match");
+        failures += expect_string_contains(buffers.diagnostics[0].message, rejected_cases[index].message_fragment, "invalid RET diagnostic should explain rejected form");
+        failures += expect_no_phase71b_forbidden_diagnostic_wording(buffers.diagnostics[0].message, "invalid RET diagnostic must not use milestone-relative wording");
+    }
 
     return failures;
 }
@@ -6569,8 +6561,7 @@ static int test_phase73_leave_parse_paths(void) {
     } rejected_cases[] = {
         {"leave eax", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "does not take operands"},
         {"leave eax, ebx", VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, "does not take operands"},
-        {"enter 8, 0", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "Unsupported instruction"},
-        {"ret 4", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, "RET operand forms"}
+        {"enter 8, 0", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION, "Unsupported instruction"}
     };
     size_t index = 0U;
 
@@ -7371,7 +7362,7 @@ int main(void) {
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
     failures += test_phase70_plain_ret_parses_to_ir();
-    failures += test_phase70_ret_form_rejections();
+    failures += test_phase74_ret_imm16_forms();
     failures += test_phase68_procedure_name_diagnostics();
     failures += test_phase68b_eip_control_state_diagnostics();
     failures += test_phase58_label_casemap_policy();
@@ -7478,6 +7469,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 73 LEAVE coverage passed.\n");
+    printf("Parser tests through Phase 74 RET imm16 coverage passed.\n");
     return 0;
 }

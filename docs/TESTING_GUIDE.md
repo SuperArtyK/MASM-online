@@ -6,9 +6,9 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 73 - LEAVE Instruction
+- Phase 74 - RET imm16 Instruction
 
-Phase 73 adds tests for source-level `leave`/`LEAVE`. Tests must cover parser acceptance and rejection, validation-first executor frame teardown, checked-memory diagnostics for `[EBP]` reads, rendered Simulator Messages, strict planned-read validation, no-public-`memoryChanges` behavior, no-partial-mutation behavior, and regressions for Phase 72A `PUSH`/`POP`, helper `CALL`/`RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`.
+Phase 74 adds tests for near `ret imm16`/`RET imm16`. Tests must cover parser acceptance and rejection, helper-return execution after source-level argument pushes, unsigned 16-bit immediate boundaries, return-token validation before cleanup, cleanup-range diagnostics, rendered Simulator Messages, no-public-`memoryChanges` behavior for internal return-token reads, no-partial-mutation behavior, and regressions for Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`.
 
 
 
@@ -1200,12 +1200,13 @@ Use executor/native tests when a phase implements an instruction whose full sour
 - Phase 69 - Direct CALL to User Procedures can be tested by stepping one CALL and checking the return token, stack write, instruction pointer, modeled flags, and no-partial-mutation behavior.
 - Phase 70 - RET Execution and Return Address Validation can be tested with executor-level stack setup before complete source-level CALL/root termination programs exist.
 - Phase 73 - LEAVE Instruction can be tested with direct frame setup even when source-level setup instructions are also available.
+- Phase 74 - RET imm16 Instruction can be tested with source-level argument pushes because Phase 72A already implements the required 32-bit PUSH subset.
 
 Use source-run tests only when all required source-level dependencies already exist. Examples:
 
 - A complete CALL/RET source program requires both CALL and RET behavior and a defined termination path.
 - A source program using `push ebp` requires source-level PUSH support.
-- A source program using argument pushes before `ret imm16` requires source-level PUSH support.
+- A source program using argument pushes before `ret imm16` is valid after Phase 74 because source-level PUSH support is already available from Phase 72A.
 
 Do not implement future instructions merely to make a source-run fixture pass. If a fixture depends on a future phase, either move that fixture to the owning future phase or mark it as an integration regression that becomes active only after the dependency phase is complete.
 
@@ -1246,7 +1247,7 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
-- static documentation checks continue to list RET imm16, RETF, stack-frame creation, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them, while verifying that Phase 73 `LEAVE` is documented as implemented.
+- static documentation checks continue to list RETF, stack-frame creation, LOCAL, USES, PROTO, INVOKE, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them, while verifying that Phase 73 `LEAVE` and Phase 74 `RET imm16` are documented as implemented.
 
 ## Current-status documentation clutter checks
 
@@ -1295,7 +1296,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72A, the expected token is `phase-72a-push-pop-stack-output-contract-v1` because the phase changes accepted syntax, runtime stack semantics, structured JSON memory-change rows, rendered Simulator Messages, and protocol interpretation for source-level PUSH/POP stack transfers. For Phase 73, the expected token is `phase-73-leave-output-contract-v1` because the phase changes accepted syntax, runtime stack-read semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for source-level LEAVE frame teardown.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72A, the expected token is `phase-72a-push-pop-stack-output-contract-v1` because the phase changes accepted syntax, runtime stack semantics, structured JSON memory-change rows, rendered Simulator Messages, and protocol interpretation for source-level PUSH/POP stack transfers. For Phase 73, the expected token is `phase-73-leave-output-contract-v1` because the phase changes accepted syntax, runtime stack-read semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for source-level LEAVE frame teardown. For Phase 74, the expected token is `phase-74-ret-imm16-output-contract-v1` because the phase changes accepted syntax, runtime return-cleanup semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for near `RET imm16` caller cleanup.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 

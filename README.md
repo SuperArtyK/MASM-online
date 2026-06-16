@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 73 - LEAVE Instruction |
+| Current milestone | Phase 74 - RET imm16 Instruction |
 
-Phase 73 implements source-level `leave`/`LEAVE` as validation-first stack-frame teardown shorthand. `LEAVE` reads saved `EBP` from DWORD `[EBP]` through checked VM memory, then commits `ESP = old EBP + 4` and `EBP = saved EBP` only after the read succeeds; it preserves modeled flags, creates no public `memoryChanges` rows, and preserves no-partial-mutation behavior on fatal checked-memory failures. Phase 72A source-level 32-bit `push`/`pop`, helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, call-depth limits, and Irvine32 `exit` behavior remain independent.
+Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior: it pops and validates the pseudo-EIP return token first, applies unsigned 16-bit cleanup only after validation, preserves modeled flags, and skipped argument bytes are not read or cleared. Phase 73 `LEAVE`, Phase 72A source-level 32-bit `push`/`pop`, helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, call-depth limits, and Irvine32 `exit` behavior remain independent.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -36,6 +36,7 @@ At a high level, the current subset includes:
 - source-level 32-bit `pop` for registers and DWORD memory destinations;
 - source-level `leave`/`LEAVE` frame teardown shorthand with checked saved-EBP reads and no public `memoryChanges` rows;
 - plain near helper `ret`/`RET` with checked internal pseudo-EIP return-token stack reads and validated return transfer when a helper call return is pending;
+- near helper `ret imm16`/`RET imm16` with unsigned 16-bit caller-cleanup bytes applied only after successful return-token validation;
 - root-code-stream `ret`/`RET` success by default without stack reads when no helper return is pending, including after ordinary fallthrough from the selected entry into later procedure text;
 - optional `rootRetMode = "strict-call-frame"` teaching mode, which rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`;
 - configurable `procedureFallthroughPolicy` for ordinary procedure-boundary fallthrough;
@@ -53,7 +54,6 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- `ret imm16`;
 - stack-frame creation, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;

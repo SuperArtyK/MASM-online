@@ -8,15 +8,15 @@
  * lea, mul, imul, div, idiv, Phase 61 direct-JMP runtime transfer,
  * Phase 64 equality conditional jumps, Phase 65 signed relational conditional
  * jumps, Phase 66 unsigned relational conditional jumps, Phase 69 direct CALL, Phase 72 call-depth resource protection,
- * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE,
+ * Phase 70 helper plain near RET, Phase 71 root-code-stream RET termination, Phase 72A source-level PUSH/POP, Phase 73 LEAVE, Phase 74 RET imm16 cleanup,
  * Phase 71D configurable procedure-fallthrough diagnostics, Phase 71E
  * entry-procedure auto-stop compatibility, Phase 71C code-stream
  * end-falloff diagnostics, and Irvine32 exit
  * over the currently supported register and memory operand forms. It records
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
- * stack region at startup; source-level PUSH/POP and LEAVE are supported,
- * while RET imm16, ENTER, procedure-frame creation, and non-exit Irvine32
+ * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
+ * while ENTER, procedure-frame creation, far returns, and non-exit Irvine32
  * routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -3685,29 +3685,66 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     return VM_EXEC_STATUS_OK;
 }
 
-/// Executes one plain near RET root/helper operation.
+/// Returns whether an ESP value is valid for the active stack region.
+///
+/// Phase 68A defines the empty stack as the first byte past the active stack
+/// region. Phase 74 RET imm16 cleanup may therefore leave ESP either inside the
+/// stack region or exactly at that exclusive high boundary.
+///
+/// @param vm VM whose active stack region should be inspected.
+/// @param esp Candidate ESP value after stack cleanup.
+/// @return true when ESP is inside the stack region or exactly at its high boundary.
+static bool vm_exec_stack_pointer_is_inside_or_empty_boundary(const Vm *vm, uint32_t esp) {
+    const VmMemoryRegion *stack_region = NULL;
+    uint64_t stack_limit = 0U;
+
+    if (vm == NULL) {
+        return false;
+    }
+    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL || stack_region->size == 0U) {
+        return false;
+    }
+    stack_limit = (uint64_t)stack_region->base + (uint64_t)stack_region->size;
+    if (stack_limit > (uint64_t)UINT32_MAX) {
+        return false;
+    }
+
+    return esp == (uint32_t)stack_limit || (esp >= stack_region->base && esp < (uint32_t)stack_limit);
+}
+
+/// Executes one near RET root/helper operation.
 ///
 /// A root-code-stream RET with no helper return pending uses the configured
 /// Phase 71A root RET mode: the default mode terminates successfully before
 /// reading `[ESP]`, while strict mode stops before stack access with a teaching
 /// diagnostic. Every ordinary helper RET preserves the Phase 70 checked DWORD
-/// pseudo-EIP token read, return-target validation, and ESP mutation ordering.
+/// pseudo-EIP token read and return-target validation, then Phase 74 applies an
+/// optional unsigned imm16 cleanup only after the return token is valid.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction RET instruction descriptor.
-/// @return Executor status for the RET read and return-target validation.
+/// @return Executor status for the RET read, return-target validation, and optional cleanup.
 static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instruction) {
     VmMemoryDiagnostic memory_diagnostic;
     VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
     uint32_t original_esp = 0U;
+    uint32_t cleanup_bytes = 0U;
+    uint32_t final_esp = 0U;
     uint32_t return_token = 0U;
     size_t return_index = 0U;
 
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-    if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
+    if (instruction->destination.kind != VM_IR_OPERAND_NONE) {
         return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+    }
+    if (instruction->source.kind != VM_IR_OPERAND_NONE) {
+        if (instruction->source.kind != VM_IR_OPERAND_IMMEDIATE || instruction->source.width_bits != 16U || instruction->source.immediate > 65535U) {
+            return VM_EXEC_STATUS_INVALID_INSTRUCTION;
+        }
+        cleanup_bytes = instruction->source.immediate;
     }
     if (vm_exec_root_metadata_is_inconsistent(vm)) {
         return VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE;
@@ -3735,7 +3772,12 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
         return VM_EXEC_STATUS_INVALID_RETURN_ADDRESS;
     }
 
-    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, original_esp + 4U)) {
+    final_esp = (uint32_t)(original_esp + 4U + cleanup_bytes);
+    if (!vm_exec_stack_pointer_is_inside_or_empty_boundary(vm, final_esp)) {
+        return VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE;
+    }
+
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, final_esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
     vm->instruction_pointer = return_index;
@@ -4580,6 +4622,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-call-target";
         case VM_EXEC_STATUS_INVALID_RETURN_ADDRESS:
             return "invalid-return-address";
+        case VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE:
+            return "ret-stack-cleanup-out-of-range";
         case VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH:
             return "procedure-fell-through";
         case VM_EXEC_STATUS_CODE_FELL_OFF_END:

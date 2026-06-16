@@ -490,7 +490,7 @@ Procedure-boundary fallthrough diagnostics and optional beginner compatibility s
 
 The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, `RET imm16`, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features.
 
 #### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
@@ -1631,7 +1631,8 @@ Extended loop helpers:
 
 Stack/procedure convenience:
 
-- `ret imm16`
+- `ENTER`/automatic frame setup
+- `PROC USES`, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
 
 Conditional byte set:
 
@@ -3532,7 +3533,7 @@ A separate call-depth watchdog may be provided for clearer recursion diagnostics
 
 ### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
 
-CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, USES, LOCAL, RET imm16, PROTO, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
+CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, near `RET imm16`, USES, LOCAL, PROTO, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
 
 The required staging is:
 
@@ -3550,7 +3551,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, and LEAVE are implemented in their owning phases. Remaining expanded features such as RET imm16, PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, and near `RET imm16` are implemented in their owning phases. Remaining expanded features such as PROC USES, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3560,7 +3561,7 @@ Mandatory Level 1 VM memory safety always applies to implicit stack accesses. Ad
 
 Optional educational validation policies apply to implicit stack accesses only when the relevant policy has an applicable stack model. Data-section declared-object validation must not be accidentally reused as stack-frame validation. Before a phase explicitly defines stack-section object metadata, stack-frame metadata, local-variable metadata, argument metadata, saved-register metadata, return-token-slot metadata, or synthetic stack-object metadata, declared-object validation must not reject an otherwise valid CALL, RET, PUSH, POP, frame, or Irvine32 stack access merely because that stack address is outside every `.data`, `.DATA?`, or `.CONST` declared object.
 
-Current `LEAVE` is implemented as validation-first frame teardown shorthand. It reads saved `EBP` from DWORD `[EBP]` through the central checked memory helpers, then commits `ESP = old EBP + 4` and `EBP = saved EBP` only after that read succeeds. The read is internal VM stack/frame state and must not create a public `memoryChanges` row. A failed `[EBP]` read must report the existing checked-memory diagnostic on the `LEAVE` source span before mutating `ESP`, `EBP`, flags, memory, Program Console output, terminal state, or public memory-change rows. `LEAVE` does not imply automatic frame creation, `ENTER`, `RET imm16`, `PROC USES`, `LOCAL`, argument handling, calling-convention inference, or Irvine32 callable routine dispatch.
+Current `LEAVE` is implemented as validation-first frame teardown shorthand. It reads saved `EBP` from DWORD `[EBP]` through the central checked memory helpers, then commits `ESP = old EBP + 4` and `EBP = saved EBP` only after that read succeeds. The read is internal VM stack/frame state and must not create a public `memoryChanges` row. A failed `[EBP]` read must report the existing checked-memory diagnostic on the `LEAVE` source span before mutating `ESP`, `EBP`, flags, memory, Program Console output, terminal state, or public memory-change rows. `LEAVE` does not imply automatic frame creation, `ENTER`, `PROC USES`, `LOCAL`, argument metadata, calling-convention inference, or Irvine32 callable routine dispatch.
 
 Once a later phase defines stack-object, stack-frame, local, argument, saved-register, return-token, or synthetic stack metadata, that later phase may add warning-mode or strict-mode validation for stack accesses. That validation must be defined as stack validation, with its own applicability rules and tests. It must not silently reuse data-section object rules without a documented mapping from stack addresses to stack objects.
 
@@ -3617,7 +3618,7 @@ Default MASM32 Educational Mode accepts root-code-stream RET. The accepted stric
 
 This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
 
-Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, LEAVE, future frame setup/teardown, PROC USES, LOCAL, RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.
+Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, LEAVE, future frame setup/teardown, PROC USES, LOCAL, near RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.
 
 A phase that introduces, replaces, or changes a stack-specific diagnostic code must define all of the following in the implementation guide before implementation:
 
@@ -5158,6 +5159,8 @@ Unless the owning milestone explicitly requires public visualization, implicit c
 This rule preserves the Phase 69 public output behavior that remains part of the Phase 70 source-run output contract: successful direct user-procedure `CALL` performs an internal checked pseudo-EIP return-token stack write, updates `ESP`, and transfers to the target procedure entry, but that implicit stack write does not appear as a public source-run `memoryChanges` row.
 
 Because `RET` reads the return token rather than writing one, Phase 70 `RET` return-token reads must not create public source-run JSON `memoryChanges` rows. If a later milestone deliberately adds public stack-effect visualization, that milestone must define the JSON fields, rendered display wording, source attribution behavior, tests, and compatibility impact.
+Near `RET imm16` is implemented for helper returns as explicit caller-cleanup behavior. The operand is an unsigned 16-bit immediate byte count. The executor reads and validates the pseudo-EIP return token exactly like plain helper `RET`, applies the immediate cleanup only after the token is valid, validates that the resulting `ESP` remains inside the active stack region or exactly at the documented empty-stack boundary, preserves modeled flags, does not read or clear skipped argument bytes, and reports a runtime error on the `RET imm16` source span before changing `ESP` or transferring control when cleanup would leave the valid stack boundary. Selected-entry root-code-stream `RET` compatibility behavior remains governed by root RET mode and does not infer helper return cleanup semantics from the immediate operand.
+
 
 Source attribution must not create successful memory-change rows for failed writes. Failed `.CONST` writes, invalid-address writes, invalid-range writes, permission failures, strict planned-access failures, and any other no-partial-mutation failure must still produce no successful memory-change row.
 
@@ -5831,12 +5834,12 @@ A realistic unsupported program should produce a concise set of structured diagn
 - MASM32 library or C runtime routines such as `StdOut` or `crt_printf`;
 - high-level MASM flow such as `.IF`, `.ELSE`, and `.ENDIF`;
 - unsupported `CALL` forms beyond direct user-procedure CALL, such as Irvine32 routine calls, external/API calls, ordinary-label targets, register targets, memory targets, and indirect calls;
-- `RET imm16`, `RETF`, stack-frame creation, and Irvine32 callable routine dispatch until their owning phases implement those features;
+- `RETF`, stack-frame creation, and Irvine32 callable routine dispatch until their owning phases implement those features;
 - loop-family instructions, indirect/register/memory/immediate branch targets, and branch distance/type overrides until their owning phases are implemented.
 
 Already-implemented branch forms must not be described as unsupported in current source-of-truth text. Direct `jmp label`, equality conditional jumps, signed relational conditional jumps, and unsigned relational conditional jumps are current implemented behavior and should follow their implemented diagnostics and execution rules.
 
-Current direct user-procedure `CALL`, current plain near helper `RET`, current selected-entry root `RET`, current source-level `PUSH`/`POP`, and current `LEAVE` behavior must not be removed or described as unsupported merely because Irvine32 routine dispatch, `RET imm16`, stack-frame creation, and other CALL/RET forms remain future-owned.
+Current direct user-procedure `CALL`, current plain near helper `RET`, current near helper `RET imm16`, current selected-entry root `RET`, current source-level `PUSH`/`POP`, and current `LEAVE` behavior must not be removed or described as unsupported merely because Irvine32 routine dispatch, stack-frame creation, far returns, and other CALL/RET forms remain future-owned.
 
 The simulator should avoid flooding the user with repeated character-level diagnostics when a more meaningful unsupported-feature diagnostic is possible.
 

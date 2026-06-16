@@ -136,7 +136,7 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_JNA,
     /// Direct near CALL to a user procedure entry.
     VM_IR_OPCODE_CALL,
-    /// Plain near RET that consumes a checked pseudo-EIP return token from the stack.
+    /// Near RET that consumes a checked pseudo-EIP return token and may apply an imm16 cleanup.
     VM_IR_OPCODE_RET,
     /// Source-level 32-bit PUSH stack transfer.
     VM_IR_OPCODE_PUSH,

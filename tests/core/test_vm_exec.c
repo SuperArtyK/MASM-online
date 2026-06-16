@@ -1,13 +1,14 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 73 LEAVE coverage.
+ * @brief Unit tests for the VM executor through Phase 74 RET imm16 coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
  * JMP, conditional-branch, Phase 69 direct CALL runtime transfer, Phase 70 RET validation, Phase 71 root termination, Phase 71A strict root RET mode, arithmetic fault rollback, and
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
- * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP, and
- * Phase 73 LEAVE frame teardown. They intentionally avoid parser, Irvine32
+ * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
+ * Phase 73 LEAVE frame teardown, and Phase 74 RET imm16 cleanup. They
+ * intentionally avoid parser, Irvine32
  * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
  * terminator.
  */
@@ -4410,6 +4411,130 @@ static int test_phase70_ret_invalid_token_rolls_back(void) {
 }
 
 
+/// Verifies Phase 74 RET imm16 pops the return token and then skips caller arguments.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase74_ret_imm16_cleans_arguments(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDelta *delta = NULL;
+    const VmExecRegisterChange *esp_change = NULL;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_PUSH, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x2222U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "push 2222h", 0U},
+        {VM_IR_OPCODE_PUSH, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x1111U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "push 1111h", 1U},
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 4U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "call Callee", 2U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "exit", 3U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "ret 8", 4U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for RET imm16 cleanup test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "RET imm16 cleanup program should load");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_OF, true) ? 0 : record_failure("RET imm16 flag setup should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "first argument PUSH should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "second argument PUSH should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL before RET imm16 should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "RET imm16 should execute");
+    failures += expect_size(vm.instruction_pointer, 3U, "RET imm16 should transfer to CALL successor");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after RET imm16 should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "RET imm16 should skip two DWORD caller arguments");
+    failures += expect_flag(&vm.cpu, VM_FLAG_OF, true, "RET imm16 should preserve modeled flags");
+
+    delta = vm_last_delta(&vm);
+    if (delta == NULL || !delta->has_instruction) {
+        failures += record_failure("RET imm16 should expose a committed delta");
+    } else {
+        failures += expect_u32((uint32_t)delta->instruction.opcode, (uint32_t)VM_IR_OPCODE_RET, "RET imm16 delta should record RET opcode");
+        failures += expect_u32((uint32_t)delta->instruction.source.kind, (uint32_t)VM_IR_OPERAND_IMMEDIATE, "RET imm16 delta should retain immediate source");
+        failures += expect_u32(delta->instruction.source.immediate, 8U, "RET imm16 delta should retain cleanup byte count");
+        failures += expect_size(delta->memory_access_count, 1U, "RET imm16 should record only the return-token read");
+        failures += expect_size(delta->memory_change_count, 0U, "RET imm16 should not expose skipped arguments as memory changes");
+        failures += expect_size(delta->flag_change_count, 0U, "RET imm16 should not report flag changes");
+        esp_change = find_register_change(delta, VM_REGISTER_ESP);
+        if (esp_change == NULL) {
+            failures += record_failure("RET imm16 should report ESP register change");
+        } else {
+            failures += expect_u32(esp_change->old_value, VM_MEMORY_DEFAULT_STACK_TOP - 12U, "RET imm16 ESP old value should be return-token slot");
+            failures += expect_u32(esp_change->new_value, VM_MEMORY_DEFAULT_STACK_TOP, "RET imm16 ESP new value should include token pop and immediate cleanup");
+        }
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 74 RET imm16 edge cases and failure ordering.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase74_ret_imm16_edges_and_failures(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t esp = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction ret0_program[] = {
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "exit", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "ret 0", 1U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 1U, true, true},
+        {1U, 2U, false, true}
+    };
+    const VmIrInstruction invalid_token_program[] = {
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret 8", 0U}
+    };
+    const VmIrInstruction cleanup_range_program[] = {
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "exit", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 65535U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret 65535", 1U}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for RET 0 test");
+    failures += expect_status(vm_load_program(&vm, ret0_program, sizeof(ret0_program) / sizeof(ret0_program[0])), VM_EXEC_STATUS_OK, "RET 0 program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "RET 0 boundaries should configure");
+    vm.instruction_pointer = 1U;
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("RET 0 ESP setup should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, VM_EXEC_PSEUDO_EIP_BASE, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("RET 0 token setup should write stack DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "RET 0 should execute like plain RET");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after RET 0 should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "RET 0 should leave ESP at empty-stack boundary");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid RET imm16 token test");
+    failures += expect_status(vm_load_program(&vm, invalid_token_program, sizeof(invalid_token_program) / sizeof(invalid_token_program[0])), VM_EXEC_STATUS_OK, "invalid RET imm16 token program should load");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("invalid RET imm16 ESP setup should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, 0x12345678U, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("invalid RET imm16 token setup should write stack DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_RETURN_ADDRESS, "invalid RET imm16 token should fail before cleanup");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after invalid RET imm16 token should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "invalid RET imm16 token should not apply cleanup");
+    vm_deinit(&vm);
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for RET imm16 cleanup-boundary test");
+    failures += expect_status(vm_load_program(&vm, cleanup_range_program, sizeof(cleanup_range_program) / sizeof(cleanup_range_program[0])), VM_EXEC_STATUS_OK, "RET imm16 cleanup-boundary program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "RET imm16 cleanup-boundary metadata should configure");
+    vm.instruction_pointer = 1U;
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - 4U) ? 0 : record_failure("RET imm16 cleanup-boundary ESP setup should succeed");
+    failures += (vm_memory_write_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, VM_EXEC_PSEUDO_EIP_BASE, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("RET imm16 cleanup-boundary token setup should write stack DWORD"));
+    vm_memory_clear_changes(&vm.memory);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE, "RET imm16 cleanup beyond stack boundary should fail");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after cleanup-boundary failure should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "RET imm16 cleanup-boundary failure should not commit ESP");
+    failures += expect_size(vm.instruction_pointer, 1U, "RET imm16 cleanup-boundary failure should not transfer control");
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("RET imm16 cleanup-boundary failure should populate diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE, "RET imm16 cleanup-boundary diagnostic should name status");
+        failures += expect_u32(diagnostic->instruction_index, 1U, "RET imm16 cleanup-boundary diagnostic should point at RET instruction");
+    }
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE), "ret-stack-cleanup-out-of-range") == 0 ? 1U : 0U, 1U, "executor status helper should name RET imm16 cleanup range failures");
+    vm_deinit(&vm);
+
+    return failures;
+}
+
+
 /// Verifies Phase 71 does not add active-frame provenance validation to non-root RET.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -5984,7 +6109,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 73 LEAVE coverage.
+/// Runs all executor tests through Phase 74 RET imm16 coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -6070,6 +6195,8 @@ int main(void) {
     failures += test_phase69_invalid_call_metadata();
     failures += test_phase70_ret_returns_to_call_successor();
     failures += test_phase70_ret_invalid_token_rolls_back();
+    failures += test_phase74_ret_imm16_cleans_arguments();
+    failures += test_phase74_ret_imm16_edges_and_failures();
     failures += test_phase70_ret_empty_stack_checked_read_failure();
     failures += test_phase71_non_root_ret_with_valid_token_preserves_phase70_path();
     failures += test_phase71_root_ret_terminates_without_stack_read();
@@ -6106,6 +6233,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 73 LEAVE coverage passed.");
+    puts("Executor tests through Phase 74 RET imm16 coverage passed.");
     return 0;
 }

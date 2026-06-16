@@ -8,9 +8,9 @@
  * user-procedure CALL metadata, and emits only the minimal IR supported by the
  * current executor. Conditional control-flow transfer is implemented for direct
  * labels and procedure-entry labels; direct CALL is implemented only for user
- * procedure entries, and no-operand plain RET is lowered for the executor's
- * helper/root semantics. Phase 72A source-level PUSH/POP stack transfers and Phase 73 LEAVE
- * frame teardown are supported; RET imm16, ENTER, stack-frame creation,
+ * procedure entries, and plain near RET plus near RET imm16 are lowered for the
+ * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
+ * frame teardown, and Phase 74 RET imm16 cleanup are supported; ENTER, stack-frame creation,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -319,6 +319,9 @@ static bool vm_parser_add_lexer_status_diagnostic(
 );
 
 static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserConstantExpression *out_expression);
+
+/// Parses near RET with optional Phase 74 imm16 cleanup before generic operand validation.
+static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token);
 
 static bool vm_parser_expect_comma(VmParserState *state);
 
@@ -4662,7 +4665,11 @@ static bool vm_parser_token_is_nop_register_encoding_operand(const VmLexerToken 
     return width_bits == 16U || width_bits == 32U;
 }
 
-/// Returns whether an opcode uses no explicit source operands.
+/// Returns whether an opcode uses no ordinary explicit operands.
+///
+/// RET is included because its optional Phase 74 immediate cleanup operand is
+/// handled by the dedicated RET parser path before the generic no-operand
+/// validation rejects ordinary register, memory, or extra operands.
 ///
 /// @param opcode Opcode to inspect.
 /// @return true for accumulator conversion, NOP, carry-control, RET, LEAVE, and EXIT instructions.
@@ -4678,6 +4685,66 @@ static bool vm_parser_opcode_has_no_operands(VmIrOpcode opcode) {
            opcode == VM_IR_OPCODE_RET ||
            opcode == VM_IR_OPCODE_LEAVE ||
            opcode == VM_IR_OPCODE_EXIT;
+}
+
+
+/// Parses a near RET instruction with optional Phase 74 imm16 cleanup.
+///
+/// A plain RET emits the existing no-operand IR form. `RET imm16` emits the
+/// same RET opcode with an unsigned 16-bit immediate source operand. Register,
+/// memory, far-return, negative, and out-of-range cleanup forms remain rejected
+/// before lowering.
+///
+/// @param state Parser state positioned at the first token after RET.
+/// @param opcode RET opcode to emit.
+/// @param mnemonic_token Source token containing the RET mnemonic.
+/// @return true when the RET instruction was parsed and emitted.
+static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token) {
+    const VmLexerToken *operand_token = vm_parser_current_token(state);
+    VmParserConstantExpression expression;
+    VmIrOperand destination = vm_ir_operand_none();
+    VmIrOperand source = vm_ir_operand_none();
+
+    if (state == NULL || mnemonic_token == NULL || opcode != VM_IR_OPCODE_RET) {
+        return false;
+    }
+
+    if (vm_parser_is_line_end_token(operand_token)) {
+        if (!vm_parser_expect_line_end(state)) {
+            return false;
+        }
+        return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
+    }
+
+    if (!(operand_token->kind == VM_LEXER_TOKEN_NUMBER ||
+          operand_token->kind == VM_LEXER_TOKEN_PLUS ||
+          operand_token->kind == VM_LEXER_TOKEN_MINUS ||
+          operand_token->kind == VM_LEXER_TOKEN_LEFT_PAREN ||
+          (operand_token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+           (vm_parser_token_names_equate_expression(state, operand_token) ||
+            vm_parser_token_is_constant_unary_operator(operand_token))))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, operand_token, "RET accepts only no operand or an unsigned 16-bit immediate byte count; register, memory, and far-return operands are unsupported.");
+        return false;
+    }
+
+    memset(&expression, 0, sizeof(expression));
+    if (!vm_parser_parse_constant_expression(state, &expression)) {
+        return false;
+    }
+    if (expression.value < 0 || expression.value > 65535) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_NUMBER_OUT_OF_RANGE, expression.start_token, "RET immediate cleanup must be an unsigned 16-bit byte count in the range 0..65535.");
+        return false;
+    }
+    if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "RET imm16 accepts exactly one unsigned 16-bit immediate operand.");
+        return false;
+    }
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    source = vm_ir_operand_immediate((uint32_t)expression.value, 16U);
+    return vm_parser_emit_instruction(state, opcode, destination, source, mnemonic_token);
 }
 
 
@@ -8653,7 +8720,7 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             opcode = VM_IR_OPCODE_EXIT;
         } else {
             if (vm_parser_token_equals(mnemonic_token, "retf")) {
-                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "Far RET forms are not implemented. This simulator accepts plain near RET with no operands.");
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "Far RET forms are not implemented. This simulator accepts only near RET with no operand or an unsigned 16-bit immediate byte count.");
                 return false;
             }
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
@@ -8690,9 +8757,8 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "exit does not take operands.");
             return false;
         }
-        if (opcode == VM_IR_OPCODE_RET && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, vm_parser_current_token(state), "RET operand forms are not implemented. This simulator accepts plain near RET with no operands.");
-            return false;
+        if (opcode == VM_IR_OPCODE_RET) {
+            return vm_parser_parse_ret_instruction(state, opcode, mnemonic_token);
         }
         if (opcode == VM_IR_OPCODE_LEAVE && !vm_parser_is_line_end_token(vm_parser_current_token(state))) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INSTRUCTION_OPERANDS, vm_parser_current_token(state), "LEAVE does not take operands.");
