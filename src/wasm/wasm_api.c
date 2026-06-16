@@ -20,7 +20,8 @@
  * and code-end diagnostics, Phase 71D configurable procedure-fallthrough
  * diagnostics, Phase 72 call-depth resource-limit diagnostics, Phase 72A
  * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
- * RET imm16 caller cleanup, and recovered unsupported-feature diagnostics, then
+ * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, and
+ * recovered unsupported-feature diagnostics, then
  * reports a compact JSON result for the UI.
  */
 
@@ -82,17 +83,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 74 JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 74U
+/// Numeric runtime/source-run behavior phase reported for Phase 75 JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 75U
 
-/// Suffix for the current Phase 74 runtime/source-run behavior phase.
+/// Suffix for the current Phase 75 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 74 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 74 - RET imm16 Instruction"
+/// Full name of the current Phase 75 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 74 RET imm16 cleanup state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-74-ret-imm16-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 75 PROC diagnostic metadata state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-75-proc-metadata-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U

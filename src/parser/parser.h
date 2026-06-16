@@ -15,8 +15,9 @@
  * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
  * virtual Irvine32 registry metadata, Phase 68 call-target classification
- * metadata used by Phase 69 direct user-procedure CALL lowering, and Phase 70
- * plain near RET lowering.
+ * metadata used by Phase 69 direct user-procedure CALL lowering, Phase 70
+ * plain near RET lowering, Phase 74 RET imm16 lowering, and Phase 75
+ * PROC metadata diagnostics.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -243,6 +244,14 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_LABEL_SYMBOL_CONFLICT,
     /// A procedure declaration used malformed procedure-name syntax.
     VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME,
+    /// A PROC declaration used an unsupported attribute, parameter, language, visibility, frame, or distance token.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE,
+    /// A PROC declaration used malformed syntax after the PROC marker.
+    VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION,
+    /// An ENDP declaration named a procedure other than the currently open PROC.
+    VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH,
+    /// A procedure declaration conflicts with an earlier procedure declaration.
+    VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE,
     /// A direct CALL target resolved to a known symbol that is not a user procedure entry.
     VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET,
     /// A direct CALL operand used a register, memory, far, OFFSET, or expression form reserved for a later phase.
@@ -314,6 +323,22 @@ typedef struct VmCodeLabel {
 } VmCodeLabel;
 
 
+/// Maximum number of rejected PROC attributes preserved on one procedure metadata record.
+#define VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_CAPACITY 4U
+
+/// Maximum byte length, including the NUL terminator, for one rejected PROC attribute name.
+#define VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_NAME_CAPACITY 32U
+
+/// Describes one unsupported PROC attribute token retained for diagnostics and future metadata expansion.
+typedef struct VmProcedureUnsupportedAttribute {
+    /// Null-terminated original source spelling of the unsupported attribute or parameter token.
+    char name[VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_NAME_CAPACITY];
+    /// Source location of the unsupported attribute or parameter token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the unsupported attribute or parameter token in bytes.
+    size_t source_span_length;
+} VmProcedureUnsupportedAttribute;
+
 /// Describes one accepted `PROC` / `ENDP` source procedure range.
 typedef struct VmProcedureRange {
     /// Null-terminated original source spelling of the procedure name.
@@ -330,6 +355,10 @@ typedef struct VmProcedureRange {
     VmLexerSourceLocation source_location;
     /// Source span length of the procedure name in bytes.
     size_t source_span_length;
+    /// Number of unsupported PROC attributes recorded for this procedure metadata entry.
+    size_t unsupported_attribute_count;
+    /// Reserved parser-owned unsupported-attribute metadata slots for future accepted PROC attribute phases.
+    VmProcedureUnsupportedAttribute unsupported_attributes[VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_CAPACITY];
 } VmProcedureRange;
 
 /// Describes one accepted numeric equate declaration published for metadata consumers.

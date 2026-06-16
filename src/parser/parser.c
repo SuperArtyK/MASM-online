@@ -10,7 +10,10 @@
  * labels and procedure-entry labels; direct CALL is implemented only for user
  * procedure entries, and plain near RET plus near RET imm16 are lowered for the
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
- * frame teardown, and Phase 74 RET imm16 cleanup are supported; ENTER, stack-frame creation,
+ * frame teardown, Phase 74 RET imm16 cleanup, and Phase 75 PROC
+ * metadata diagnostics are supported; accepted PROC remains metadata-only,
+ * unsupported PROC tails are rejected with targeted diagnostics, and ENTER,
+ * stack-frame creation,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -1130,8 +1133,28 @@ static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *n
 
     existing_label = vm_parser_find_code_label(state, name_token);
     if (existing_label != NULL) {
+        const bool duplicate_procedure =
+            declaration_kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY &&
+            existing_label->declaration_kind == VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY;
+
         if (state->user_symbol_case_policy == VM_PARSER_USER_SYMBOL_CASEMAP_ALL &&
             vm_parser_label_conflict_is_folded_case(name_token, existing_label->name)) {
+            if (duplicate_procedure) {
+                (void)vm_parser_add_label_related_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE,
+                    name_token,
+                    existing_label->source_location,
+                    existing_label->source_span_length,
+                    "Procedure `%.*s` conflicts with prior procedure `%s` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line %u, column %u.",
+                    (int)name_token->lexeme_length,
+                    name_token->lexeme,
+                    existing_label->name,
+                    existing_label->source_location.line,
+                    existing_label->source_location.column
+                );
+                return false;
+            }
             (void)vm_parser_add_label_related_diagnostic(
                 state,
                 VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL,
@@ -1143,6 +1166,21 @@ static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *n
                 (int)name_token->lexeme_length,
                 name_token->lexeme,
                 existing_label->name,
+                existing_label->source_location.line,
+                existing_label->source_location.column
+            );
+            return false;
+        }
+        if (duplicate_procedure) {
+            (void)vm_parser_add_label_related_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE,
+                name_token,
+                existing_label->source_location,
+                existing_label->source_span_length,
+                "Duplicate procedure `%.*s`; first defined at line %u, column %u.",
+                (int)name_token->lexeme_length,
+                name_token->lexeme,
                 existing_label->source_location.line,
                 existing_label->source_location.column
             );
@@ -9398,6 +9436,51 @@ static bool vm_parser_parse_data_directive(VmParserState *state) {
     return false;
 }
 
+/// Returns whether one token can be reported as an unsupported PROC attribute or parameter.
+///
+/// @param token Token immediately after the PROC marker.
+/// @return true when the token is a recognizable unsupported PROC tail token.
+static bool vm_parser_token_is_unsupported_proc_attribute(const VmLexerToken *token) {
+    if (token == NULL) {
+        return false;
+    }
+
+    return token->kind == VM_LEXER_TOKEN_IDENTIFIER ||
+        token->kind == VM_LEXER_TOKEN_REGISTER ||
+        token->kind == VM_LEXER_TOKEN_DIRECTIVE;
+}
+
+/// Validates that a PROC declaration uses the currently accepted bare form.
+///
+/// @param state Parser state used for diagnostics.
+/// @param tail_token Token following the PROC marker.
+/// @return true when the declaration tail is empty.
+static bool vm_parser_validate_proc_tail(VmParserState *state, const VmLexerToken *tail_token) {
+    if (vm_parser_is_line_end_token(tail_token)) {
+        return true;
+    }
+
+    if (vm_parser_token_is_unsupported_proc_attribute(tail_token)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE,
+            tail_token,
+            "PROC attribute or parameter `%.*s` is not supported yet; the simulator currently accepts only bare PROC declarations and leaves USES, parameters, language attributes, visibility/export attributes, FRAME, NEAR, and FAR deferred.",
+            (int)tail_token->lexeme_length,
+            tail_token->lexeme
+        );
+        return false;
+    }
+
+    (void)vm_parser_add_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION,
+        tail_token,
+        "Invalid PROC declaration syntax after PROC; the simulator currently accepts only the bare form `name PROC`."
+    );
+    return false;
+}
+
 /// Parses a procedure-start line such as `main PROC`.
 ///
 /// @param state Parser state to mutate.
@@ -9405,6 +9488,7 @@ static bool vm_parser_parse_data_directive(VmParserState *state) {
 static bool vm_parser_parse_proc_line(VmParserState *state) {
     const VmLexerToken *name_token = vm_parser_current_token(state);
     const VmLexerToken *proc_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
 
     if (name_token == NULL || proc_token == NULL || !vm_parser_token_equals(proc_token, "PROC")) {
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_PROC, name_token, "Expected procedure name followed by PROC.");
@@ -9416,6 +9500,10 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
             return false;
         }
         vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME, name_token, "Procedure name must be an identifier before PROC.");
+        return false;
+    }
+
+    if (!vm_parser_validate_proc_tail(state, tail_token)) {
         return false;
     }
 
@@ -9460,7 +9548,7 @@ static bool vm_parser_parse_endp_line(VmParserState *state) {
         procedure_token.lexeme = state->open_procedure.lexeme;
         procedure_token.lexeme_length = state->open_procedure.length;
         if (!vm_parser_user_symbol_tokens_equal(state, &procedure_token, name_token)) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, name_token, "ENDP procedure name does not match the parsed procedure name under the active CASEMAP policy.");
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH, name_token, "ENDP procedure name does not match the currently open PROC name under the active CASEMAP policy.");
             return false;
         }
         if (state->config != NULL && state->config->procedure_ranges != NULL &&
@@ -11172,6 +11260,14 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "label-symbol-conflict";
         case VM_PARSER_DIAGNOSTIC_INVALID_PROCEDURE_NAME:
             return "invalid-procedure-name";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE:
+            return "unsupported-proc-attribute";
+        case VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION:
+            return "invalid-proc-declaration";
+        case VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH:
+            return "proc-end-mismatch";
+        case VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE:
+            return "duplicate-procedure";
         case VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET:
             return "invalid-call-target";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM:

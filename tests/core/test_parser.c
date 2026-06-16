@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 74 RET imm16 coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 75 PROC diagnostics coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -858,8 +858,8 @@ static int test_phase68_call_target_classifier_casemap_policy(void) {
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "default CASEMAP should reject folded duplicate procedures");
     failures += expect_size(result.diagnostic_count, 1U, "folded duplicate procedure should emit one diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_LABEL, "folded duplicate procedure should reuse duplicate-label diagnostic");
-    failures += expect_string_contains(buffers.diagnostics[0].message, "procedure-entry label", "duplicate procedure diagnostic should identify procedure-entry metadata");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE, "folded duplicate procedure should use duplicate-procedure diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "prior procedure", "duplicate procedure diagnostic should identify prior procedure metadata");
 
     failures += expect_parser_status(parse_for_test(
         ".code\n"
@@ -3275,10 +3275,104 @@ static int test_phase35a_casemap_parser_policy(void) {
         &buffers,
         &result
     ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "CASEMAP:NONE should require exact ENDP procedure-name spelling");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_END_TARGET, "CASEMAP:NONE mismatched ENDP name should keep existing invalid-end-target diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH, "CASEMAP:NONE mismatched ENDP name should use proc-end-mismatch diagnostic");
     failures += expect_size(buffers.diagnostics[0].location.line, 4U, "CASEMAP:NONE ENDP diagnostic should point at ENDP line");
     failures += expect_size(buffers.diagnostics[0].location.column, 1U, "CASEMAP:NONE ENDP diagnostic should point at ENDP procedure token");
     failures += expect_string_contains(buffers.diagnostics[0].message, "ENDP procedure name", "CASEMAP:NONE ENDP diagnostic should explain procedure-name mismatch");
+
+    return failures;
+}
+
+
+/// Verifies Phase 75 keeps bare PROC metadata and adds targeted PROC declaration diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase75_proc_metadata_and_attribute_diagnostics(void) {
+    static const char *const unsupported_sources[] = {
+        ".code\nMyProc PROC USES eax ebx\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC arg1:DWORD\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC C\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC STDCALL\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC PUBLIC\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC PRIVATE\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC EXPORT\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC FRAME\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC NEAR\nMyProc ENDP\nEND MyProc\n",
+        ".code\nMyProc PROC FAR\nMyProc ENDP\nEND MyProc\n"
+    };
+    int failures = 0;
+    size_t index = 0U;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 75\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 75 bare PROC metadata fixture should parse");
+    failures += expect_size(result.procedure_range_count, 1U, "Phase 75 bare PROC fixture should keep one procedure range");
+    failures += expect_string(buffers.procedure_ranges[0].name, "main", "Phase 75 procedure metadata should preserve source name");
+    failures += expect_size(buffers.procedure_ranges[0].source_location.line, 2U, "Phase 75 procedure declaration line should be preserved");
+    failures += expect_size(buffers.procedure_ranges[0].source_location.column, 1U, "Phase 75 procedure declaration column should be preserved");
+    failures += expect_size(buffers.procedure_ranges[0].start_instruction_index, 0U, "Phase 75 procedure body start should be preserved");
+    failures += expect_size(buffers.procedure_ranges[0].end_instruction_index, 1U, "Phase 75 procedure body boundary should be preserved");
+    failures += expect_bool(buffers.procedure_ranges[0].has_executable_instruction, "Phase 75 procedure metadata should retain executable-body flag");
+    failures += expect_size(buffers.procedure_ranges[0].unsupported_attribute_count, 0U, "accepted bare PROC should not record unsupported attributes");
+
+    for (index = 0U; index < sizeof(unsupported_sources) / sizeof(unsupported_sources[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(unsupported_sources[index], &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unsupported PROC tail should be rejected with diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "unsupported PROC tail should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROC_ATTRIBUTE, "unsupported PROC tail should use unsupported-proc-attribute");
+        failures += expect_size(buffers.diagnostics[0].location.line, 2U, "unsupported PROC attribute diagnostic should point at PROC tail line");
+        failures += expect_size(buffers.diagnostics[0].location.column, 13U, "unsupported PROC attribute diagnostic should point at PROC tail token");
+        failures += expect_string_contains(buffers.diagnostics[0].message, "PROC attribute or parameter", "unsupported PROC diagnostic should explain PROC tail rejection");
+        failures += expect_size(result.procedure_range_count, 0U, "rejected PROC declaration should not publish procedure metadata");
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "MyProc PROC ,\n"
+        "MyProc ENDP\n"
+        "END MyProc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "malformed PROC declaration should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_PROC_DECLARATION, "malformed PROC tail should use invalid-proc-declaration");
+    failures += expect_size(buffers.diagnostics[0].location.line, 2U, "invalid PROC declaration line should be preserved");
+    failures += expect_size(buffers.diagnostics[0].location.column, 13U, "invalid PROC declaration column should be preserved");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 1U, "invalid PROC declaration span should cover malformed token");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "MyProc PROC\n"
+        "    mov eax, 1\n"
+        "Other ENDP\n"
+        "END MyProc\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "mismatched ENDP name should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_PROC_END_MISMATCH, "mismatched ENDP should use proc-end-mismatch");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "mismatched ENDP diagnostic should point at ENDP name line");
+    failures += expect_size(buffers.diagnostics[0].location.column, 1U, "mismatched ENDP diagnostic should point at ENDP name column");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 5U, "mismatched ENDP diagnostic should span mismatched name");
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "Helper PROC\n"
+        "Helper ENDP\n"
+        "Helper PROC\n"
+        "Helper ENDP\n"
+        "END Helper\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "duplicate procedure should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_PROCEDURE, "duplicate procedure should use duplicate-procedure");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "duplicate procedure diagnostic should point at second declaration");
+    failures += expect_size(buffers.diagnostics[0].related_location.line, 2U, "duplicate procedure diagnostic should carry prior declaration line");
 
     return failures;
 }
@@ -7359,6 +7453,7 @@ int main(void) {
     failures += test_phase67a_procedure_range_capacity_diagnostic();
     failures += test_phase68_call_target_classifier_metadata();
     failures += test_phase68_call_target_classifier_casemap_policy();
+    failures += test_phase75_proc_metadata_and_attribute_diagnostics();
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
     failures += test_phase70_plain_ret_parses_to_ir();
@@ -7469,6 +7564,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 74 RET imm16 coverage passed.\n");
+    printf("Parser tests through Phase 75 PROC diagnostics coverage passed.\n");
     return 0;
 }

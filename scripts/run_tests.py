@@ -523,9 +523,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 74 - RET imm16 Instruction")
-    assert_text_contains("README.md", "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior")
-    assert_text_contains("README.md", "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior")
+    assert_text_contains("README.md", "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics")
+    assert_text_contains("README.md", "Phase 75 preserves accepted bare `PROC`/`ENDP` procedure metadata")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
@@ -607,9 +606,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 74")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 75")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 74 - RET imm16 Instruction")
+    assert_text_contains("web/src/protocol.js", "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -677,7 +676,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 74 RET imm16 behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 75 PROC diagnostics behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1753,7 +1752,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify Phase 74 status, concise status surfaces, and harness documentation wording."""
+    """Verify Phase 75 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1773,10 +1772,10 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 74 - RET imm16 Instruction",
-            "Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior",
-            "pops and validates the pseudo-EIP return token first",
-            "skipped argument bytes are not read or cleared",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
+            "Phase 75 preserves accepted bare `PROC`/`ENDP` procedure metadata",
+            "targeted parser/source-run diagnostics for unsupported `PROC` attributes",
+            "mismatched `ENDP` names",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
             "source-level 32-bit `pop` for registers and DWORD memory destinations",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
@@ -1842,10 +1841,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 74 - RET imm16 Instruction",
-            "Phase 74 advances runtime/source-run behavior metadata",
-            "near `ret imm16` caller-cleanup returns are now executable",
-            "no public `memoryChanges` rows",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
+            "Phase 75 advances runtime/source-run behavior metadata",
+            "targeted `PROC` declaration diagnostics are now part of the public source-run and browser-rendered diagnostic contract",
+            "runtime behavior is unchanged from Phase 74",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1891,8 +1890,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 74 - RET imm16 Instruction",
-            "Phase 74 adds near `ret imm16`/`RET imm16` caller-cleanup returns",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
+            "Phase 75 preserves accepted bare `PROC`/`ENDP` source metadata",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -1900,6 +1899,10 @@ def assert_current_status_and_harness_documented() -> None:
             "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
             "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
             "`ret`/`RET` with no operands is implemented as a plain near return",
+            "Bare `name PROC` declarations record procedure metadata",
+            "unsupported attributes or parameters after `PROC` are rejected with targeted parser/source-run diagnostics",
+            "duplicate-procedure",
+            "proc-end-mismatch",
             "Near `RET imm16` reads and validates the helper return token exactly like plain helper `RET`",
             "Root-code-stream `RET` succeeds by default in MASM32-compatible root RET mode",
             "Optional strict root RET mode rejects root-code-stream `RET` with `root-ret-disallowed-by-mode`",
@@ -1942,9 +1945,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 74 - RET imm16 Instruction",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 74 - RET imm16 Instruction",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2065,6 +2068,7 @@ def assert_current_status_and_harness_documented() -> None:
             "## 76. Phase 72 - Call Depth Limit and Call Trace Diagnostics",
             "## 77. Phase 73 - LEAVE Instruction",
             "## 78. Phase 74 - RET imm16 Instruction",
+            "## 79. Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2097,12 +2101,13 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 74 - RET imm16 Instruction",
-            "Phase 74 adds tests for near `ret imm16`/`RET imm16`",
-            "parser acceptance and rejection",
-            "checked-memory diagnostics",
-            "return-token validation before cleanup",
-            "regressions for Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
+            "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
+            "Phase 75 adds tests for bare `PROC` metadata preservation",
+            "unsupported attributes and parameters",
+            "malformed declarations",
+            "mismatched `ENDP` names",
+            "duplicate procedures",
+            "regressions for Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2117,12 +2122,12 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 74: RET imm16 Instruction",
+            "Milestone 75: PROC Metadata Baseline and Attribute Diagnostics",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
-            "push 2222h",
-            "call Callee",
-            "ret 8",
+            "call Helper",
+            "mov ebx, 75",
+            "ret",
             "final-registers",
             "Program Console",
         ],
@@ -2170,7 +2175,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 74",
+            "IMPLEMENTED_PHASE = 75",
         ],
     )
     assert_all_text_not_contains(

@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 74 - RET imm16 Instruction. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 75 - PROC Metadata Baseline and Attribute Diagnostics. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 74 - RET imm16 Instruction. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 75 - PROC Metadata Baseline and Attribute Diagnostics. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2511,7 +2511,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2554,7 +2554,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2591,9 +2591,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2619,7 +2619,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2646,7 +2646,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2671,7 +2671,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2695,7 +2695,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2721,7 +2721,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2762,7 +2762,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2793,8 +2793,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phase, 75);
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2839,8 +2839,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 74);
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phase, 75);
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2866,7 +2866,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2890,7 +2890,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2914,7 +2914,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2939,7 +2939,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2963,7 +2963,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2987,7 +2987,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3012,9 +3012,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3040,9 +3040,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3068,9 +3068,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3095,9 +3095,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3123,7 +3123,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3148,7 +3148,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3172,7 +3172,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3389,7 +3389,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 74);
+    assert.equal(json.phase, 75);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3402,7 +3402,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 74);
+  assert.equal(duplicateResult.json.phase, 75);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3904,7 +3904,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3925,7 +3925,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5363,9 +5363,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5425,9 +5425,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5485,9 +5485,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5522,9 +5522,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5573,9 +5573,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5614,9 +5614,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 74);
+  assert.equal(defaultResult.json.phase, 75);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(defaultResult.json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5636,9 +5636,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 74);
+  assert.equal(stopResult.json.phase, 75);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(stopResult.json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5678,7 +5678,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5714,7 +5714,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5741,9 +5741,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5775,9 +5775,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5865,9 +5865,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 74 - RET imm16 Instruction");
+  assert.equal(json.phaseName, "Phase 75 - PROC Metadata Baseline and Attribute Diagnostics");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6862,7 +6862,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7080,6 +7080,30 @@ END main
   assertNoPhase71bForbiddenDiagnosticWording(name, rawJson, rendered);
 });
 
+
+test("Phase 75 renders unsupported PROC attribute diagnostic", () => {
+  const name = "phase75UnsupportedProcAttribute";
+  const source = `.code
+MyProc PROC USES eax ebx
+MyProc ENDP
+END MyProc
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 75);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-proc-attribute",
+    message: "PROC attribute or parameter `USES` is not supported yet; the simulator currently accepts only bare PROC declarations and leaves USES, parameters, language attributes, visibility/export attributes, FRAME, NEAR, and FAR deferred.",
+    line: 2,
+    column: 13,
+    byteOffset: 18,
+    spanLength: 4
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-proc-attribute line 2, column 13, byte offset 18, span length 4: PROC attribute or parameter `USES` is not supported yet; the simulator currently accepts only bare PROC declarations and leaves USES, parameters, language attributes, visibility/export attributes, FRAME, NEAR, and FAR deferred.");
+});
+
 test("Phase 74 renders RET register operand diagnostic without milestone-relative wording", () => {
   const name = "phase74-ret-register-operand";
   const source = `.code
@@ -7166,7 +7190,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -7192,8 +7216,8 @@ END Helper
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
-      code: "duplicate-label",
-      message: "procedure-entry label `helper` conflicts with `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.",
+      code: "duplicate-procedure",
+      message: "Procedure `helper` conflicts with prior procedure `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.",
       line: 4,
       column: 1,
       byteOffset: 30,
@@ -7201,7 +7225,7 @@ END Helper
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] duplicate-label line 4, column 1, byte offset 30, span length 6: procedure-entry label `helper` conflicts with `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] duplicate-procedure line 4, column 1, byte offset 30, span length 6: Procedure `helper` conflicts with prior procedure `Helper` because user-defined symbols are case-insensitive under the active CASEMAP policy; first defined at line 2, column 1.");
 });
 
 test("Phase 68 renders reserved Irvine32 procedure-name diagnostic exactly", () => {
@@ -7969,7 +7993,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 74);
+  assert.equal(json.phase, 75);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

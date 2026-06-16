@@ -2,9 +2,9 @@
 
 Current milestone:
 
-- Phase 74 - RET imm16 Instruction
+- Phase 75 - PROC Metadata Baseline and Attribute Diagnostics
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 74 adds near `ret imm16`/`RET imm16` caller-cleanup returns. A helper `RET` reads and validates the pseudo-EIP return token first, then applies the unsigned 16-bit immediate byte cleanup only after validation succeeds; `ret 0` matches plain near helper `RET`, modeled flags are preserved, skipped argument bytes are not read or cleared, and cleanup that would move `ESP` outside the active stack region or documented empty-stack boundary stops before changing `ESP` or transferring control.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 75 preserves accepted bare `PROC`/`ENDP` source metadata while adding targeted diagnostics for unsupported `PROC` attributes or parameters, malformed `PROC` declarations, mismatched `ENDP` names, and duplicate procedures. Phase 74 near `ret imm16`/`RET imm16` caller-cleanup behavior remains implemented: a helper `RET` reads and validates the pseudo-EIP return token first, then applies the unsigned 16-bit immediate byte cleanup only after validation succeeds.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, plain near `ret`/`RET` with no operands, and near `ret imm16`/`RET imm16`.
 
@@ -13,6 +13,7 @@ Implemented procedure and termination behavior for the active runtime/source-run
 - `END entryName` selects the source-run entry procedure.
 - Execution starts at the selected entry procedure's first lowered executable slot. If the selected entry procedure is empty, execution starts at the source-order position immediately after that procedure range.
 - `PROC`, `ENDP`, and `END` are source/module structure, not executable VM instructions, hidden stops, hidden returns, or implicit program terminators.
+- Bare `name PROC` declarations record procedure metadata and remain accepted; unsupported attributes or parameters after `PROC` are rejected with targeted parser/source-run diagnostics rather than generic line-ending diagnostics.
 - Direct near `CALL` to accepted user procedures is implemented for the supported direct form. Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry under the active user-symbol `CASEMAP` policy. A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`, updates `ESP`, and transfers to the target procedure entry through the checked VM control-flow path. The current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row.
 - Plain near `RET` is implemented for helper returns through simulator pseudo-EIP return tokens when a helper call return is pending.
 - Near `RET imm16` is implemented for helper returns as explicit unsigned 16-bit caller cleanup applied only after the return token is validated.
@@ -31,7 +32,7 @@ The selected-entry `ENDP` success rule from pre-71C accepted behavior is no long
 
 Phase 72 adds `callDepthLimit` as a source-run/protocol setting for direct user-procedure `CALL` chains. The setting defaults to `64`, accepts integer values from `1` through `4096`, and rejects invalid values with `invalid-call-depth-limit` before execution. The selected entry procedure itself is not counted as a call frame; committed direct helper calls increment the current call depth until a successfully validated ordinary helper `RET` returns. An over-limit direct `CALL` reports `call-depth-exceeded` before return-token stack writes, `ESP` mutation, IP transfer, flag changes, memory-change rows, Program Console output, or successful terminal status. Phase 72 emits no call trace metadata and no `call-trace-truncated` message.
 
-Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, and near `RET imm16` caller-cleanup returns are implemented. Procedure-frame creation, argument metadata, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
+Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, and near `RET imm16` caller-cleanup returns are implemented. Procedure-frame creation, `PROC USES` accepted parsing/runtime save-restore, argument metadata, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
 Implemented and planned fallthrough diagnostics and settings:
 
@@ -59,7 +60,7 @@ Consult the current instruction-support table in this document for implemented b
 
 The following stack/procedure features remain future work only if a later accepted milestone explicitly implements them:
 
-- `PROC USES`;
+- `PROC USES` accepted parsing and runtime save/restore;
 - `LOCAL`;
 - `PROTO`;
 - `INVOKE`;
@@ -203,11 +204,12 @@ Supported structural forms:
 - Required `.code` section.
 - `.DATA?` declarations must use `?` or `DUP(?)` uninitialized initializers, including nested `DUP` forms that expand only to `?`. They are emitted as deterministic zero-filled writable storage while retaining metadata that they were originally uninitialized.
 - `.CONST` declarations are emitted into read-only storage. Direct writes to known `.CONST` symbols are assembly diagnostics, and calculated-address writes fail at runtime through checked memory permissions.
-- Procedure markers using `PROC` and `ENDP` as structural markers.
+- Procedure markers using bare `PROC` and `ENDP` as structural markers.
 - `END name` entry-point validation.
 - Labels are accepted as parser/source metadata. Implemented direct branch and conditional branch families may target executable code labels or procedure-entry labels according to their instruction-specific rules. Direct user-procedure `CALL` targets user `PROC` entries only.
+- `PROC` tails such as `USES`, parameters, language attributes, visibility/export attributes, `FRAME`, `NEAR`, and `FAR` remain rejected in this phase with `unsupported-proc-attribute`; malformed punctuation after `PROC` reports `invalid-proc-declaration`.
 
-Procedure declarations create source ranges and procedure-entry symbols distinct from ordinary `label:` code labels. `END entryName` selects the source-run entry procedure. Execution starts at the first executable instruction inside that selected procedure. If the selected entry procedure has no executable instruction, execution starts at the source-order position immediately after that selected procedure range. Helper procedures before the selected entry procedure do not run automatically merely because they appear earlier in source order. Helper procedures after the selected entry procedure may run by ordinary VM code-stream fallthrough when control reaches their lowered executable instructions, or by implemented explicit control transfer such as direct `jmp` or direct user-procedure `CALL`. Falling off the end of the lowered executable stream without explicit `RET`, virtual Irvine32 `exit`, or another supported terminator reports `code-fell-off-end`; `ENDP` itself is not a successful terminator.
+Procedure declarations create source ranges and procedure-entry symbols distinct from ordinary `label:` code labels. Duplicate procedure declarations report `duplicate-procedure`, and an `ENDP` name that does not match the currently open procedure reports `proc-end-mismatch`. `END entryName` selects the source-run entry procedure. Execution starts at the first executable instruction inside that selected procedure. If the selected entry procedure has no executable instruction, execution starts at the source-order position immediately after that selected procedure range. Helper procedures before the selected entry procedure do not run automatically merely because they appear earlier in source order. Helper procedures after the selected entry procedure may run by ordinary VM code-stream fallthrough when control reaches their lowered executable instructions, or by implemented explicit control transfer such as direct `jmp` or direct user-procedure `CALL`. Falling off the end of the lowered executable stream without explicit `RET`, virtual Irvine32 `exit`, or another supported terminator reports `code-fell-off-end`; `ENDP` itself is not a successful terminator.
 
 ### MASM32 header compatibility directives
 

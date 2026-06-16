@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 74: RET imm16 Instruction.
+  Milestone 75: PROC Metadata Baseline and Attribute Diagnostics.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,23 +18,21 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 74: RET imm16 Instruction</p>
+        <p class="muted">Milestone 75: PROC Metadata Baseline and Attribute Diagnostics</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
 .code
 main PROC
-    push 2222h
-    push 1111h
-    call Callee
-    mov eax, esp
+    call Helper
+    mov eax, ebx
     exit
 main ENDP
 
-Callee PROC
-    mov ebx, 5
-    ret 8
-Callee ENDP
+Helper PROC
+    mov ebx, 75
+    ret
+Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

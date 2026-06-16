@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 74 - RET imm16 Instruction |
+| Current milestone | Phase 75 - PROC Metadata Baseline and Attribute Diagnostics |
 
-Phase 74 implements near `ret imm16` as explicit caller-cleanup behavior: it pops and validates the pseudo-EIP return token first, applies unsigned 16-bit cleanup only after validation, preserves modeled flags, and skipped argument bytes are not read or cleared. Phase 73 `LEAVE`, Phase 72A source-level 32-bit `push`/`pop`, helper `CALL`/`RET`, root `RET`, procedure fallthrough, entry-end compatibility, call-depth limits, and Irvine32 `exit` behavior remain independent.
+Phase 75 preserves accepted bare `PROC`/`ENDP` procedure metadata and adds targeted parser/source-run diagnostics for unsupported `PROC` attributes or parameters, malformed `PROC` declarations, mismatched `ENDP` names, and duplicate procedures. 
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 

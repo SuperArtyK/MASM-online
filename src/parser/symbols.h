@@ -4,7 +4,8 @@
  *
  * This module defines the small symbol model used for .data layout
  * and direct symbolic memory operands. It is intentionally limited to data
- * symbols; label targets and procedure metadata remain later milestones.
+ * symbols; code-label targets and procedure-range metadata live in the
+ * parser metadata tables instead of this data-symbol table.
  */
 
 #ifndef MASM32_SIM_SYMBOLS_H
