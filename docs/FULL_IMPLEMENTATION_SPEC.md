@@ -1632,7 +1632,7 @@ Extended loop helpers:
 Stack/procedure convenience:
 
 - `ENTER`/automatic frame setup
-- `PROC USES` runtime save/restore, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
+- `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
 
 Conditional byte set:
 
@@ -3551,7 +3551,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, and near `RET imm16` are implemented in their owning phases. Remaining expanded features such as PROC USES runtime save/restore, LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, and direct-CALL `PROC USES` register save/restore are implemented in their owning phases. Remaining expanded features such as LOCAL, PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, and Irvine32 stack effects must remain deferred until their owning phases. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3617,6 +3617,9 @@ The root terminal mechanism must not be exposed as:
 Default MASM32 Educational Mode accepts root-code-stream RET. The accepted stricter teaching mode is `rootRetMode = "strict-call-frame"`; it rejects root-code-stream RET with `root-ret-disallowed-by-mode`. The diagnostic message must explain the source-level cause: `RET` cannot return because no caller supplied a return address. The message must not repeat the literal strict-mode setting value; it should direct the user to MASM32-compatible root RET mode or the supported Irvine32 `exit` routine for explicit termination. This setting must not change ordinary helper CALL/RET behavior when a helper return token is pending or called non-entry procedure fallthrough behavior.
 
 This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
+
+For direct `CALL` entry into a procedure with accepted `PROC USES` metadata, the simulator saves the listed general-purpose registers on the checked simulated stack in declared order after the helper return token is written and before the procedure body executes. On `RET` from that CALL-created preservation frame, the simulator validates and restores the saved registers in reverse order before popping and validating the helper return token. Automatic save/restore must preserve modeled flags and must not expose simulator-internal save/restore stack transfers as public source-run `memoryChanges` rows. If `EAX` is listed in `USES`, `EAX` is restored like any other listed register; if `EAX` is omitted, helper code may use it as the conventional return-value register. A failed automatic save reports `stack-overflow` before partial CALL/USES mutation. A failed automatic restore reports `stack-underflow` before partial register restore, return-token pop, return transfer, or caller cleanup mutation. Selected-entry startup, direct branch transfer, and ordinary fallthrough into a `PROC USES` body remain unsupported until a later accepted phase defines a preservation model for those non-CALL entry paths.
+
 
 Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, LEAVE, future frame setup/teardown, PROC USES, LOCAL, near RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.
 

@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 76 - PROC USES Parsing and Metadata |
+| Current milestone | Phase 77 - PROC USES Runtime Save/Restore |
 
-Phase 76 accepts whitespace-separated `PROC USES` metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, preserves declared order on procedure records, rejects invalid, duplicate, alias, comma, and malformed `USES` lists with targeted diagnostics, and reports `unsupported-proc-uses-runtime` when execution enters or calls a `USES` procedure before Phase 77 runtime save/restore.
+Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures, automatically saves listed `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI` registers on the checked simulated stack, restores them in reverse order on `RET`, preserves modeled flags and stack balance, and reports `stack-overflow` or `stack-underflow` when automatic save/restore cannot complete.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -46,6 +46,7 @@ At a high level, the current subset includes:
 - `code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`;
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
+- direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -55,7 +56,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- stack-frame creation, `PROC USES` runtime save/restore, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
+- stack-frame creation, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

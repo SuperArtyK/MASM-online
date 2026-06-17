@@ -12,7 +12,7 @@
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {Record<string, boolean>} RegisterWriteMap */
 /** @typedef {Record<string, string>} RegisterRoleMap */
-/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number}} SimulatorMessage */
+/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number, procedure?: string}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number, sourceLine?: number, sourceText?: string}} MemoryChange */
 
 /** Zero-based EFLAGS bit index for the currently modeled carry flag. */
@@ -623,6 +623,25 @@ export function formatRegisters(registers, registerWrites, registerRoles) {
 }
 
 /**
+ * Returns whether a structured simulator message should expose procedure context in rendered text.
+ *
+ * Phase 77 stack failures attach the responsible procedure as structured metadata;
+ * rendering that name keeps automatic PROC USES save/restore failures actionable
+ * without changing older procedure-fallthrough and code-falloff text.
+ *
+ * @param {SimulatorMessage} message Structured simulator message to inspect.
+ * @returns {boolean} true when the procedure name should be rendered.
+ */
+function shouldRenderProcedureContext(message) {
+  return Boolean(
+    message &&
+      typeof message.procedure === "string" &&
+      message.procedure.length > 0 &&
+      (message.code === "stack-overflow" || message.code === "stack-underflow")
+  );
+}
+
+/**
  * Formats simulator messages returned by a RUN_RESULT response.
  *
  * @param {SimulatorMessage[] | undefined} messages Messages to render.
@@ -643,10 +662,11 @@ export function formatSimulatorMessages(messages) {
       ? `, byte offset ${safeMessage.byteOffset}${Number.isFinite(safeMessage.spanLength) ? `, span length ${safeMessage.spanLength}` : ""}`
       : "";
     const location = safeMessage.line ? ` line ${safeMessage.line}${safeMessage.column ? `, column ${safeMessage.column}` : ""}${sourceSpan}` : "";
+    const procedureContext = shouldRenderProcedureContext(safeMessage) ? `${location ? "," : ""} procedure ${safeMessage.procedure}` : "";
     if (previousGroup !== null && shouldSeparateSimulatorMessageGroups(previousGroup, group)) {
       lines.push("");
     }
-    lines.push(`[${safeMessage.kind || "message"}] ${safeMessage.code || "unknown"}${location}: ${safeMessage.message || ""}`);
+    lines.push(`[${safeMessage.kind || "message"}] ${safeMessage.code || "unknown"}${location}${procedureContext}: ${safeMessage.message || ""}`);
     previousGroup = group;
   });
 

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 76: PROC USES Parsing and Metadata.
+  Milestone 77: PROC USES Runtime Save/Restore.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,25 +18,22 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 76: PROC USES Parsing and Metadata</p>
+        <p class="muted">Milestone 77: PROC USES Runtime Save/Restore</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .stack 4096
 .code
 main PROC
+    mov ebx, 1111h
     call Helper
     mov eax, ebx
     exit
 main ENDP
 
-Helper PROC
-    mov ebx, 76
+Helper PROC USES ebx
+    mov ebx, 2222h
     ret
 Helper ENDP
-
-Preserved PROC USES ebx esi
-    ret
-Preserved ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

@@ -523,8 +523,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 76 - PROC USES Parsing and Metadata")
-    assert_text_contains("README.md", "Phase 76 accepts whitespace-separated `PROC USES` metadata")
+    assert_text_contains("README.md", "Phase 77 - PROC USES Runtime Save/Restore")
+    assert_text_contains("README.md", "Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
@@ -606,9 +606,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 76")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 77")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 76 - PROC USES Parsing and Metadata")
+    assert_text_contains("web/src/protocol.js", "Phase 77 - PROC USES Runtime Save/Restore")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -676,7 +676,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 76 PROC USES metadata behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 77 PROC USES runtime save/restore behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1752,7 +1752,7 @@ def assert_phase71b2_stale_milestone_context_checks() -> None:
 
 
 def assert_current_status_and_harness_documented() -> None:
-    """Verify Phase 76 status, concise status surfaces, and harness documentation wording."""
+    """Verify Phase 77 status, concise status surfaces, and harness documentation wording."""
 
     def read_repo_text(path: str) -> str:
         return (ROOT / path).read_text(encoding="utf-8")
@@ -1772,10 +1772,10 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 76 - PROC USES Parsing and Metadata",
-            "Phase 76 accepts whitespace-separated `PROC USES` metadata",
-            "invalid, duplicate, alias, comma, and malformed `USES` lists",
-            "unsupported-proc-uses-runtime",
+            "Phase 77 - PROC USES Runtime Save/Restore",
+            "Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures",
+            "stack-overflow",
+            "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
             "source-level 32-bit `pop` for registers and DWORD memory destinations",
             "For current accepted syntax, rejected forms, diagnostics, and future/deferred features",
@@ -1841,10 +1841,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 76 - PROC USES Parsing and Metadata",
-            "Phase 76 advances runtime/source-run behavior metadata",
-            "`PROC USES` parsing metadata, invalid-list diagnostics",
-            "Runtime register save/restore for `USES` begins in Phase 77",
+            "Phase 77 - PROC USES Runtime Save/Restore",
+            "Phase 77 advances runtime/source-run behavior metadata",
+            "direct `CALL` entry into `PROC USES` procedures now performs checked automatic register save/restore",
+            "exposes `stack-overflow` and `stack-underflow` diagnostics for automatic save/restore failures",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1890,14 +1890,14 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 76 - PROC USES Parsing and Metadata",
-            "Phase 76 accepts `PROC USES` parsing metadata",
+            "Phase 77 - PROC USES Runtime Save/Restore",
+            "Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
-            "Otherwise, a successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
-            "current public source-run output contract does not expose that implicit write as a user-visible `memoryChanges` row",
+            "A successful direct user-procedure `CALL` writes a pseudo-EIP return token to `ESP - 4`",
+            "current public source-run output contract does not expose implicit CALL return-token writes or automatic USES save/restore stack writes as user-visible `memoryChanges` rows",
             "`ret`/`RET` with no operands is implemented as a plain near return",
             "Bare `name PROC` declarations record procedure metadata",
             "Unsupported non-USES attributes or parameters after `PROC` are rejected with targeted parser/source-run diagnostics",
@@ -1943,9 +1943,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 76 - PROC USES Parsing and Metadata",
+            "Phase 77 - PROC USES Runtime Save/Restore",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 76 - PROC USES Parsing and Metadata",
+            "Phase 77 - PROC USES Runtime Save/Restore",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2068,6 +2068,7 @@ def assert_current_status_and_harness_documented() -> None:
             "## 78. Phase 74 - RET imm16 Instruction",
             "## 79. Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
             "## 80. Phase 76 - PROC USES Parsing and Metadata",
+            "## 81. Phase 77 - PROC USES Runtime Save/Restore",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2100,11 +2101,12 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 76 - PROC USES Parsing and Metadata",
-            "Phase 76 adds tests for `PROC USES` parsing metadata",
+            "Phase 77 - PROC USES Runtime Save/Restore",
+            "Phase 77 adds tests for runtime `PROC USES` register save/restore",
             "ordered canonical register storage",
             "invalid register/list diagnostics",
-            "unsupported-proc-uses-runtime",
+            "stack-overflow",
+            "stack-underflow",
             "regressions for Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
         ],
     )
@@ -2120,11 +2122,13 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 76: PROC USES Parsing and Metadata",
+            "Milestone 77: PROC USES Runtime Save/Restore",
             "INCLUDE Irvine32.inc",
             ".stack 4096",
             "call Helper",
-            "mov ebx, 76",
+            "mov ebx, 1111h",
+            "PROC USES ebx",
+            "mov ebx, 2222h",
             "ret",
             "final-registers",
             "Program Console",
@@ -2173,7 +2177,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 76",
+            "IMPLEMENTED_PHASE = 77",
         ],
     )
     assert_all_text_not_contains(
@@ -2776,6 +2780,23 @@ def assert_phase71f_fallthrough_fixture_migration_checks() -> None:
         ],
     )
 
+
+def assert_wasm_source_run_vm_storage_off_stack() -> None:
+    """Verify browser source-run keeps the large VM object out of the Wasm call stack."""
+
+    text = (ROOT / "src/wasm/wasm_api.c").read_text(encoding="utf-8")
+    start_marker = "static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallthrough_policy"
+    end_marker = "/// Runs source with the default Phase 71D procedure-fallthrough warning policy."
+    start = text.index(start_marker)
+    end = text.index(end_marker, start)
+    body = text[start:end]
+    if "/// VM instance used during source-run execution; stored with run storage to avoid overflowing the smaller browser Wasm stack." not in text:
+        raise TestFailure("src/wasm/wasm_api.c must document why source-run VM storage is not stack-local")
+    if "Vm *vm = &g_masm32_sim_wasm_run_storage.vm;" not in body:
+        raise TestFailure("source-run Wasm API must use run-storage VM instead of a stack-local VM")
+    if "\n    Vm vm;" in body:
+        raise TestFailure("source-run Wasm API must not allocate Vm on the Wasm call stack")
+
 def run_static_tests() -> None:
     """Run runner, documentation, and fixture-inventory consistency checks."""
 
@@ -2798,6 +2819,7 @@ def run_static_tests() -> None:
     assert_phase61b_watchdog_scope_documented()
     assert_phase61c_debugger_dependency_documented()
     assert_phase61d_capacity_documented()
+    assert_wasm_source_run_vm_storage_off_stack()
     assert_phase57m_segment_and_code_policy_documented()
     if VERBOSE_OUTPUT:
         report_phase51_smoke_harness_status()

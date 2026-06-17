@@ -384,6 +384,21 @@ test("formats simulator messages with byte offset and span length", () => {
   ]), "[assembly-error] invalid-hex-literal line 3, column 14, byte offset 29, span length 2: Invalid hexadecimal literal.");
 });
 
+test("formats Phase 77 PROC USES stack diagnostics with procedure context", () => {
+  assert.equal(formatSimulatorMessages([
+    {
+      kind: "runtime-error",
+      code: "stack-overflow",
+      line: 5,
+      column: 5,
+      byteOffset: 64,
+      spanLength: 11,
+      procedure: "Helper",
+      message: "Automatic PROC USES register save failed."
+    }
+  ]), "[runtime-error] stack-overflow line 5, column 5, byte offset 64, span length 11, procedure Helper: Automatic PROC USES register save failed.");
+});
+
 test("formats Phase 53E UI setting errors through Simulator Messages", () => {
   assert.equal(formatSimulatorMessages([
     {

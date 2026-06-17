@@ -16,8 +16,7 @@
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 76 blocks runtime entry into PROC USES metadata before Phase 77
- * save/restore. ENTER, procedure-frame creation, far returns, and non-exit
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. ENTER, procedure-frame creation, far returns, and non-exit
  * Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -326,6 +325,8 @@ static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
     vm->selected_entry_procedure_index = 0U;
     vm->active_helper_return_count = 0U;
     vm->current_call_depth = 0U;
+    memset(vm->active_uses_frames, 0, sizeof(vm->active_uses_frames));
+    vm->active_uses_frame_count = 0U;
     vm->root_code_stream_active = false;
     vm->selected_entry_end_stop_eligible = true;
     vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
@@ -536,17 +537,32 @@ static const VmExecProcedureBoundary *vm_exec_find_procedure_boundary_starting_a
     return NULL;
 }
 
-/// Returns whether the current instruction would enter a procedure with PROC USES metadata.
+/// Returns whether the current instruction has an active CALL-created USES frame.
 ///
-/// Phase 76 stores PROC USES metadata but does not implement the Phase 77
-/// save/restore runtime behavior. This guard prevents execution paths such as
-/// selected-entry startup, direct branch targets, or ordinary fallthrough from
-/// silently running the first lowered instruction of a USES procedure. Direct
-/// CALL validates the same metadata before mutating the stack.
+/// @param vm VM instance containing active Phase 77 USES frame metadata.
+/// @param procedure_start_index Procedure body start instruction index to match.
+/// @return true when the most recent active USES frame belongs to the procedure.
+static bool vm_exec_active_uses_frame_matches_start(const Vm *vm, size_t procedure_start_index) {
+    const VmExecUsesFrame *frame = NULL;
+
+    if (vm == NULL || vm->active_uses_frame_count == 0U) {
+        return false;
+    }
+
+    frame = &vm->active_uses_frames[vm->active_uses_frame_count - 1U];
+    return frame->procedure_start_instruction_index == procedure_start_index;
+}
+
+/// Returns whether execution would enter a PROC USES body without a CALL-created frame.
+///
+/// Phase 77 supports automatic USES save/restore only for direct CALL entry.
+/// This guard prevents selected-entry startup, direct branch targets, and
+/// ordinary fallthrough from silently executing a USES procedure body without
+/// a matching active save/restore frame.
 ///
 /// @param vm VM instance containing configured procedure boundaries.
-/// @return true when execution is positioned at a USES procedure entry.
-static bool vm_exec_current_instruction_starts_uses_procedure(const Vm *vm) {
+/// @return true when execution is positioned at an unsupported USES procedure entry.
+static bool vm_exec_current_instruction_starts_uses_procedure_without_frame(const Vm *vm) {
     const VmExecProcedureBoundary *boundary = NULL;
 
     if (vm == NULL || vm->instruction_pointer >= vm->program_count) {
@@ -554,7 +570,8 @@ static bool vm_exec_current_instruction_starts_uses_procedure(const Vm *vm) {
     }
 
     boundary = vm_exec_find_procedure_boundary_starting_at(vm, vm->instruction_pointer);
-    return boundary != NULL && boundary->uses_register_count > 0U;
+    return boundary != NULL && boundary->uses_register_count > 0U &&
+           !vm_exec_active_uses_frame_matches_start(vm, boundary->start_instruction_index);
 }
 
 /// Returns whether a committed step moved by ordinary fallthrough.
@@ -3658,29 +3675,239 @@ static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruc
     return VM_EXEC_STATUS_OK;
 }
 
-/// Executes one Phase 69 direct user-procedure CALL stack write.
+
+/// Returns whether a DWORD stack range can be reserved for automatic CALL/USES writes.
+///
+/// @param vm VM instance whose stack region should be inspected.
+/// @param esp Stack pointer before reservation.
+/// @param dword_count Number of DWORD stack slots needed.
+/// @return true when all requested slots fit in the writable stack region.
+static bool vm_exec_stack_can_reserve_dwords(const Vm *vm, uint32_t esp, size_t dword_count) {
+    const VmMemoryRegion *stack_region = NULL;
+    uint64_t stack_limit = 0U;
+    uint64_t byte_count = 0U;
+    uint64_t low_address = 0U;
+
+    if (vm == NULL || dword_count == 0U) {
+        return false;
+    }
+    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL || stack_region->size == 0U ||
+        !vm_memory_region_has_permission(stack_region, VM_MEMORY_PERMISSION_WRITE)) {
+        return false;
+    }
+    stack_limit = (uint64_t)stack_region->base + (uint64_t)stack_region->size;
+    if (stack_limit > (uint64_t)UINT32_MAX) {
+        return false;
+    }
+    byte_count = (uint64_t)dword_count * 4ULL;
+    if (byte_count > (uint64_t)esp) {
+        return false;
+    }
+    low_address = (uint64_t)esp - byte_count;
+
+    return low_address >= (uint64_t)stack_region->base && (uint64_t)esp <= stack_limit;
+}
+
+/// Pushes one active Phase 77 PROC USES runtime frame.
+///
+/// @param vm VM instance to mutate.
+/// @param boundary Procedure boundary whose USES metadata was saved.
+/// @return true when the active frame was recorded.
+static bool vm_exec_push_active_uses_frame(Vm *vm, const VmExecProcedureBoundary *boundary) {
+    VmExecUsesFrame *frame = NULL;
+    size_t index = 0U;
+
+    if (vm == NULL || boundary == NULL || boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY ||
+        vm->active_uses_frame_count >= (size_t)VM_MAX_CALL_DEPTH_LIMIT) {
+        return false;
+    }
+
+    frame = &vm->active_uses_frames[vm->active_uses_frame_count];
+    memset(frame, 0, sizeof(*frame));
+    frame->procedure_start_instruction_index = boundary->start_instruction_index;
+    frame->uses_register_count = boundary->uses_register_count;
+    for (index = 0U; index < boundary->uses_register_count; index += 1U) {
+        frame->uses_registers[index] = boundary->uses_registers[index];
+    }
+    vm->active_uses_frame_count += 1U;
+    return true;
+}
+
+/// Writes the CALL return token and automatic PROC USES save slots.
+///
+/// The full CALL-plus-USES stack footprint is preflighted before any mutation so
+/// save failure cannot branch into a procedure with a partially committed frame.
+/// All committed DWORD writes still go through the checked memory helpers.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction CALL instruction associated with diagnostics.
+/// @param return_token Pseudo-EIP token for the CALL successor.
+/// @param target_boundary Optional called procedure boundary containing USES metadata.
+/// @return OK when the stack frame was committed, stack-overflow on USES reservation/write failure, or another executor status.
+static VmExecStatus vm_exec_write_call_and_uses_frame(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    uint32_t return_token,
+    const VmExecProcedureBoundary *target_boundary
+) {
+    uint32_t esp = 0U;
+    uint32_t write_address = 0U;
+    size_t uses_count = 0U;
+    size_t index = 0U;
+    size_t required_dwords = 1U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (target_boundary != NULL) {
+        if (target_boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        uses_count = target_boundary->uses_register_count;
+        required_dwords += uses_count;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (uses_count > 0U && !vm_exec_stack_can_reserve_dwords(vm, esp, required_dwords)) {
+        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+        return VM_EXEC_STATUS_STACK_OVERFLOW;
+    }
+
+    write_address = esp - 4U;
+    status = vm_exec_write_u32_at_address(vm, instruction, write_address, return_token);
+    if (status != VM_EXEC_STATUS_OK) {
+        if (uses_count > 0U) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+            return VM_EXEC_STATUS_STACK_OVERFLOW;
+        }
+        return status;
+    }
+    for (index = 0U; index < uses_count; index += 1U) {
+        uint32_t saved_value = 0U;
+        if (!vm_cpu_read_register(&vm->cpu, target_boundary->uses_registers[index], &saved_value)) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        write_address -= 4U;
+        status = vm_exec_write_u32_at_address(vm, instruction, write_address, saved_value);
+        if (status != VM_EXEC_STATUS_OK) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+            return VM_EXEC_STATUS_STACK_OVERFLOW;
+        }
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, write_address)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (uses_count > 0U && !vm_exec_push_active_uses_frame(vm, target_boundary)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Returns the active USES frame owned by the current RET instruction, if any.
+///
+/// @param vm VM instance containing active USES frames and procedure metadata.
+/// @return Active frame for the containing procedure, or NULL when the RET has no USES frame.
+static const VmExecUsesFrame *vm_exec_current_ret_uses_frame(const Vm *vm) {
+    const VmExecProcedureBoundary *boundary = NULL;
+
+    if (vm == NULL || vm->active_uses_frame_count == 0U || vm->instruction_pointer >= vm->program_count) {
+        return NULL;
+    }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    if (boundary == NULL || !vm_exec_active_uses_frame_matches_start(vm, boundary->start_instruction_index)) {
+        return NULL;
+    }
+    return &vm->active_uses_frames[vm->active_uses_frame_count - 1U];
+}
+
+/// Reads saved PROC USES register values without committing CPU mutation.
+///
+/// @param vm VM instance whose stack should be inspected.
+/// @param instruction RET instruction associated with diagnostics.
+/// @param frame Active USES frame to restore.
+/// @param original_esp ESP at the start of RET execution.
+/// @param out_values Receives saved values in declared USES order.
+/// @param out_return_esp Receives ESP address where the return token starts after USES slots.
+/// @return OK when all saved slots were readable, stack-underflow on restore failure, or invalid-argument.
+static VmExecStatus vm_exec_read_uses_restore_values(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    const VmExecUsesFrame *frame,
+    uint32_t original_esp,
+    uint32_t *out_values,
+    uint32_t *out_return_esp
+) {
+    size_t reverse_index = 0U;
+
+    if (vm == NULL || instruction == NULL || frame == NULL || out_values == NULL || out_return_esp == NULL ||
+        frame->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    for (reverse_index = 0U; reverse_index < frame->uses_register_count; reverse_index += 1U) {
+        size_t declared_index = frame->uses_register_count - 1U - reverse_index;
+        uint32_t address = original_esp + (uint32_t)(reverse_index * 4U);
+        VmExecStatus status = vm_exec_read_u32_at_address(vm, instruction, address, &out_values[declared_index]);
+        if (status != VM_EXEC_STATUS_OK) {
+            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_UNDERFLOW, instruction);
+            return VM_EXEC_STATUS_STACK_UNDERFLOW;
+        }
+    }
+    *out_return_esp = original_esp + (uint32_t)(frame->uses_register_count * 4U);
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Commits previously validated PROC USES restore register values.
+///
+/// @param vm VM instance to mutate.
+/// @param frame Active USES frame whose registers should be restored.
+/// @param values Saved register values in declared USES order.
+/// @return OK when all registers were restored.
+static VmExecStatus vm_exec_commit_uses_restore_values(Vm *vm, const VmExecUsesFrame *frame, const uint32_t *values) {
+    size_t index = 0U;
+
+    if (vm == NULL || frame == NULL || values == NULL || frame->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+
+    for (index = 0U; index < frame->uses_register_count; index += 1U) {
+        if (!vm_cpu_write_register(&vm->cpu, frame->uses_registers[index], values[index])) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    if (vm->active_uses_frame_count > 0U) {
+        vm->active_uses_frame_count -= 1U;
+        memset(&vm->active_uses_frames[vm->active_uses_frame_count], 0, sizeof(vm->active_uses_frames[vm->active_uses_frame_count]));
+    }
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Executes one direct user-procedure CALL and optional Phase 77 PROC USES save.
 ///
 /// The helper validates target metadata before mutation, applies the Phase 72
 /// call-depth limit before the implicit stack write, computes the return token
 /// from parser-owned return-target metadata when present, falls back to the
 /// next lowered instruction for hand-authored native fixtures, writes that token
-/// to `ESP - 4` through checked memory, and updates ESP and call depth only
-/// after the write succeeds. The caller applies the instruction-pointer transfer
-/// after successful execution so accounting and deltas stay centralized in
-/// @ref vm_step.
+/// to `ESP - 4` through checked memory, and saves any target PROC USES
+/// registers before entry. ESP and call depth are updated only after the
+/// complete CALL-plus-USES stack frame succeeds. The caller applies the
+/// instruction-pointer transfer after successful execution so accounting and
+/// deltas stay centralized in @ref vm_step.
 ///
 /// @param vm VM instance to mutate.
 /// @param instruction CALL instruction descriptor.
-/// @return Executor status for the CALL stack write.
+/// @return Executor status for the CALL stack frame write and optional USES save.
 static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruction) {
-    VmMemoryDiagnostic memory_diagnostic;
-    VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
     VmExecStatus target_status = VM_EXEC_STATUS_OK;
-    uint32_t esp = 0U;
-    uint32_t new_esp = 0U;
+    const VmExecProcedureBoundary *target_boundary = NULL;
     uint32_t return_token = 0U;
     uint32_t current_depth = 0U;
     uint32_t attempted_depth = 0U;
+    VmExecStatus stack_status = VM_EXEC_STATUS_OK;
 
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -3690,13 +3917,7 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     if (target_status != VM_EXEC_STATUS_OK) {
         return target_status;
     }
-    {
-        const VmExecProcedureBoundary *target_boundary =
-            vm_exec_find_procedure_boundary_starting_at(vm, (size_t)instruction->destination.immediate);
-        if (target_boundary != NULL && target_boundary->uses_register_count > 0U) {
-            return VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME;
-        }
-    }
+    target_boundary = vm_exec_find_procedure_boundary_starting_at(vm, (size_t)instruction->destination.immediate);
 
     current_depth = vm->current_call_depth > (size_t)UINT32_MAX ? UINT32_MAX : (uint32_t)vm->current_call_depth;
     attempted_depth = current_depth == UINT32_MAX ? UINT32_MAX : current_depth + 1U;
@@ -3711,22 +3932,12 @@ static VmExecStatus vm_exec_execute_call(Vm *vm, const VmIrInstruction *instruct
     } else if (!vm_exec_instruction_index_to_pseudo_eip(vm->instruction_pointer + 1U, &return_token)) {
         return VM_EXEC_STATUS_INVALID_CALL_TARGET;
     }
-    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
-        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+
+    stack_status = vm_exec_write_call_and_uses_frame(vm, instruction, return_token, target_boundary);
+    if (stack_status != VM_EXEC_STATUS_OK) {
+        return stack_status;
     }
 
-    new_esp = esp - 4U;
-    memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
-    memory_status = vm_memory_write_u32(&vm->memory, new_esp, return_token, &memory_diagnostic);
-    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_WRITE, new_esp, 32U, memory_status);
-    if (!vm_memory_status_succeeded(memory_status)) {
-        vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
-        return VM_EXEC_STATUS_MEMORY_ERROR;
-    }
-
-    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, new_esp)) {
-        return VM_EXEC_STATUS_INVALID_ARGUMENT;
-    }
     if (vm->active_helper_return_count < (size_t)UINT32_MAX) {
         vm->active_helper_return_count += 1U;
     }
@@ -3781,15 +3992,22 @@ static bool vm_exec_stack_pointer_is_inside_or_empty_boundary(const Vm *vm, uint
 static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instruction) {
     VmMemoryDiagnostic memory_diagnostic;
     VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+    const VmExecUsesFrame *uses_frame = NULL;
+    VmExecUsesFrame uses_frame_copy;
+    uint32_t uses_restore_values[VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY];
     uint32_t original_esp = 0U;
+    uint32_t return_esp = 0U;
     uint32_t cleanup_bytes = 0U;
     uint32_t final_esp = 0U;
     uint32_t return_token = 0U;
     size_t return_index = 0U;
+    VmExecStatus restore_status = VM_EXEC_STATUS_OK;
 
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
+    memset(&uses_frame_copy, 0, sizeof(uses_frame_copy));
+    memset(uses_restore_values, 0, sizeof(uses_restore_values));
     if (instruction->destination.kind != VM_IR_OPERAND_NONE) {
         return VM_EXEC_STATUS_INVALID_INSTRUCTION;
     }
@@ -3813,9 +4031,19 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
+    return_esp = original_esp;
+    uses_frame = vm_exec_current_ret_uses_frame(vm);
+    if (uses_frame != NULL) {
+        uses_frame_copy = *uses_frame;
+        restore_status = vm_exec_read_uses_restore_values(vm, instruction, uses_frame, original_esp, uses_restore_values, &return_esp);
+        if (restore_status != VM_EXEC_STATUS_OK) {
+            return restore_status;
+        }
+    }
+
     memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
-    memory_status = vm_memory_read_u32(&vm->memory, original_esp, &return_token, &memory_diagnostic);
-    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, original_esp, 32U, memory_status);
+    memory_status = vm_memory_read_u32(&vm->memory, return_esp, &return_token, &memory_diagnostic);
+    vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_READ, return_esp, 32U, memory_status);
     if (!vm_memory_status_succeeded(memory_status)) {
         vm_exec_set_memory_diagnostic(vm, instruction, memory_status, &memory_diagnostic);
         return VM_EXEC_STATUS_MEMORY_ERROR;
@@ -3825,11 +4053,17 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
         return VM_EXEC_STATUS_INVALID_RETURN_ADDRESS;
     }
 
-    final_esp = (uint32_t)(original_esp + 4U + cleanup_bytes);
+    final_esp = (uint32_t)(return_esp + 4U + cleanup_bytes);
     if (!vm_exec_stack_pointer_is_inside_or_empty_boundary(vm, final_esp)) {
         return VM_EXEC_STATUS_RET_STACK_CLEANUP_OUT_OF_RANGE;
     }
 
+    if (uses_frame != NULL) {
+        restore_status = vm_exec_commit_uses_restore_values(vm, &uses_frame_copy, uses_restore_values);
+        if (restore_status != VM_EXEC_STATUS_OK) {
+            return restore_status;
+        }
+    }
     if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, final_esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
@@ -4197,7 +4431,8 @@ VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoun
     vm_exec_clear_procedure_runtime_metadata(vm);
     for (index = 0U; index < boundary_count; index += 1U) {
         const VmExecProcedureBoundary *boundary = &boundaries[index];
-        if (!vm_exec_procedure_boundary_is_valid(vm, boundary)) {
+        if (!vm_exec_procedure_boundary_is_valid(vm, boundary) ||
+            boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY) {
             vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
             vm_exec_clear_procedure_runtime_metadata(vm);
             return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -4586,7 +4821,7 @@ VmExecStatus vm_step(Vm *vm) {
     vm_exec_refresh_root_code_stream_state(vm);
     instruction_pointer_before_step = vm->instruction_pointer;
     instruction = &vm->program[vm->instruction_pointer];
-    if (vm_exec_current_instruction_starts_uses_procedure(vm)) {
+    if (vm_exec_current_instruction_starts_uses_procedure_without_frame(vm)) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, instruction);
         return VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME;
     }
@@ -4695,6 +4930,10 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "branch-runtime-deferred";
         case VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME:
             return "unsupported-proc-uses-runtime";
+        case VM_EXEC_STATUS_STACK_OVERFLOW:
+            return "stack-overflow";
+        case VM_EXEC_STATUS_STACK_UNDERFLOW:
+            return "stack-underflow";
         default:
             return NULL;
     }
@@ -4734,7 +4973,7 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         }
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 3U, true, true, 0U}
+        {0U, 3U, true, true, 0U, {0}}
     };
 
     if (out_eax == NULL) {

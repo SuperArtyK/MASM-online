@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 76 PROC USES runtime deferral coverage.
+ * @brief Unit tests for the VM executor through Phase 77 PROC USES runtime save/restore coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 76 PROC USES runtime deferral. They intentionally avoid parser, Irvine32
+ * Phase 77 PROC USES runtime save/restore. They intentionally avoid parser, Irvine32
  * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
  * terminator.
  */
@@ -4296,81 +4296,194 @@ static int test_phase69_invalid_call_metadata(void) {
 }
 
 
-/// Verifies Phase 76 rejects runtime entry into PROC USES procedures before save/restore exists.
+/// Verifies Phase 77 saves and restores PROC USES registers around a direct CALL.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase76_proc_uses_runtime_deferral_rolls_back(void) {
+static int test_phase77_proc_uses_runtime_save_restore(void) {
     int failures = 0;
-    Vm call_vm;
-    Vm entry_vm;
-    uint32_t esp = 0U;
+    Vm vm;
     uint32_t eax = 0U;
+    uint32_t ebx = 0U;
+    uint32_t esi = 0U;
+    uint32_t esp = 0U;
     const VmExecDelta *delta = NULL;
-    const VmExecDiagnostic *diagnostic = NULL;
-    const VmIrInstruction call_program[] = {
-        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
-        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "mov eax, 1", 1U}
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x2222U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2222h", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_ESI, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x3333U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "mov esi, 3333h", 3U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x9999U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "mov eax, 9999h", 4U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "ret", 5U}
     };
-    const VmExecProcedureBoundary call_boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 2U}
-    };
-    const VmIrInstruction entry_program[] = {
-        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 76U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 76", 0U}
-    };
-    const VmExecProcedureBoundary entry_boundaries[] = {
-        {0U, 1U, true, true, 1U}
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 6U, false, true, 2U, {VM_REGISTER_EBX, VM_REGISTER_ESI}}
     };
 
-    failures += expect_status(vm_init(&call_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 76 CALL deferral test");
-    failures += expect_status(vm_load_program(&call_vm, call_program, sizeof(call_program) / sizeof(call_program[0])), VM_EXEC_STATUS_OK, "Phase 76 CALL deferral program should load");
-    failures += expect_status(vm_configure_procedure_boundaries(&call_vm, call_boundaries, sizeof(call_boundaries) / sizeof(call_boundaries[0])), VM_EXEC_STATUS_OK, "Phase 76 CALL deferral boundaries should configure");
-    failures += vm_cpu_write_flag(&call_vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("Phase 76 CALL deferral flag setup should succeed");
-    failures += expect_status(vm_step(&call_vm), VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, "CALL to a PROC USES procedure should stop before Phase 77 save/restore exists");
-    failures += (vm_cpu_read_register(&call_vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after PROC USES CALL deferral should succeed"));
-    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "PROC USES CALL deferral should not push a return token or mutate ESP");
-    failures += expect_size(call_vm.instruction_pointer, 0U, "PROC USES CALL deferral should not transfer instruction pointer");
-    failures += expect_u64(call_vm.instruction_count, 0ULL, "PROC USES CALL deferral should not count a committed instruction");
-    failures += expect_flag(&call_vm.cpu, VM_FLAG_CF, true, "PROC USES CALL deferral should preserve flags");
-    delta = vm_last_delta(&call_vm);
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 77 USES save/restore test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 77 USES save/restore program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "Phase 77 USES boundaries should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x5555U) ? 0 : record_failure("EAX setup for USES save/restore should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBX, 0x1111U) ? 0 : record_failure("EBX setup for USES save/restore should succeed");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_ESI, 0x2222U) ? 0 : record_failure("ESI setup for USES save/restore should succeed");
+    failures += vm_cpu_write_flag(&vm.cpu, VM_FLAG_CF, true) ? 0 : record_failure("CF setup for USES save/restore should succeed");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL into PROC USES should save listed registers and transfer");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after USES CALL should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 12U, "USES CALL should push return token and two saved registers");
+    failures += expect_size(vm.instruction_pointer, 2U, "USES CALL should transfer to helper start");
+    failures += expect_u64(vm.instruction_count, 1ULL, "USES CALL should count as one committed instruction");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "USES save should preserve flags");
+    delta = vm_last_delta(&vm);
     if (delta == NULL) {
-        failures += record_failure("PROC USES CALL deferral should expose a delta object");
+        failures += record_failure("USES CALL should expose a delta object");
     } else {
-        failures += expect_size(delta->memory_change_count, 0U, "PROC USES CALL deferral should not report memory changes");
-        failures += expect_size(delta->memory_access_count, 0U, "PROC USES CALL deferral should not attempt the CALL stack write");
-        failures += expect_size(delta->register_change_count, 0U, "PROC USES CALL deferral should not report register changes");
-        failures += expect_size(delta->flag_change_count, 0U, "PROC USES CALL deferral should not report flag changes");
-    }
-    diagnostic = vm_last_diagnostic(&call_vm);
-    if (diagnostic == NULL) {
-        failures += record_failure("PROC USES CALL deferral should populate diagnostic metadata");
-    } else {
-        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, "PROC USES CALL deferral diagnostic should report unsupported-proc-uses-runtime");
-        failures += expect_u32(diagnostic->instruction_index, 0U, "PROC USES CALL deferral diagnostic should point at the CALL instruction");
-    }
-    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME), "unsupported-proc-uses-runtime") == 0 ? 1U : 0U, 1U, "executor status helper should name unsupported-proc-uses-runtime");
-
-    failures += expect_status(vm_init(&entry_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 76 selected-entry deferral test");
-    failures += expect_status(vm_load_program(&entry_vm, entry_program, sizeof(entry_program) / sizeof(entry_program[0])), VM_EXEC_STATUS_OK, "Phase 76 selected-entry deferral program should load");
-    failures += expect_status(vm_configure_procedure_boundaries(&entry_vm, entry_boundaries, sizeof(entry_boundaries) / sizeof(entry_boundaries[0])), VM_EXEC_STATUS_OK, "Phase 76 selected-entry deferral boundaries should configure");
-    failures += expect_status(vm_step(&entry_vm), VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, "selected-entry PROC USES body should stop before Phase 77 save/restore exists");
-    failures += (vm_cpu_read_register(&entry_vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after selected-entry PROC USES deferral should succeed"));
-    failures += expect_u32(eax, 0U, "selected-entry PROC USES deferral should stop before executing the first body instruction");
-    failures += expect_size(entry_vm.instruction_pointer, 0U, "selected-entry PROC USES deferral should leave instruction pointer at the first body instruction");
-    failures += expect_u64(entry_vm.instruction_count, 0ULL, "selected-entry PROC USES deferral should not count a committed instruction");
-    diagnostic = vm_last_diagnostic(&entry_vm);
-    if (diagnostic == NULL) {
-        failures += record_failure("selected-entry PROC USES deferral should populate diagnostic metadata");
-    } else {
-        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, "selected-entry PROC USES deferral diagnostic should report unsupported-proc-uses-runtime");
-        failures += expect_u32(diagnostic->instruction_index, 0U, "selected-entry PROC USES deferral diagnostic should point at the first body instruction");
+        failures += expect_size(delta->memory_access_count, 3U, "USES CALL should record return-token and register-save writes");
+        failures += expect_size(delta->flag_change_count, 0U, "USES CALL should not report flag changes");
     }
 
-    vm_deinit(&call_vm);
-    vm_deinit(&entry_vm);
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper EBX mutation should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper ESI mutation should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper EAX return mutation should execute");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "RET from PROC USES should restore listed registers and return");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after USES RET should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after USES RET should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESI, &esi) ? 0 : record_failure("ESI read after USES RET should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after USES RET should succeed"));
+    failures += expect_u32(eax, 0x9999U, "unlisted EAX should remain available as helper return register");
+    failures += expect_u32(ebx, 0x1111U, "listed EBX should be restored by PROC USES");
+    failures += expect_u32(esi, 0x2222U, "listed ESI should be restored by PROC USES");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "USES RET should restore ESP to pre-call value");
+    failures += expect_size(vm.instruction_pointer, 1U, "USES RET should return to CALL successor");
+    failures += expect_flag(&vm.cpu, VM_FLAG_CF, true, "USES restore should preserve flags");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "EXIT after USES return should terminate");
+
+    vm_deinit(&vm);
     return failures;
 }
 
+/// Verifies Phase 77 preserves EAX when EAX is listed in PROC USES.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase77_proc_uses_eax_listed_preserves_return_register(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x9999U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 9999h", 2U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "ret", 3U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 4U, false, true, 1U, {VM_REGISTER_EAX}}
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for EAX USES test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "EAX USES program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "EAX USES boundaries should configure");
+    failures += vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x1234U) ? 0 : record_failure("EAX setup for listed USES should succeed");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "CALL into EAX USES helper should save EAX");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "helper should overwrite EAX");
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "RET should restore listed EAX");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after listed USES RET should succeed"));
+    failures += expect_u32(eax, 0x1234U, "listed EAX should be restored instead of acting as a return register");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies Phase 77 PROC USES save/restore error paths and unsupported non-CALL entry.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase77_proc_uses_error_paths(void) {
+    int failures = 0;
+    Vm overflow_vm;
+    Vm underflow_vm;
+    Vm entry_vm;
+    uint32_t esp = 0U;
+    uint32_t ebx = 0U;
+    uint32_t eax = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction overflow_program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
+    };
+    const VmExecProcedureBoundary overflow_boundaries[] = {
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 2U, {VM_REGISTER_EBX, VM_REGISTER_ESI}}
+    };
+    const VmIrInstruction underflow_program[] = {
+        {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
+        {VM_IR_OPCODE_EXIT, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "exit", 1U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x2222U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2222h", 2U},
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_ESP, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, VM_MEMORY_DEFAULT_STACK_TOP, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "mov esp, 00900000h", 3U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "ret", 4U}
+    };
+    const VmExecProcedureBoundary underflow_boundaries[] = {
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 5U, false, true, 1U, {VM_REGISTER_EBX}}
+    };
+    const VmIrInstruction entry_program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 77U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 77", 0U}
+    };
+    const VmExecProcedureBoundary entry_boundaries[] = {
+        {0U, 1U, true, true, 1U, {VM_REGISTER_EAX}}
+    };
+
+    failures += expect_status(vm_init(&overflow_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for USES overflow test");
+    failures += expect_status(vm_load_program(&overflow_vm, overflow_program, sizeof(overflow_program) / sizeof(overflow_program[0])), VM_EXEC_STATUS_OK, "USES overflow program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&overflow_vm, overflow_boundaries, sizeof(overflow_boundaries) / sizeof(overflow_boundaries[0])), VM_EXEC_STATUS_OK, "USES overflow boundaries should configure");
+    failures += vm_cpu_write_register(&overflow_vm.cpu, VM_REGISTER_ESP, VM_MEMORY_DEFAULT_STACK_TOP - VM_MEMORY_DEFAULT_STACK_SIZE + 8U) ? 0 : record_failure("ESP setup for USES overflow should succeed");
+    failures += expect_status(vm_step(&overflow_vm), VM_EXEC_STATUS_STACK_OVERFLOW, "USES save should fail before partial stack mutation when capacity is insufficient");
+    failures += (vm_cpu_read_register(&overflow_vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after USES overflow should succeed"));
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - VM_MEMORY_DEFAULT_STACK_SIZE + 8U, "USES save overflow should preserve ESP");
+    failures += expect_size(overflow_vm.instruction_pointer, 0U, "USES save overflow should not transfer to helper");
+    failures += expect_u64(overflow_vm.instruction_count, 0ULL, "USES save overflow should not count a committed instruction");
+    diagnostic = vm_last_diagnostic(&overflow_vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("USES save overflow should populate diagnostic metadata");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_STACK_OVERFLOW, "USES save overflow diagnostic should report stack-overflow");
+        failures += expect_u32(diagnostic->instruction_index, 0U, "USES save overflow diagnostic should point at CALL instruction");
+    }
+
+    failures += expect_status(vm_init(&underflow_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for USES underflow test");
+    failures += expect_status(vm_load_program(&underflow_vm, underflow_program, sizeof(underflow_program) / sizeof(underflow_program[0])), VM_EXEC_STATUS_OK, "USES underflow program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&underflow_vm, underflow_boundaries, sizeof(underflow_boundaries) / sizeof(underflow_boundaries[0])), VM_EXEC_STATUS_OK, "USES underflow boundaries should configure");
+    failures += vm_cpu_write_register(&underflow_vm.cpu, VM_REGISTER_EBX, 0x1111U) ? 0 : record_failure("EBX setup for USES underflow should succeed");
+    failures += expect_status(vm_step(&underflow_vm), VM_EXEC_STATUS_OK, "USES underflow CALL setup should succeed");
+    failures += expect_status(vm_step(&underflow_vm), VM_EXEC_STATUS_OK, "USES underflow helper mutation should execute");
+    failures += expect_status(vm_step(&underflow_vm), VM_EXEC_STATUS_OK, "USES underflow ESP corruption should execute");
+    failures += expect_status(vm_step(&underflow_vm), VM_EXEC_STATUS_STACK_UNDERFLOW, "USES restore should fail when saved slots are unavailable");
+    failures += (vm_cpu_read_register(&underflow_vm.cpu, VM_REGISTER_EBX, &ebx) ? 0 : record_failure("EBX read after USES underflow should succeed"));
+    failures += expect_u32(ebx, 0x2222U, "USES restore underflow should not partially restore EBX");
+    failures += expect_size(underflow_vm.instruction_pointer, 4U, "USES restore underflow should keep IP on RET");
+    diagnostic = vm_last_diagnostic(&underflow_vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("USES restore underflow should populate diagnostic metadata");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_STACK_UNDERFLOW, "USES restore underflow diagnostic should report stack-underflow");
+        failures += expect_u32(diagnostic->instruction_index, 4U, "USES restore underflow diagnostic should point at RET instruction");
+    }
+
+    failures += expect_status(vm_init(&entry_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 77 selected-entry guard test");
+    failures += expect_status(vm_load_program(&entry_vm, entry_program, sizeof(entry_program) / sizeof(entry_program[0])), VM_EXEC_STATUS_OK, "Phase 77 selected-entry guard program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&entry_vm, entry_boundaries, sizeof(entry_boundaries) / sizeof(entry_boundaries[0])), VM_EXEC_STATUS_OK, "Phase 77 selected-entry guard boundaries should configure");
+    failures += expect_status(vm_step(&entry_vm), VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, "selected-entry PROC USES body should still require direct CALL entry");
+    failures += (vm_cpu_read_register(&entry_vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after selected-entry PROC USES guard should succeed"));
+    failures += expect_u32(eax, 0U, "selected-entry PROC USES guard should stop before executing body");
+
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME), "unsupported-proc-uses-runtime") == 0 ? 1U : 0U, 1U, "executor status helper should name unsupported-proc-uses-runtime");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_STACK_OVERFLOW), "stack-overflow") == 0 ? 1U : 0U, 1U, "executor status helper should name stack-overflow");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_STACK_UNDERFLOW), "stack-underflow") == 0 ? 1U : 0U, 1U, "executor status helper should name stack-underflow");
+
+    vm_deinit(&overflow_vm);
+    vm_deinit(&underflow_vm);
+    vm_deinit(&entry_vm);
+    return failures;
+}
 
 /// Verifies Phase 70 RET reads a checked pseudo-EIP token and returns to the CALL successor.
 ///
@@ -4553,8 +4666,8 @@ static int test_phase74_ret_imm16_edges_and_failures(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "ret 0", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
     const VmIrInstruction invalid_token_program[] = {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret 8", 0U}
@@ -4624,8 +4737,8 @@ static int test_phase71_non_root_ret_with_valid_token_preserves_phase70_path(voi
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for non-root RET preservation test");
@@ -4712,7 +4825,7 @@ static int test_phase71_root_ret_terminates_without_stack_read(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U}
+        {0U, 1U, true, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71 root RET test");
@@ -4761,7 +4874,7 @@ static int test_phase71a_strict_root_ret_rejects_without_stack_read(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    ret", 4U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U}
+        {0U, 1U, true, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71A strict root RET test");
@@ -4810,7 +4923,7 @@ static int test_phase71_invalid_root_metadata_diagnostic(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U}
+        {0U, 1U, true, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid root metadata test");
@@ -4858,8 +4971,8 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U},
-        {2U, 3U, false, true, 0U}
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 3U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for helper fallthrough test");
@@ -4917,8 +5030,8 @@ static int test_phase71d_procedure_fallthrough_error_stops_before_destination(vo
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough error test");
@@ -4958,8 +5071,8 @@ static int test_phase71d_procedure_fallthrough_off_suppresses_warning(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough off test");
@@ -4997,8 +5110,8 @@ static int test_phase71d_fallthrough_into_helper_ret_uses_root_code_stream(void)
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 3U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 3U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for fallthrough RET root-stream test");
@@ -5047,7 +5160,7 @@ static int test_phase71c_empty_selected_entry_falls_off_code_end(void) {
     const VmExecDelta *delta = NULL;
     const VmExecDiagnostic *diagnostic = NULL;
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 0U, true, false, 0U}
+        {0U, 0U, true, false, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for empty selected-entry falloff test");
@@ -5091,7 +5204,7 @@ static int test_phase71c_selected_entry_falloff_reports_code_end(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    mov eax, 1", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U}
+        {0U, 1U, true, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry code-end falloff test");
@@ -5142,8 +5255,8 @@ static int test_phase71c_selected_entry_falls_through_to_later_procedure(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "    mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry fallthrough test");
@@ -5186,8 +5299,8 @@ static int test_phase71e_stop_at_entry_end_prevents_later_procedure_execution(vo
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U},
-        {1U, 2U, false, true, 0U}
+        {0U, 1U, true, true, 0U, {0}},
+        {1U, 2U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71E stop-at-entry-end test");
@@ -5229,8 +5342,8 @@ static int test_phase71e_taken_branch_to_entry_boundary_does_not_auto_stop(void)
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U},
-        {2U, 3U, false, true, 0U}
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 3U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for Phase 71E branch-boundary stop test");
@@ -5260,7 +5373,7 @@ static int test_phase71e_empty_selected_entry_succeeds_only_in_stop_mode(void) {
     Vm default_vm;
     Vm stop_vm;
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 0U, true, false, 0U}
+        {0U, 0U, true, false, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&default_vm, NULL), VM_EXEC_STATUS_OK, "default empty-entry VM should initialize");
@@ -5311,8 +5424,8 @@ static int test_phase71e_stop_mode_does_not_suppress_helper_fallthrough(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U},
-        {2U, 3U, false, true, 0U}
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 3U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for stop-mode helper fallthrough test");
@@ -5355,8 +5468,8 @@ static int test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough(voi
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U},
-        {2U, 3U, false, true, 0U}
+        {0U, 2U, true, true, 0U, {0}},
+        {2U, 3U, false, true, 0U, {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71F EXIT fallthrough regression test");
@@ -6185,7 +6298,7 @@ static int test_metadata_helpers(void) {
     return failures;
 }
 
-/// Runs all executor tests through Phase 76 PROC USES runtime deferral coverage.
+/// Runs all executor tests through Phase 77 PROC USES runtime save/restore coverage.
 ///
 /// @return Zero on success, non-zero when any test fails.
 int main(void) {
@@ -6269,7 +6382,9 @@ int main(void) {
     failures += test_phase69_direct_call_stack_write_and_transfer();
     failures += test_phase69_direct_call_stack_write_failure_rolls_back();
     failures += test_phase69_invalid_call_metadata();
-    failures += test_phase76_proc_uses_runtime_deferral_rolls_back();
+    failures += test_phase77_proc_uses_runtime_save_restore();
+    failures += test_phase77_proc_uses_eax_listed_preserves_return_register();
+    failures += test_phase77_proc_uses_error_paths();
     failures += test_phase70_ret_returns_to_call_successor();
     failures += test_phase70_ret_invalid_token_rolls_back();
     failures += test_phase74_ret_imm16_cleans_arguments();
@@ -6310,6 +6425,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 76 PROC USES runtime deferral coverage passed.");
+    puts("Executor tests through Phase 77 PROC USES runtime save/restore coverage passed.");
     return 0;
 }

@@ -15,8 +15,8 @@
  * source-run code layers an instruction-count watchdog over this executor.
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
- * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, and Phase 76
- * blocks runtime entry into PROC USES metadata until Phase 77 save/restore. ENTER,
+ * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, and Phase 77
+ * saves and restores PROC USES registers for direct CALL/RET paths. ENTER,
  * procedure-frame creation, far returns, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
@@ -49,6 +49,9 @@
 
 /// Maximum procedure boundaries retained for root, helper-fallthrough, and code-falloff checks.
 #define VM_EXEC_MAX_PROCEDURE_BOUNDARIES 128U
+
+/// Maximum ordered registers stored for one Phase 77 PROC USES save/restore list.
+#define VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY 6U
 
 /// Default Phase 72 direct user-procedure CALL depth limit.
 #define VM_DEFAULT_CALL_DEPTH_LIMIT 64u
@@ -110,8 +113,12 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE,
     /// Execution reached an accepted branch form whose runtime behavior is still explicitly deferred.
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED,
-    /// Execution attempted to enter a procedure with PROC USES metadata before runtime save/restore exists.
-    VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME
+    /// Execution attempted to enter a PROC USES procedure without a supported CALL-created USES frame.
+    VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME,
+    /// Automatic PROC USES save could not reserve or write the required stack frame.
+    VM_EXEC_STATUS_STACK_OVERFLOW,
+    /// Automatic PROC USES restore could not read the saved register frame.
+    VM_EXEC_STATUS_STACK_UNDERFLOW
 } VmExecStatus;
 
 
@@ -125,9 +132,21 @@ typedef struct VmExecProcedureBoundary {
     bool is_selected_entry;
     /// Whether the procedure contains at least one executable instruction.
     bool has_executable_instruction;
-    /// Number of Phase 76 PROC USES registers attached to this procedure.
+    /// Number of Phase 77 PROC USES registers attached to this procedure.
     size_t uses_register_count;
+    /// Ordered canonical Phase 77 PROC USES registers saved on CALL entry and restored on RET.
+    VmRegister uses_registers[VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY];
 } VmExecProcedureBoundary;
+
+/// Captures one active CALL-created Phase 77 PROC USES save/restore frame.
+typedef struct VmExecUsesFrame {
+    /// Procedure body start instruction index that owns this USES frame.
+    size_t procedure_start_instruction_index;
+    /// Number of saved registers in @ref uses_registers.
+    size_t uses_register_count;
+    /// Ordered canonical registers saved in declared PROC USES order.
+    VmRegister uses_registers[VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY];
+} VmExecUsesFrame;
 
 
 /// Selects how root-code-stream RET is handled when no helper return is pending.
@@ -323,6 +342,10 @@ typedef struct Vm {
     size_t active_helper_return_count;
     /// Phase 72 count of committed direct user-procedure CALL frames not yet returned by helper RET.
     size_t current_call_depth;
+    /// Active Phase 77 PROC USES frames created by direct CALL entry.
+    VmExecUsesFrame active_uses_frames[VM_MAX_CALL_DEPTH_LIMIT];
+    /// Number of valid entries in @ref active_uses_frames.
+    size_t active_uses_frame_count;
     /// Whether execution is currently in the selected-entry root code stream rather than an explicit helper CALL.
     bool root_code_stream_active;
     /// Whether Phase 71E selected-entry boundary auto-stop remains eligible for this run.
