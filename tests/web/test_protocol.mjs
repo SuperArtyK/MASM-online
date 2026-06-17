@@ -34,9 +34,9 @@ function test(name, body) {
 
 test("ready message includes implemented phase and loaded wasm status", () => {
   assert.equal(IMPLEMENTED_PHASE, 78);
-  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "");
-  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
-  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-78-local-metadata-output-contract-v1");
+  assert.equal(IMPLEMENTED_PHASE_SUFFIX, "A");
+  assert.equal(IMPLEMENTED_PHASE_NAME, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(SOURCE_RUN_OUTPUT_CONTRACT, "phase-78a-nokeyword-output-contract-v1");
   assert.deepEqual(createReadyMessage({ status: "loaded", testValue: 32, sourceExecution: "available" }), {
     type: "READY",
     payload: {
@@ -47,9 +47,9 @@ test("ready message includes implemented phase and loaded wasm status", () => {
       },
       wasmTestValue: 32,
       phase: 78,
-      phaseSuffix: "",
-      phaseName: "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-      sourceRunOutputContract: "phase-78-local-metadata-output-contract-v1"
+      phaseSuffix: "A",
+      phaseName: "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+      sourceRunOutputContract: "phase-78a-nokeyword-output-contract-v1"
     }
   });
 });
@@ -66,9 +66,9 @@ test("ready message supports not-built wasm status", () => {
       },
       wasmTestValue: null,
       phase: 78,
-      phaseSuffix: "",
-      phaseName: "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-      sourceRunOutputContract: "phase-78-local-metadata-output-contract-v1"
+      phaseSuffix: "A",
+      phaseName: "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+      sourceRunOutputContract: "phase-78a-nokeyword-output-contract-v1"
     }
   });
 });
@@ -113,7 +113,7 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
         });
         return {
           phase: 78,
-          phaseSuffix: "",
+          phaseSuffix: "A",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           registers: {
@@ -129,7 +129,7 @@ test("RUN_SOURCE dispatches to runtime with default diagnostic settings and retu
     type: "RUN_RESULT",
     payload: {
       phase: 78,
-      phaseSuffix: "",
+      phaseSuffix: "A",
       sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
       ok: true,
       registers: {
@@ -209,7 +209,7 @@ test("RUN_SOURCE dispatches Phase 71A root RET mode setting to runtime", () => {
           entryProcedureEndMode: 0,
           callDepthLimit: 64
         });
-        return { phase: 78, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
+        return { phase: 78, phaseSuffix: "A", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "runtime-error", code: "root-ret-disallowed-by-mode" }] };
       }
     }
   );
@@ -249,7 +249,7 @@ test("RUN_SOURCE dispatches Phase 71D procedure fallthrough policy setting to ru
         });
         return {
           phase: 78,
-          phaseSuffix: "",
+          phaseSuffix: "A",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: false,
           simulatorMessages: [{ kind: "runtime-error", code: "procedure-fell-through" }]
@@ -293,7 +293,7 @@ test("RUN_SOURCE dispatches Phase 71E entry procedure end mode setting to runtim
         });
         return {
           phase: 78,
-          phaseSuffix: "",
+          phaseSuffix: "A",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: [{ kind: "info", code: "execution-complete" }]
@@ -334,7 +334,7 @@ test("RUN_SOURCE dispatches Phase 72 callDepthLimit setting to runtime", () => {
           entryProcedureEndMode: 0,
           callDepthLimit: 1
         });
-        return { phase: 78, phaseSuffix: "", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "resource-limit-error", code: "call-depth-exceeded" }] };
+        return { phase: 78, phaseSuffix: "A", sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT, ok: false, simulatorMessages: [{ kind: "resource-limit-error", code: "call-depth-exceeded" }] };
       }
     }
   );
@@ -544,7 +544,7 @@ test("RUN_SOURCE marks stale Wasm artifacts", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 29, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
   assert.equal(response.payload.simulatorMessages[1].code, "stale-wasm-output-contract");
   assert.equal(response.payload.simulatorMessages[2].code, "unsupported-constant-expression");
@@ -572,7 +572,7 @@ test("RUN_SOURCE accepts matching runtime and output-contract metadata", () => {
       runSource() {
         return {
           phase: 78,
-          phaseSuffix: "",
+          phaseSuffix: "A",
           sourceRunOutputContract: SOURCE_RUN_OUTPUT_CONTRACT,
           ok: true,
           simulatorMessages: [
@@ -610,7 +610,7 @@ test("RUN_SOURCE rejects newer runtime phase metadata by default", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 79, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 79, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -635,7 +635,7 @@ test("RUN_SOURCE rejects mismatched runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -659,7 +659,7 @@ test("RUN_SOURCE rejects missing runtime phase metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior unknown, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -705,7 +705,7 @@ test("RUN_SOURCE rejects missing runtime phase suffix metadata", () => {
   assert.equal(response.payload.simulatorMessages[0].code, "stale-wasm-artifact");
   assert.equal(
     response.payload.simulatorMessages[0].message,
-    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71 with missing or invalid suffix metadata, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -737,7 +737,7 @@ test("RUN_SOURCE marks matching runtime phase with missing output-contract metad
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 78, phaseSuffix: "", ok: true, simulatorMessages: [] };
+        return { phase: 78, phaseSuffix: "A", ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -756,7 +756,7 @@ test("RUN_SOURCE marks matching runtime phase with stale output-contract metadat
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 78, phaseSuffix: "", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
+        return { phase: 78, phaseSuffix: "A", sourceRunOutputContract: "phase-69b-output-ordering", ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -774,7 +774,7 @@ test("RUN_SOURCE treats non-string output-contract metadata as missing", () => {
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 78, phaseSuffix: "", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
+        return { phase: 78, phaseSuffix: "A", sourceRunOutputContract: 69, ok: true, simulatorMessages: [] };
       }
     }
   );
@@ -792,7 +792,7 @@ test("RUN_SOURCE creates stale-output-contract message when simulatorMessages is
     { type: "RUN_SOURCE", payload: { source: ".code\nmain PROC\nEND main\n" } },
     {
       runSource() {
-        return { phase: 78, phaseSuffix: "", ok: true, simulatorMessages: "not an array" };
+        return { phase: 78, phaseSuffix: "A", ok: true, simulatorMessages: "not an array" };
       }
     }
   );

@@ -19,13 +19,13 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 export const IMPLEMENTED_PHASE = 78;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "";
+export const IMPLEMENTED_PHASE_SUFFIX = "A";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata";
+export const IMPLEMENTED_PHASE_NAME = "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-78-local-metadata-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-78a-nokeyword-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

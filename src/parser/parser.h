@@ -17,7 +17,9 @@
  * virtual Irvine32 registry metadata, Phase 68 call-target classification
  * metadata used by Phase 69 direct user-procedure CALL lowering, Phase 70
  * plain near RET lowering, Phase 74 RET imm16 lowering, Phase 75
- * PROC metadata diagnostics, and Phase 76 PROC USES parsing metadata, and Phase 78 LOCAL declaration parser metadata.
+ * PROC metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78
+ * LOCAL declaration parser metadata, and Phase 78A limited OPTION NOKEYWORD
+ * parser keyword opt-out metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -278,6 +280,18 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT,
     /// A CALL/INVOKE classifier query identified an unsupported target.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET,
+    /// An OPTION NOKEYWORD directive was malformed outside the angle-bracket list payload.
+    VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX,
+    /// An OPTION NOKEYWORD angle-bracket list was missing, empty, or malformed.
+    VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+    /// An OPTION NOKEYWORD list entry was not recognized as a reserved word by the simulator.
+    VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD,
+    /// An OPTION NOKEYWORD list entry was recognized but is intentionally protected from disablement.
+    VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD,
+    /// A keyword disabled by OPTION NOKEYWORD was later used in its former keyword role.
+    VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD,
+    /// A keyword disabled by OPTION NOKEYWORD created a parser ambiguity the simulator cannot resolve safely.
+    VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_AMBIGUOUS,
     /// The caller-provided code-label table was full.
     VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
     /// The caller-provided procedure-range table was full.

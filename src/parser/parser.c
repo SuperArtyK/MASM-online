@@ -11,8 +11,9 @@
  * procedure entries, and plain near RET plus near RET imm16 are lowered for the
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
- * metadata diagnostics, and Phase 76 PROC USES parsing metadata and Phase 78 LOCAL
- * declaration metadata are supported; accepted PROC remains metadata-only, unsupported non-USES PROC
+ * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
+ * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata are
+ * supported; accepted PROC remains metadata-only, unsupported non-USES PROC
  * tails are rejected with targeted diagnostics, and ENTER, stack-frame creation,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
@@ -121,6 +122,16 @@ typedef enum VmParserUserSymbolCasePolicy {
     VM_PARSER_USER_SYMBOL_CASEMAP_NONE
 } VmParserUserSymbolCasePolicy;
 
+/// Identifies one Phase 78A disable-eligible keyword.
+typedef enum VmParserNoKeywordWord {
+    /// No disable-eligible word was matched.
+    VM_PARSER_NOKEYWORD_WORD_NONE = 0,
+    /// The Phase 78A disable-eligible LOOP instruction-family word.
+    VM_PARSER_NOKEYWORD_WORD_LOOP,
+    /// The Phase 78A disable-eligible OFFSET operator word.
+    VM_PARSER_NOKEYWORD_WORD_OFFSET
+} VmParserNoKeywordWord;
+
 /// Describes one numeric equate known during parsing.
 typedef struct VmParserEquate {
     /// Null-terminated equate name copied from source.
@@ -157,6 +168,10 @@ typedef struct VmParserBranchFixup {
     VmLexerToken target_token;
     /// User-symbol CASEMAP policy active at the target reference.
     VmParserUserSymbolCasePolicy case_policy;
+    /// Whether LOOP had been disabled by OPTION NOKEYWORD at the reference.
+    bool nokeyword_loop_disabled;
+    /// Whether OFFSET had been disabled by OPTION NOKEYWORD at the reference.
+    bool nokeyword_offset_disabled;
 } VmParserBranchFixup;
 
 /// Describes one lowered direct CALL target that must be resolved after procedures are known.
@@ -167,6 +182,10 @@ typedef struct VmParserCallFixup {
     VmLexerToken target_token;
     /// User-symbol CASEMAP policy active at the target reference.
     VmParserUserSymbolCasePolicy case_policy;
+    /// Whether LOOP had been disabled by OPTION NOKEYWORD at the reference.
+    bool nokeyword_loop_disabled;
+    /// Whether OFFSET had been disabled by OPTION NOKEYWORD at the reference.
+    bool nokeyword_offset_disabled;
 } VmParserCallFixup;
 
 /// Owns mutable parser state for one parse operation.
@@ -207,6 +226,10 @@ typedef struct VmParserState {
     VmParserUserSymbolCasePolicy user_symbol_case_policy;
     /// Whether a supported OPTION CASEMAP directive has been seen.
     bool has_explicit_casemap_policy;
+    /// Whether Phase 78A OPTION NOKEYWORD disabled LOOP for later source lines.
+    bool nokeyword_loop_disabled;
+    /// Whether Phase 78A OPTION NOKEYWORD disabled OFFSET for later source lines.
+    bool nokeyword_offset_disabled;
     /// Code-label table indexes that should resolve to the next executable instruction.
     size_t pending_code_label_indices[VM_PARSER_PENDING_CODE_LABEL_CAPACITY];
     /// Number of valid entries in @ref pending_code_label_indices.
@@ -279,6 +302,8 @@ typedef struct VmParserReservedWordClassification {
     bool is_reserved;
     /// User-facing reserved-word category for diagnostics.
     const char *kind;
+    /// Canonical spelling for diagnostics when known.
+    const char *canonical_spelling;
 } VmParserReservedWordClassification;
 
 /// Describes one known name in the virtual Irvine32 registry.
@@ -306,6 +331,8 @@ static const VmLexerToken *vm_parser_current_token(const VmParserState *state);
 static const VmLexerToken *vm_parser_peek_token(const VmParserState *state, size_t offset);
 
 static void vm_parser_advance(VmParserState *state);
+
+static void vm_parser_advance_many(VmParserState *state, size_t count);
 
 static bool vm_parser_add_diagnostic(
     VmParserState *state,
@@ -387,6 +414,16 @@ static bool vm_parser_reject_reserved_symbol_declaration(
     const char *symbol_kind
 );
 
+static bool vm_parser_nokeyword_word_is_disabled(const VmParserState *state, VmParserNoKeywordWord word);
+
+static bool vm_parser_token_is_disabled_nokeyword(const VmParserState *state, const VmLexerToken *token);
+
+static bool vm_parser_reject_disabled_keyword_role_use(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmParserNoKeywordWord word
+);
+
 static void vm_parser_resolve_pending_code_labels(VmParserState *state, size_t target_instruction_index);
 
 static void vm_parser_finalize_pending_code_labels_without_target(VmParserState *state);
@@ -419,6 +456,18 @@ static bool vm_parser_is_horizontal_space(char ch) {
 static char vm_parser_ascii_lower(char ch) {
     if (ch >= 'A' && ch <= 'Z') {
         return (char)(ch - 'A' + 'a');
+    }
+
+    return ch;
+}
+
+/// Converts an ASCII letter to uppercase without depending on locale.
+///
+/// @param ch Source byte to convert.
+/// @return Uppercase ASCII letter or the original byte.
+static char vm_parser_ascii_upper(char ch) {
+    if (ch >= 'a' && ch <= 'z') {
+        return (char)(ch - 'a' + 'A');
     }
 
     return ch;
@@ -6651,6 +6700,12 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return false;
     }
 
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET") &&
+        vm_parser_nokeyword_word_is_disabled(state, VM_PARSER_NOKEYWORD_WORD_OFFSET) &&
+        vm_parser_peek_token(state, 1U) != NULL && !vm_parser_is_line_end_token(vm_parser_peek_token(state, 1U))) {
+        return vm_parser_reject_disabled_keyword_role_use(state, token, VM_PARSER_NOKEYWORD_WORD_OFFSET);
+    }
+
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "TYPE")) {
         return vm_parser_parse_type_source_operand(state, out_operand);
     }
@@ -6718,7 +6773,8 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return vm_parser_parse_symbol_index_memory_operand(state, out_operand);
     }
 
-    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET")) {
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "OFFSET") &&
+        !vm_parser_nokeyword_word_is_disabled(state, VM_PARSER_NOKEYWORD_WORD_OFFSET)) {
         const VmLexerToken *symbol_token = vm_parser_peek_token(state, 1U);
         const VmLexerToken *tail_token = vm_parser_peek_token(state, 2U);
         const VmSymbol *symbol = NULL;
@@ -7731,13 +7787,13 @@ static bool vm_parser_token_names_instruction_mnemonic(const VmLexerToken *token
            vm_parser_token_equals(token, "loop");
 }
 
-/// Looks up a reserved-word category in a small case-insensitive table.
+/// Searches a reserved-word table for a token spelling.
 ///
 /// @param token Candidate token to classify.
 /// @param words Reserved-word table.
 /// @param word_count Number of entries in @p words.
-/// @return Matching reserved-word kind, or NULL when the token is not listed.
-static const char *vm_parser_find_reserved_word_kind(
+/// @return Matched reserved-word entry, or NULL when no entry matched.
+static const VmParserReservedWord *vm_parser_find_reserved_word_entry(
     const VmLexerToken *token,
     const VmParserReservedWord *words,
     size_t word_count
@@ -7750,7 +7806,7 @@ static const char *vm_parser_find_reserved_word_kind(
 
     for (index = 0U; index < word_count; index += 1U) {
         if (vm_parser_token_equals(token, words[index].spelling)) {
-            return words[index].kind;
+            return &words[index];
         }
     }
 
@@ -7795,12 +7851,19 @@ static VmParserReservedWordClassification vm_parser_classify_reserved_word(const
         {"FAR", "branch-distance keyword"},
         {"ADDR", "operator"},
         {"INVOKE", "procedure-call keyword"},
+        {"LOCAL", "structural directive"},
+        {"CASEMAP", "OPTION option name"},
+        {"NOKEYWORD", "OPTION option name"},
+        {"ALL", "OPTION CASEMAP value"},
+        {"NONE", "OPTION CASEMAP value"},
+        {"NOTPUBLIC", "OPTION CASEMAP value"},
         {"IRVINE32", "virtual include name"},
         {"MACROS", "virtual include name"}
     };
     VmParserReservedWordClassification result;
     VmSymbolDataType data_type = VM_SYMBOL_DATA_TYPE_BYTE;
-    const char *kind = NULL;
+    VmIrOpcode opcode = VM_IR_OPCODE_MOV;
+    const VmParserReservedWord *reserved_word = NULL;
 
     memset(&result, 0, sizeof(result));
 
@@ -7811,6 +7874,7 @@ static VmParserReservedWordClassification vm_parser_classify_reserved_word(const
     if (token->kind == VM_LEXER_TOKEN_REGISTER) {
         result.is_reserved = true;
         result.kind = "register name";
+        result.canonical_spelling = vm_cpu_register_name(token->register_id);
         return result;
     }
 
@@ -7824,7 +7888,14 @@ static VmParserReservedWordClassification vm_parser_classify_reserved_word(const
         return result;
     }
 
-    if (vm_parser_token_names_instruction_mnemonic(token)) {
+    if (vm_parser_parse_opcode(token, &opcode)) {
+        result.is_reserved = true;
+        result.kind = vm_parser_opcode_is_direct_branch(opcode) ? "branch mnemonic" : "instruction mnemonic";
+        return result;
+    }
+
+    if (vm_parser_token_equals(token, "call") || vm_parser_token_equals(token, "ret") ||
+        vm_parser_token_equals(token, "retf") || vm_parser_token_equals(token, "loop")) {
         result.is_reserved = true;
         result.kind = "instruction mnemonic";
         return result;
@@ -7833,13 +7904,15 @@ static VmParserReservedWordClassification vm_parser_classify_reserved_word(const
     if (vm_symbol_parse_data_type(token->lexeme, token->lexeme_length, &data_type)) {
         result.is_reserved = true;
         result.kind = "data type name";
+        result.canonical_spelling = vm_symbol_data_type_name(data_type);
         return result;
     }
 
-    kind = vm_parser_find_reserved_word_kind(token, fixed_words, sizeof(fixed_words) / sizeof(fixed_words[0]));
-    if (kind != NULL) {
+    reserved_word = vm_parser_find_reserved_word_entry(token, fixed_words, sizeof(fixed_words) / sizeof(fixed_words[0]));
+    if (reserved_word != NULL) {
         result.is_reserved = true;
-        result.kind = kind;
+        result.kind = reserved_word->kind;
+        result.canonical_spelling = reserved_word->spelling;
         return result;
     }
 
@@ -7912,6 +7985,10 @@ static bool vm_parser_reject_reserved_symbol_declaration(
         return true;
     }
 
+    if (vm_parser_token_is_disabled_nokeyword(state, name_token)) {
+        return false;
+    }
+
     if (!classification.is_reserved) {
         return false;
     }
@@ -7970,6 +8047,8 @@ static bool vm_parser_add_branch_fixup(VmParserState *state, size_t instruction_
     fixup->instruction_index = instruction_index;
     fixup->target_token = *target_token;
     fixup->case_policy = state->user_symbol_case_policy;
+    fixup->nokeyword_loop_disabled = state->nokeyword_loop_disabled;
+    fixup->nokeyword_offset_disabled = state->nokeyword_offset_disabled;
     state->branch_fixup_count += 1U;
     return true;
 }
@@ -8185,6 +8264,8 @@ static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_in
     fixup->instruction_index = instruction_index;
     fixup->target_token = *target_token;
     fixup->case_policy = state->user_symbol_case_policy;
+    fixup->nokeyword_loop_disabled = state->nokeyword_loop_disabled;
+    fixup->nokeyword_offset_disabled = state->nokeyword_offset_disabled;
     state->call_fixup_count += 1U;
     return true;
 }
@@ -8274,7 +8355,8 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return false;
     }
 
-    if (vm_parser_token_equals(target_token, "OFFSET")) {
+    if (vm_parser_token_equals(target_token, "OFFSET") &&
+        !vm_parser_nokeyword_word_is_disabled(state, VM_PARSER_NOKEYWORD_WORD_OFFSET)) {
         return vm_parser_reject_call_form(
             state,
             target_token,
@@ -8790,6 +8872,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
                 vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "Far RET forms are not implemented. This simulator accepts only near RET with no operand or an unsigned 16-bit immediate byte count.");
                 return false;
             }
+            if (vm_parser_token_equals(mnemonic_token, "loop") &&
+                vm_parser_nokeyword_word_is_disabled(state, VM_PARSER_NOKEYWORD_WORD_LOOP)) {
+                return vm_parser_reject_disabled_keyword_role_use(state, mnemonic_token, VM_PARSER_NOKEYWORD_WORD_LOOP);
+            }
             if (vm_parser_diagnose_irvine32_symbol_use_if_known(state, mnemonic_token)) {
                 return false;
             }
@@ -9138,7 +9224,9 @@ static bool vm_parser_resolve_one_branch_fixup(VmParserState *state, const VmPar
         return false;
     }
 
-    if (vm_parser_token_names_instruction_mnemonic(target_token)) {
+    if (vm_parser_token_names_instruction_mnemonic(target_token) &&
+        !(fixup->nokeyword_loop_disabled && vm_parser_token_equals(target_token, "LOOP")) &&
+        !(fixup->nokeyword_offset_disabled && vm_parser_token_equals(target_token, "OFFSET"))) {
         if (is_jmp) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_BRANCH_TARGET, target_token, "JMP target cannot be an instruction mnemonic. Use a non-reserved code label with an executable target instruction.");
         } else {
@@ -10472,6 +10560,336 @@ static bool vm_parser_header_token_equals(const VmLexerToken *token, const char 
     return token != NULL && spelling != NULL && vm_parser_token_equals(token, spelling);
 }
 
+/// Copies a token spelling into an uppercase ASCII diagnostic buffer.
+///
+/// @param token Source token to copy.
+/// @param out_text Destination buffer.
+/// @param out_text_size Destination buffer capacity in bytes.
+static void vm_parser_copy_token_uppercase(const VmLexerToken *token, char *out_text, size_t out_text_size) {
+    size_t index = 0U;
+    size_t copy_length = 0U;
+
+    if (out_text == NULL || out_text_size == 0U) {
+        return;
+    }
+
+    out_text[0] = '\0';
+    if (token == NULL || token->lexeme == NULL) {
+        return;
+    }
+
+    copy_length = token->lexeme_length;
+    if (copy_length >= out_text_size) {
+        copy_length = out_text_size - 1U;
+    }
+
+    for (index = 0U; index < copy_length; index += 1U) {
+        out_text[index] = vm_parser_ascii_upper(token->lexeme[index]);
+    }
+    out_text[copy_length] = '\0';
+}
+
+/// Returns whether a token spelling exactly matches a null-terminated string.
+///
+/// @param token Source token to inspect.
+/// @param spelling Null-terminated canonical spelling.
+/// @return true when @p token exactly matches @p spelling byte-for-byte.
+static bool vm_parser_token_matches_exact_spelling(const VmLexerToken *token, const char *spelling) {
+    size_t spelling_length = 0U;
+
+    if (token == NULL || token->lexeme == NULL || spelling == NULL) {
+        return false;
+    }
+
+    spelling_length = strlen(spelling);
+    return token->lexeme_length == spelling_length && memcmp(token->lexeme, spelling, spelling_length) == 0;
+}
+
+/// Returns the canonical spelling for one Phase 78A disable-eligible word.
+///
+/// @param word Disable-eligible word identity.
+/// @return Canonical uppercase spelling, or "keyword" for NONE.
+static const char *vm_parser_nokeyword_canonical_word(VmParserNoKeywordWord word) {
+    if (word == VM_PARSER_NOKEYWORD_WORD_LOOP) {
+        return "LOOP";
+    }
+    if (word == VM_PARSER_NOKEYWORD_WORD_OFFSET) {
+        return "OFFSET";
+    }
+    return "keyword";
+}
+
+/// Returns the original reserved role for one Phase 78A disable-eligible word.
+///
+/// @param word Disable-eligible word identity.
+/// @return User-facing role description.
+static const char *vm_parser_nokeyword_original_role(VmParserNoKeywordWord word) {
+    if (word == VM_PARSER_NOKEYWORD_WORD_LOOP) {
+        return "instruction-family keyword";
+    }
+    if (word == VM_PARSER_NOKEYWORD_WORD_OFFSET) {
+        return "operator keyword";
+    }
+    return "keyword";
+}
+
+/// Classifies a token against the exact Phase 78A disable-eligible table.
+///
+/// @param token Token to inspect.
+/// @return Disable-eligible word identity, or NONE.
+static VmParserNoKeywordWord vm_parser_classify_nokeyword_disable_eligible(const VmLexerToken *token) {
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return VM_PARSER_NOKEYWORD_WORD_NONE;
+    }
+    if (vm_parser_token_equals(token, "LOOP")) {
+        return VM_PARSER_NOKEYWORD_WORD_LOOP;
+    }
+    if (vm_parser_token_equals(token, "OFFSET")) {
+        return VM_PARSER_NOKEYWORD_WORD_OFFSET;
+    }
+    return VM_PARSER_NOKEYWORD_WORD_NONE;
+}
+
+/// Returns whether a Phase 78A disable-eligible keyword is currently disabled.
+///
+/// @param state Parser state containing source-order disabled keyword state.
+/// @param word Disable-eligible word identity.
+/// @return true when the word was disabled by an earlier valid directive.
+static bool vm_parser_nokeyword_word_is_disabled(const VmParserState *state, VmParserNoKeywordWord word) {
+    if (state == NULL) {
+        return false;
+    }
+    if (word == VM_PARSER_NOKEYWORD_WORD_LOOP) {
+        return state->nokeyword_loop_disabled;
+    }
+    if (word == VM_PARSER_NOKEYWORD_WORD_OFFSET) {
+        return state->nokeyword_offset_disabled;
+    }
+    return false;
+}
+
+/// Returns whether a source token names a disabled Phase 78A keyword.
+///
+/// @param state Parser state containing source-order disabled keyword state.
+/// @param token Token to inspect.
+/// @return true when the token names a currently disabled LOOP or OFFSET word.
+static bool vm_parser_token_is_disabled_nokeyword(const VmParserState *state, const VmLexerToken *token) {
+    return vm_parser_nokeyword_word_is_disabled(state, vm_parser_classify_nokeyword_disable_eligible(token));
+}
+
+/// Emits a Phase 78A diagnostic for using a disabled word in its old keyword role.
+///
+/// @param state Parser state to mutate.
+/// @param token Disabled keyword token.
+/// @param word Disable-eligible word identity.
+/// @return false so callers can return directly.
+static bool vm_parser_reject_disabled_keyword_role_use(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmParserNoKeywordWord word
+) {
+    (void)vm_parser_add_formatted_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD,
+        token,
+        "'%s' was disabled by OPTION NOKEYWORD and is no longer available as an %s on this source line.",
+        vm_parser_nokeyword_canonical_word(word),
+        vm_parser_nokeyword_original_role(word)
+    );
+    return false;
+}
+
+/// Returns whether a token is valid list content for OPTION NOKEYWORD.
+///
+/// @param token Token to inspect.
+/// @return true for identifier-like NOKEYWORD list words.
+static bool vm_parser_token_can_name_nokeyword_list_entry(const VmLexerToken *token) {
+    return token != NULL && (token->kind == VM_LEXER_TOKEN_IDENTIFIER || token->kind == VM_LEXER_TOKEN_REGISTER || token->kind == VM_LEXER_TOKEN_DIRECTIVE);
+}
+
+/// Emits a Phase 78A protected-word diagnostic for one OPTION NOKEYWORD entry.
+///
+/// @param state Parser state to mutate.
+/// @param word_token Protected list entry token.
+/// @param reserved Reserved-word classification for @p word_token.
+static void vm_parser_add_nokeyword_protected_diagnostic(
+    VmParserState *state,
+    const VmLexerToken *word_token,
+    const VmParserReservedWordClassification *reserved
+) {
+    char canonical_buffer[VM_SYMBOL_NAME_CAPACITY];
+    const char *canonical = NULL;
+    const char *kind = NULL;
+
+    canonical_buffer[0] = '\0';
+    if (reserved != NULL) {
+        canonical = reserved->canonical_spelling;
+        kind = reserved->kind;
+    }
+    if (canonical == NULL) {
+        vm_parser_copy_token_uppercase(word_token, canonical_buffer, sizeof(canonical_buffer));
+        canonical = canonical_buffer[0] != '\0' ? canonical_buffer : NULL;
+    }
+
+    if (canonical != NULL && !vm_parser_token_matches_exact_spelling(word_token, canonical)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD,
+            word_token,
+            "'%.*s' is a protected MASM %s and cannot be disabled by OPTION NOKEYWORD in Phase 78A; canonical spelling is '%s'.",
+            (int)(word_token != NULL ? word_token->lexeme_length : 0U),
+            word_token != NULL && word_token->lexeme != NULL ? word_token->lexeme : "",
+            kind != NULL ? kind : "reserved word",
+            canonical
+        );
+        return;
+    }
+
+    (void)vm_parser_add_formatted_diagnostic(
+        state,
+        VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD,
+        word_token,
+        "'%.*s' is a protected MASM %s and cannot be disabled by OPTION NOKEYWORD in Phase 78A.",
+        (int)(word_token != NULL ? word_token->lexeme_length : 0U),
+        word_token != NULL && word_token->lexeme != NULL ? word_token->lexeme : "",
+        kind != NULL ? kind : "reserved word"
+    );
+}
+
+/// Parses and validates a Phase 78A OPTION NOKEYWORD directive.
+///
+/// The directive is validation-first: no disabled keyword state is mutated until
+/// the entire angle-bracket list has been verified.
+///
+/// @param state Parser state to mutate.
+/// @param option_token OPTION token beginning the directive.
+/// @return true after the directive line is consumed or diagnosed.
+static bool vm_parser_parse_nokeyword_directive(VmParserState *state, const VmLexerToken *option_token) {
+    const VmLexerToken *nokeyword_token = vm_parser_peek_token(state, 1U);
+    const VmLexerToken *colon_token = vm_parser_peek_token(state, 2U);
+    const VmLexerToken *left_token = vm_parser_peek_token(state, 3U);
+    size_t scan_index = 4U;
+    bool saw_entry = false;
+    bool disable_loop = false;
+    bool disable_offset = false;
+
+    if (state == NULL) {
+        return false;
+    }
+
+    if (colon_token == NULL || colon_token->kind != VM_LEXER_TOKEN_COLON) {
+        (void)vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX,
+            nokeyword_token != NULL ? nokeyword_token : option_token,
+            "Invalid OPTION NOKEYWORD syntax. Expected OPTION NOKEYWORD:<LOOP>, OPTION NOKEYWORD:<OFFSET>, or OPTION NOKEYWORD:<LOOP OFFSET>."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (left_token == NULL || left_token->kind != VM_LEXER_TOKEN_LESS_THAN) {
+        (void)vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+            left_token != NULL && !vm_parser_is_line_end_token(left_token) ? left_token : colon_token,
+            "Invalid OPTION NOKEYWORD list. The list must be enclosed in angle brackets, for example OPTION NOKEYWORD:<LOOP OFFSET>."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    while (true) {
+        const VmLexerToken *entry_token = vm_parser_peek_token(state, scan_index);
+        VmParserNoKeywordWord entry_word = VM_PARSER_NOKEYWORD_WORD_NONE;
+        VmParserReservedWordClassification reserved;
+
+        if (entry_token == NULL || vm_parser_is_line_end_token(entry_token)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+                entry_token != NULL ? entry_token : left_token,
+                "Invalid OPTION NOKEYWORD list. Expected one or more whitespace-separated reserved words followed by '>'."
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        if (entry_token->kind == VM_LEXER_TOKEN_GREATER_THAN) {
+            const VmLexerToken *tail_token = vm_parser_peek_token(state, scan_index + 1U);
+            if (!saw_entry) {
+                (void)vm_parser_add_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+                    entry_token,
+                    "Invalid OPTION NOKEYWORD list. The angle-bracket list must contain LOOP, OFFSET, or both."
+                );
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            if (tail_token != NULL && !vm_parser_is_line_end_token(tail_token)) {
+                (void)vm_parser_add_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+                    tail_token,
+                    "Invalid OPTION NOKEYWORD list. Only a trailing source comment may follow the closing '>'."
+                );
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            break;
+        }
+
+        if (!vm_parser_token_can_name_nokeyword_list_entry(entry_token)) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST,
+                entry_token,
+                "Invalid OPTION NOKEYWORD list. Entries must be whitespace-separated identifier-like reserved words without commas, quotes, numbers, or operators."
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        entry_word = vm_parser_classify_nokeyword_disable_eligible(entry_token);
+        if (entry_word == VM_PARSER_NOKEYWORD_WORD_LOOP) {
+            disable_loop = true;
+        } else if (entry_word == VM_PARSER_NOKEYWORD_WORD_OFFSET) {
+            disable_offset = true;
+        } else {
+            reserved = vm_parser_classify_reserved_word(entry_token);
+            if (reserved.is_reserved) {
+                vm_parser_add_nokeyword_protected_diagnostic(state, entry_token, &reserved);
+            } else {
+                (void)vm_parser_add_formatted_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD,
+                    entry_token,
+                    "'%.*s' is not a simulator-recognized reserved word and cannot be disabled by OPTION NOKEYWORD.",
+                    (int)entry_token->lexeme_length,
+                    entry_token->lexeme != NULL ? entry_token->lexeme : ""
+                );
+            }
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        saw_entry = true;
+        scan_index += 1U;
+    }
+
+    if (disable_loop) {
+        state->nokeyword_loop_disabled = true;
+    }
+    if (disable_offset) {
+        state->nokeyword_offset_disabled = true;
+    }
+
+    vm_parser_advance_many(state, scan_index + 1U);
+    (void)vm_parser_expect_line_end(state);
+    return true;
+}
+
 /// Consumes a fixed number of parser tokens.
 ///
 /// @param state Parser state to mutate.
@@ -10866,6 +11284,10 @@ static bool vm_parser_parse_option_directive(VmParserState *state) {
 
     if (state == NULL) {
         return false;
+    }
+
+    if (vm_parser_header_token_equals(casemap_token, "nokeyword")) {
+        return vm_parser_parse_nokeyword_directive(state, option_token);
     }
 
     if (vm_parser_header_token_equals(casemap_token, "casemap") && colon_token != NULL && colon_token->kind == VM_LEXER_TOKEN_COLON &&
@@ -11740,11 +12162,6 @@ VmParserCallTargetClassification vm_parser_classify_call_target_token(
         return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL);
     }
 
-    reserved = vm_parser_classify_reserved_word(target_token);
-    if (reserved.is_reserved) {
-        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_RESERVED_WORD);
-    }
-
     if (vm_parser_find_call_target_procedure(context, target_token->lexeme, target_token->lexeme_length, &metadata_index)) {
         result = vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY);
         result.metadata_index = metadata_index;
@@ -11784,6 +12201,11 @@ VmParserCallTargetClassification vm_parser_classify_call_target_token(
         result.metadata_index = metadata_index;
         result.has_metadata_index = true;
         return result;
+    }
+
+    reserved = vm_parser_classify_reserved_word(target_token);
+    if (reserved.is_reserved) {
+        return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_RESERVED_WORD);
     }
 
     return vm_parser_make_call_target_classification(VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL);
@@ -12038,6 +12460,18 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "invalid-local-count";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET:
             return "unsupported-call-target";
+        case VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX:
+            return "invalid-nokeyword-syntax";
+        case VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST:
+            return "invalid-nokeyword-list";
+        case VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD:
+            return "nokeyword-unknown-keyword";
+        case VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD:
+            return "nokeyword-protected-keyword";
+        case VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD:
+            return "disabled-keyword-used-as-keyword";
+        case VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_AMBIGUOUS:
+            return "disabled-keyword-ambiguous";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:
             return "code-label-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED:

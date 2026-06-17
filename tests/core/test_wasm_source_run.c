@@ -1,6 +1,6 @@
 /*
  * @file test_wasm_source_run.c
- * @brief Tests for the Wasm-facing source execution API through Phase 78 LOCAL parser metadata coverage.
+ * @brief Tests for the Wasm-facing source execution API through Phase 78A limited OPTION NOKEYWORD coverage.
  *
  * These tests verify the narrow browser-facing C export that parses and runs
  * supported `.code` and data-section programs, reports final registers and
@@ -18,7 +18,7 @@
 #define TEST_JSON_COPY_CAPACITY 8192U
 
 /// Exact current source-run output-contract identifier expected in source-run JSON.
-#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-78-local-metadata-output-contract-v1\""
+#define TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT "\"sourceRunOutputContract\":\"phase-78a-nokeyword-output-contract-v1\""
 
 /// Exact zero-startup notice wording expected in source-run JSON.
 #define TEST_STARTUP_STATE_NOTICE_TEXT "The simulator starts modeled flags and all registers to 0, except ESP and EIP. ESP is set to the end of the active stack region, and EIP is displayed as a derived VM pseudo-code address for the current execution position, not as a source-writable register. Uninitialized storage bytes are also zero-filled, with uninitialized-origin metadata preserved for code-quality diagnostics. Real MASM programs running on real systems should not rely on arbitrary register or flag startup values."
@@ -2594,7 +2594,7 @@ static int test_phase26_header_source_run_error_paths(void) {
     failures += expect_json_not_contains(include_only_copy, "expected-code-directive", "Unsupported include-only source should not add a redundant expected-code diagnostic");
 
     failures += expect_json_contains(option_copy, "\"ok\":false", "Unsupported OPTION source should fail before execution");
-    failures += expect_json_contains(option_copy, "unsupported-option", "Unsupported OPTION source should expose unsupported-option code");
+    failures += expect_json_contains(option_copy, "nokeyword-protected-keyword", "Protected OPTION NOKEYWORD word should expose targeted code");
 
     return failures;
 }
@@ -9458,7 +9458,7 @@ static int test_phase58_label_source_run_behavior(void) {
     );
 
     failures += expect_json_contains(labeled_copy, "\"phase\":78", "Labeled source should report numeric current runtime phase metadata");
-    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Labeled source should report current runtime phase name");
+    failures += expect_json_contains(labeled_copy, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Labeled source should report current runtime phase name");
     failures += expect_json_contains(labeled_copy, "\"ok\":true", "valid labeled source should execute");
     failures += expect_json_contains(labeled_copy, "\"instructionCount\":3", "labels should not emit extra executable instructions");
     failures += expect_json_contains(labeled_copy, "\"EAX\":{\"hex\":\"00000001h\",\"unsigned\":1", "labeled source should set EAX");
@@ -9573,7 +9573,7 @@ static int test_phase64_equality_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 64 equality-jump acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":78", "Equality-jump regression should report current numeric phase metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Equality-jump regression should report current runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Equality-jump regression should report current runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000002h\",\"unsigned\":2", "taken JE should execute equal target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JE acceptance path should commit MOV, CMP, JE, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JE should not create memory changes");
@@ -9828,7 +9828,7 @@ static int test_phase65_signed_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 65 signed relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":78", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JL should execute less target");
     failures += expect_json_contains(acceptance_json, "\"instructionCount\":6", "taken JL acceptance path should commit MOV, CMP, JL, target MOV, and done NOP");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JL should not create memory changes");
@@ -10193,7 +10193,7 @@ static int test_phase66_unsigned_relational_jumps_source_run_programs(void) {
 
     failures += expect_json_contains(acceptance_json, "\"ok\":true", "Phase 66 unsigned relational acceptance program should execute");
     failures += expect_json_contains(acceptance_json, "\"phase\":78", "current runtime acceptance program should report numeric metadata");
-    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "current runtime acceptance program should report runtime phase name");
+    failures += expect_json_contains(acceptance_json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "current runtime acceptance program should report runtime phase name");
     failures += expect_json_contains(acceptance_json, "\"EBX\":{\"hex\":\"00000001h\",\"unsigned\":1", "taken JA should execute above target");
     failures += expect_json_contains(acceptance_json, "\"memoryChanges\":[]", "taken JA should not create memory changes");
     failures += expect_json_not_contains(acceptance_json, "branch-runtime-deferred", "valid JA should not emit deferred branch diagnostic");
@@ -10405,7 +10405,7 @@ static int test_phase71_call_ret_source_run_behavior(void) {
     ));
     failures += expect_json_contains(success_copy, "\"ok\":true", "Phase 71 CALL/RET acceptance program should execute");
     failures += expect_json_contains(success_copy, "\"phase\":78", "Phase 71 CALL/RET acceptance program should report numeric phase metadata");
-    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
+    failures += expect_json_contains(success_copy, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Phase 71 CALL/RET acceptance program should report runtime phase name");
     failures += expect_json_contains(success_copy, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "current source-run output contract should be reported");
     failures += expect_json_contains(success_copy, "\"EAX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "helper should leave EAX set to 42");
     failures += expect_json_contains(success_copy, "\"EBX\":{\"hex\":\"0000002Ah\",\"unsigned\":42}", "post-RET instruction should observe helper result");
@@ -11288,9 +11288,9 @@ static int test_current_source_run_phase_metadata(void) {
     int failures = 0;
 
     failures += expect_json_contains(json, "\"phase\":78", "Runtime metadata should report numeric Phase 78 metadata");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 78 should report the suffix field");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Phase 78 should report the runtime phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78 should report separate source-run output-contract metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 78A should report suffix metadata");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Phase 78A should report the runtime phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78A should report separate source-run output-contract metadata");
     failures += expect_json_contains(json, "\"entryProcedureEndMode\":\"code-stream\"", "Phase 71E should serialize the default entry procedure end mode");
 
     return failures;
@@ -11744,7 +11744,7 @@ static int test_phase67a_entry_procedure_runtime_boundary_source_run(void) {
     ));
     failures += expect_json_contains(before_copy, "\"ok\":true", "Phase 67A helper-before-entry source should execute");
     failures += expect_json_contains(before_copy, "\"phase\":78", "Phase 67A helper-before-entry source should report numeric phase metadata");
-    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"\"", "Helper-before-entry source should report current suffix metadata");
+    failures += expect_json_contains(before_copy, "\"phaseSuffix\":\"A\"", "Helper-before-entry source should report current suffix metadata");
     failures += expect_json_contains(before_copy, "\"executedInstructionCount\":2", "Phase 67A should execute only the selected entry instruction");
     failures += expect_json_contains(before_copy, "\"EAX\":{\"hex\":\"00000064h\",\"unsigned\":100}", "selected main procedure should set EAX");
     failures += expect_json_contains(before_copy, "\"ECX\":{\"hex\":\"00000000h\",\"unsigned\":0}", "helper before main must not execute by source order");
@@ -12848,7 +12848,7 @@ static int test_phase57i_const_uninitialized_storage_acceptance_source_run(void)
     int failures = 0;
 
     failures += expect_json_contains(zero_copy, "\"ok\":true", "Phase 57I .CONST ? metadata fixture should execute");
-    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"\"", ".CONST ? fixture should report the current runtime phase suffix");
+    failures += expect_json_contains(zero_copy, "\"phaseSuffix\":\"A\"", ".CONST ? fixture should report the current runtime phase suffix");
     failures += expect_json_contains(zero_copy, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"EBX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DUP(?) should read deterministic zero by default");
     failures += expect_json_contains(zero_copy, "\"ECX\":{\"hex\":\"00000009h\",\"unsigned\":9}", "Initialized .CONST should remain unchanged");
@@ -13568,7 +13568,7 @@ static int test_phase57l_code_memory_access_diagnostics_source_run(void) {
 
     printf("PHASE 57L source-run program exercised: phase57l-code-memory-access-diagnostics\n");
 
-    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"\"", ".code read should report the current runtime phase suffix");
+    failures += expect_json_contains(byte_read_json, "\"phaseSuffix\":\"A\"", ".code read should report the current runtime phase suffix");
     failures += expect_json_contains(byte_read_json, "\"ok\":false", "Phase 57L BYTE .code read should fail");
     failures += expect_json_contains(byte_read_json, "\"instructionCount\":1", "Phase 57L BYTE .code read should stop after setup instruction");
     failures += expect_json_contains(byte_read_json, "\"code\":\"unsupported-code-memory-access\"", "Phase 57L BYTE .code read should use unsupported-code-memory-access");
@@ -13761,7 +13761,7 @@ static int test_phase57m_segment_symbol_source_run(void) {
 
     printf("PHASE 57M source-run program exercised: phase57m-segment-group-symbol-diagnostics\n");
 
-    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"\"", "segment diagnostics should report the current runtime phase suffix");
+    failures += expect_json_contains(offset_text_json, "\"phaseSuffix\":\"A\"", "segment diagnostics should report the current runtime phase suffix");
     failures += expect_json_contains(offset_text_json, "\"ok\":false", "OFFSET _TEXT should fail source-run");
     failures += expect_json_contains(offset_text_json, "\"status\":\"parse-error\"", "OFFSET _TEXT should be a parse-time assembly diagnostic");
     failures += expect_json_contains(offset_text_json, "\"kind\":\"unsupported-feature\"", "OFFSET _TEXT should render as unsupported feature category");
@@ -14386,7 +14386,7 @@ static int test_phase61a_jmp_skips_memory_write_and_keeps_console_empty(void) {
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 61A skipped-write JMP fixture should complete successfully");
     failures += expect_json_contains(json, "\"phase\":78", "current runtime should report numeric phase metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Phase 78 should report the runtime phase name");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Phase 78A should report the runtime phase name");
     failures += expect_json_contains(json, "\"instructionCount\":3", "JMP plus target read should count as two committed instructions");
     failures += expect_json_contains(json, "\"executedInstructionCount\":3", "committed direct JMP should be included in executedInstructionCount");
     failures += expect_json_contains(json, "\"attemptedNextInstructionIndex\":null", "successful skipped-write JMP run should not report a blocked instruction");
@@ -15026,7 +15026,7 @@ static int test_phase72a_push_pop_source_run_stack_semantics(void) {
     ));
 
     failures += expect_json_contains(json, "\"ok\":true", "Phase 72A PUSH/POP source-run program should complete");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 72A PUSH/POP source-run should report suffix metadata");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 72A PUSH/POP source-run should report suffix metadata");
     failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 72A PUSH/POP source-run should report current output contract");
     failures += expect_json_contains(json, "\"EAX\":{\"hex\":\"11111111h\"", "PUSH/POP source-run should leave EAX source value intact");
     failures += expect_json_contains(json, "\"EBX\":{\"hex\":\"11111111h\"", "PUSH/POP source-run should pop first pushed value last");
@@ -15190,7 +15190,7 @@ static int test_phase73_leave_source_run_semantics_and_diagnostics(void) {
     ));
     failures += expect_json_contains(direct_json, "\"ok\":true", "Phase 73 direct-frame LEAVE source-run program should complete");
     failures += expect_json_contains(direct_json, "\"phase\":78", "Phase 78 source-run should report numeric phase");
-    failures += expect_json_contains(direct_json, "\"phaseSuffix\":\"\"", "Phase 78 source-run should report empty suffix metadata");
+    failures += expect_json_contains(direct_json, "\"phaseSuffix\":\"A\"", "Phase 78 source-run should report current suffix metadata");
     failures += expect_json_contains(direct_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78 source-run should report current output contract");
     failures += expect_json_contains(direct_json, "\"EAX\":{\"hex\":\"0000007Bh\"", "LEAVE source-run should preserve EAX acceptance value");
     failures += expect_json_contains(direct_json, "\"EBP\":{\"hex\":\"00000000h\"", "LEAVE source-run should restore EBP from saved DWORD");
@@ -15280,10 +15280,10 @@ static int test_phase73_source_run_default_metadata_and_call_depth(void) {
     );
     int failures = 0;
 
-    failures += expect_json_contains(json, "\"phase\":78", "Phase 78 default source-run metadata should report numeric phase");
-    failures += expect_json_contains(json, "\"phaseSuffix\":\"\"", "Phase 78 default source-run metadata should report suffix metadata");
-    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata\"", "Phase 78 default source-run metadata should report full phase name");
-    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78 default source-run metadata should report current output contract");
+    failures += expect_json_contains(json, "\"phase\":78", "Phase 78A default source-run metadata should report numeric phase");
+    failures += expect_json_contains(json, "\"phaseSuffix\":\"A\"", "Phase 78A default source-run metadata should report suffix metadata");
+    failures += expect_json_contains(json, "\"phaseName\":\"Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out\"", "Phase 78A default source-run metadata should report full phase name");
+    failures += expect_json_contains(json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78A default source-run metadata should report current output contract");
     failures += expect_json_contains(json, "\"callDepthLimit\":64", "default source-run JSON should expose callDepthLimit 64");
     failures += expect_json_not_contains(json, "call-trace-truncated", "default current source-run JSON should not emit call trace metadata");
 
@@ -15743,6 +15743,91 @@ static int test_phase77_proc_uses_source_run(void) {
 }
 
 
+/// Verifies Phase 78A limited OPTION NOKEYWORD source-run behavior.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78a_nokeyword_source_run(void) {
+    int failures = 0;
+    char success_json[TEST_JSON_COPY_CAPACITY];
+    char atomic_json[TEST_JSON_COPY_CAPACITY];
+    char unknown_json[TEST_JSON_COPY_CAPACITY];
+    char disabled_loop_json[TEST_JSON_COPY_CAPACITY];
+    char disabled_offset_json[TEST_JSON_COPY_CAPACITY];
+
+    copy_source_run_json(success_json, sizeof(success_json), masm32_sim_wasm_run_source_json(
+        "OPTION NOKEYWORD:<LOOP OFFSET>\n"
+        ".data\n"
+        "OFFSET DWORD 1234h\n"
+        "loop DWORD 5\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET\n"
+        "    mov ebx, loop\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(success_json, "\"ok\":true", "Phase 78A accepted OPTION NOKEYWORD source should run");
+    failures += expect_json_contains(success_json, "\"phase\":78", "Phase 78A source-run should keep numeric phase 78");
+    failures += expect_json_contains(success_json, "\"phaseSuffix\":\"A\"", "Phase 78A source-run should report suffix A");
+    failures += expect_json_contains(success_json, TEST_SOURCE_RUN_OUTPUT_CONTRACT_FRAGMENT, "Phase 78A source-run should report current output contract");
+    failures += expect_json_contains(success_json, "\"EAX\":{\"hex\":\"00001234h\"", "disabled OFFSET data symbol should load normally");
+    failures += expect_json_contains(success_json, "\"EBX\":{\"hex\":\"00000005h\"", "disabled LOOP data symbol should load normally");
+    failures += expect_json_not_contains(success_json, "unsupported-option", "accepted Phase 78A OPTION NOKEYWORD source should not use unsupported-option");
+
+    copy_source_run_json(atomic_json, sizeof(atomic_json), masm32_sim_wasm_run_source_json(
+        "OPTION NOKEYWORD:<LOOP EAX>\n"
+        ".data\n"
+        "loop DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(atomic_json, "\"ok\":false", "invalid mixed NOKEYWORD list should fail source-run");
+    failures += expect_json_contains(atomic_json, "nokeyword-protected-keyword", "protected NOKEYWORD word should use targeted diagnostic");
+    failures += expect_json_contains(atomic_json, "reserved-word-symbol", "atomic NOKEYWORD failure should not disable earlier valid words");
+    failures += expect_json_not_contains(atomic_json, "execution-complete", "NOKEYWORD parse failures should not execute");
+
+    copy_source_run_json(unknown_json, sizeof(unknown_json), masm32_sim_wasm_run_source_json(
+        "OPTION NOKEYWORD:<FutureKeyword>\n"
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(unknown_json, "\"ok\":false", "unknown NOKEYWORD word should fail source-run");
+    failures += expect_json_contains(unknown_json, "nokeyword-unknown-keyword", "unknown NOKEYWORD word should use targeted diagnostic");
+
+    copy_source_run_json(disabled_loop_json, sizeof(disabled_loop_json), masm32_sim_wasm_run_source_json(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "main PROC\n"
+        "    loop main\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(disabled_loop_json, "\"ok\":false", "disabled LOOP old keyword role should fail source-run");
+    failures += expect_json_contains(disabled_loop_json, "disabled-keyword-used-as-keyword", "disabled LOOP old keyword role should use targeted diagnostic");
+
+    copy_source_run_json(disabled_offset_json, sizeof(disabled_offset_json), masm32_sim_wasm_run_source_json(
+        "OPTION NOKEYWORD:<OFFSET>\n"
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "main ENDP\n"
+        "END main\n"
+    ));
+    failures += expect_json_contains(disabled_offset_json, "\"ok\":false", "disabled OFFSET old operator role should fail source-run");
+    failures += expect_json_contains(disabled_offset_json, "disabled-keyword-used-as-keyword", "disabled OFFSET old operator role should use targeted diagnostic");
+
+    return failures;
+}
+
 /// Verifies Phase 78 accepts LOCAL declarations as parser metadata without runtime frame behavior.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -15781,8 +15866,8 @@ static int test_phase78_local_metadata_source_run(void) {
         "main ENDP\n"
         "END main\n"
     ));
-    failures += expect_json_contains(local_operand_json, "\"ok\":false", "Phase 78 should still reject LOCAL operands before Phase 80");
-    failures += expect_json_contains(local_operand_json, "\"code\":\"unknown-symbol\"", "Phase 78 should leave local operand resolution deferred");
+    failures += expect_json_contains(local_operand_json, "\"ok\":false", "Phase 78A should preserve Phase 78 LOCAL operand deferral before Phase 80");
+    failures += expect_json_contains(local_operand_json, "\"code\":\"unknown-symbol\"", "Phase 78A should preserve Phase 78 local operand resolution deferral");
     failures += expect_json_not_contains(local_operand_json, "unsupported-feature", "LOCAL declaration should parse before deferred operand use fails");
 
     copy_source_run_json(invalid_type_json, sizeof(invalid_type_json), masm32_sim_wasm_run_source_json(
@@ -15820,6 +15905,7 @@ static const SourceRunTestCase SOURCE_RUN_TEST_CASES[] = {
     {"test_phase71c_code_stream_falloff_source_run_behavior", SOURCE_RUN_TEST_CONTROL_FLOW, test_phase71c_code_stream_falloff_source_run_behavior},
     {"test_parse_error_returns_structured_message", SOURCE_RUN_TEST_DIAGNOSTICS, test_parse_error_returns_structured_message},
     {"test_phase77_proc_uses_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase77_proc_uses_source_run},
+    {"test_phase78a_nokeyword_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase78a_nokeyword_source_run},
     {"test_phase78_local_metadata_source_run", SOURCE_RUN_TEST_DIAGNOSTICS, test_phase78_local_metadata_source_run},
     {"test_source_run_invalid_hex_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_invalid_hex_reports_specific_lexer_diagnostic},
     {"test_source_run_unterminated_string_reports_specific_lexer_diagnostic", SOURCE_RUN_TEST_DIAGNOSTICS, test_source_run_unterminated_string_reports_specific_lexer_diagnostic},
@@ -16171,7 +16257,7 @@ int main(int argc, char **argv) {
     if (has_filter) {
         printf("Source-run %s fixture-family tests passed (%lu fixtures).\n", source_run_family_name(requested_family), (unsigned long)selected_count);
     } else {
-        puts("Source execution tests through Phase 78 LOCAL parser metadata behavior passed.");
+        puts("Source execution tests through Phase 78A limited OPTION NOKEYWORD behavior passed.");
     }
     return 0;
 }

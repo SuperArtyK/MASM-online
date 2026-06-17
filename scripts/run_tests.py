@@ -523,8 +523,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata")
-    assert_text_contains("README.md", "Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions")
+    assert_text_contains("README.md", "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out")
+    assert_text_contains("README.md", "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
@@ -607,8 +607,8 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 78")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
+    assert_text_contains("web/src/protocol.js", "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -676,7 +676,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 78 LOCAL parser metadata behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 78A limited OPTION NOKEYWORD behavior passed.")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1772,8 +1772,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-            "Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1841,10 +1841,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-            "Phase 78 advances runtime/source-run behavior metadata",
-            "supported `LOCAL` declarations are now accepted as parser metadata",
-            "invalid `LOCAL` declarations use targeted structured diagnostics",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 78A advances runtime/source-run behavior metadata",
+            "limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET` are now accepted",
+            "invalid NOKEYWORD lists use targeted structured diagnostics",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1890,8 +1890,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-            "Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
@@ -1918,7 +1918,7 @@ def assert_current_status_and_harness_documented() -> None:
             "### Reserved words and user-defined symbols",
             "reserved-word-symbol",
             "`OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols",
-            "`OPTION NOKEYWORD` remains unsupported",
+            "Phase 78A implements a limited educational `OPTION NOKEYWORD:<...>` subset",
             "Source code cannot read, write, address through, use as an instruction operand, or define `EIP`",
             "Phase 69B final-register display uses stable high-level educational groups",
             "### Simulator Messages grouping",
@@ -1943,9 +1943,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2068,7 +2068,7 @@ def assert_current_status_and_harness_documented() -> None:
             "## 78. Phase 74 - RET imm16 Instruction",
             "## 79. Phase 75 - PROC Metadata Baseline and Attribute Diagnostics",
             "## 80. Phase 76 - PROC USES Parsing and Metadata",
-            "## 82. Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
+            "## 82A. Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
             "### Required easter egg",
             "This phase must add one deliberately harmless notice-level diagnostic easter egg",
             "Treat `front`, `Front`, `FRONT`, and `fRoNt` as matches",
@@ -2101,10 +2101,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata",
-            "Phase 78 adds tests for parser-only `LOCAL` declaration metadata",
-            "deterministic local frame layout",
-            "targeted invalid `LOCAL` diagnostics",
+            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 78A adds tests for accepted limited `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, and whitespace-list forms",
+            "malformed forms",
+            "protected words",
             "stack-overflow",
             "stack-underflow",
             "regressions for Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
@@ -2122,13 +2122,13 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 78: LOCAL Declaration Parser and Frame Layout Metadata",
+            "Milestone 78A: Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
             "INCLUDE Irvine32.inc",
-            "COUNT EQU 16",
-            ".stack 4096",
-            "LOCAL temp:DWORD",
-            "LOCAL buf[COUNT]:BYTE",
-            "mov eax, 42",
+            "OPTION NOKEYWORD:<LOOP OFFSET>",
+            "OFFSET DWORD 42",
+            "mov eax, OFFSET",
+            "mov ebx, loop",
+            "exit",
             "final-registers",
             "Program Console",
         ],

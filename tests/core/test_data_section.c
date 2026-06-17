@@ -2291,7 +2291,7 @@ static int test_additional_data_sections_layout_and_const_protection(void) {
         "END main\n"
     );
     failures += expect_json_contains(const_uninitialized_json, "\"ok\":true", ".CONST uninitialized storage should now be accepted");
-    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"\"", ".CONST uninitialized source-run should report the current runtime phase suffix");
+    failures += expect_json_contains(const_uninitialized_json, "\"phaseSuffix\":\"A\"", ".CONST uninitialized source-run should report the current runtime phase suffix");
     failures += expect_json_contains(const_uninitialized_json, "\"EAX\":{\"hex\":\"00000000h\",\"unsigned\":0}", ".CONST DWORD ? read should return deterministic zero by default");
     failures += expect_json_contains(const_uninitialized_json, "\"code\":\"uninitialized-read\"", ".CONST ? read should preserve uninitialized-origin warning metadata");
     failures += expect_json_contains(const_uninitialized_json, "reads 4 bytes from limit + 0", ".CONST ? read warning should identify the symbol");

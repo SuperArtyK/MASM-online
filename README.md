@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata |
+| Current milestone | Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out |
 
-Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions, stores procedure-scoped local metadata, computes deterministic negative-`EBP` frame offsets and rounded local-frame sizes, and reports targeted diagnostics for invalid `LOCAL` declarations. Runtime stack allocation for locals and local operand resolution remain deferred.
+Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`, allowing those two words to be used as later user-defined symbols while preserving targeted diagnostics for malformed lists, unknown words, protected reserved words, and disabled keywords used in their old keyword roles. Phase 78 parser-only `LOCAL` metadata remains implemented; runtime stack allocation for locals and local operand resolution remain deferred.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 

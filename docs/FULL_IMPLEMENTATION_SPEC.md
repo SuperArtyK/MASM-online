@@ -490,7 +490,7 @@ Procedure-boundary fallthrough diagnostics and optional beginner compatibility s
 
 The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, runtime LOCAL allocation/addressing, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns parser-only LOCAL declaration metadata.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame creation, runtime LOCAL allocation/addressing, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns parser-only LOCAL declaration metadata, and Phase 78A owns limited `OPTION NOKEYWORD` parser keyword opt-out for `LOOP` and `OFFSET`.
 
 #### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
@@ -815,7 +815,7 @@ END main
 ```
 
 
-#### 8.1.3A Reserved Words and User-Defined Symbols
+#### 8.1.3A Reserved Words, User-Defined Symbols, and Limited `OPTION NOKEYWORD`
 
 MASM reserved words are not valid user-defined symbols by default.
 
@@ -823,14 +823,14 @@ This rule is separate from `OPTION CASEMAP`.
 
 `OPTION CASEMAP` controls case-sensitive or case-insensitive lookup for accepted user-defined symbols. It does not make reserved words available as user-defined symbols. It also does not make instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, or recognized Irvine32 routine names case-sensitive.
 
-Reserved-word matching is case-insensitive. For example, `loop:`, `LOOP:`, and `Loop:` all conflict with the `LOOP` instruction mnemonic.
+Reserved-word matching is case-insensitive. For example, before any implemented keyword opt-out applies, `loop:`, `LOOP:`, and `Loop:` all conflict with the `LOOP` instruction-family keyword because the current simulator recognizes `LOOP` as a reserved instruction-family mnemonic even though executable `LOOP` behavior remains unsupported.
 
-This specification does not require the simulator to import or fully reproduce the complete MASM reserved-word table in one step. Instead, the simulator must reject names that conflict with words it already recognizes as reserved.
+This specification does not require the simulator to import or fully reproduce the complete MASM reserved-word table. The simulator must reject names that conflict with words it already recognizes as reserved. A later phase that adds a new recognized instruction mnemonic, directive, operator, data type, width name, virtual include name, or Irvine32 registry name must update the centralized reserved-word classification path at the same time unless the phase explicitly documents a different rule.
 
 Reserved words include, at minimum:
 
 - every instruction mnemonic currently implemented by the simulator;
-- every planned instruction mnemonic that the current parser already recognizes as an instruction keyword, branch keyword, or unsupported instruction-family keyword;
+- every instruction mnemonic or instruction-family mnemonic the current parser recognizes for unsupported-instruction diagnostics, branch diagnostics, or reserved-word diagnostics;
 - registers and register aliases;
 - directives recognized by the parser, including accepted, metadata-only, no-op, unsupported, deferred, and non-goal directives;
 - operators recognized by the parser;
@@ -839,8 +839,6 @@ Reserved words include, at minimum:
 - virtual include names where parsed as include targets;
 - recognized Irvine32 routine and terminator names classified by the Phase 41 - Virtual Irvine32 Symbol Registry or its direct successor as simulator-visible routine names;
 - other MASM or simulator-recognized keywords that the parser treats as reserved for diagnostics or compatibility classification.
-
-A future phase that adds a new recognized keyword, instruction mnemonic, directive, operator, data type, `PTR` width name, virtual include name, or Irvine32 registry name must update the reserved-word classification path at the same time unless the phase explicitly documents a different MASM-compatible rule.
 
 Do not hardcode a second independent Irvine32 reserved-name list in the parser. Reserved-name checks for Irvine32 routine and terminator names must use the centralized Phase 41 - Virtual Irvine32 Symbol Registry or a small documented reserved-word query wrapper over that registry.
 
@@ -898,7 +896,7 @@ main ENDP
 END main
 ```
 
-`OPTION CASEMAP:NONE` does not make reserved words available as symbols. These remain rejected:
+`OPTION CASEMAP:NONE` does not make reserved words available as symbols. These remain rejected before any implemented keyword opt-out applies:
 
 ```asm
 OPTION CASEMAP:NONE
@@ -920,38 +918,160 @@ main ENDP
 END main
 ```
 
-`OPTION NOKEYWORD` remains unsupported until a later phase explicitly implements it. Until such a phase is accepted, `OPTION NOKEYWORD` must not be treated as silently enabling reserved-word identifiers.
+##### Pre-Phase-78A accepted behavior
 
-The implementation guide may reserve a non-renumbering placeholder phase for future `OPTION NOKEYWORD` keyword-control work. A placeholder is not implementation authority by itself. It must not be selected as an implementation target until a later documentation revision deliberately expands it into an implementation-ready phase with accepted syntax, rejected syntax, diagnostics, tests, and acceptance criteria.
+Before Phase 78A, every `OPTION NOKEYWORD` form was unsupported. Phase 78A now accepts only the limited forms documented below. All broader `OPTION NOKEYWORD` forms remain unsupported, must not be silently accepted, and must not mutate parser keyword tables. Reserved-word declarations remain rejected by default unless the later source line is using `LOOP` or `OFFSET` as an ordinary user-defined symbol after a valid Phase 78A directive. `OPTION CASEMAP:ALL` and `OPTION CASEMAP:NONE` do not make protected reserved words available as user-defined symbols.
 
-Until such an expanded phase is accepted:
+##### Phase 78A implemented behavior: limited educational `OPTION NOKEYWORD`
 
-- `OPTION NOKEYWORD` remains rejected or recognized-unsupported according to the current option-diagnostic path;
-- reserved-word declarations remain rejected by default;
-- `OPTION CASEMAP:ALL` does not make reserved words available as user-defined symbols;
-- `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols;
-- parser keyword tables must not be mutated dynamically;
-- instruction mnemonics, directives, registers, operators, data type names, `PTR` width names, virtual include names, and recognized Irvine32 names remain case-insensitive reserved words according to the current reserved-word policy;
-- no macro, linker, object-file, public/external symbol, or WinAPI behavior is implied.
+Phase 78A provides a deliberately limited educational compatibility subset of MASM `OPTION NOKEYWORD`. The feature disables recognition of explicitly listed, simulator-recognized, Phase-78A-disable-eligible reserved words for later source lines in the same source-run input. After a word is disabled, the disabled spelling and its ASCII case variants may be used as ordinary user-defined symbols where that symbol kind is otherwise valid.
 
-A future expanded `OPTION NOKEYWORD` phase must explicitly define all of the following before changing reserved-word behavior:
+This is not full MASM keyword compatibility. The simulator must not import a complete MASM reserved-word table, must not attempt to reproduce all MASM context-sensitive keyword behavior, and must not make macros, object files, public/external linkage, WinAPI names, host include paths, or PE/linker behavior available.
 
-- accepted `OPTION NOKEYWORD` syntax;
-- rejected `OPTION NOKEYWORD` syntax;
-- source-order behavior;
-- whether disabled keywords can still be used as instructions, directives, or operators;
-- whether disabled keywords can be used only as user-defined symbols;
-- interaction with `OPTION CASEMAP:ALL`;
-- interaction with `OPTION CASEMAP:NONE`;
-- interaction with code labels, procedure names, data symbols, equates, macros, user-defined types, fields, and future local labels;
-- interaction with recognized Irvine32 routine and terminator names;
-- interaction with aliases or related mnemonics, such as whether disabling `JE` affects `JZ`;
-- whether keyword recognition can be restored;
-- whether disabling one keyword affects aliases or related instructions;
-- exact structured diagnostics;
-- exact rendered Simulator Messages tests;
-- parser recovery behavior after unsupported or ambiguous forms;
-- supported-syntax documentation updates.
+Accepted directive spelling for Phase 78A:
+
+```asm
+OPTION NOKEYWORD:<LOOP>
+OPTION NOKEYWORD:<OFFSET>
+OPTION NOKEYWORD:<LOOP OFFSET>
+OPTION NOKEYWORD: <LOOP OFFSET>
+```
+
+The list inside angle brackets is whitespace-separated. `OPTION` and `NOKEYWORD` are matched case-insensitively. List entries are matched case-insensitively against the Phase 78A disable-eligible table. Commas, semicolons inside the list, nested angle brackets, quoted strings, text macros, numeric expressions, register operands, empty lists, missing closing brackets, and missing opening brackets are not accepted in Phase 78A.
+
+The exact Phase 78A disable-eligible set is:
+
+- `LOOP`, the recognized unsupported instruction-family mnemonic used by current reserved-word and unsupported-instruction diagnostics;
+- `OFFSET`, the recognized address operator.
+
+No other word is disable-eligible in Phase 78A. This exact set is intentional. It gives the simulator enough coverage to prove instruction-family and operator keyword opt-out behavior without destabilizing structural parsing, register parsing, data declaration parsing, Irvine32 routine recognition, include handling, or procedure parsing. A later non-renumbering phase may broaden the disable-eligible set, but Phase 78A must not silently accept additional words.
+
+Phase 78A must use one canonical reserved-word classification service. That service must answer at least these questions for a candidate word:
+
+- whether the current simulator recognizes the word as reserved;
+- whether the word is exactly one of the Phase 78A disable-eligible words, `LOOP` or `OFFSET`;
+- the reserved kind to show in diagnostics, such as instruction mnemonic, operator, data type, directive, register, virtual include name, or Irvine32 routine name;
+- whether the word is protected in Phase 78A.
+
+A word that is not in the simulator's recognized reserved-word table is rejected with `nokeyword-unknown-keyword`. Phase 78A must not accept unknown future MASM keywords merely because real MASM might recognize them.
+
+A word that is recognized as reserved but is not exactly `LOOP` or `OFFSET` is protected in Phase 78A and is rejected with `nokeyword-protected-keyword`. Protected words include, but are not limited to:
+
+- register names and register aliases, including 8-bit, 16-bit, and 32-bit spellings such as `AL`, `AH`, `CH`, `AX`, `EAX`, `ESP`, and `EBP`;
+- displayed or internal control-state names such as `EIP` if recognized by the simulator;
+- implemented instruction mnemonics such as `MOV`, `ADD`, `SUB`, `CMP`, `CALL`, `RET`, `PUSH`, `POP`, `LEA`, and `NOP`;
+- branch mnemonics and aliases other than the exact word `LOOP`, including `JMP`, `JE`, `JZ`, `JNE`, `JNZ`, `JL`, `JNGE`, `JGE`, `JNL`, `JA`, `JNBE`, `JAE`, `JNB`, `JB`, `JNAE`, `JBE`, and `JNA`;
+- structural directives required to maintain parse shape, including `.DATA`, `.DATA?`, `.CONST`, `.CODE`, `PROC`, `ENDP`, `END`, `LOCAL`, `OPTION`, `INCLUDE`, and section/model/setup directives that the parser requires for source structure;
+- `OPTION` family names and option values that are needed to parse `OPTION CASEMAP` and `OPTION NOKEYWORD` deterministically;
+- data type names and `PTR` width names such as `BYTE`, `WORD`, `DWORD`, `QWORD`, `SBYTE`, `SWORD`, `SDWORD`, `SQWORD`, and `PTR`;
+- virtual include names where parsed as include targets, including `Irvine32.inc` and `Macros.inc`;
+- recognized Irvine32 routine and terminator names classified by the central virtual Irvine32 registry;
+- external/API/non-goal names classified as WinAPI, C runtime, MASM32 runtime, import-library, object-file, or host-environment behavior;
+- any word whose disablement would make the parser unable to produce a targeted diagnostic for a supported, unsupported, deferred, or non-goal construct that already has a documented diagnostic.
+
+`OPTION NOKEYWORD` must validate the whole angle-bracket list before mutating disabled keyword state. If any listed word is malformed, unknown, or protected, the directive fails and none of the words in that directive are newly disabled. Any disabled keyword state created by earlier valid directives remains active.
+
+Source-order rules:
+
+- `OPTION NOKEYWORD` affects only subsequent source text. It is not retroactive.
+- A declaration rejected before the directive remains rejected.
+- A symbol inserted before the directive keeps the symbol-table spelling and case policy that applied when it was declared.
+- Multiple valid `OPTION NOKEYWORD` directives accumulate.
+- Repeating the same disable-eligible word is idempotent and must not emit a warning or error by itself.
+- Phase 78A does not implement a re-enable directive.
+- Phase 78A does not implement `PUSHCONTEXT` or `POPCONTEXT` interaction for keyword state.
+
+Case and alias rules:
+
+- Matching words in the `NOKEYWORD` list is ASCII case-insensitive.
+- Disabling `LOOP` disables recognition of `loop`, `Loop`, and `LOOP` as that keyword on later source lines.
+- Disabling `OFFSET` disables recognition of `offset`, `Offset`, and `OFFSET` as that keyword on later source lines.
+- `OPTION CASEMAP` controls lookup of accepted user-defined symbols only. It does not control which reserved words are disabled and does not make protected words disable-eligible.
+- Disabling `LOOP` does not disable any separately recognized loop-family mnemonic unless that exact mnemonic is introduced as disable-eligible by a later phase.
+- Phase 78A does not disable branch aliases. `JE`, `JZ`, `JNE`, `JNZ`, `JL`, `JNGE`, `JA`, and other branch aliases remain protected even if `LOOP` is disabled.
+
+Parser behavior after a word is disabled:
+
+- The disabled word must no longer be classified as that keyword for subsequent source text.
+- If the disabled word appears in a declaration position where an ordinary user-defined symbol is legal, it may be inserted into the relevant user-symbol table subject to duplicate-symbol, case-map, scope, and symbol-kind rules.
+- If the disabled word appears in the original keyword role after being disabled, the parser must not silently reinterpret it as the original keyword. It must either parse it as an ordinary user symbol in a valid symbol context or emit a targeted diagnostic.
+- If disabling a word makes a line ambiguous, the parser must emit a targeted diagnostic rather than guessing.
+- Disabled keyword state must not affect already-tokenized or already-parsed earlier lines.
+
+Examples of intended accepted behavior:
+
+```asm
+OPTION NOKEYWORD:<LOOP>
+
+.data
+loop DWORD 1
+
+.code
+main PROC
+loop:
+    mov eax, loop
+    ret
+main ENDP
+END main
+```
+
+```asm
+OPTION NOKEYWORD:<OFFSET>
+
+.data
+OFFSET DWORD 123
+
+.code
+main PROC
+    mov eax, OFFSET
+    ret
+main ENDP
+END main
+```
+
+Examples of intended rejected behavior after disablement:
+
+```asm
+OPTION NOKEYWORD:<LOOP>
+
+.code
+main PROC
+    loop main
+main ENDP
+END main
+```
+
+```asm
+OPTION NOKEYWORD:<OFFSET>
+
+.data
+value DWORD 1
+
+.code
+main PROC
+    mov eax, OFFSET value
+main ENDP
+END main
+```
+
+These rejected examples must not execute old `LOOP` or old `OFFSET` behavior. If the parser cannot parse the disabled word as an ordinary symbol-role construct, it must emit `disabled-keyword-used-as-keyword` or `disabled-keyword-ambiguous` with a source span on the disabled word.
+
+Implemented Phase 78A diagnostic codes:
+
+- `invalid-nokeyword-syntax` for malformed `OPTION NOKEYWORD` directive syntax outside the list payload itself;
+- `invalid-nokeyword-list` for an empty or malformed angle-bracket list;
+- `nokeyword-unknown-keyword` for a listed word the current simulator does not recognize as reserved;
+- `nokeyword-protected-keyword` for a recognized word that is intentionally not disable-eligible in Phase 78A;
+- `disabled-keyword-used-as-keyword` for later use of a disabled word where the original keyword role appears to have been intended and no ordinary symbol parse is valid;
+- `disabled-keyword-ambiguous` for later ambiguous source forms caused by keyword disablement.
+
+Diagnostics must include severity, diagnostic code, source line, source column, byte offset, span length, the listed word where applicable, canonical reserved-word spelling, and the reserved kind where available. Rendered Simulator Messages tests must cover accepted directives, malformed directives, protected words, unknown words, later accepted symbols, and later rejected keyword-role usage.
+
+Phase 78A must update source-run output-contract metadata because it changes accepted syntax, parser keyword classification, structured diagnostics, rendered Simulator Messages, and user-symbol tables. The expected output-contract token is:
+
+```text
+phase-78a-nokeyword-output-contract-v1
+```
 
 #### 8.1.4 Recognized Unsupported or Deferred Directives
 
@@ -993,7 +1113,7 @@ Recognized unsupported or deferred directives and directive families include:
 - `FOR`
 - `FORC`
 - `GOTO`
-- `OPTION NOKEYWORD`, including forms such as `OPTION NOKEYWORD:<LOOP>`, until a future keyword-control phase explicitly implements reserved-word disabling behavior
+- unsupported `OPTION NOKEYWORD` forms outside the limited Phase 78A target syntax; Phase 78A accepts only `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, and whitespace-list combinations of those exact two words after that phase is implemented
 - `OPTION DOTNAME` and `OPTION NODOTNAME`
 - unsupported `OPTION LANGUAGE` forms
 - conditional assembly directives such as `IF`, `IF2`, `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ELSEIF`, and `ENDIF`
@@ -1004,7 +1124,7 @@ Recognized unsupported or deferred directives and directive families include:
 
 Numeric `name = expression` and numeric `name EQU expression` are implemented by the numeric-equate and constant-expression phases. They must not be reported through the generic unsupported-directive path. Unsupported text-substitution forms such as `TEXTEQU` and `name EQU <text>` must remain explicitly rejected until a text-equate or macro-compatibility phase defines exact accepted behavior.
 
-`OPTION NOKEYWORD` is broader than ordinary option parsing because it can change whether a reserved word is recognized as a keyword or accepted as a user-defined symbol. Until a future phase explicitly implements that behavior, the simulator must continue to reject reserved-word user-symbol declarations by default.
+Limited `OPTION NOKEYWORD` behavior is specified as the Phase 78A target in Section 8.1.3A. Before Phase 78A, every `OPTION NOKEYWORD` form remained unsupported. In implemented Phase 78A behavior, only `LOOP` and `OFFSET` are disable-eligible, and only the documented angle-bracket forms are accepted. Malformed forms, unknown words, protected words, macro-time keyword behavior, public/external symbol behavior, object-file/linker behavior, WinAPI behavior, and host include behavior remain unsupported.
 
 Unsupported directive diagnostics should include the directive name, source line, column, byte offset, span length, severity, and a short explanation.
 
@@ -2558,16 +2678,19 @@ A flag phase must not advance metadata unless all implemented instruction famili
 
 The VM should use deterministic simulated memory regions.
 
-Example default layout:
+Example fixed educational layout:
 
 ```text
 .code   base 0x00400000
 .data   base 0x00500000
-.heap   base 0x00600000
-.stack  top  0x00800000, grows downward
+.const  base 0x00600000
+.heap   base 0x00700000
+.stack  top  0x00900000, grows downward
 ```
 
-Actual sizes are configurable through project settings and local safety limits.
+This example describes the active fixed educational layout and must stay aligned with the named layout constants in `src/core/vm_layout.h`. Other layout modes may compute region bases, capacities, and guard gaps differently. Fixed-layout tests and active documentation must not cite stale stack-top, heap-base, or `.CONST` placement values.
+
+Actual region capacities and safety margins are implementation settings, not MASM compatibility promises. If a future phase changes a fixed-layout address, that phase must update the named constants, active documentation, supported-syntax text if applicable, and fixed-layout tests in the same milestone.
 
 ### 11.2 Permissions
 
@@ -2735,6 +2858,14 @@ Each declared object entry should include:
 - source location of the declaration.
 
 This object map is required for strict object-bounds diagnostics, provenance diagnostics, memory visualization, and uninitialized-origin read diagnostics. It must not replace the lower-level region permission checks.
+
+Runtime LOCAL stack storage must use a separate local-object descriptor model once an owning implementation phase allocates locals. A local-object descriptor is tied to exactly one active procedure frame instance. It records the procedure name, local name, declaration source location, runtime base address, byte size, declared element size, element count, frame-relative offset, and active/inactive lifetime state.
+
+Local-object descriptors are active only while their owning frame is active. Releasing the frame must remove the descriptors or mark them inactive before any later unrelated stack access can be classified as access to those locals. Local descriptors must not be merged into the global `.data`, `.DATA?`, or `.CONST` declared-object map, because local storage is frame-instance storage, not static section storage.
+
+Object-bound diagnostics for LOCAL storage must identify the local name, procedure scope, active frame instance where relevant, access byte range, access width, and byte offset within or beyond the local object. Stack padding between locals, saved frame-pointer slots, return tokens, and `PROC USES` save slots are not local objects and must not be accepted as valid object-bound targets.
+
+This descriptor model is an internal validation model. It does not make LOCAL variables visible as global symbols, does not allocate static memory for locals, and does not allow local operands before the owning local-operand phase explicitly implements that behavior.
 
 ### 11.9 Memory Access Validation Levels
 
@@ -3324,6 +3455,12 @@ Required model:
 
 This feature must not change the default runtime value of `?` storage. The default value remains deterministic zero.
 
+When an owning implementation phase adds runtime LOCAL allocation, automatically allocated LOCAL bytes are uninitialized storage for diagnostic purposes. By default, their visible byte values must be deterministic zero at allocation time while preserving uninitialized-origin metadata until a successful simulated program write initializes each byte. If an explicit seeded uninitialized-storage mode is active and the owning phase defines that it applies to runtime locals, the seeded value must still be deterministic for the same source text, settings, seed, call path, and input.
+
+Reading an uninitialized LOCAL byte before a successful write must participate in the same uninitialized-read policy as other uninitialized-origin storage. A successful simulated program write to LOCAL storage initializes exactly the written bytes. Multi-byte reads and writes must check and update every byte in the accessed range according to the same rules used for global uninitialized-origin storage.
+
+Automatic VM frame setup writes, including return-token writes, `PROC USES` save-slot writes, saved-`EBP` writes, and deterministic LOCAL initialization writes, are not simulated program writes for uninitialized-origin clearing. Only an instruction executed on behalf of the simulated source program may initialize LOCAL bytes for the purpose of suppressing later uninitialized-read diagnostics.
+
 ### 11.11 Invalid Memory Access Handling and Diagnostic Precedence
 
 Current memory-access diagnostic precedence is defined authoritatively in §11.9.2. This subsection does not define a second independent precedence order.
@@ -3617,9 +3754,15 @@ Default MASM32 Educational Mode accepts root-code-stream RET. The accepted stric
 
 This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
 
-Phase 78 accepts `LOCAL` declarations as parser metadata inside procedure bodies before executable instructions. Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`; accepted forms include scalar declarations, array declarations with positive constant counts, and comma-separated declarators. The parser stores procedure-scoped local symbols, source locations, declaration order, element counts, element sizes, alignment, negative `EBP`-relative offsets, and total local-frame size rounded to 4 bytes. The canonical accepted example `LOCAL ch:BYTE` is a narrow parser-only compatibility exception to the reserved-register-name rule because the lexer recognizes `CH` as a register alias; other register names remain rejected as local symbol names. Phase 78 does not allocate runtime stack storage, create procedure frames, save or restore `EBP`, or resolve local names as instruction operands; those remain future-owned procedure/frame phases. Targeted LOCAL diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`.
+Phase 78 accepts `LOCAL` declarations as parser metadata inside procedure bodies before executable instructions. Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`; accepted forms include scalar declarations, array declarations with positive numeric literal counts or already-defined numeric equates that resolve to positive 32-bit constant values without registers or runtime operands, and comma-separated declarators. The parser stores procedure-scoped local symbols, source locations, declaration order, element counts, element sizes, alignment, negative `EBP`-relative offsets, and total local-frame size rounded to 4 bytes. The canonical accepted example `LOCAL ch:BYTE` is a narrow parser-only compatibility exception to the reserved-register-name rule because the lexer recognizes `CH` as a register alias; other register names remain rejected as local symbol names. Phase 78 does not allocate runtime stack storage, create procedure frames, save or restore `EBP`, initialize local bytes, create runtime local-object descriptors, or resolve local names as instruction operands; those remain future-owned procedure/frame and local-operand phases. Targeted LOCAL diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`.
 
 For direct `CALL` entry into a procedure with accepted `PROC USES` metadata, the simulator saves the listed general-purpose registers on the checked simulated stack in declared order after the helper return token is written and before the procedure body executes. On `RET` from that CALL-created preservation frame, the simulator validates and restores the saved registers in reverse order before popping and validating the helper return token. Automatic save/restore must preserve modeled flags and must not expose simulator-internal save/restore stack transfers as public source-run `memoryChanges` rows. If `EAX` is listed in `USES`, `EAX` is restored like any other listed register; if `EAX` is omitted, helper code may use it as the conventional return-value register. A failed automatic save reports `stack-overflow` before partial CALL/USES mutation. A failed automatic restore reports `stack-underflow` before partial register restore, return-token pop, return transfer, or caller cleanup mutation. Selected-entry startup, direct branch transfer, and ordinary fallthrough into a `PROC USES` body remain unsupported until a later accepted phase defines a preservation model for those non-CALL entry paths.
+
+For runtime LOCAL allocation, the owning implementation phase must define and test the complete frame lifecycle before code changes. A selected entry procedure with LOCAL metadata must receive an automatic educational LOCAL frame before its first executable instruction, because common classroom programs declare locals in `main PROC` and terminate with virtual Irvine32 `exit` or root `RET`. Direct `CALL` entry into a helper procedure with LOCAL metadata must also create an automatic LOCAL frame. Direct branch transfer or ordinary fallthrough into a procedure with LOCAL metadata must not silently run the procedure body without a LOCAL frame; unless the owning phase deliberately implements a safe non-CALL/non-selected-entry frame-creation rule, that path must stop with diagnostic code `local-frame-entry-unsupported` before destination procedure body mutation.
+
+A successful helper `RET`, helper `RET imm16`, selected-entry root `RET`, or virtual Irvine32 `exit` from a procedure with an active automatic LOCAL frame must release the frame exactly once. If source-level `LEAVE` releases the active automatic LOCAL frame before a later `RET`, the later return path must not release it a second time. The runtime must track whether each automatic frame is active, released by `LEAVE`, released by the automatic epilogue, or invalid. A frame-state failure must stop before partial mutation of `ESP`, `EBP`, saved registers, return tokens, memory, Program Console output, terminal status, or public memory-change rows.
+
+When a direct `CALL` targets a procedure that has both `PROC USES` metadata and LOCAL metadata, stack operations must preserve the existing Phase 77 return-token and `USES` contract. Before writing any automatic return-token, `PROC USES`, saved-`EBP`, or LOCAL bytes for that call, the runtime must preflight the combined automatic stack footprint for that entry path. Required committed order after successful preflight is: write the helper pseudo-EIP return token; save `PROC USES` registers in declared order; save old `EBP`; set `EBP` to the LOCAL frame base; reserve the rounded local byte count; execute the body; release LOCAL storage and restore `EBP`; restore `PROC USES` registers in reverse order; pop and validate the return token; and then apply `RET imm16` caller cleanup only after return-token validation succeeds. Automatic return-token, `PROC USES`, saved-`EBP`, and LOCAL frame transfers remain internal VM stack operations and must not appear as public source-run `memoryChanges` rows unless a later accepted output-contract phase explicitly changes that rule.
 
 
 Stack-related runtime features must not invent stack-specific diagnostic codes by implication. Unless a diagnostic code is already defined in the active diagnostic registry and assigned to the relevant stack operation, or unless an owning phase explicitly defines a new stack-specific diagnostic code such as `stack-overflow`, `stack-underflow`, or `return-with-empty-call-stack`, internal stack accesses performed by CALL, RET, PUSH, POP, LEAVE, future frame setup/teardown, PROC USES, LOCAL, near RET imm16 cleanup, or Irvine32 routines must use the existing central checked-memory diagnostic path and its existing precedence.

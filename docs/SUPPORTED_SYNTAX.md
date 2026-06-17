@@ -2,9 +2,9 @@
 
 Current milestone:
 
-- Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata
+- Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions, stores procedure-scoped local metadata, computes deterministic negative-`EBP` frame offsets and rounded local-frame sizes, and reports targeted diagnostics for invalid `LOCAL` declarations. Runtime local stack allocation and local operand resolution remain deferred. Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`, allowing those two words to be used as later user-defined symbols while preserving targeted diagnostics for malformed lists, unknown listed words, protected reserved words, and disabled keywords used in their old keyword roles. Phase 78 parser-only `LOCAL` metadata, Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented. Runtime local stack allocation and local operand resolution remain deferred.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, plain near `ret`/`RET` with no operands, and near `ret imm16`/`RET imm16`.
 
@@ -28,7 +28,7 @@ LOCAL buf[16]:BYTE
 LOCAL a:DWORD, b:DWORD
 ```
 
-Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`, case-insensitively. A valid `LOCAL` declaration is accepted only inside a `PROC` body and only before executable instructions in that procedure. Array counts must be positive constant counts that the parser can resolve without registers or runtime operands. The parser stores declaration order, element count, element size, alignment, source location, negative `EBP`-relative metadata offsets, and the procedure total local-frame size rounded to 4 bytes. Phase 78 does not allocate runtime stack storage for locals and does not resolve local names as instruction operands. The canonical Phase 78 example `LOCAL ch:BYTE` is accepted even though `CH` is otherwise a recognized register alias; other register names remain reserved and are rejected as local symbol names.
+Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`, case-insensitively. A valid `LOCAL` declaration is accepted only inside a `PROC` body and only before executable instructions in that procedure. Array counts must be positive numeric literal counts or already-defined numeric equates that resolve to positive 32-bit constant values without registers or runtime operands. The parser stores declaration order, element count, element size, alignment, source location, negative `EBP`-relative metadata offsets, and the procedure total local-frame size rounded to 4 bytes. Phase 78 does not allocate runtime stack storage for locals and does not resolve local names as instruction operands. The canonical Phase 78 example `LOCAL ch:BYTE` is accepted even though `CH` is otherwise a recognized register alias; other register names and register aliases remain reserved and are rejected as local symbol names.
 
 Targeted `LOCAL` diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`. Unsupported types such as `QWORD`, `SQWORD`, `REAL4`, and user-defined structure types are rejected with `unsupported-local-type`; malformed declarations, initializers, invalid array counts, duplicate locals, procedure-name collisions, and same-procedure label collisions receive targeted parser/source-run diagnostics.
 
@@ -84,6 +84,9 @@ Consult the current instruction-support table in this document for implemented b
 
 The following stack/procedure features remain future work only if a later accepted milestone explicitly implements them:
 
+- runtime LOCAL stack allocation;
+- local operand resolution and LOCAL addressing;
+- automatic procedure-frame creation beyond already implemented `PROC USES` preservation frames;
 - `PROTO`;
 - `INVOKE`;
 - `ADDR`;
@@ -136,7 +139,13 @@ MASM reserved words are not valid user-defined symbols by default. The current s
 
 Rejected declaration categories include data symbols, numeric equates, code labels, procedure names, and procedure-local symbols, except for the narrow Phase 78 `LOCAL ch:BYTE` compatibility example documented above. The diagnostic code is `reserved-word-symbol`, and it points at the declaration name when source location is available. A rejected reserved-word declaration is not inserted into the user-symbol tables.
 
-`OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols, and reserved-word matching remains case-insensitive. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase; it must not be treated as enabling reserved-word identifiers.
+`OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols, and reserved-word matching remains case-insensitive.
+
+Phase 78A implements a limited educational `OPTION NOKEYWORD:<...>` subset. Only the exact words `LOOP` and `OFFSET` are disable-eligible. Accepted forms are `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, `OPTION NOKEYWORD:<LOOP OFFSET>`, and `OPTION NOKEYWORD: <LOOP OFFSET>`; directive names and listed words are matched case-insensitively, and list entries must be whitespace-separated inside angle brackets. Valid directives affect only later source lines, multiple valid directives accumulate, and duplicate listed words are idempotent.
+
+After a valid directive, disabled `LOOP` and `OFFSET` spellings and ASCII case variants may be used as ordinary user-defined symbols where that symbol kind is otherwise valid. Disabled `LOOP` is no longer available as its old instruction-family keyword on later source lines, and disabled `OFFSET` is no longer available as its old address-operator keyword on later source lines. Malformed lists use `invalid-nokeyword-syntax` or `invalid-nokeyword-list`; unknown listed words use `nokeyword-unknown-keyword`; recognized but protected words use `nokeyword-protected-keyword`; old keyword-role use after disablement uses `disabled-keyword-used-as-keyword` or, where the parser cannot choose a safe symbol interpretation, `disabled-keyword-ambiguous`. A failed directive is atomic: no word in that directive is newly disabled, while disabled keyword state created by earlier valid directives remains active.
+
+Protected words such as all registers, register aliases, `EIP`, implemented instructions, branch aliases other than `LOOP`, data type names, `PTR` width names, structural directives, virtual include names, Irvine32 registry names, external/API names, unknown words, and parser-critical option keywords remain rejected. Broader MASM keyword compatibility, keyword re-enable forms, macro-time keyword behavior, `PUSHCONTEXT`/`POPCONTEXT`, public/external linkage behavior, object-file/linker behavior, WinAPI behavior, and host include behavior remain outside the current simulator boundary unless a later accepted phase deliberately expands them.
 
 ### Execution limits
 

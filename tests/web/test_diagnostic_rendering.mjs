@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2592,8 +2592,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2620,7 +2620,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2647,7 +2647,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2672,7 +2672,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2696,7 +2696,7 @@ END loop
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2710,41 +2710,130 @@ END loop
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] reserved-word-symbol line 2, column 1, byte offset 6, span length 4: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a procedure name.");
 });
 
-test("renders Phase 61E OPTION NOKEYWORD remains unsupported with reserved label", () => {
-  const name = "phase61eOptionNoKeywordStillUnsupported";
+test("renders Phase 78A accepted OPTION NOKEYWORD source-run without extra message", () => {
+  const name = "phase78aAcceptedNokeywordNoNotice";
   const source = `OPTION NOKEYWORD:<LOOP>
 .code
 main PROC
-loop:
+    ret
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseSuffix, "A");
+  assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
+  assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 78A disabled LOOP keyword-role diagnostic exactly", () => {
+  const name = "phase78aDisabledLoopKeywordRole";
+  const source = `OPTION NOKEYWORD:<LOOP>
+.code
+main PROC
+loop main
 main ENDP
 END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
-      code: "unsupported-option",
-      message: "Unsupported OPTION form. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.",
-      line: 1,
-      column: 1,
-      byteOffset: 0,
-      spanLength: 6
-    },
-    {
-      kind: "assembly-error",
-      code: "reserved-word-symbol",
-      message: "'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.",
+      code: "disabled-keyword-used-as-keyword",
+      message: "'LOOP' was disabled by OPTION NOKEYWORD and is no longer available as an instruction-family keyword on this source line.",
       line: 4,
       column: 1,
       byteOffset: 40,
       spanLength: 4
     }
   ]);
-  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-option line 1, column 1, byte offset 0, span length 6: Unsupported OPTION form. Supported CASEMAP values: ALL, NONE. Recognized but unsupported: NOTPUBLIC.\n[assembly-error] reserved-word-symbol line 4, column 1, byte offset 40, span length 4: 'loop' is a reserved MASM instruction mnemonic and cannot be used as a code label.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] disabled-keyword-used-as-keyword line 4, column 1, byte offset 40, span length 4: 'LOOP' was disabled by OPTION NOKEYWORD and is no longer available as an instruction-family keyword on this source line.");
+});
+
+test("renders Phase 78A malformed OPTION NOKEYWORD list diagnostic exactly", () => {
+  const name = "phase78aMalformedNokeywordList";
+  const source = `OPTION NOKEYWORD:<LOOP,OFFSET>
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseSuffix, "A");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-nokeyword-list",
+      message: "Invalid OPTION NOKEYWORD list. Entries must be whitespace-separated identifier-like reserved words without commas, quotes, numbers, or operators.",
+      line: 1,
+      column: 23,
+      byteOffset: 22,
+      spanLength: 1
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-nokeyword-list line 1, column 23, byte offset 22, span length 1: Invalid OPTION NOKEYWORD list. Entries must be whitespace-separated identifier-like reserved words without commas, quotes, numbers, or operators.");
+});
+
+test("renders Phase 78A unknown OPTION NOKEYWORD word diagnostic exactly", () => {
+  const name = "phase78aUnknownNokeywordWord";
+  const source = `OPTION NOKEYWORD:<FutureKeyword>
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseSuffix, "A");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "nokeyword-unknown-keyword",
+      message: "'FutureKeyword' is not a simulator-recognized reserved word and cannot be disabled by OPTION NOKEYWORD.",
+      line: 1,
+      column: 19,
+      byteOffset: 18,
+      spanLength: 13
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] nokeyword-unknown-keyword line 1, column 19, byte offset 18, span length 13: 'FutureKeyword' is not a simulator-recognized reserved word and cannot be disabled by OPTION NOKEYWORD.");
+});
+
+test("renders Phase 78A protected OPTION NOKEYWORD word diagnostic exactly", () => {
+  const name = "phase78aProtectedNokeywordWord";
+  const source = `OPTION NOKEYWORD:<MOV>
+.code
+main PROC
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseSuffix, "A");
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "nokeyword-protected-keyword",
+      message: "'MOV' is a protected MASM instruction mnemonic and cannot be disabled by OPTION NOKEYWORD in Phase 78A.",
+      line: 1,
+      column: 19,
+      byteOffset: 18,
+      spanLength: 3
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] nokeyword-protected-keyword line 1, column 19, byte offset 18, span length 3: 'MOV' is a protected MASM instruction mnemonic and cannot be disabled by OPTION NOKEYWORD in Phase 78A.");
 });
 
 test("renders Phase 61 direct JMP success exactly", () => {
@@ -2794,7 +2883,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2840,7 +2929,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3013,8 +3102,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3041,8 +3130,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,8 +3158,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3096,8 +3185,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -5364,8 +5453,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5426,8 +5515,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5486,8 +5575,8 @@ END main
   });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5523,8 +5612,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5574,8 +5663,8 @@ END main
   });
   assertRunStatus(json, true, "ok");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5615,8 +5704,8 @@ END main
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
   assert.equal(defaultResult.json.phase, 78);
-  assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(defaultResult.json.phaseSuffix, "A");
+  assert.equal(defaultResult.json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5637,8 +5726,8 @@ END main
   });
   assertRunStatus(stopResult.json, true, "ok");
   assert.equal(stopResult.json.phase, 78);
-  assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(stopResult.json.phaseSuffix, "A");
+  assert.equal(stopResult.json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5679,7 +5768,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
   const message = json.simulatorMessages[json.simulatorMessages.length - 1];
@@ -5742,8 +5831,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5776,8 +5865,8 @@ END front
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5866,8 +5955,8 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
+  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6863,7 +6952,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7303,7 +7392,7 @@ END main
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
   assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseSuffix, "A");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");

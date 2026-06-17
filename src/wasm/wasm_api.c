@@ -22,7 +22,7 @@
  * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
  * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, Phase 76 PROC USES
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
- * Phase 78 parser-only LOCAL declaration metadata and targeted LOCAL
+ * Phase 78A limited OPTION NOKEYWORD parser behavior and Phase 78 LOCAL
  * diagnostics, and recovered unsupported-feature diagnostics, then reports a
  * compact JSON result for the UI.
  */
@@ -88,14 +88,14 @@
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 78U
 
-/// Suffix for the current Phase 78 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
+/// Suffix for the current Phase 78A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
 
-/// Full name of the current Phase 78 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata"
+/// Full name of the current Phase 78A runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 78 LOCAL parser metadata state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-78-local-metadata-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 78A limited OPTION NOKEYWORD state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-78a-nokeyword-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U

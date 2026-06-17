@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 78 LOCAL parser metadata coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 78A limited OPTION NOKEYWORD coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -3660,6 +3660,327 @@ static int test_phase78_local_operands_remain_deferred(void) {
 }
 
 
+/// Verifies Phase 78A accepted OPTION NOKEYWORD forms make LOOP and OFFSET available as later user symbols.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78a_nokeyword_accepts_loop_and_offset_symbols(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        "loop EQU 7\n"
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A LOOP opt-out should allow LOOP equates");
+    failures += expect_size(result.diagnostic_count, 0U, "disabled LOOP equate fixture should emit no diagnostics");
+    failures += expect_size(result.numeric_equate_count, 1U, "disabled LOOP should be accepted as numeric equate metadata");
+    failures += expect_string(buffers.numeric_equates[0].name, "loop", "disabled LOOP equate should preserve spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP OFFSET>\n"
+        ".data\n"
+        "OFFSET DWORD 123\n"
+        "loop DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET\n"
+        "    mov ebx, loop\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A LOOP/OFFSET opt-out fixture should parse data symbols");
+    failures += expect_size(result.diagnostic_count, 0U, "valid NOKEYWORD data fixture should emit no diagnostics");
+    failures += expect_size(result.symbol_count, 2U, "disabled OFFSET and LOOP should be accepted as data symbols");
+    failures += expect_string(buffers.symbols[0].name, "OFFSET", "disabled OFFSET data symbol should preserve spelling");
+    failures += expect_string(buffers.symbols[1].name, "loop", "disabled LOOP data symbol should preserve spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "main PROC\n"
+        "loop:\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A LOOP opt-out should allow LOOP labels");
+    failures += expect_size(result.diagnostic_count, 0U, "disabled LOOP label fixture should emit no diagnostics");
+    failures += expect_size(result.code_label_count, 2U, "main PROC and loop label should be accepted as code labels");
+    failures += expect_string(buffers.code_labels[1].name, "loop", "disabled LOOP code label should preserve spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "LOOP PROC\n"
+        "    ret\n"
+        "LOOP ENDP\n"
+        "END LOOP\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A LOOP opt-out should allow LOOP procedure names");
+    failures += expect_size(result.diagnostic_count, 0U, "disabled LOOP procedure fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 1U, "disabled LOOP procedure should publish one range");
+    failures += expect_string(buffers.procedure_ranges[0].name, "LOOP", "disabled LOOP procedure name should preserve spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "main PROC\n"
+        "    LOCAL loop:DWORD\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A LOOP opt-out should allow LOOP locals");
+    failures += expect_size(result.diagnostic_count, 0U, "disabled LOOP local fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 1U, "main procedure metadata should still be present");
+    failures += expect_size(buffers.procedure_ranges[0].local_count, 1U, "disabled LOOP should be accepted as a procedure-local metadata name");
+    failures += expect_string(buffers.procedure_ranges[0].locals[0].name, "loop", "disabled LOOP local should preserve spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "option nokeyword:<offset>\n"
+        ".code\n"
+        "OFFSET PROC\n"
+        "    ret\n"
+        "OFFSET ENDP\n"
+        "END OFFSET\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78A lower-case directive should allow OFFSET procedure names");
+    failures += expect_size(result.diagnostic_count, 0U, "disabled OFFSET procedure fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 1U, "disabled OFFSET procedure should publish one range");
+    failures += expect_string(buffers.procedure_ranges[0].name, "OFFSET", "disabled OFFSET procedure name should preserve spelling");
+
+    return failures;
+}
+
+/// Verifies Phase 78A OPTION NOKEYWORD source-order, CASEMAP, and duplicate handling.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78a_nokeyword_source_order_and_casemap(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "option casemap:none\n"
+        "OPTION NOKEYWORD:<loop LOOP>\n"
+        ".data\n"
+        "Loop DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, Loop\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "CASEMAP:NONE should not affect NOKEYWORD list matching");
+    failures += expect_size(result.diagnostic_count, 0U, "duplicate NOKEYWORD entries should be idempotent");
+    failures += expect_string(buffers.symbols[0].name, "Loop", "disabled LOOP symbol should keep CASEMAP:NONE source spelling");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        "OPTION NOKEYWORD:<OFFSET>\n"
+        ".data\n"
+        "loop DWORD 1\n"
+        "OFFSET DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, loop\n"
+        "    mov ebx, OFFSET\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "repeated valid NOKEYWORD directives should accumulate");
+    failures += expect_size(result.diagnostic_count, 0U, "repeated valid NOKEYWORD directives should emit no diagnostics");
+    failures += expect_size(result.symbol_count, 2U, "repeated valid directives should disable both accepted words");
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "loop DWORD 1\n"
+        "OPTION NOKEYWORD:<LOOP>\n"
+        "again DWORD 2\n"
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "NOKEYWORD must not retroactively repair earlier declarations");
+    failures += expect_size(result.diagnostic_count, 1U, "source-order fixture should emit one earlier reserved-word diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "earlier LOOP declaration should remain reserved");
+    failures += expect_size(result.symbol_count, 1U, "failed earlier LOOP declaration should not block later ordinary declaration after directive");
+    failures += expect_string(buffers.symbols[0].name, "again", "later ordinary data symbol should still be accepted");
+
+    return failures;
+}
+
+/// Verifies Phase 78A OPTION NOKEYWORD malformed, unknown, protected, and atomic-failure diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78a_nokeyword_rejection_diagnostics(void) {
+    typedef struct NoKeywordCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        const char *message_fragment;
+    } NoKeywordCase;
+    static const NoKeywordCase cases[] = {
+        {"OPTION NOKEYWORD\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX, "Invalid OPTION NOKEYWORD syntax"},
+        {"OPTION NOKEYWORD:\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "angle brackets"},
+        {"OPTION NOKEYWORD LOOP\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX, "Invalid OPTION NOKEYWORD syntax"},
+        {"OPTION NOKEYWORD:LOOP\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "angle brackets"},
+        {"OPTION NOKEYWORD:<>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "must contain LOOP"},
+        {"OPTION NOKEYWORD:<LOOP,OFFSET>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "without commas"},
+        {"OPTION NOKEYWORD:<LOOP OFFSET\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "followed by '>'"},
+        {"OPTION NOKEYWORD:LOOP>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "angle brackets"},
+        {"OPTION NOKEYWORD:<<LOOP>>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "identifier-like"},
+        {"OPTION NOKEYWORD:<\"LOOP\">\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "identifier-like"},
+        {"OPTION NOKEYWORD:<LOOP + OFFSET>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "identifier-like"},
+        {"OPTION NOKEYWORD:<123>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST, "identifier-like"},
+        {"OPTION NOKEYWORD:<FutureKeyword>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD, "not a simulator-recognized reserved word"},
+        {"OPTION NOKEYWORD:<MOV>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM instruction mnemonic"},
+        {"OPTION NOKEYWORD:<RET>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM instruction mnemonic"},
+        {"OPTION NOKEYWORD:<JE>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM branch mnemonic"},
+        {"OPTION NOKEYWORD:<JZ>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM branch mnemonic"},
+        {"OPTION NOKEYWORD:<JL>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM branch mnemonic"},
+        {"OPTION NOKEYWORD:<JA>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM branch mnemonic"},
+        {"OPTION NOKEYWORD:<EAX>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM register name"},
+        {"OPTION NOKEYWORD:<ESP>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM register name"},
+        {"OPTION NOKEYWORD:<CH>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM register name"},
+        {"OPTION NOKEYWORD:<DWORD>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM data type name"},
+        {"OPTION NOKEYWORD:<BYTE>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM data type name"},
+        {"OPTION NOKEYWORD:<PTR>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM PTR width keyword"},
+        {"OPTION NOKEYWORD:<PROC>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM procedure directive"},
+        {"OPTION NOKEYWORD:<ENDP>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM procedure directive"},
+        {"OPTION NOKEYWORD:<END>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM directive"},
+        {"OPTION NOKEYWORD:<LOCAL>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM structural directive"},
+        {"OPTION NOKEYWORD:<OPTION>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM directive"},
+        {"OPTION NOKEYWORD:<CASEMAP>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM OPTION option name"},
+        {"OPTION NOKEYWORD:<NOKEYWORD>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM OPTION option name"},
+        {"OPTION NOKEYWORD:<Irvine32>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM virtual include name"},
+        {"INCLUDE Irvine32.inc\nOPTION NOKEYWORD:<WriteString>\n.code\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "protected MASM Irvine32 registry name"}
+    };
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid NOKEYWORD fixture should parse with diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "invalid NOKEYWORD fixture should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].code, "invalid NOKEYWORD fixture should use targeted diagnostic code");
+        failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "invalid NOKEYWORD diagnostic should be an error");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "invalid NOKEYWORD diagnostic should explain the rejection");
+        if (buffers.diagnostics[0].location.line == 0U || buffers.diagnostics[0].lexeme_length == 0U) {
+            failures += record_failure("invalid NOKEYWORD diagnostic should preserve source location and span");
+        }
+    }
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP EAX>\n"
+        ".data\n"
+        "loop DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "mixed valid/protected NOKEYWORD list should fail atomically");
+    failures += expect_size(result.diagnostic_count, 2U, "atomic failure fixture should retain protected diagnostic plus later reserved LOOP diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD, "mixed list should diagnose protected EAX first");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "LOOP should not be disabled by a failed directive");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<OFFSET FutureKeyword>\n"
+        ".data\n"
+        "OFFSET DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "mixed valid/unknown NOKEYWORD list should fail atomically");
+    failures += expect_size(result.diagnostic_count, 2U, "atomic unknown fixture should retain unknown diagnostic plus later reserved OFFSET diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD, "mixed list should diagnose unknown future word first");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[1].code, VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "OFFSET should not be disabled by a failed directive");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "main PROC\n"
+        "    JE main\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "disabling LOOP should not disable JE branch aliases");
+    failures += expect_size(result.diagnostic_count, 0U, "JE branch alias should remain an implemented branch mnemonic after LOOP opt-out");
+    failures += expect_size(result.instruction_count, 1U, "JE branch alias should still lower as an instruction after LOOP opt-out");
+
+    return failures;
+}
+
+/// Verifies disabled LOOP and OFFSET are rejected in their old keyword roles after Phase 78A disablement.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78a_disabled_keyword_role_rejections(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<LOOP>\n"
+        ".code\n"
+        "main PROC\n"
+        "    loop main\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "disabled LOOP used as keyword should diagnose");
+    failures += expect_size(result.diagnostic_count, 1U, "disabled LOOP keyword-role fixture should emit one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD, "disabled LOOP old role should use targeted diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "instruction-family keyword", "disabled LOOP diagnostic should explain old role");
+    failures += expect_size(buffers.diagnostics[0].location.line, 4U, "disabled LOOP diagnostic should point at later keyword-role line");
+
+    failures += expect_parser_status(parse_for_test(
+        "OPTION NOKEYWORD:<OFFSET>\n"
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, OFFSET value\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "disabled OFFSET used as operator should diagnose");
+    failures += expect_size(result.diagnostic_count, 1U, "disabled OFFSET keyword-role fixture should emit one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD, "disabled OFFSET old role should use targeted diagnostic");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "operator keyword", "disabled OFFSET diagnostic should explain old role");
+    failures += expect_size(buffers.diagnostics[0].location.line, 6U, "disabled OFFSET diagnostic should point at later operator-role line");
+
+    return failures;
+}
+
+
 /// Verifies INCLUDE Irvine32.inc records virtual registry metadata.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -7080,6 +7401,24 @@ static int test_metadata_helpers(void) {
     if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET), "unsupported-call-target") != 0) {
         failures += record_failure("parser diagnostic helper should name unsupported call-target diagnostics");
     }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_SYNTAX), "invalid-nokeyword-syntax") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid NOKEYWORD syntax diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_NOKEYWORD_LIST), "invalid-nokeyword-list") != 0) {
+        failures += record_failure("parser diagnostic helper should name invalid NOKEYWORD list diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_NOKEYWORD_UNKNOWN_KEYWORD), "nokeyword-unknown-keyword") != 0) {
+        failures += record_failure("parser diagnostic helper should name unknown NOKEYWORD word diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_NOKEYWORD_PROTECTED_KEYWORD), "nokeyword-protected-keyword") != 0) {
+        failures += record_failure("parser diagnostic helper should name protected NOKEYWORD word diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_USED_AS_KEYWORD), "disabled-keyword-used-as-keyword") != 0) {
+        failures += record_failure("parser diagnostic helper should name disabled keyword role-use diagnostics");
+    }
+    if (strcmp(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_DISABLED_KEYWORD_AMBIGUOUS), "disabled-keyword-ambiguous") != 0) {
+        failures += record_failure("parser diagnostic helper should name disabled keyword ambiguity diagnostics");
+    }
     if (strcmp(vm_parser_irvine32_symbol_class_name(VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC), "supported-virtual-intrinsic") != 0) {
         failures += record_failure("Irvine32 symbol-class helper should name supported virtual intrinsics");
     }
@@ -7741,6 +8080,10 @@ int main(void) {
     failures += test_phase78_local_scoping_and_shadowing();
     failures += test_phase78_local_diagnostics();
     failures += test_phase78_local_operands_remain_deferred();
+    failures += test_phase78a_nokeyword_accepts_loop_and_offset_symbols();
+    failures += test_phase78a_nokeyword_source_order_and_casemap();
+    failures += test_phase78a_nokeyword_rejection_diagnostics();
+    failures += test_phase78a_disabled_keyword_role_rejections();
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
     failures += test_phase70_plain_ret_parses_to_ir();
@@ -7851,6 +8194,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 78 LOCAL parser metadata coverage passed.\n");
+    printf("Parser tests through Phase 78A limited OPTION NOKEYWORD coverage passed.\n");
     return 0;
 }
