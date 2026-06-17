@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 76 PROC USES metadata coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 78 LOCAL parser metadata coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -126,6 +126,21 @@ static int expect_size(size_t actual, size_t expected, const char *message) {
 static int expect_u32(uint32_t actual, uint32_t expected, const char *message) {
     if (actual != expected) {
         fprintf(stderr, "FAIL: %s (actual=%u expected=%u)\n", message, actual, expected);
+        return 1;
+    }
+
+    return 0;
+}
+
+/// Verifies that two signed 32-bit values are equal.
+///
+/// @param actual Actual value.
+/// @param expected Expected value.
+/// @param message Failure message when values differ.
+/// @return Zero on success, otherwise one failure.
+static int expect_i32(int32_t actual, int32_t expected, const char *message) {
+    if (actual != expected) {
+        fprintf(stderr, "FAIL: %s (actual=%d expected=%d)\n", message, actual, expected);
         return 1;
     }
 
@@ -1632,7 +1647,6 @@ static int test_textbook_unsupported_keywords_are_stable(void) {
     failures += expect_unsupported_feature_source("PUBLIC main\n.code\nmain PROC\nmain ENDP\nEND main\n", "PUBLIC");
     failures += expect_unsupported_feature_source("COMM buffer:BYTE:16\n.code\nmain PROC\nmain ENDP\nEND main\n", "COMM");
     failures += expect_unsupported_feature_source("m MACRO\nENDM\n.code\nmain PROC\nmain ENDP\nEND main\n", "macro definitions");
-    failures += expect_unsupported_feature_source(".code\nmain PROC\nLOCAL temp:DWORD\nmain ENDP\nEND main\n", "LOCAL");
 
     return failures;
 }
@@ -1774,7 +1788,6 @@ static int test_line_level_unsupported_feature_recovery_covers_required_construc
         "main PROC\n"
         "    INVOKE SomeProc\n"
         "    SomeProc PROTO\n"
-        "    LOCAL temp:DWORD\n"
         "    Greeting TEXTEQU <Hello>\n"
         "    INCLUDELIB Irvine32.lib\n"
         "    EXTERN SomeProc:PROC\n"
@@ -1787,15 +1800,14 @@ static int test_line_level_unsupported_feature_recovery_covers_required_construc
     int failures = 0;
 
     failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "all line-level unsupported constructs should recover");
-    failures += expect_size(result.diagnostic_count, 8U, "all required line-level constructs should produce diagnostics");
+    failures += expect_size(result.diagnostic_count, 7U, "all remaining line-level unsupported constructs should produce diagnostics");
     failures += expect_string_contains(buffers.diagnostics[0].message, "INVOKE", "line diagnostic should describe INVOKE");
     failures += expect_string_contains(buffers.diagnostics[1].message, "PROTO", "line diagnostic should describe PROTO");
-    failures += expect_string_contains(buffers.diagnostics[2].message, "LOCAL", "line diagnostic should describe LOCAL");
-    failures += expect_string_contains(buffers.diagnostics[3].message, "TEXTEQU", "line diagnostic should describe TEXTEQU");
-    failures += expect_string_contains(buffers.diagnostics[4].message, "INCLUDELIB", "line diagnostic should describe INCLUDELIB");
-    failures += expect_string_contains(buffers.diagnostics[5].message, "EXTERN", "line diagnostic should describe EXTERN");
-    failures += expect_string_contains(buffers.diagnostics[6].message, "PUBLIC", "line diagnostic should describe PUBLIC");
-    failures += expect_string_contains(buffers.diagnostics[7].message, "COMM", "line diagnostic should describe COMM");
+    failures += expect_string_contains(buffers.diagnostics[2].message, "TEXTEQU", "line diagnostic should describe TEXTEQU");
+    failures += expect_string_contains(buffers.diagnostics[3].message, "INCLUDELIB", "line diagnostic should describe INCLUDELIB");
+    failures += expect_string_contains(buffers.diagnostics[4].message, "EXTERN", "line diagnostic should describe EXTERN");
+    failures += expect_string_contains(buffers.diagnostics[5].message, "PUBLIC", "line diagnostic should describe PUBLIC");
+    failures += expect_string_contains(buffers.diagnostics[6].message, "COMM", "line diagnostic should describe COMM");
     failures += expect_size(result.instruction_count, 0U, "unsupported line-level constructs should not emit instructions");
 
     return failures;
@@ -1886,7 +1898,7 @@ static int test_recovery_diagnostic_capacity_failure_is_fatal(void) {
     memset(&buffers, 0, sizeof(buffers));
     memset(&config, 0, sizeof(config));
     memset(&result, 0, sizeof(result));
-    config.source = ".code\nmain PROC\nINVOKE A\nPROTO B\nLOCAL c:DWORD\nmain ENDP\nEND main\n";
+    config.source = ".code\nmain PROC\nINVOKE A\nPROTO B\nGreeting TEXTEQU <Hello>\nmain ENDP\nEND main\n";
     config.source_file = "main.asm";
     config.tokens = buffers.tokens;
     config.token_capacity = TEST_TOKEN_CAPACITY;
@@ -3466,6 +3478,183 @@ static int test_phase76_proc_uses_parsing_and_metadata(void) {
         failures += expect_string_contains(buffers.diagnostics[0].message, invalid_cases[index].message_fragment, "invalid PROC USES diagnostic should explain rejection");
         failures += expect_size(result.procedure_range_count, 0U, "rejected PROC USES declaration should not publish procedure metadata");
     }
+
+    return failures;
+}
+
+/// Verifies Phase 78 LOCAL declarations publish deterministic procedure metadata.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78_local_declarations_parse_to_metadata(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    const VmProcedureRange *main_range = NULL;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "COUNT EQU 16\n"
+        ".data\n"
+        "temp DWORD 1\n"
+        ".code\n"
+        "main PROC USES ebx\n"
+        "    LOCAL temp:DWORD\n"
+        "    LOCAL ch:BYTE, signedVal:SDWORD\n"
+        "    LOCAL buf[COUNT]:BYTE\n"
+        "    LOCAL literalBuf[16]:BYTE\n"
+        "    LOCAL COUNT:WORD\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "Phase 78 LOCAL fixture should parse without diagnostics");
+    failures += expect_size(result.diagnostic_count, 0U, "valid LOCAL fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 1U, "valid LOCAL fixture should publish one procedure range");
+
+    main_range = &buffers.procedure_ranges[0];
+    failures += expect_size(main_range->uses_register_count, 1U, "LOCAL metadata should preserve existing PROC USES metadata");
+    failures += expect_size(main_range->local_count, 6U, "valid LOCAL fixture should publish six local symbols");
+    failures += expect_u32(main_range->local_frame_size_bytes, 48U, "LOCAL frame size should be rounded to four bytes");
+
+    failures += expect_string(main_range->locals[0].name, "temp", "first LOCAL name should preserve source spelling");
+    failures += expect_u32((uint32_t)main_range->locals[0].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_DWORD, "temp should be DWORD");
+    failures += expect_u32(main_range->locals[0].element_count, 1U, "temp should be scalar");
+    failures += expect_u32(main_range->locals[0].element_size_bytes, 4U, "temp element width should be four bytes");
+    failures += expect_u32(main_range->locals[0].size_bytes, 4U, "temp should occupy four bytes");
+    failures += expect_u32(main_range->locals[0].alignment_bytes, 4U, "temp should align to four bytes");
+    failures += expect_i32(main_range->locals[0].ebp_offset, -4, "temp should live at EBP-4");
+
+    failures += expect_string(main_range->locals[1].name, "ch", "second LOCAL name should preserve source spelling");
+    failures += expect_u32((uint32_t)main_range->locals[1].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_BYTE, "ch should be BYTE");
+    failures += expect_i32(main_range->locals[1].ebp_offset, -5, "ch should live at EBP-5 before padding for the following SDWORD");
+
+    failures += expect_string(main_range->locals[2].name, "signedVal", "third LOCAL name should preserve source spelling");
+    failures += expect_u32((uint32_t)main_range->locals[2].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_SDWORD, "signedVal should be SDWORD");
+    failures += expect_i32(main_range->locals[2].ebp_offset, -12, "signedVal should be aligned to a four-byte slot");
+
+    failures += expect_string(main_range->locals[3].name, "buf", "array LOCAL name should preserve source spelling");
+    failures += expect_u32(main_range->locals[3].element_count, 16U, "buf should use the numeric equate array count");
+    failures += expect_u32(main_range->locals[3].size_bytes, 16U, "buf should reserve sixteen bytes of metadata");
+    failures += expect_i32(main_range->locals[3].ebp_offset, -28, "buf should follow previous locals in declaration order");
+
+    failures += expect_string(main_range->locals[4].name, "literalBuf", "literal array LOCAL name should preserve source spelling");
+    failures += expect_u32(main_range->locals[4].element_count, 16U, "literalBuf should use the literal array count");
+    failures += expect_u32(main_range->locals[4].element_size_bytes, 1U, "literalBuf element width should be one byte");
+    failures += expect_u32(main_range->locals[4].size_bytes, 16U, "literalBuf should reserve sixteen bytes of metadata");
+    failures += expect_i32(main_range->locals[4].ebp_offset, -44, "literalBuf should follow the equate-count array in declaration order");
+
+    failures += expect_string(main_range->locals[5].name, "COUNT", "LOCAL should be allowed to shadow a numeric equate inside the procedure");
+    failures += expect_u32((uint32_t)main_range->locals[5].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_WORD, "COUNT local should be WORD");
+    failures += expect_i32(main_range->locals[5].ebp_offset, -46, "COUNT local should be aligned to two bytes");
+    failures += expect_size(main_range->locals[0].source_location.line, 6U, "first LOCAL source line should be preserved for debugger metadata");
+    failures += expect_size(main_range->locals[0].source_location.column, 11U, "first LOCAL source column should target the local name");
+    failures += expect_size(main_range->locals[0].source_span_length, 4U, "first LOCAL source span should cover the local name");
+
+    return failures;
+}
+
+/// Verifies Phase 78 LOCAL declarations remain procedure-scoped.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78_local_scoping_and_shadowing(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".data\n"
+        "value DWORD 1\n"
+        ".code\n"
+        "first PROC\n"
+        "    LOCAL value:DWORD\n"
+        "    ret\n"
+        "first ENDP\n"
+        "second PROC\n"
+        "    LOCAL value:BYTE\n"
+        "    ret\n"
+        "second ENDP\n"
+        "END first\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "same LOCAL spelling in separate procedures and global shadowing should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "valid scoped LOCAL fixture should emit no diagnostics");
+    failures += expect_size(result.procedure_range_count, 2U, "two procedure ranges should be published");
+    failures += expect_size(buffers.procedure_ranges[0].local_count, 1U, "first procedure should have one local");
+    failures += expect_size(buffers.procedure_ranges[1].local_count, 1U, "second procedure should have one local");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[0].locals[0].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_DWORD, "first local should retain DWORD type");
+    failures += expect_u32((uint32_t)buffers.procedure_ranges[1].locals[0].data_type, (uint32_t)VM_SYMBOL_DATA_TYPE_BYTE, "second local should retain BYTE type");
+
+    return failures;
+}
+
+/// Verifies Phase 78 LOCAL rejection paths use targeted diagnostics.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78_local_diagnostics(void) {
+    /// Defines one invalid Phase 78 LOCAL parser fixture and its expected diagnostic.
+    typedef struct LocalDiagnosticCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        const char *message_fragment;
+    } LocalDiagnosticCase;
+    static const LocalDiagnosticCase cases[] = {
+        {".code\nLOCAL temp:DWORD\nmain PROC\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_LOCAL_OUTSIDE_PROCEDURE, "inside a PROC body"},
+        {".code\nmain PROC\nmov eax, 1\nLOCAL temp:DWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_LOCAL_AFTER_INSTRUCTION, "before executable instructions"},
+        {".code\nmain PROC\nLOCAL q:QWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE, "accepted types"},
+        {".code\nmain PROC\nLOCAL sq:SQWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE, "SQWORD"},
+        {".code\nmain PROC\nLOCAL r:REAL4\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE, "REAL4"},
+        {".code\nmain PROC\nLOCAL s:STRUCTTYPE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE, "STRUCTTYPE"},
+        {".code\nmain PROC\nLOCAL x DWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, "name:TYPE"},
+        {".code\nmain PROC\nLOCAL x:DWORD = 1\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, "initializers"},
+        {".code\nmain PROC\nLOCAL buf[0]:BYTE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, "positive"},
+        {".code\nmain PROC\nLOCAL buf[-1]:BYTE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, "positive"},
+        {"COUNT EQU 4\n.code\nmain PROC\nLOCAL buf[COUNT + eax]:BYTE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, "compound"},
+        {".code\nmain PROC\nLOCAL a:DWORD, a:BYTE\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL, "Duplicate LOCAL"},
+        {".code\nmain PROC\nLOCAL eax:DWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_RESERVED_WORD_SYMBOL, "reserved MASM register name"},
+        {".code\nmain PROC\nLOCAL main:DWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL, "conflicts with procedure"},
+        {".code\nmain PROC\nagain:\nLOCAL again:DWORD\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL, "same-procedure label"},
+        {".code\nmain PROC\nLOCAL again:DWORD\nagain:\nmain ENDP\nEND main\n", VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL, "same-procedure LOCAL"}
+    };
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "invalid LOCAL fixture should produce diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "invalid LOCAL fixture should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].code, "invalid LOCAL fixture should use the targeted diagnostic code");
+        failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "invalid LOCAL diagnostic should be an assembly error");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "invalid LOCAL diagnostic should explain the rejection");
+        if (buffers.diagnostics[0].location.line == 0U || buffers.diagnostics[0].lexeme_length == 0U) {
+            failures += record_failure("invalid LOCAL diagnostic should preserve source location and span");
+        }
+    }
+
+    return failures;
+}
+
+/// Verifies Phase 78 LOCAL metadata does not resolve local operands before Phase 80.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase78_local_operands_remain_deferred(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        ".code\n"
+        "main PROC\n"
+        "    LOCAL temp:DWORD\n"
+        "    mov eax, temp\n"
+        "main ENDP\n"
+        "END main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LOCAL operands should remain unresolved before Phase 80");
+    failures += expect_size(result.diagnostic_count, 1U, "deferred LOCAL operand fixture should emit one diagnostic");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "LOCAL operand should still use existing unknown-symbol path before Phase 80");
+    failures += expect_size(buffers.procedure_ranges[0].local_count, 1U, "LOCAL metadata should still be published before the operand diagnostic");
 
     return failures;
 }
@@ -7548,6 +7737,10 @@ int main(void) {
     failures += test_phase68_call_target_classifier_casemap_policy();
     failures += test_phase75_proc_metadata_and_attribute_diagnostics();
     failures += test_phase76_proc_uses_parsing_and_metadata();
+    failures += test_phase78_local_declarations_parse_to_metadata();
+    failures += test_phase78_local_scoping_and_shadowing();
+    failures += test_phase78_local_diagnostics();
+    failures += test_phase78_local_operands_remain_deferred();
     failures += test_phase69_direct_call_to_user_procedure_parses_to_ir();
     failures += test_phase69_direct_call_target_rejections();
     failures += test_phase70_plain_ret_parses_to_ir();
@@ -7658,6 +7851,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 76 PROC USES metadata coverage passed.\n");
+    printf("Parser tests through Phase 78 LOCAL parser metadata coverage passed.\n");
     return 0;
 }

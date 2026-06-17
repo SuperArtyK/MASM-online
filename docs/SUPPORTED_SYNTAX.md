@@ -2,9 +2,9 @@
 
 Current milestone:
 
-- Phase 77 - PROC USES Runtime Save/Restore
+- Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures, automatically saves listed `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI` registers on the checked simulated stack, restores them in reverse order on `RET`, preserves modeled flags and stack balance, and reports `stack-overflow` or `stack-underflow` when automatic USES save/restore cannot complete. Phase 76 `PROC USES` parsing metadata and Phase 75 targeted diagnostics for unsupported non-USES `PROC` attributes or parameters, malformed `PROC` declarations, mismatched `ENDP` names, and duplicate procedures remain implemented.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions, stores procedure-scoped local metadata, computes deterministic negative-`EBP` frame offsets and rounded local-frame sizes, and reports targeted diagnostics for invalid `LOCAL` declarations. Runtime local stack allocation and local operand resolution remain deferred. Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, plain near `ret`/`RET` with no operands, and near `ret imm16`/`RET imm16`.
 
@@ -17,6 +17,20 @@ MyProc PROC USES EAX EBX ESI EDI
 ```
 
 Accepted `USES` register names are `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, case-insensitively. The parser stores canonical register identities in declared order. Direct `CALL` entry into a `PROC USES` procedure saves listed registers in declared order on the checked simulated stack and restores them in reverse order on `RET`. Selected-entry startup, direct branch transfer, and ordinary fallthrough into a `USES` procedure remain unsupported and report `unsupported-proc-uses-runtime` so the simulator does not silently ignore USES metadata without a CALL-created preservation frame.
+
+Current accepted `LOCAL` declaration metadata syntax:
+
+```asm
+LOCAL temp:DWORD
+LOCAL ch:BYTE
+LOCAL signedVal:SDWORD
+LOCAL buf[16]:BYTE
+LOCAL a:DWORD, b:DWORD
+```
+
+Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`, case-insensitively. A valid `LOCAL` declaration is accepted only inside a `PROC` body and only before executable instructions in that procedure. Array counts must be positive constant counts that the parser can resolve without registers or runtime operands. The parser stores declaration order, element count, element size, alignment, source location, negative `EBP`-relative metadata offsets, and the procedure total local-frame size rounded to 4 bytes. Phase 78 does not allocate runtime stack storage for locals and does not resolve local names as instruction operands. The canonical Phase 78 example `LOCAL ch:BYTE` is accepted even though `CH` is otherwise a recognized register alias; other register names remain reserved and are rejected as local symbol names.
+
+Targeted `LOCAL` diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`. Unsupported types such as `QWORD`, `SQWORD`, `REAL4`, and user-defined structure types are rejected with `unsupported-local-type`; malformed declarations, initializers, invalid array counts, duplicate locals, procedure-name collisions, and same-procedure label collisions receive targeted parser/source-run diagnostics.
 
 Implemented procedure and termination behavior for the active runtime/source-run MASM behavior phase:
 
@@ -42,7 +56,7 @@ The selected-entry `ENDP` success rule from pre-71C accepted behavior is no long
 
 Phase 72 adds `callDepthLimit` as a source-run/protocol setting for direct user-procedure `CALL` chains. The setting defaults to `64`, accepts integer values from `1` through `4096`, and rejects invalid values with `invalid-call-depth-limit` before execution. The selected entry procedure itself is not counted as a call frame; committed direct helper calls increment the current call depth until a successfully validated ordinary helper `RET` returns. An over-limit direct `CALL` reports `call-depth-exceeded` before return-token stack writes, `ESP` mutation, IP transfer, flag changes, memory-change rows, Program Console output, or successful terminal status. Phase 72 emits no call trace metadata and no `call-trace-truncated` message.
 
-Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, near `RET imm16` caller-cleanup returns, `PROC USES` parsing metadata, and direct-CALL `PROC USES` runtime save/restore are implemented. Procedure-frame creation, argument metadata, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
+Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, near `RET imm16` caller-cleanup returns, `PROC USES` parsing metadata, direct-CALL `PROC USES` runtime save/restore, and parser-only `LOCAL` declaration metadata are implemented. Runtime local stack allocation, local operand resolution, procedure-frame creation, argument metadata, calling-convention behavior, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
 Implemented and planned fallthrough diagnostics and settings:
 
@@ -70,7 +84,6 @@ Consult the current instruction-support table in this document for implemented b
 
 The following stack/procedure features remain future work only if a later accepted milestone explicitly implements them:
 
-- `LOCAL`;
 - `PROTO`;
 - `INVOKE`;
 - `ADDR`;
@@ -121,7 +134,7 @@ Rendered Simulator Messages now use Phase 69B logical ordering. When execution b
 
 MASM reserved words are not valid user-defined symbols by default. The current simulator rejects declarations whose names conflict with words it already recognizes as reserved, including implemented or recognized instruction mnemonics, registers and aliases, directives, operators, data type names, `PTR` width names, signed `PTR` aliases, virtual include names where recognized, and Irvine32 registry names.
 
-Rejected declaration categories include data symbols, numeric equates, code labels, and procedure names. The diagnostic code is `reserved-word-symbol`, and it points at the declaration name when source location is available. A rejected reserved-word declaration is not inserted into the user-symbol tables.
+Rejected declaration categories include data symbols, numeric equates, code labels, procedure names, and procedure-local symbols, except for the narrow Phase 78 `LOCAL ch:BYTE` compatibility example documented above. The diagnostic code is `reserved-word-symbol`, and it points at the declaration name when source location is available. A rejected reserved-word declaration is not inserted into the user-symbol tables.
 
 `OPTION CASEMAP` controls lookup for accepted user-defined symbols only. `OPTION CASEMAP:NONE` does not make reserved words available as user-defined symbols, and reserved-word matching remains case-insensitive. `OPTION NOKEYWORD` remains unsupported until a later explicit keyword-control phase; it must not be treated as enabling reserved-word identifiers.
 
@@ -517,7 +530,6 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 - `RECORD`
 - `INVOKE`
 - `PROTO`
-- `LOCAL`
 - `.IF`
 - `.WHILE`
 - `.REPEAT`
@@ -548,7 +560,7 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 
 Phase 17 and later behavior can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
-Recovered line-level constructs include `INVOKE`, `PROTO`, `LOCAL`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
+Recovered line-level constructs include `INVOKE`, `PROTO`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 

@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 77;
+export const IMPLEMENTED_PHASE = 78;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
 export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 77 - PROC USES Runtime Save/Restore";
+export const IMPLEMENTED_PHASE_NAME = "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-77-proc-uses-runtime-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-78-local-metadata-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

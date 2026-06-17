@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 77 - PROC USES Runtime Save/Restore. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 77 - PROC USES Runtime Save/Restore. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -1933,7 +1933,7 @@ main PROC
 main ENDP
 END main
 `,
-    reason: "Current Phase 71 runtime metadata with Phase 63 CMP register/immediate success fixture."
+    reason: "Current Phase 78 runtime metadata with Phase 63 CMP register/immediate success fixture."
   },
   phase57tLoopUnsupported: {
     source: `.code
@@ -2511,7 +2511,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2554,7 +2554,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2591,9 +2591,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2619,7 +2619,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2646,7 +2646,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2671,7 +2671,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2695,7 +2695,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2721,7 +2721,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2762,7 +2762,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2793,8 +2793,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2839,8 +2839,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 77);
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phase, 78);
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2866,7 +2866,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2890,7 +2890,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2914,7 +2914,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2939,7 +2939,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2963,7 +2963,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -2987,7 +2987,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3012,9 +3012,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3040,9 +3040,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3068,9 +3068,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3095,9 +3095,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3123,7 +3123,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3148,7 +3148,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3172,7 +3172,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3389,7 +3389,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 77);
+    assert.equal(json.phase, 78);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3402,7 +3402,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 77);
+  assert.equal(duplicateResult.json.phase, 78);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3904,7 +3904,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -3925,7 +3925,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5363,9 +5363,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5425,9 +5425,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5485,9 +5485,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5522,9 +5522,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5573,9 +5573,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5614,9 +5614,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 77);
+  assert.equal(defaultResult.json.phase, 78);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(defaultResult.json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5636,9 +5636,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 77);
+  assert.equal(stopResult.json.phase, 78);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(stopResult.json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5678,7 +5678,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5714,7 +5714,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5741,9 +5741,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5775,9 +5775,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5865,9 +5865,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 77 - PROC USES Runtime Save/Restore");
+  assert.equal(json.phaseName, "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6862,7 +6862,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7090,7 +7090,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7102,6 +7102,55 @@ END MyProc
     spanLength: 3
   });
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-proc-uses-register line 2, column 18, byte offset 23, span length 3: Invalid PROC USES register `esp`; accepted PROC USES registers are EAX, EBX, ECX, EDX, ESI, and EDI. ESP, EBP, 8-bit aliases, 16-bit aliases, punctuation, and unknown names are not accepted in PROC USES metadata.");
+});
+
+
+test("Phase 78 renders unsupported LOCAL type diagnostic", () => {
+  const name = "phase78UnsupportedLocalType";
+  const source = `.code
+main PROC
+LOCAL q:QWORD
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 78);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "unsupported-local-type",
+    message: "LOCAL type `QWORD` is unsupported; accepted types are BYTE, SBYTE, WORD, SWORD, DWORD, and SDWORD.",
+    line: 3,
+    column: 9,
+    byteOffset: 24,
+    spanLength: 5
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unsupported-local-type line 3, column 9, byte offset 24, span length 5: LOCAL type `QWORD` is unsupported; accepted types are BYTE, SBYTE, WORD, SWORD, DWORD, and SDWORD.");
+});
+
+test("Phase 78 renders invalid LOCAL array count diagnostic", () => {
+  const name = "phase78InvalidLocalCount";
+  const source = `.code
+main PROC
+LOCAL buf[0]:BYTE
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 78);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-local-count",
+    message: "LOCAL array count must be a positive 32-bit value.",
+    line: 3,
+    column: 11,
+    byteOffset: 26,
+    spanLength: 1
+  });
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-local-count line 3, column 11, byte offset 26, span length 1: LOCAL array count must be a positive 32-bit value.");
 });
 
 test("Phase 77 renders PROC USES save overflow diagnostic", () => {
@@ -7120,7 +7169,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7152,7 +7201,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7253,7 +7302,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -8056,7 +8105,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 77);
+  assert.equal(json.phase, 78);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

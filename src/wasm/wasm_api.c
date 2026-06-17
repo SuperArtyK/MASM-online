@@ -21,8 +21,10 @@
  * diagnostics, Phase 72 call-depth resource-limit diagnostics, Phase 72A
  * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
  * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, Phase 76 PROC USES
- * parsing metadata with runtime save/restore deferral, and recovered unsupported-feature diagnostics, then
- * reports a compact JSON result for the UI.
+ * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
+ * Phase 78 parser-only LOCAL declaration metadata and targeted LOCAL
+ * diagnostics, and recovered unsupported-feature diagnostics, then reports a
+ * compact JSON result for the UI.
  */
 
 #include "wasm_api.h"
@@ -83,17 +85,17 @@
 /// Mask value used for bytes that remain uninitialized-origin.
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
-/// Numeric runtime/source-run behavior phase reported for Phase 76 JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 77U
+/// Numeric runtime/source-run behavior phase reported to JSON consumers.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 78U
 
-/// Suffix for the current Phase 77 runtime/source-run behavior phase.
+/// Suffix for the current Phase 78 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 77 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 77 - PROC USES Runtime Save/Restore"
+/// Full name of the current Phase 78 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 77 PROC USES save/restore state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-77-proc-uses-runtime-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 78 LOCAL parser metadata state.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-78-local-metadata-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U

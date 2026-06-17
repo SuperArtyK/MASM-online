@@ -11,8 +11,8 @@
  * procedure entries, and plain near RET plus near RET imm16 are lowered for the
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
- * metadata diagnostics, and Phase 76 PROC USES parsing metadata are
- * supported; accepted PROC remains metadata-only, unsupported non-USES PROC
+ * metadata diagnostics, and Phase 76 PROC USES parsing metadata and Phase 78 LOCAL
+ * declaration metadata are supported; accepted PROC remains metadata-only, unsupported non-USES PROC
  * tails are rejected with targeted diagnostics, and ENTER, stack-frame creation,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
@@ -228,6 +228,16 @@ typedef struct VmParserState {
 /// @param state Parser state to mutate.
 /// @param library_token Token carrying the unsupported library operand, when present.
 static void vm_parser_add_includelib_diagnostic(VmParserState *state, const VmLexerToken *library_token);
+
+/// Finds a current-procedure LOCAL that collides with a label declaration.
+///
+/// @param state Parser state to inspect.
+/// @param label_token Candidate label-name token.
+/// @return Matching local symbol, or NULL when no local collision exists.
+static VmProcedureLocalSymbol *vm_parser_find_current_procedure_local_for_label(
+    VmParserState *state,
+    const VmLexerToken *label_token
+);
 
 /// Describes one parsed PTR width override prefix.
 typedef struct VmParserPtrWidth {
@@ -1131,6 +1141,26 @@ static bool vm_parser_add_code_label(VmParserState *state, const VmLexerToken *n
         return false;
     }
 
+    if (declaration_kind == VM_CODE_LABEL_DECLARATION_ORDINARY) {
+        VmProcedureLocalSymbol *existing_local = vm_parser_find_current_procedure_local_for_label(state, name_token);
+        if (existing_local != NULL) {
+            (void)vm_parser_add_label_related_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL,
+                name_token,
+                existing_local->source_location,
+                existing_local->source_span_length,
+                "Code label `%.*s` conflicts with same-procedure LOCAL symbol `%s` declared at line %u, column %u.",
+                (int)name_token->lexeme_length,
+                name_token->lexeme,
+                existing_local->name,
+                existing_local->source_location.line,
+                existing_local->source_location.column
+            );
+            return false;
+        }
+    }
+
     existing_label = vm_parser_find_code_label(state, name_token);
     if (existing_label != NULL) {
         const bool duplicate_procedure =
@@ -1948,7 +1978,6 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
         {"union", "Unsupported feature: UNION declarations are not supported yet."},
         {"record", "Unsupported feature: RECORD declarations are not supported yet."},
         {"proto", "Unsupported feature: PROTO procedure metadata is not supported yet."},
-        {"local", "Unsupported feature: LOCAL procedure variables are not supported yet."},
         {"macro", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"endm", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"extern", "Unsupported feature: EXTERN declarations are not supported yet."},
@@ -9797,6 +9826,548 @@ static bool vm_parser_expect_no_tokens_after_end(VmParserState *state) {
     return false;
 }
 
+
+/// Returns the currently open procedure metadata record when one is available.
+///
+/// @param state Parser state to inspect.
+/// @return Current procedure range, or NULL when no procedure metadata record is active.
+static VmProcedureRange *vm_parser_current_procedure_range(VmParserState *state) {
+    if (state == NULL || state->config == NULL || state->result == NULL ||
+        !state->open_procedure.is_set || state->config->procedure_ranges == NULL ||
+        state->open_procedure.range_index >= state->result->procedure_range_count) {
+        return NULL;
+    }
+
+    return &state->config->procedure_ranges[state->open_procedure.range_index];
+}
+
+/// Returns an unsigned local-object alignment for one local type.
+///
+/// @param element_size_bytes Scalar element width in bytes.
+/// @return Alignment in bytes, capped at four bytes.
+static uint8_t vm_parser_local_alignment_bytes(uint8_t element_size_bytes) {
+    if (element_size_bytes == 0U) {
+        return 1U;
+    }
+    return element_size_bytes < 4U ? element_size_bytes : 4U;
+}
+
+/// Rounds an unsigned 32-bit value up to a power-of-two alignment.
+///
+/// @param value Value to align.
+/// @param alignment Alignment in bytes.
+/// @param out_value Receives the rounded value.
+/// @return true when the rounded value fits in uint32_t.
+static bool vm_parser_align_u32(uint32_t value, uint32_t alignment, uint32_t *out_value) {
+    uint32_t mask = 0U;
+
+    if (out_value == NULL || alignment == 0U) {
+        return false;
+    }
+
+    mask = alignment - 1U;
+    if (value > UINT32_MAX - mask) {
+        return false;
+    }
+    *out_value = (value + mask) & ~mask;
+    return true;
+}
+
+/// Recomputes declaration-order negative EBP offsets for one procedure's locals.
+///
+/// @param procedure Procedure metadata to mutate.
+/// @return true when every computed offset and total frame size fit Phase 78 metadata.
+static bool vm_parser_recompute_local_frame_layout(VmProcedureRange *procedure) {
+    uint32_t cursor = 0U;
+    size_t index = 0U;
+
+    if (procedure == NULL) {
+        return false;
+    }
+
+    for (index = 0U; index < procedure->local_count; index += 1U) {
+        VmProcedureLocalSymbol *local = &procedure->locals[index];
+        uint32_t aligned_cursor = 0U;
+
+        if (!vm_parser_align_u32(cursor, (uint32_t)local->alignment_bytes, &aligned_cursor)) {
+            return false;
+        }
+        if (local->size_bytes > UINT32_MAX - aligned_cursor) {
+            return false;
+        }
+        cursor = aligned_cursor + local->size_bytes;
+        if (cursor > (uint32_t)INT32_MAX) {
+            return false;
+        }
+        local->ebp_offset = -(int32_t)cursor;
+    }
+
+    return vm_parser_align_u32(cursor, 4U, &procedure->local_frame_size_bytes);
+}
+
+/// Returns whether a data type is accepted for Phase 78 LOCAL metadata.
+///
+/// @param data_type Parsed data type to inspect.
+/// @return true for BYTE, SBYTE, WORD, SWORD, DWORD, and SDWORD.
+static bool vm_parser_local_type_is_supported(VmSymbolDataType data_type) {
+    return data_type == VM_SYMBOL_DATA_TYPE_BYTE || data_type == VM_SYMBOL_DATA_TYPE_SBYTE ||
+           data_type == VM_SYMBOL_DATA_TYPE_WORD || data_type == VM_SYMBOL_DATA_TYPE_SWORD ||
+           data_type == VM_SYMBOL_DATA_TYPE_DWORD || data_type == VM_SYMBOL_DATA_TYPE_SDWORD;
+}
+
+/// Compares a stored local name with a source token under the active CASEMAP policy.
+///
+/// @param state Parser state carrying the active user-symbol policy.
+/// @param local Existing local metadata.
+/// @param token Candidate local or label token.
+/// @return true when the names match under the active CASEMAP policy.
+static bool vm_parser_local_symbol_name_matches(
+    const VmParserState *state,
+    const VmProcedureLocalSymbol *local,
+    const VmLexerToken *token
+) {
+    VmLexerToken local_token;
+
+    if (local == NULL || token == NULL ||
+        (token->kind != VM_LEXER_TOKEN_IDENTIFIER && token->kind != VM_LEXER_TOKEN_REGISTER)) {
+        return false;
+    }
+
+    memset(&local_token, 0, sizeof(local_token));
+    local_token.kind = VM_LEXER_TOKEN_IDENTIFIER;
+    local_token.lexeme = local->name;
+    local_token.lexeme_length = strlen(local->name);
+    return vm_parser_user_symbol_tokens_equal(state, &local_token, token);
+}
+
+/// Finds an accepted local symbol in one procedure.
+///
+/// @param state Parser state carrying the active user-symbol policy.
+/// @param procedure Procedure metadata whose locals should be searched.
+/// @param token Candidate local name token.
+/// @return Matching local symbol, or NULL when none exists.
+static VmProcedureLocalSymbol *vm_parser_find_local_symbol(
+    VmParserState *state,
+    VmProcedureRange *procedure,
+    const VmLexerToken *token
+) {
+    size_t index = 0U;
+
+    if (procedure == NULL || token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < procedure->local_count; index += 1U) {
+        if (vm_parser_local_symbol_name_matches(state, &procedure->locals[index], token)) {
+            return &procedure->locals[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Returns whether a source location is inside the currently open procedure body before the current token.
+///
+/// @param state Parser state carrying open-procedure metadata.
+/// @param location Candidate declaration location.
+/// @param current_token Current LOCAL token used as the upper source bound.
+/// @return true when the candidate belongs to the current procedure body prefix.
+static bool vm_parser_location_is_in_current_procedure_prefix(
+    VmParserState *state,
+    VmLexerSourceLocation location,
+    const VmLexerToken *current_token
+) {
+    VmProcedureRange *procedure = vm_parser_current_procedure_range(state);
+
+    if (procedure == NULL || current_token == NULL) {
+        return false;
+    }
+
+    return location.offset > procedure->source_location.offset && location.offset < current_token->location.offset;
+}
+
+/// Finds a same-procedure label that collides with a LOCAL declaration.
+///
+/// @param state Parser state whose labels should be inspected.
+/// @param local_token Candidate local-name token.
+/// @param current_token Current LOCAL token used as the procedure-prefix upper bound.
+/// @return Matching code label, or NULL when no same-procedure collision exists.
+static VmCodeLabel *vm_parser_find_prior_same_procedure_label_for_local(
+    VmParserState *state,
+    const VmLexerToken *local_token,
+    const VmLexerToken *current_token
+) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->code_labels == NULL || local_token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->result->code_label_count; index += 1U) {
+        VmCodeLabel *label = &state->config->code_labels[index];
+        if (label->declaration_kind == VM_CODE_LABEL_DECLARATION_ORDINARY &&
+            vm_parser_location_is_in_current_procedure_prefix(state, label->source_location, current_token) &&
+            vm_parser_code_label_name_equals(label, local_token, state->user_symbol_case_policy)) {
+            return label;
+        }
+    }
+
+    return NULL;
+}
+
+/// Finds a current-procedure LOCAL that collides with a label declaration.
+///
+/// @param state Parser state to inspect.
+/// @param label_token Candidate label-name token.
+/// @return Matching local symbol, or NULL when no local collision exists.
+static VmProcedureLocalSymbol *vm_parser_find_current_procedure_local_for_label(
+    VmParserState *state,
+    const VmLexerToken *label_token
+) {
+    VmProcedureRange *procedure = vm_parser_current_procedure_range(state);
+
+    return vm_parser_find_local_symbol(state, procedure, label_token);
+}
+
+/// Parses a Phase 78 LOCAL array count inside square brackets.
+///
+/// The first LOCAL implementation accepts a positive numeric literal or visible
+/// numeric equate and rejects register-containing or compound count expressions
+/// with the LOCAL-specific invalid-local-count diagnostic.
+///
+/// @param state Parser state positioned at the token after '['.
+/// @param count_start_token Token used for diagnostics when the count is absent.
+/// @param out_count Receives the positive element count.
+/// @return true when a positive count and closing bracket were consumed.
+static bool vm_parser_parse_local_array_count(
+    VmParserState *state,
+    const VmLexerToken *count_start_token,
+    uint32_t *out_count
+) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+    int64_t value = 0;
+
+    if (out_count != NULL) {
+        *out_count = 0U;
+    }
+    if (state == NULL || out_count == NULL) {
+        return false;
+    }
+
+    if (token == NULL || token->kind == VM_LEXER_TOKEN_RIGHT_BRACKET || token->kind == VM_LEXER_TOKEN_NEWLINE || token->kind == VM_LEXER_TOKEN_EOF) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, count_start_token, "LOCAL array count must be a positive numeric literal or visible numeric equate.");
+        return false;
+    }
+
+    if (token->kind == VM_LEXER_TOKEN_NUMBER) {
+        if (token->number_is_negative || token->number_value == 0U || token->number_value > (uint64_t)UINT32_MAX) {
+            (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, token, "LOCAL array count must be a positive 32-bit value.");
+            return false;
+        }
+        value = (int64_t)token->number_value;
+        vm_parser_advance(state);
+    } else if (token->kind == VM_LEXER_TOKEN_IDENTIFIER) {
+        VmParserEquate *equate = vm_parser_find_equate(state, token);
+        if (equate == NULL || !equate->is_defined || equate->is_invalid || equate->value <= 0 || equate->value > (int64_t)UINT32_MAX) {
+            (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, token, "LOCAL array count equate must resolve to a positive 32-bit value.");
+            return false;
+        }
+        value = equate->value;
+        vm_parser_advance(state);
+    } else {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, token, "LOCAL array count must be a positive numeric literal or visible numeric equate; registers and expressions are not accepted in Phase 78 LOCAL metadata.");
+        return false;
+    }
+
+    token = vm_parser_current_token(state);
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_RIGHT_BRACKET) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT, token != NULL ? token : count_start_token, "LOCAL array count must be a single positive constant followed by ']'; compound expressions and registers remain deferred.");
+        return false;
+    }
+
+    vm_parser_advance(state);
+    *out_count = (uint32_t)value;
+    return true;
+}
+
+/// Returns whether a lexer-register token is the Phase 78 canonical `ch` LOCAL sample name.
+///
+/// The lexer recognizes `CH` as a register alias. The Phase 78 guide
+/// nevertheless lists `LOCAL ch:BYTE` as accepted syntax, so this narrow
+/// parser-only exception accepts that sample spelling while preserving the
+/// general reserved-word rule for other register names.
+///
+/// @param token Token to inspect.
+/// @return true only for the case-insensitive `CH` local-name exception.
+static bool vm_parser_is_phase78_ch_local_name_exception(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_REGISTER && vm_parser_token_equals(token, "CH");
+}
+
+/// Validates one Phase 78 LOCAL symbol name against procedure-scope collisions.
+///
+/// @param state Parser state to inspect and diagnose.
+/// @param procedure Current procedure metadata.
+/// @param name_token Candidate LOCAL name token.
+/// @param local_token Current LOCAL keyword token used for label-scope bounds.
+/// @return true when the local name is valid for this procedure.
+static bool vm_parser_validate_local_name(
+    VmParserState *state,
+    VmProcedureRange *procedure,
+    const VmLexerToken *name_token,
+    const VmLexerToken *local_token
+) {
+    VmProcedureLocalSymbol *existing_local = NULL;
+    VmCodeLabel *existing_label = NULL;
+    bool is_ch_exception = false;
+
+    if (state == NULL || procedure == NULL || name_token == NULL) {
+        return false;
+    }
+
+    is_ch_exception = vm_parser_is_phase78_ch_local_name_exception(name_token);
+    if ((name_token->kind != VM_LEXER_TOKEN_IDENTIFIER && name_token->kind != VM_LEXER_TOKEN_REGISTER) ||
+        name_token->lexeme_length == 0U || name_token->lexeme_length >= VM_SYMBOL_NAME_CAPACITY) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, name_token, "LOCAL declaration requires a symbol name that fits the fixed metadata table.");
+        return false;
+    }
+
+    if (!is_ch_exception && vm_parser_reject_reserved_symbol_declaration(state, name_token, "local symbol")) {
+        return false;
+    }
+
+    if (vm_parser_user_symbol_name_matches(state, name_token, procedure->name)) {
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL,
+            name_token,
+            procedure->source_location,
+            procedure->source_span_length,
+            "LOCAL symbol `%.*s` conflicts with procedure `%s` declared at line %u, column %u.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            procedure->name,
+            procedure->source_location.line,
+            procedure->source_location.column
+        );
+        return false;
+    }
+
+    existing_local = vm_parser_find_local_symbol(state, procedure, name_token);
+    if (existing_local != NULL) {
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL,
+            name_token,
+            existing_local->source_location,
+            existing_local->source_span_length,
+            "Duplicate LOCAL symbol `%.*s`; first declared at line %u, column %u.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing_local->source_location.line,
+            existing_local->source_location.column
+        );
+        return false;
+    }
+
+    existing_label = vm_parser_find_prior_same_procedure_label_for_local(state, name_token, local_token);
+    if (existing_label != NULL) {
+        (void)vm_parser_add_label_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL,
+            name_token,
+            existing_label->source_location,
+            existing_label->source_span_length,
+            "LOCAL symbol `%.*s` conflicts with same-procedure label `%s` declared at line %u, column %u.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing_label->name,
+            existing_label->source_location.line,
+            existing_label->source_location.column
+        );
+        return false;
+    }
+
+    return true;
+}
+
+/// Appends one accepted LOCAL symbol and recomputes the procedure's frame layout.
+///
+/// @param state Parser state used for diagnostics.
+/// @param procedure Procedure metadata to mutate.
+/// @param name_token Accepted local-name token.
+/// @param data_type Accepted local element type.
+/// @param element_count Accepted element count.
+/// @return true when the local metadata was stored.
+static bool vm_parser_add_local_symbol(
+    VmParserState *state,
+    VmProcedureRange *procedure,
+    const VmLexerToken *name_token,
+    VmSymbolDataType data_type,
+    uint32_t element_count
+) {
+    VmProcedureLocalSymbol *local = NULL;
+    uint8_t element_size = vm_symbol_data_type_size_bytes(data_type);
+    uint64_t total_size = (uint64_t)element_size * (uint64_t)element_count;
+
+    if (state == NULL || procedure == NULL || name_token == NULL || element_size == 0U || element_count == 0U ||
+        total_size == 0U || total_size > (uint64_t)INT32_MAX) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, name_token, "LOCAL declaration size is outside the Phase 78 metadata range.");
+        return false;
+    }
+
+    if (procedure->local_count >= VM_PROCEDURE_LOCAL_CAPACITY) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, name_token, "Procedure LOCAL metadata capacity exceeded.");
+        return false;
+    }
+
+    local = &procedure->locals[procedure->local_count];
+    memset(local, 0, sizeof(*local));
+    memcpy(local->name, name_token->lexeme, name_token->lexeme_length);
+    local->name[name_token->lexeme_length] = '\0';
+    local->data_type = data_type;
+    local->case_policy = vm_parser_symbol_case_policy(state->user_symbol_case_policy);
+    local->element_size_bytes = element_size;
+    local->alignment_bytes = vm_parser_local_alignment_bytes(element_size);
+    local->element_count = element_count;
+    local->size_bytes = (uint32_t)total_size;
+    local->source_location = name_token->location;
+    local->source_span_length = name_token->lexeme_length;
+    procedure->local_count += 1U;
+
+    if (!vm_parser_recompute_local_frame_layout(procedure)) {
+        procedure->local_count -= 1U;
+        memset(local, 0, sizeof(*local));
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, name_token, "Procedure LOCAL frame layout exceeds Phase 78 metadata limits.");
+        return false;
+    }
+
+    return true;
+}
+
+/// Parses one `name:TYPE` or `name[count]:TYPE` member inside a Phase 78 LOCAL declaration line.
+///
+/// @param state Parser state positioned at the local-name token.
+/// @param procedure Current procedure metadata.
+/// @param local_token Source LOCAL keyword token for diagnostics and scope bounds.
+/// @return true when one local member was accepted and the parser is positioned on a comma or line end.
+static bool vm_parser_parse_one_local_declarator(
+    VmParserState *state,
+    VmProcedureRange *procedure,
+    const VmLexerToken *local_token
+) {
+    const VmLexerToken *name_token = vm_parser_current_token(state);
+    const VmLexerToken *token = NULL;
+    VmSymbolDataType data_type = VM_SYMBOL_DATA_TYPE_BYTE;
+    uint32_t element_count = 1U;
+
+    if (!vm_parser_validate_local_name(state, procedure, name_token, local_token)) {
+        return false;
+    }
+    vm_parser_advance(state);
+
+    token = vm_parser_current_token(state);
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_LEFT_BRACKET) {
+        const VmLexerToken *count_start_token = vm_parser_peek_token(state, 1U);
+        vm_parser_advance(state);
+        if (!vm_parser_parse_local_array_count(state, count_start_token, &element_count)) {
+            return false;
+        }
+        token = vm_parser_current_token(state);
+    }
+
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_COLON) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, token != NULL ? token : name_token, "LOCAL declaration requires `name:TYPE` or `name[count]:TYPE` syntax.");
+        return false;
+    }
+    vm_parser_advance(state);
+
+    token = vm_parser_current_token(state);
+    if (token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, token != NULL ? token : name_token, "LOCAL declaration requires a type name after ':'.");
+        return false;
+    }
+    if (!vm_symbol_parse_data_type(token->lexeme, token->lexeme_length, &data_type) ||
+        !vm_parser_local_type_is_supported(data_type)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE,
+            token,
+            "LOCAL type `%.*s` is unsupported; accepted types are BYTE, SBYTE, WORD, SWORD, DWORD, and SDWORD.",
+            (int)token->lexeme_length,
+            token->lexeme != NULL ? token->lexeme : ""
+        );
+        return false;
+    }
+    vm_parser_advance(state);
+
+    token = vm_parser_current_token(state);
+    if (!(vm_parser_is_line_end_token(token) || (token != NULL && token->kind == VM_LEXER_TOKEN_COMMA))) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, token, "LOCAL declarations do not accept initializers or trailing tokens in Phase 78 metadata.");
+        return false;
+    }
+
+    return vm_parser_add_local_symbol(state, procedure, name_token, data_type, element_count);
+}
+
+/// Parses a Phase 78 LOCAL declaration line.
+///
+/// @param state Parser state positioned at the LOCAL keyword.
+/// @return true when the line was consumed; diagnostics may have been recorded.
+static bool vm_parser_parse_local_line(VmParserState *state) {
+    const VmLexerToken *local_token = vm_parser_current_token(state);
+    VmProcedureRange *procedure = vm_parser_current_procedure_range(state);
+
+    if (state == NULL || local_token == NULL || !vm_parser_token_equals(local_token, "LOCAL")) {
+        return false;
+    }
+
+    if (!state->open_procedure.is_set) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_LOCAL_OUTSIDE_PROCEDURE, local_token, "LOCAL declarations are valid only inside a PROC body.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (procedure == NULL) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, local_token, "LOCAL metadata requires an active procedure metadata record.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (procedure->has_executable_instruction) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_LOCAL_AFTER_INSTRUCTION, local_token, "LOCAL declarations must appear before executable instructions in the procedure body.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    vm_parser_advance(state);
+    if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, local_token, "LOCAL requires at least one declaration.");
+        (void)vm_parser_expect_line_end(state);
+        return true;
+    }
+
+    while (true) {
+        const VmLexerToken *token = NULL;
+        if (!vm_parser_parse_one_local_declarator(state, procedure, local_token)) {
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        token = vm_parser_current_token(state);
+        if (token != NULL && token->kind == VM_LEXER_TOKEN_COMMA) {
+            vm_parser_advance(state);
+            if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+                (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION, token, "LOCAL declaration has a trailing comma without another declaration.");
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            continue;
+        }
+
+        return vm_parser_expect_line_end(state);
+    }
+}
+
 /// Parses a label prefix and leaves the parser at any token after the label.
 ///
 /// @param state Parser state to mutate.
@@ -9847,6 +10418,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         return !state->diagnostic_overflowed;
     }
 
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LOCAL")) {
+        return vm_parser_parse_local_line(state) && !state->diagnostic_overflowed;
+    }
+
     if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
         return !state->diagnostic_overflowed;
     }
@@ -9873,6 +10448,9 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
         token = vm_parser_current_token(state);
         if (vm_parser_is_line_end_token(token)) {
             return vm_parser_expect_line_end(state);
+        }
+        if (token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LOCAL")) {
+            return vm_parser_parse_local_line(state) && !state->diagnostic_overflowed;
         }
     }
 
@@ -11446,6 +12024,18 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-call-form";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL:
             return "unsupported-external-call";
+        case VM_PARSER_DIAGNOSTIC_LOCAL_OUTSIDE_PROCEDURE:
+            return "local-outside-procedure";
+        case VM_PARSER_DIAGNOSTIC_LOCAL_AFTER_INSTRUCTION:
+            return "local-after-instruction";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE:
+            return "unsupported-local-type";
+        case VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION:
+            return "invalid-local-declaration";
+        case VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL:
+            return "duplicate-local-symbol";
+        case VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT:
+            return "invalid-local-count";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET:
             return "unsupported-call-target";
         case VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED:

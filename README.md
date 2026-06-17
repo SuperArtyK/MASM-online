@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 77 - PROC USES Runtime Save/Restore |
+| Current milestone | Phase 78 - LOCAL Declaration Parser and Frame Layout Metadata |
 
-Phase 77 executes supported direct `CALL` entry into `PROC USES` procedures, automatically saves listed `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI` registers on the checked simulated stack, restores them in reverse order on `RET`, preserves modeled flags and stack balance, and reports `stack-overflow` or `stack-underflow` when automatic save/restore cannot complete.
+Phase 78 accepts supported `LOCAL` declarations inside procedure bodies before executable instructions, stores procedure-scoped local metadata, computes deterministic negative-`EBP` frame offsets and rounded local-frame sizes, and reports targeted diagnostics for invalid `LOCAL` declarations. Runtime stack allocation for locals and local operand resolution remain deferred.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -46,7 +46,8 @@ At a high level, the current subset includes:
 - `code-fell-off-end` runtime diagnostics when execution reaches the end of the executable stream without explicit `RET` or Irvine32 `exit`;
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
-- direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
+- direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, `stack-overflow` and `stack-underflow` diagnostics, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
+- parser-only `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -56,7 +57,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- stack-frame creation, `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`;
+- runtime stack-frame creation for locals, local operand resolution/addressing, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

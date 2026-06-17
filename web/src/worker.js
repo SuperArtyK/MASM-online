@@ -72,7 +72,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 72 call-depth-limit settings required by the current Phase 72 protocol. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 72 call-depth-limit settings required by the current protocol. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},
@@ -88,7 +88,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 71E entry procedure end mode settings required by the current Phase 71E UI. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 71E entry procedure end mode settings required by the current UI. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},
@@ -104,7 +104,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 71D procedure fallthrough policy settings required by the current Phase 71D UI. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 71D procedure fallthrough policy settings required by the current UI. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},
@@ -120,7 +120,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 71A root RET mode settings required by the current Phase 71A UI. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 71A root RET mode settings required by the current UI. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},
@@ -136,7 +136,7 @@ function createRunSourceFunction(moduleInstance) {
           {
             kind: "ui-error",
             code: "stale-wasm-artifact",
-            message: "The loaded Wasm artifact does not expose Phase 59 instruction-limit settings required by the current Phase 61 UI. Rebuild web/dist with the Emscripten build script."
+            message: "The loaded Wasm artifact does not expose Phase 59 instruction-limit settings required by the current UI. Rebuild web/dist with the Emscripten build script."
           }
         ],
         registers: {},

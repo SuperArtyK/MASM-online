@@ -17,7 +17,7 @@
  * virtual Irvine32 registry metadata, Phase 68 call-target classification
  * metadata used by Phase 69 direct user-procedure CALL lowering, Phase 70
  * plain near RET lowering, Phase 74 RET imm16 lowering, Phase 75
- * PROC metadata diagnostics, and Phase 76 PROC USES parsing metadata.
+ * PROC metadata diagnostics, and Phase 76 PROC USES parsing metadata, and Phase 78 LOCAL declaration parser metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -264,6 +264,18 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_FORM,
     /// A direct CALL target names Windows/API, external, linker, import-library, or host-environment behavior.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_CALL,
+    /// A LOCAL declaration appeared outside a procedure body.
+    VM_PARSER_DIAGNOSTIC_LOCAL_OUTSIDE_PROCEDURE,
+    /// A LOCAL declaration appeared after an executable instruction in the same procedure.
+    VM_PARSER_DIAGNOSTIC_LOCAL_AFTER_INSTRUCTION,
+    /// A LOCAL declaration used a type outside the Phase 78 accepted local subset.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_LOCAL_TYPE,
+    /// A LOCAL declaration was malformed or used unsupported initializer syntax.
+    VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_DECLARATION,
+    /// A LOCAL symbol collided with another local, procedure name, parameter, or same-procedure label.
+    VM_PARSER_DIAGNOSTIC_DUPLICATE_LOCAL_SYMBOL,
+    /// A LOCAL array declaration used a missing, non-positive, or unsupported count expression.
+    VM_PARSER_DIAGNOSTIC_INVALID_LOCAL_COUNT,
     /// A CALL/INVOKE classifier query identified an unsupported target.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CALL_TARGET,
     /// The caller-provided code-label table was full.
@@ -338,6 +350,33 @@ typedef struct VmCodeLabel {
 /// Maximum byte length, including the NUL terminator, for one rejected PROC attribute name.
 #define VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_NAME_CAPACITY 32U
 
+/// Maximum number of Phase 78 LOCAL declarations preserved on one procedure metadata record.
+#define VM_PROCEDURE_LOCAL_CAPACITY 32U
+
+/// Describes one accepted Phase 78 procedure-local declaration.
+typedef struct VmProcedureLocalSymbol {
+    /// Null-terminated original source spelling of the local symbol name.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Declared scalar element type of the local symbol.
+    VmSymbolDataType data_type;
+    /// Source-order CASEMAP policy active at the local declaration.
+    VmSymbolCasePolicy case_policy;
+    /// Size in bytes of one declared element.
+    uint8_t element_size_bytes;
+    /// Alignment used for the local object, equal to min(element size, 4).
+    uint8_t alignment_bytes;
+    /// Number of elements represented by this local symbol.
+    uint32_t element_count;
+    /// Total bytes reserved by this local object before inter-object padding.
+    uint32_t size_bytes;
+    /// Negative EBP-relative byte offset of the first byte of this local object.
+    int32_t ebp_offset;
+    /// Source location of the local-name token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the local-name token in bytes.
+    size_t source_span_length;
+} VmProcedureLocalSymbol;
+
 /// Describes one unsupported PROC attribute token retained for diagnostics and future metadata expansion.
 typedef struct VmProcedureUnsupportedAttribute {
     /// Null-terminated original source spelling of the unsupported attribute or parameter token.
@@ -372,6 +411,12 @@ typedef struct VmProcedureRange {
     size_t unsupported_attribute_count;
     /// Reserved parser-owned unsupported-attribute metadata slots for future accepted PROC attribute phases.
     VmProcedureUnsupportedAttribute unsupported_attributes[VM_PROCEDURE_UNSUPPORTED_ATTRIBUTE_CAPACITY];
+    /// Number of Phase 78 LOCAL declarations stored for this procedure.
+    size_t local_count;
+    /// Total frame byte count after declaration-order layout and final 4-byte rounding.
+    uint32_t local_frame_size_bytes;
+    /// Parser-owned Phase 78 LOCAL metadata slots in declaration order.
+    VmProcedureLocalSymbol locals[VM_PROCEDURE_LOCAL_CAPACITY];
 } VmProcedureRange;
 
 /// Describes one accepted numeric equate declaration published for metadata consumers.
