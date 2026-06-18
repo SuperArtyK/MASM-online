@@ -12,7 +12,7 @@
 /** @typedef {Record<string, RegisterValue>} RegisterMap */
 /** @typedef {Record<string, boolean>} RegisterWriteMap */
 /** @typedef {Record<string, string>} RegisterRoleMap */
-/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number, procedure?: string}} SimulatorMessage */
+/** @typedef {{kind?: string, code?: string, message?: string, line?: number, column?: number, byteOffset?: number, spanLength?: number, procedure?: string, operationStage?: string, relevantByteCount?: number, relevantAddress?: number}} SimulatorMessage */
 /** @typedef {{symbol?: string, dataType?: string, widthBits?: number, byteOffset?: number, elementIndex?: number, oldHex?: string, oldUnsigned?: number, newHex?: string, newUnsigned?: number, sourceLine?: number, sourceText?: string}} MemoryChange */
 
 /** Zero-based EFLAGS bit index for the currently modeled carry flag. */
@@ -632,12 +632,41 @@ export function formatRegisters(registers, registerWrites, registerRoles) {
  * @param {SimulatorMessage} message Structured simulator message to inspect.
  * @returns {boolean} true when the procedure name should be rendered.
  */
+
+/**
+ * Formats optional automatic stack/frame diagnostic context.
+ *
+ * @param {SimulatorMessage} message Structured simulator message to inspect.
+ * @returns {string} Rendered automatic operation context, or an empty string.
+ */
+function formatAutomaticOperationContext(message) {
+  if (!message) {
+    return "";
+  }
+
+  const parts = [];
+  if (typeof message.operationStage === "string" && message.operationStage.length > 0) {
+    parts.push(`operation ${message.operationStage}`);
+  }
+  if (Number.isFinite(message.relevantByteCount)) {
+    parts.push(`bytes ${message.relevantByteCount}`);
+  }
+  if (Number.isFinite(message.relevantAddress)) {
+    parts.push(`address ${message.relevantAddress}`);
+  }
+
+  return parts.length > 0 ? `, ${parts.join(", ")}` : "";
+}
+
 function shouldRenderProcedureContext(message) {
   return Boolean(
     message &&
       typeof message.procedure === "string" &&
       message.procedure.length > 0 &&
-      (message.code === "stack-overflow" || message.code === "stack-underflow")
+      (message.code === "stack-overflow" ||
+        message.code === "stack-underflow" ||
+        message.code === "invalid-frame-state" ||
+        message.code === "local-frame-entry-unsupported")
   );
 }
 
@@ -663,10 +692,11 @@ export function formatSimulatorMessages(messages) {
       : "";
     const location = safeMessage.line ? ` line ${safeMessage.line}${safeMessage.column ? `, column ${safeMessage.column}` : ""}${sourceSpan}` : "";
     const procedureContext = shouldRenderProcedureContext(safeMessage) ? `${location ? "," : ""} procedure ${safeMessage.procedure}` : "";
+    const automaticOperationContext = formatAutomaticOperationContext(safeMessage);
     if (previousGroup !== null && shouldSeparateSimulatorMessageGroups(previousGroup, group)) {
       lines.push("");
     }
-    lines.push(`[${safeMessage.kind || "message"}] ${safeMessage.code || "unknown"}${location}${procedureContext}: ${safeMessage.message || ""}`);
+    lines.push(`[${safeMessage.kind || "message"}] ${safeMessage.code || "unknown"}${location}${procedureContext}${automaticOperationContext}: ${safeMessage.message || ""}`);
     previousGroup = group;
   });
 

@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 77 PROC USES runtime save/restore coverage.
+ * @brief Unit tests for the VM executor through Phase 79 LOCAL stack allocation and lifetime coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore. They intentionally avoid parser, Irvine32
+ * Phase 77 PROC USES runtime save/restore, and Phase 79 automatic LOCAL stack allocation/lifetime. They intentionally avoid parser, Irvine32
  * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
  * terminator.
  */
@@ -4316,8 +4316,8 @@ static int test_phase77_proc_uses_runtime_save_restore(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 11U, "ret", 5U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 6U, false, true, 2U, {VM_REGISTER_EBX, VM_REGISTER_ESI}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 6U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 2U, .uses_registers = {VM_REGISTER_EBX, VM_REGISTER_ESI}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 77 USES save/restore test");
@@ -4376,8 +4376,8 @@ static int test_phase77_proc_uses_eax_listed_preserves_return_register(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 9U, "ret", 3U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 4U, false, true, 1U, {VM_REGISTER_EAX}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 4U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 1U, .uses_registers = {VM_REGISTER_EAX}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for EAX USES test");
@@ -4411,8 +4411,8 @@ static int test_phase77_proc_uses_error_paths(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
     };
     const VmExecProcedureBoundary overflow_boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 2U, {VM_REGISTER_EBX, VM_REGISTER_ESI}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 2U, .uses_registers = {VM_REGISTER_EBX, VM_REGISTER_ESI}}
     };
     const VmIrInstruction underflow_program[] = {
         {VM_IR_OPCODE_CALL, {VM_IR_OPERAND_BRANCH_TARGET, 0U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "call Helper", 0U},
@@ -4422,14 +4422,14 @@ static int test_phase77_proc_uses_error_paths(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 10U, "ret", 4U}
     };
     const VmExecProcedureBoundary underflow_boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 5U, false, true, 1U, {VM_REGISTER_EBX}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 5U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 1U, .uses_registers = {VM_REGISTER_EBX}}
     };
     const VmIrInstruction entry_program[] = {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 77U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "mov eax, 77", 0U}
     };
     const VmExecProcedureBoundary entry_boundaries[] = {
-        {0U, 1U, true, true, 1U, {VM_REGISTER_EAX}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 1U, .uses_registers = {VM_REGISTER_EAX}}
     };
 
     failures += expect_status(vm_init(&overflow_vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for USES overflow test");
@@ -4482,6 +4482,164 @@ static int test_phase77_proc_uses_error_paths(void) {
     vm_deinit(&overflow_vm);
     vm_deinit(&underflow_vm);
     vm_deinit(&entry_vm);
+    return failures;
+}
+
+
+/// Verifies Phase 79 selected-entry LOCAL frames create descriptors and release once.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase79_selected_entry_local_frame_lifetime(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebp = 0U;
+    uint32_t esp = 0U;
+    uint32_t local_dword = 0xFFFFFFFFU;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x1234U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov eax, 1234h", 0U},
+        {VM_IR_OPCODE_LEAVE, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 5U, "leave", 1U},
+        {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "ret", 2U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {
+            .start_instruction_index = 0U,
+            .end_instruction_index = 3U,
+            .is_selected_entry = true,
+            .has_executable_instruction = true,
+            .uses_register_count = 0U,
+            .uses_registers = {0},
+            .procedure_name = "main",
+            .source_line = 3U,
+            .source_column = 1U,
+            .source_byte_offset = 14U,
+            .source_span_length = 4U,
+            .local_count = 1U,
+            .local_frame_size_bytes = 4U,
+            .locals = {
+                {
+                    .local_name = "temp",
+                    .source_line = 4U,
+                    .source_column = 11U,
+                    .source_byte_offset = 28U,
+                    .source_span_length = 4U,
+                    .element_size_bytes = 4U,
+                    .element_count = 1U,
+                    .total_size_bytes = 4U,
+                    .ebp_offset = -4
+                }
+            }
+        }
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 79 selected-entry LOCAL test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 79 selected-entry LOCAL program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "Phase 79 LOCAL boundary metadata should configure");
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "selected-entry LOCAL setup should occur before first instruction");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after Phase 79 local setup should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read after Phase 79 local setup should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after Phase 79 local setup should succeed"));
+    failures += expect_u32(eax, 0x1234U, "first executable instruction should still execute after LOCAL setup");
+    failures += expect_u32(ebp, VM_MEMORY_DEFAULT_STACK_TOP - 4U, "selected-entry LOCAL frame should install EBP at saved-EBP slot");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP - 8U, "selected-entry LOCAL frame should reserve saved EBP and local bytes");
+    failures += (vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 8U, &local_dword, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("LOCAL dword read after Phase 79 setup should succeed"));
+    failures += expect_u32(local_dword, 0U, "selected-entry LOCAL visible bytes should be initialized to deterministic zero");
+    failures += expect_size(vm.active_local_frame_count, 1U, "selected-entry LOCAL setup should create one active frame");
+    failures += expect_size(vm.local_descriptor_count, 1U, "selected-entry LOCAL setup should create one local descriptor");
+    if (vm.local_descriptor_count >= 1U) {
+        failures += expect_u32(strcmp(vm.local_descriptors[0].procedure_name, "main") == 0 ? 1U : 0U, 1U, "LOCAL descriptor should copy procedure name");
+        failures += expect_u32(strcmp(vm.local_descriptors[0].local_name, "temp") == 0 ? 1U : 0U, 1U, "LOCAL descriptor should copy local name");
+        failures += expect_u32(vm.local_descriptors[0].runtime_base_address, VM_MEMORY_DEFAULT_STACK_TOP - 8U, "LOCAL descriptor should record EBP-relative runtime address");
+        failures += expect_u32((uint32_t)vm.local_descriptors[0].state, (uint32_t)VM_EXEC_LOCAL_FRAME_STATE_ACTIVE, "LOCAL descriptor should start active");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "source-level LEAVE should release the automatic LOCAL frame once");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read after Phase 79 LEAVE should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after Phase 79 LEAVE should succeed"));
+    failures += expect_u32(ebp, 0U, "LEAVE should restore saved EBP from the automatic LOCAL frame");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "LEAVE should restore ESP past the saved EBP slot");
+    failures += expect_size(vm.active_local_frame_count, 1U, "LEAVE should retain released frame for RET acknowledgement");
+    if (vm.local_descriptor_count >= 1U) {
+        failures += expect_u32((uint32_t)vm.local_descriptors[0].state, (uint32_t)VM_EXEC_LOCAL_FRAME_STATE_INACTIVE, "LEAVE should mark descriptor inactive");
+    }
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_OK, "root RET should acknowledge released LOCAL frame without double release");
+    failures += expect_size(vm.active_local_frame_count, 0U, "root RET should pop the released LOCAL frame slot");
+    failures += expect_size(vm.local_descriptor_count, 0U, "RET acknowledgement should discard descriptors after inactive lifetime was observable");
+    failures += expect_u32(vm.halted ? 1U : 0U, 1U, "root RET should halt after acknowledging released LOCAL frame");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_INVALID_FRAME_STATE), "invalid-frame-state") == 0 ? 1U : 0U, 1U, "executor status helper should name invalid-frame-state");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED), "local-frame-entry-unsupported") == 0 ? 1U : 0U, 1U, "executor status helper should name local-frame-entry-unsupported");
+
+    vm_deinit(&vm);
+    return failures;
+}
+
+/// Verifies LOCAL descriptor-capacity preflight does not partially mutate selected-entry setup.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase79_local_descriptor_capacity_preflight_rolls_back(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    uint32_t ebp = 0U;
+    uint32_t esp = 0U;
+    uint32_t saved_slot = 0U;
+    const VmIrInstruction program[] = {
+        {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 0x5678U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 4U, "mov eax, 5678h", 0U}
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {
+            .start_instruction_index = 0U,
+            .end_instruction_index = 1U,
+            .is_selected_entry = true,
+            .has_executable_instruction = true,
+            .uses_register_count = 0U,
+            .uses_registers = {0},
+            .procedure_name = "main",
+            .source_line = 3U,
+            .source_column = 1U,
+            .source_byte_offset = 14U,
+            .source_span_length = 4U,
+            .local_count = 1U,
+            .local_frame_size_bytes = 4U,
+            .locals = {
+                {
+                    .local_name = "temp",
+                    .source_line = 4U,
+                    .source_column = 11U,
+                    .source_byte_offset = 28U,
+                    .source_span_length = 4U,
+                    .element_size_bytes = 4U,
+                    .element_count = 1U,
+                    .total_size_bytes = 4U,
+                    .ebp_offset = -4
+                }
+            }
+        }
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 79 descriptor-capacity preflight test");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 79 descriptor-capacity program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "Phase 79 descriptor-capacity boundary metadata should configure");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EBP, 0x12345678U) ? 0 : record_failure("EBP setup before descriptor-capacity test should succeed"));
+    vm.local_descriptor_count = VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY;
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_INVALID_FRAME_STATE, "descriptor capacity exhaustion should fail before selected-entry LOCAL setup mutation");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after descriptor-capacity failure should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EBP, &ebp) ? 0 : record_failure("EBP read after descriptor-capacity failure should succeed"));
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_ESP, &esp) ? 0 : record_failure("ESP read after descriptor-capacity failure should succeed"));
+    failures += expect_u32(eax, 0U, "descriptor-capacity failure should not execute the first body instruction");
+    failures += expect_u32(ebp, 0x12345678U, "descriptor-capacity failure should preserve EBP before frame setup");
+    failures += expect_u32(esp, VM_MEMORY_DEFAULT_STACK_TOP, "descriptor-capacity failure should preserve ESP before frame setup");
+    failures += expect_size(vm.active_local_frame_count, 0U, "descriptor-capacity failure should not create an active LOCAL frame");
+    failures += expect_size(vm.local_descriptor_count, (size_t)VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY, "descriptor-capacity failure should not mutate descriptor count");
+    failures += expect_size(vm.instruction_pointer, 0U, "descriptor-capacity failure should not advance the instruction pointer");
+    failures += (vm_memory_read_u32(&vm.memory, VM_MEMORY_DEFAULT_STACK_TOP - 4U, &saved_slot, NULL) == VM_MEMORY_STATUS_OK ? 0 : record_failure("saved-EBP slot read should succeed after descriptor-capacity failure"));
+    failures += expect_u32(saved_slot, 0U, "descriptor-capacity failure should not write the saved EBP slot");
+    failures += expect_u32(strcmp(vm.last_diagnostic.operation_stage, "local-descriptor-capacity") == 0 ? 1U : 0U, 1U, "descriptor-capacity failure should report the preflight operation stage");
+
+    vm_deinit(&vm);
     return failures;
 }
 
@@ -4666,8 +4824,8 @@ static int test_phase74_ret_imm16_edges_and_failures(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "ret 0", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
     const VmIrInstruction invalid_token_program[] = {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 16U, 8U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret 8", 0U}
@@ -4737,8 +4895,8 @@ static int test_phase71_non_root_ret_with_valid_token_preserves_phase70_path(voi
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for non-root RET preservation test");
@@ -4825,7 +4983,7 @@ static int test_phase71_root_ret_terminates_without_stack_read(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71 root RET test");
@@ -4874,7 +5032,7 @@ static int test_phase71a_strict_root_ret_rejects_without_stack_read(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    ret", 4U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71A strict root RET test");
@@ -4923,7 +5081,7 @@ static int test_phase71_invalid_root_metadata_diagnostic(void) {
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "ret", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for invalid root metadata test");
@@ -4971,8 +5129,8 @@ static int test_phase71_called_helper_fallthrough_diagnostic(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 3U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 3U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for helper fallthrough test");
@@ -5030,8 +5188,8 @@ static int test_phase71d_procedure_fallthrough_error_stops_before_destination(vo
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough error test");
@@ -5071,8 +5229,8 @@ static int test_phase71d_procedure_fallthrough_off_suppresses_warning(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for procedure fallthrough off test");
@@ -5110,8 +5268,8 @@ static int test_phase71d_fallthrough_into_helper_ret_uses_root_code_stream(void)
         {VM_IR_OPCODE_RET, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "ret", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 3U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 3U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for fallthrough RET root-stream test");
@@ -5160,7 +5318,7 @@ static int test_phase71c_empty_selected_entry_falls_off_code_end(void) {
     const VmExecDelta *delta = NULL;
     const VmExecDiagnostic *diagnostic = NULL;
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 0U, true, false, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 0U, .is_selected_entry = true, .has_executable_instruction = false, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for empty selected-entry falloff test");
@@ -5204,7 +5362,7 @@ static int test_phase71c_selected_entry_falloff_reports_code_end(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 1U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 3U, "    mov eax, 1", 0U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry code-end falloff test");
@@ -5255,8 +5413,8 @@ static int test_phase71c_selected_entry_falls_through_to_later_procedure(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 6U, "    mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for selected-entry fallthrough test");
@@ -5299,8 +5457,8 @@ static int test_phase71e_stop_at_entry_end_prevents_later_procedure_execution(vo
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 7U, "mov ebx, 2", 1U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 1U, true, true, 0U, {0}},
-        {1U, 2U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 1U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 1U, .end_instruction_index = 2U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71E stop-at-entry-end test");
@@ -5342,8 +5500,8 @@ static int test_phase71e_taken_branch_to_entry_boundary_does_not_auto_stop(void)
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 3U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 3U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for Phase 71E branch-boundary stop test");
@@ -5373,7 +5531,7 @@ static int test_phase71e_empty_selected_entry_succeeds_only_in_stop_mode(void) {
     Vm default_vm;
     Vm stop_vm;
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 0U, true, false, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 0U, .is_selected_entry = true, .has_executable_instruction = false, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&default_vm, NULL), VM_EXEC_STATUS_OK, "default empty-entry VM should initialize");
@@ -5424,8 +5582,8 @@ static int test_phase71e_stop_mode_does_not_suppress_helper_fallthrough(void) {
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 7U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov eax, 7", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 3U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 3U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "VM should initialize for stop-mode helper fallthrough test");
@@ -5468,8 +5626,8 @@ static int test_phase71f_exit_terminator_does_not_emit_procedure_fallthrough(voi
         {VM_IR_OPCODE_MOV, {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EBX, 0U, VM_IR_RELOCATION_NONE}, {VM_IR_OPERAND_IMMEDIATE, 32U, 2U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE}, "main.asm", 8U, "mov ebx, 2", 2U}
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 2U, true, true, 0U, {0}},
-        {2U, 3U, false, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 2U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}},
+        {.start_instruction_index = 2U, .end_instruction_index = 3U, .is_selected_entry = false, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 71F EXIT fallthrough regression test");
@@ -6385,6 +6543,8 @@ int main(void) {
     failures += test_phase77_proc_uses_runtime_save_restore();
     failures += test_phase77_proc_uses_eax_listed_preserves_return_register();
     failures += test_phase77_proc_uses_error_paths();
+    failures += test_phase79_selected_entry_local_frame_lifetime();
+    failures += test_phase79_local_descriptor_capacity_preflight_rolls_back();
     failures += test_phase70_ret_returns_to_call_successor();
     failures += test_phase70_ret_invalid_token_rolls_back();
     failures += test_phase74_ret_imm16_cleans_arguments();
@@ -6425,6 +6585,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 77 PROC USES runtime save/restore coverage passed.");
+    puts("Executor tests through Phase 79 LOCAL stack allocation and lifetime coverage passed.");
     return 0;
 }

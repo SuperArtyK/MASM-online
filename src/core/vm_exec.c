@@ -16,7 +16,7 @@
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. ENTER, procedure-frame creation, far returns, and non-exit
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths. ENTER, source-level LOCAL operands, far returns, and non-exit
  * Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -28,6 +28,7 @@
 #include "vm_exec.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 /// Number of source-visible canonical registers captured for register deltas.
@@ -329,6 +330,12 @@ static void vm_exec_clear_procedure_runtime_metadata(Vm *vm) {
     vm->active_uses_frame_count = 0U;
     vm->root_code_stream_active = false;
     vm->selected_entry_end_stop_eligible = true;
+    memset(vm->active_local_frames, 0, sizeof(vm->active_local_frames));
+    vm->active_local_frame_count = 0U;
+    memset(vm->local_descriptors, 0, sizeof(vm->local_descriptors));
+    vm->local_descriptor_count = 0U;
+    vm->next_local_frame_id = 1U;
+    vm->selected_entry_local_frame_created = false;
     vm_exec_clear_procedure_fallthrough_diagnostic(&vm->last_procedure_fallthrough_diagnostic);
 }
 
@@ -1003,6 +1010,447 @@ static VmExecStatus vm_exec_write_u32_at_address(
     return VM_EXEC_STATUS_OK;
 }
 
+/// Copies a short NUL-terminated identifier into a fixed executor buffer.
+///
+/// @param destination Destination buffer.
+/// @param destination_size Destination buffer size in bytes.
+/// @param source Optional source string.
+static void vm_exec_copy_short_string(char *destination, size_t destination_size, const char *source) {
+    if (destination == NULL || destination_size == 0U) {
+        return;
+    }
+    destination[0] = '\0';
+    if (source != NULL) {
+        snprintf(destination, destination_size, "%s", source);
+    }
+}
+
+/// Returns whether a procedure boundary declares Phase 78 LOCAL metadata.
+///
+/// @param boundary Procedure boundary to inspect.
+/// @return true when Phase 79 must create an automatic LOCAL frame for it.
+static bool vm_exec_procedure_boundary_has_locals(const VmExecProcedureBoundary *boundary) {
+    return boundary != NULL && boundary->local_count > 0U && boundary->local_frame_size_bytes > 0U;
+}
+
+/// Records a Phase 79 frame diagnostic with procedure, stage, byte, and address context.
+///
+/// @param vm VM whose diagnostic should be updated.
+/// @param status Executor status to record.
+/// @param instruction Optional instruction associated with the failure.
+/// @param boundary Optional procedure boundary for procedure context.
+/// @param stage Optional operation stage string.
+/// @param byte_count Optional relevant byte count; zero means absent.
+/// @param address Optional relevant address.
+/// @param has_address Whether @p address is meaningful.
+static void vm_exec_set_local_frame_diagnostic(
+    Vm *vm,
+    VmExecStatus status,
+    const VmIrInstruction *instruction,
+    const VmExecProcedureBoundary *boundary,
+    const char *stage,
+    uint32_t byte_count,
+    uint32_t address,
+    bool has_address
+) {
+    vm_exec_set_diagnostic(vm, status, instruction);
+    if (vm == NULL) {
+        return;
+    }
+    if (boundary != NULL && boundary->procedure_name[0] != '\0') {
+        vm->last_diagnostic.has_procedure_name = true;
+        vm_exec_copy_short_string(vm->last_diagnostic.procedure_name, sizeof(vm->last_diagnostic.procedure_name), boundary->procedure_name);
+    }
+    if (stage != NULL && stage[0] != '\0') {
+        vm->last_diagnostic.has_operation_stage = true;
+        vm_exec_copy_short_string(vm->last_diagnostic.operation_stage, sizeof(vm->last_diagnostic.operation_stage), stage);
+    }
+    if (byte_count > 0U) {
+        vm->last_diagnostic.has_relevant_byte_count = true;
+        vm->last_diagnostic.relevant_byte_count = byte_count;
+    }
+    if (has_address) {
+        vm->last_diagnostic.has_relevant_address = true;
+        vm->last_diagnostic.relevant_address = address;
+    }
+}
+
+/// Returns whether a byte stack range can be reserved without crossing the active stack region.
+///
+/// @param vm VM instance whose stack region should be inspected.
+/// @param esp Stack pointer before reservation.
+/// @param byte_count Number of bytes to reserve.
+/// @return true when the complete byte range is writable stack storage.
+static bool vm_exec_stack_can_reserve_bytes(const Vm *vm, uint32_t esp, uint32_t byte_count) {
+    const VmMemoryRegion *stack_region = NULL;
+    uint64_t stack_limit = 0U;
+    uint64_t low_address = 0U;
+
+    if (vm == NULL || byte_count == 0U) {
+        return false;
+    }
+    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
+    if (stack_region == NULL || stack_region->size == 0U ||
+        !vm_memory_region_has_permission(stack_region, VM_MEMORY_PERMISSION_WRITE)) {
+        return false;
+    }
+    stack_limit = (uint64_t)stack_region->base + (uint64_t)stack_region->size;
+    if (stack_limit > (uint64_t)UINT32_MAX || (uint64_t)esp > stack_limit || (uint64_t)byte_count > (uint64_t)esp) {
+        return false;
+    }
+    low_address = (uint64_t)esp - (uint64_t)byte_count;
+    return low_address >= (uint64_t)stack_region->base;
+}
+
+/// Computes selected-entry automatic LOCAL frame footprint in bytes.
+///
+/// @param boundary Selected-entry procedure boundary.
+/// @return Saved EBP plus rounded LOCAL storage byte count.
+static uint32_t vm_exec_selected_entry_local_footprint(const VmExecProcedureBoundary *boundary) {
+    if (!vm_exec_procedure_boundary_has_locals(boundary) || boundary->local_frame_size_bytes > UINT32_MAX - 4U) {
+        return 0U;
+    }
+    return boundary->local_frame_size_bytes + 4U;
+}
+
+/// Computes direct CALL automatic stack footprint in bytes.
+///
+/// @param boundary Called procedure boundary.
+/// @return Return token, USES slots, saved EBP, and rounded LOCAL byte count.
+static uint32_t vm_exec_direct_call_combined_footprint(const VmExecProcedureBoundary *boundary) {
+    uint32_t footprint = 4U;
+    if (boundary == NULL) {
+        return footprint;
+    }
+    if (boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY ||
+        boundary->uses_register_count > ((size_t)UINT32_MAX / 4U)) {
+        return 0U;
+    }
+    footprint += (uint32_t)(boundary->uses_register_count * 4U);
+    if (vm_exec_procedure_boundary_has_locals(boundary)) {
+        if (footprint > UINT32_MAX - 4U || footprint + 4U > UINT32_MAX - boundary->local_frame_size_bytes) {
+            return 0U;
+        }
+        footprint += 4U + boundary->local_frame_size_bytes;
+    }
+    return footprint;
+}
+
+/// Returns the top retained LOCAL frame if it belongs to @p boundary.
+///
+/// @param vm VM instance containing active frame metadata.
+/// @param boundary Procedure boundary to match.
+/// @return Mutable top frame, or NULL when no matching frame exists.
+static VmExecLocalFrame *vm_exec_top_local_frame_for_boundary(Vm *vm, const VmExecProcedureBoundary *boundary) {
+    VmExecLocalFrame *frame = NULL;
+    if (vm == NULL || boundary == NULL || vm->active_local_frame_count == 0U) {
+        return NULL;
+    }
+    frame = &vm->active_local_frames[vm->active_local_frame_count - 1U];
+    if (frame->procedure_start_instruction_index != boundary->start_instruction_index) {
+        return NULL;
+    }
+    return frame;
+}
+
+/// Returns whether one active LOCAL frame matches the current procedure boundary.
+///
+/// @param frame Candidate active frame.
+/// @param boundary Candidate procedure boundary.
+/// @return true when the frame actively owns the boundary.
+static bool vm_exec_local_frame_matches_boundary(const VmExecLocalFrame *frame, const VmExecProcedureBoundary *boundary) {
+    return frame != NULL && boundary != NULL && frame->state == VM_EXEC_LOCAL_FRAME_STATE_ACTIVE &&
+           frame->procedure_start_instruction_index == boundary->start_instruction_index;
+}
+
+/// Marks descriptors associated with one frame identity inactive.
+///
+/// @param vm VM instance containing descriptor metadata.
+/// @param frame_id Frame identity to mark inactive.
+static void vm_exec_deactivate_local_descriptors(Vm *vm, uint32_t frame_id) {
+    size_t index = 0U;
+    if (vm == NULL || frame_id == 0U) {
+        return;
+    }
+    for (index = 0U; index < vm->local_descriptor_count; index += 1U) {
+        if (vm->local_descriptors[index].frame_id == frame_id) {
+            vm->local_descriptors[index].state = VM_EXEC_LOCAL_FRAME_STATE_INACTIVE;
+        }
+    }
+}
+
+/// Returns whether descriptor slots are available for one LOCAL frame.
+///
+/// @param vm VM instance containing descriptor metadata.
+/// @param boundary Procedure metadata whose locals would receive descriptors.
+/// @return true when setup can create every required descriptor before mutation.
+static bool vm_exec_can_create_local_descriptors(const Vm *vm, const VmExecProcedureBoundary *boundary) {
+    if (vm == NULL || boundary == NULL || boundary->local_count > (size_t)VM_EXEC_PROCEDURE_LOCAL_CAPACITY) {
+        return false;
+    }
+    return boundary->local_count <= (size_t)VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY - vm->local_descriptor_count;
+}
+
+/// Removes descriptors associated with one frame identity after the frame is no longer observable.
+///
+/// @param vm VM instance containing descriptor metadata.
+/// @param frame_id Frame identity whose descriptors should be discarded.
+static void vm_exec_remove_local_descriptors(Vm *vm, uint32_t frame_id) {
+    size_t read_index = 0U;
+    size_t write_index = 0U;
+    if (vm == NULL || frame_id == 0U) {
+        return;
+    }
+    for (read_index = 0U; read_index < vm->local_descriptor_count; read_index += 1U) {
+        if (vm->local_descriptors[read_index].frame_id == frame_id) {
+            continue;
+        }
+        if (write_index != read_index) {
+            vm->local_descriptors[write_index] = vm->local_descriptors[read_index];
+        }
+        write_index += 1U;
+    }
+    {
+        size_t new_count = write_index;
+        while (write_index < vm->local_descriptor_count) {
+            memset(&vm->local_descriptors[write_index], 0, sizeof(vm->local_descriptors[write_index]));
+            write_index += 1U;
+        }
+        vm->local_descriptor_count = new_count;
+    }
+}
+
+/// Pops the retained top LOCAL frame after RET/exit has acknowledged its release.
+///
+/// @param vm VM instance to mutate.
+static void vm_exec_pop_released_local_frame(Vm *vm) {
+    uint32_t frame_id = 0U;
+    if (vm == NULL || vm->active_local_frame_count == 0U) {
+        return;
+    }
+    frame_id = vm->active_local_frames[vm->active_local_frame_count - 1U].frame_id;
+    vm_exec_remove_local_descriptors(vm, frame_id);
+    memset(&vm->active_local_frames[vm->active_local_frame_count - 1U], 0, sizeof(vm->active_local_frames[vm->active_local_frame_count - 1U]));
+    vm->active_local_frame_count -= 1U;
+}
+
+/// Creates runtime descriptors for one newly active automatic LOCAL frame.
+///
+/// @param vm VM instance to mutate.
+/// @param boundary Procedure metadata that owns the locals.
+/// @param frame Active frame receiving descriptors.
+/// @return OK when all descriptors were created.
+static VmExecStatus vm_exec_create_local_descriptors(Vm *vm, const VmExecProcedureBoundary *boundary, const VmExecLocalFrame *frame) {
+    size_t index = 0U;
+    if (vm == NULL || boundary == NULL || frame == NULL || !vm_exec_can_create_local_descriptors(vm, boundary)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    for (index = 0U; index < boundary->local_count; index += 1U) {
+        const VmExecProcedureLocal *local = &boundary->locals[index];
+        VmExecLocalDescriptor *descriptor = &vm->local_descriptors[vm->local_descriptor_count];
+        int64_t runtime_address = (int64_t)frame->frame_base_address + (int64_t)local->ebp_offset;
+        if (runtime_address < 0 || runtime_address > (int64_t)UINT32_MAX) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        memset(descriptor, 0, sizeof(*descriptor));
+        vm_exec_copy_short_string(descriptor->procedure_name, sizeof(descriptor->procedure_name), boundary->procedure_name);
+        vm_exec_copy_short_string(descriptor->local_name, sizeof(descriptor->local_name), local->local_name);
+        descriptor->source_line = local->source_line;
+        descriptor->source_column = local->source_column;
+        descriptor->source_byte_offset = local->source_byte_offset;
+        descriptor->source_span_length = local->source_span_length;
+        descriptor->frame_id = frame->frame_id;
+        descriptor->runtime_base_address = (uint32_t)runtime_address;
+        descriptor->byte_size = local->total_size_bytes;
+        descriptor->element_size_bytes = local->element_size_bytes;
+        descriptor->element_count = local->element_count;
+        descriptor->ebp_offset = local->ebp_offset;
+        descriptor->state = VM_EXEC_LOCAL_FRAME_STATE_ACTIVE;
+        vm->local_descriptor_count += 1U;
+    }
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Initializes visible LOCAL storage bytes to deterministic zero values.
+///
+/// @param vm VM instance whose memory should be written.
+/// @param instruction Instruction associated with diagnostics.
+/// @param boundary Procedure metadata that owns locals.
+/// @param frame Active frame identifying the reserved byte range.
+/// @return OK when all visible bytes were written.
+static VmExecStatus vm_exec_initialize_local_visible_bytes(Vm *vm, const VmIrInstruction *instruction, const VmExecProcedureBoundary *boundary, const VmExecLocalFrame *frame) {
+    uint32_t offset = 0U;
+    if (vm == NULL || frame == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    for (offset = 0U; offset < frame->local_frame_size_bytes; offset += 1U) {
+        uint32_t address = frame->frame_base_address - 1U - offset;
+        VmMemoryDiagnostic memory_diagnostic;
+        VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
+        memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
+        memory_status = vm_memory_write_u8(&vm->memory, address, 0U, &memory_diagnostic);
+        vm_exec_record_memory_access(vm, VM_EXEC_MEMORY_ACCESS_WRITE, address, 8U, memory_status);
+        if (!vm_memory_status_succeeded(memory_status)) {
+            vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, boundary, "local-frame-byte-initialization", frame->local_frame_size_bytes, address, true);
+            return VM_EXEC_STATUS_STACK_OVERFLOW;
+        }
+    }
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Sets up one automatic Phase 79 LOCAL frame after complete preflight.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction associated with diagnostics.
+/// @param boundary Procedure whose locals should be allocated.
+/// @param stage Diagnostic operation stage.
+/// @return OK when saved EBP, new EBP/ESP, zeroed locals, and descriptors committed.
+static VmExecStatus vm_exec_setup_local_frame(Vm *vm, const VmIrInstruction *instruction, const VmExecProcedureBoundary *boundary, const char *stage) {
+    uint32_t esp = 0U;
+    uint32_t ebp = 0U;
+    uint32_t saved_ebp_address = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    VmExecLocalFrame frame;
+
+    if (vm == NULL || instruction == NULL || !vm_exec_procedure_boundary_has_locals(boundary)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (vm->active_local_frame_count >= (size_t)VM_MAX_CALL_DEPTH_LIMIT || !vm_exec_can_create_local_descriptors(vm, boundary)) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, boundary, "local-descriptor-capacity", boundary->local_frame_size_bytes, 0U, false);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    memset(&frame, 0, sizeof(frame));
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp) || !vm_cpu_read_register(&vm->cpu, VM_REGISTER_EBP, &ebp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    if (!vm_exec_stack_can_reserve_bytes(vm, esp, boundary->local_frame_size_bytes + 4U)) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, boundary, stage, boundary->local_frame_size_bytes + 4U, esp, true);
+        return VM_EXEC_STATUS_STACK_OVERFLOW;
+    }
+    saved_ebp_address = esp - 4U;
+    status = vm_exec_write_u32_at_address(vm, instruction, saved_ebp_address, ebp);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, boundary, stage, boundary->local_frame_size_bytes + 4U, saved_ebp_address, true);
+        return VM_EXEC_STATUS_STACK_OVERFLOW;
+    }
+    frame.procedure_start_instruction_index = boundary->start_instruction_index;
+    frame.frame_id = vm->next_local_frame_id == 0U ? 1U : vm->next_local_frame_id;
+    frame.saved_ebp_address = saved_ebp_address;
+    frame.saved_ebp_value = ebp;
+    frame.frame_base_address = saved_ebp_address;
+    frame.frame_stack_pointer = saved_ebp_address - boundary->local_frame_size_bytes;
+    frame.local_frame_size_bytes = boundary->local_frame_size_bytes;
+    frame.state = VM_EXEC_LOCAL_FRAME_STATE_ACTIVE;
+
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_EBP, frame.frame_base_address) ||
+        !vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, frame.frame_stack_pointer)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    status = vm_exec_initialize_local_visible_bytes(vm, instruction, boundary, &frame);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
+    status = vm_exec_create_local_descriptors(vm, boundary, &frame);
+    if (status != VM_EXEC_STATUS_OK) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, boundary, "local-descriptor-create", boundary->local_frame_size_bytes, frame.frame_base_address, true);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    vm->active_local_frames[vm->active_local_frame_count] = frame;
+    vm->active_local_frame_count += 1U;
+    vm->next_local_frame_id = frame.frame_id + 1U;
+    vm_memory_clear_changes(&vm->memory);
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Releases one active automatic LOCAL frame by restoring saved EBP and ESP.
+///
+/// @param vm VM instance to mutate.
+/// @param instruction Instruction associated with diagnostics.
+/// @param boundary Procedure whose active frame should be released.
+/// @param stage Diagnostic operation stage.
+/// @param pop_after_release Whether the retained frame slot should be popped immediately.
+/// @return OK when the frame was released or acknowledged.
+static VmExecStatus vm_exec_release_local_frame(Vm *vm, const VmIrInstruction *instruction, const VmExecProcedureBoundary *boundary, const char *stage, bool pop_after_release) {
+    VmExecLocalFrame *frame = NULL;
+    uint32_t ebp = 0U;
+    uint32_t saved_ebp = 0U;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
+    if (vm == NULL || instruction == NULL || boundary == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    frame = vm_exec_top_local_frame_for_boundary(vm, boundary);
+    if (frame == NULL) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, boundary, stage, 0U, 0U, false);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    if (frame->state == VM_EXEC_LOCAL_FRAME_STATE_INACTIVE) {
+        if (pop_after_release) {
+            vm_exec_pop_released_local_frame(vm);
+        }
+        return VM_EXEC_STATUS_OK;
+    }
+    if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EBP, &ebp) || ebp != frame->frame_base_address) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, boundary, stage, 0U, frame->frame_base_address, true);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    status = vm_exec_read_u32_at_address(vm, instruction, frame->saved_ebp_address, &saved_ebp);
+    if (status != VM_EXEC_STATUS_OK || saved_ebp != frame->saved_ebp_value) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, boundary, stage, 0U, frame->saved_ebp_address, true);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_ESP, frame->saved_ebp_address + 4U) ||
+        !vm_cpu_write_register(&vm->cpu, VM_REGISTER_EBP, saved_ebp)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    frame->state = VM_EXEC_LOCAL_FRAME_STATE_INACTIVE;
+    vm_exec_deactivate_local_descriptors(vm, frame->frame_id);
+    vm_memory_clear_changes(&vm->memory);
+    if (pop_after_release) {
+        vm_exec_pop_released_local_frame(vm);
+    }
+    return VM_EXEC_STATUS_OK;
+}
+
+/// Ensures the current instruction has an automatic LOCAL frame when required.
+///
+/// @param vm VM instance to inspect and possibly mutate.
+/// @param instruction Current instruction used for diagnostics.
+/// @return OK when execution may proceed, otherwise a Phase 79 frame status.
+static VmExecStatus vm_exec_ensure_local_frame_before_current_instruction(Vm *vm, const VmIrInstruction *instruction) {
+    const VmExecProcedureBoundary *boundary = NULL;
+    VmExecLocalFrame *frame = NULL;
+    uint32_t esp = 0U;
+    uint32_t footprint = 0U;
+    if (vm == NULL || instruction == NULL) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    if (!vm_exec_procedure_boundary_has_locals(boundary)) {
+        return VM_EXEC_STATUS_OK;
+    }
+    frame = vm_exec_top_local_frame_for_boundary(vm, boundary);
+    if (vm_exec_local_frame_matches_boundary(frame, boundary)) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (frame != NULL && frame->state == VM_EXEC_LOCAL_FRAME_STATE_INACTIVE && instruction->opcode == VM_IR_OPCODE_RET) {
+        return VM_EXEC_STATUS_OK;
+    }
+    if (boundary->is_selected_entry && vm->instruction_pointer == boundary->start_instruction_index && !vm->selected_entry_local_frame_created && vm->active_helper_return_count == 0U) {
+        if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
+        footprint = vm_exec_selected_entry_local_footprint(boundary);
+        if (footprint == 0U || !vm_exec_stack_can_reserve_bytes(vm, esp, footprint)) {
+            vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, boundary, "selected-entry-local-frame-setup", footprint, esp, true);
+            return VM_EXEC_STATUS_STACK_OVERFLOW;
+        }
+        vm->selected_entry_local_frame_created = true;
+        return vm_exec_setup_local_frame(vm, instruction, boundary, "selected-entry-local-frame-setup");
+    }
+    vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED, instruction, boundary, "local-frame-entry", 0U, 0U, false);
+    return VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED;
+}
+
 /// Resolves a memory operand while optionally substituting a post-POP ESP value.
 ///
 /// Phase 72A POP memory destinations that use ESP as the base register compute
@@ -1194,6 +1642,8 @@ static VmExecStatus vm_exec_execute_pop(Vm *vm, const VmIrInstruction *instructi
 /// @param instruction LEAVE instruction descriptor.
 /// @return Executor status for the checked saved-EBP read.
 static VmExecStatus vm_exec_execute_leave(Vm *vm, const VmIrInstruction *instruction) {
+    const VmExecProcedureBoundary *boundary = NULL;
+    VmExecLocalFrame *frame = NULL;
     uint32_t ebp = 0U;
     uint32_t saved_ebp = 0U;
     VmExecStatus status = VM_EXEC_STATUS_OK;
@@ -1203,6 +1653,11 @@ static VmExecStatus vm_exec_execute_leave(Vm *vm, const VmIrInstruction *instruc
     }
     if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
+    }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    frame = vm_exec_top_local_frame_for_boundary(vm, boundary);
+    if (vm_exec_local_frame_matches_boundary(frame, boundary)) {
+        return vm_exec_release_local_frame(vm, instruction, boundary, "source-leave-local-frame-release", false);
     }
     if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_EBP, &ebp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -1218,9 +1673,9 @@ static VmExecStatus vm_exec_execute_leave(Vm *vm, const VmIrInstruction *instruc
     if (!vm_cpu_write_register(&vm->cpu, VM_REGISTER_EBP, saved_ebp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-
     return VM_EXEC_STATUS_OK;
 }
+
 
 static bool vm_exec_operand_is_destination(const VmIrOperand *operand) {
     if (operand == NULL) {
@@ -3614,16 +4069,25 @@ static VmExecStatus vm_exec_execute_imul_immediate(Vm *vm, const VmIrInstruction
 /// @param instruction EXIT instruction descriptor.
 /// @return Executor status.
 static VmExecStatus vm_exec_execute_exit(Vm *vm, const VmIrInstruction *instruction) {
+    const VmExecProcedureBoundary *boundary = NULL;
+    VmExecStatus status = VM_EXEC_STATUS_OK;
     if (vm == NULL || instruction == NULL) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
     if (instruction->destination.kind != VM_IR_OPERAND_NONE || instruction->source.kind != VM_IR_OPERAND_NONE) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
-
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    if (vm_exec_procedure_boundary_has_locals(boundary)) {
+        status = vm_exec_release_local_frame(vm, instruction, boundary, "exit-local-frame-release", true);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
     vm->halted = true;
     return VM_EXEC_STATUS_OK;
 }
+
 
 /// Validates one lowered direct branch target before instruction-pointer transfer.
 ///
@@ -3676,38 +4140,6 @@ static VmExecStatus vm_exec_validate_call_target(const Vm *vm, const VmIrInstruc
 }
 
 
-/// Returns whether a DWORD stack range can be reserved for automatic CALL/USES writes.
-///
-/// @param vm VM instance whose stack region should be inspected.
-/// @param esp Stack pointer before reservation.
-/// @param dword_count Number of DWORD stack slots needed.
-/// @return true when all requested slots fit in the writable stack region.
-static bool vm_exec_stack_can_reserve_dwords(const Vm *vm, uint32_t esp, size_t dword_count) {
-    const VmMemoryRegion *stack_region = NULL;
-    uint64_t stack_limit = 0U;
-    uint64_t byte_count = 0U;
-    uint64_t low_address = 0U;
-
-    if (vm == NULL || dword_count == 0U) {
-        return false;
-    }
-    stack_region = vm_memory_get_region(&vm->memory, VM_MEMORY_REGION_STACK);
-    if (stack_region == NULL || stack_region->size == 0U ||
-        !vm_memory_region_has_permission(stack_region, VM_MEMORY_PERMISSION_WRITE)) {
-        return false;
-    }
-    stack_limit = (uint64_t)stack_region->base + (uint64_t)stack_region->size;
-    if (stack_limit > (uint64_t)UINT32_MAX) {
-        return false;
-    }
-    byte_count = (uint64_t)dword_count * 4ULL;
-    if (byte_count > (uint64_t)esp) {
-        return false;
-    }
-    low_address = (uint64_t)esp - byte_count;
-
-    return low_address >= (uint64_t)stack_region->base && (uint64_t)esp <= stack_limit;
-}
 
 /// Pushes one active Phase 77 PROC USES runtime frame.
 ///
@@ -3755,7 +4187,7 @@ static VmExecStatus vm_exec_write_call_and_uses_frame(
     uint32_t write_address = 0U;
     size_t uses_count = 0U;
     size_t index = 0U;
-    size_t required_dwords = 1U;
+    uint32_t required_bytes = 4U;
     VmExecStatus status = VM_EXEC_STATUS_OK;
 
     if (vm == NULL || instruction == NULL) {
@@ -3766,21 +4198,35 @@ static VmExecStatus vm_exec_write_call_and_uses_frame(
             return VM_EXEC_STATUS_INVALID_ARGUMENT;
         }
         uses_count = target_boundary->uses_register_count;
-        required_dwords += uses_count;
+        required_bytes = vm_exec_direct_call_combined_footprint(target_boundary);
+        if (required_bytes == 0U) {
+            return VM_EXEC_STATUS_INVALID_ARGUMENT;
+        }
     }
     if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-    if (uses_count > 0U && !vm_exec_stack_can_reserve_dwords(vm, esp, required_dwords)) {
-        vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+    if (target_boundary != NULL && vm_exec_procedure_boundary_has_locals(target_boundary) &&
+        (vm->active_local_frame_count >= (size_t)VM_MAX_CALL_DEPTH_LIMIT || !vm_exec_can_create_local_descriptors(vm, target_boundary))) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_INVALID_FRAME_STATE, instruction, target_boundary,
+            "local-descriptor-capacity", target_boundary->local_frame_size_bytes, 0U, false);
+        return VM_EXEC_STATUS_INVALID_FRAME_STATE;
+    }
+    if (target_boundary != NULL && (uses_count > 0U || vm_exec_procedure_boundary_has_locals(target_boundary)) &&
+        !vm_exec_stack_can_reserve_bytes(vm, esp, required_bytes)) {
+        vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, target_boundary,
+            vm_exec_procedure_boundary_has_locals(target_boundary) ? "direct-call-local-combined-frame-setup" : "direct-call-uses-frame-setup",
+            required_bytes, esp, true);
         return VM_EXEC_STATUS_STACK_OVERFLOW;
     }
 
     write_address = esp - 4U;
     status = vm_exec_write_u32_at_address(vm, instruction, write_address, return_token);
     if (status != VM_EXEC_STATUS_OK) {
-        if (uses_count > 0U) {
-            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+        if (target_boundary != NULL && (uses_count > 0U || vm_exec_procedure_boundary_has_locals(target_boundary))) {
+            vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, target_boundary,
+                vm_exec_procedure_boundary_has_locals(target_boundary) ? "direct-call-local-combined-frame-setup" : "direct-call-uses-frame-setup",
+                required_bytes, write_address, true);
             return VM_EXEC_STATUS_STACK_OVERFLOW;
         }
         return status;
@@ -3793,7 +4239,9 @@ static VmExecStatus vm_exec_write_call_and_uses_frame(
         write_address -= 4U;
         status = vm_exec_write_u32_at_address(vm, instruction, write_address, saved_value);
         if (status != VM_EXEC_STATUS_OK) {
-            vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction);
+            vm_exec_set_local_frame_diagnostic(vm, VM_EXEC_STATUS_STACK_OVERFLOW, instruction, target_boundary,
+                vm_exec_procedure_boundary_has_locals(target_boundary) ? "direct-call-local-combined-frame-setup" : "direct-call-uses-frame-setup",
+                required_bytes, write_address, true);
             return VM_EXEC_STATUS_STACK_OVERFLOW;
         }
     }
@@ -3803,9 +4251,15 @@ static VmExecStatus vm_exec_write_call_and_uses_frame(
     if (uses_count > 0U && !vm_exec_push_active_uses_frame(vm, target_boundary)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
-
+    if (vm_exec_procedure_boundary_has_locals(target_boundary)) {
+        status = vm_exec_setup_local_frame(vm, instruction, target_boundary, "direct-call-local-combined-frame-setup");
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
+    }
     return VM_EXEC_STATUS_OK;
 }
+
 
 /// Returns the active USES frame owned by the current RET instruction, if any.
 ///
@@ -3994,6 +4448,7 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
     VmMemoryStatus memory_status = VM_MEMORY_STATUS_OK;
     const VmExecUsesFrame *uses_frame = NULL;
     VmExecUsesFrame uses_frame_copy;
+    const VmExecProcedureBoundary *boundary = NULL;
     uint32_t uses_restore_values[VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY];
     uint32_t original_esp = 0U;
     uint32_t return_esp = 0U;
@@ -4020,12 +4475,25 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
     if (vm_exec_root_metadata_is_inconsistent(vm)) {
         return VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE;
     }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
     if (vm_exec_current_instruction_is_root_ret(vm)) {
         if (vm->root_ret_mode == VM_ROOT_RET_MODE_STRICT_CALL_FRAME) {
             return VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE;
         }
+        if (vm_exec_procedure_boundary_has_locals(boundary)) {
+            VmExecStatus status = vm_exec_release_local_frame(vm, instruction, boundary, "root-ret-local-frame-release", true);
+            if (status != VM_EXEC_STATUS_OK) {
+                return status;
+            }
+        }
         vm->halted = true;
         return VM_EXEC_STATUS_OK;
+    }
+    if (vm_exec_procedure_boundary_has_locals(boundary)) {
+        VmExecStatus status = vm_exec_release_local_frame(vm, instruction, boundary, "helper-ret-local-frame-release", true);
+        if (status != VM_EXEC_STATUS_OK) {
+            return status;
+        }
     }
     if (!vm_cpu_read_register(&vm->cpu, VM_REGISTER_ESP, &original_esp)) {
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -4076,6 +4544,7 @@ static VmExecStatus vm_exec_execute_ret(Vm *vm, const VmIrInstruction *instructi
     }
     return VM_EXEC_STATUS_OK;
 }
+
 
 /// Executes LEA effective-address computation.
 ///
@@ -4432,7 +4901,8 @@ VmExecStatus vm_configure_procedure_boundaries(Vm *vm, const VmExecProcedureBoun
     for (index = 0U; index < boundary_count; index += 1U) {
         const VmExecProcedureBoundary *boundary = &boundaries[index];
         if (!vm_exec_procedure_boundary_is_valid(vm, boundary) ||
-            boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY) {
+            boundary->uses_register_count > (size_t)VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY ||
+            boundary->local_count > (size_t)VM_EXEC_PROCEDURE_LOCAL_CAPACITY) {
             vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_INVALID_ARGUMENT, NULL);
             vm_exec_clear_procedure_runtime_metadata(vm);
             return VM_EXEC_STATUS_INVALID_ARGUMENT;
@@ -4825,10 +5295,16 @@ VmExecStatus vm_step(Vm *vm) {
         vm_exec_set_diagnostic(vm, VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME, instruction);
         return VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME;
     }
+    status = vm_exec_ensure_local_frame_before_current_instruction(vm, instruction);
+    if (status != VM_EXEC_STATUS_OK) {
+        return status;
+    }
     before_cpu = vm->cpu;
     status = vm_exec_execute_instruction(vm, instruction);
     if (status != VM_EXEC_STATUS_OK) {
-        if (status != VM_EXEC_STATUS_MEMORY_ERROR && status != VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED) {
+        if (status != VM_EXEC_STATUS_MEMORY_ERROR && status != VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED &&
+            status != VM_EXEC_STATUS_STACK_OVERFLOW && status != VM_EXEC_STATUS_INVALID_FRAME_STATE &&
+            status != VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
             vm_exec_set_diagnostic(vm, status, instruction);
         }
         return status;
@@ -4934,6 +5410,10 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "stack-overflow";
         case VM_EXEC_STATUS_STACK_UNDERFLOW:
             return "stack-underflow";
+        case VM_EXEC_STATUS_INVALID_FRAME_STATE:
+            return "invalid-frame-state";
+        case VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED:
+            return "local-frame-entry-unsupported";
         default:
             return NULL;
     }
@@ -4973,7 +5453,7 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         }
     };
     const VmExecProcedureBoundary boundaries[] = {
-        {0U, 3U, true, true, 0U, {0}}
+        {.start_instruction_index = 0U, .end_instruction_index = 3U, .is_selected_entry = true, .has_executable_instruction = true, .uses_register_count = 0U, .uses_registers = {0}}
     };
 
     if (out_eax == NULL) {

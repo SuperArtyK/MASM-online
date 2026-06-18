@@ -396,13 +396,79 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 79 - LOCAL Stack Allocation and Lifetime. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 79 - LOCAL Stack Allocation and Lifetime. Rebuild web/dist with the Emscripten build script."
+  );
+});
+
+test("Phase 79 renders LOCAL stack-overflow diagnostic exactly", () => {
+  const rendered = formatSimulatorMessages([
+    {
+      kind: "runtime-error",
+      code: "stack-overflow",
+      message: "Automatic LOCAL frame setup could not reserve or write the required stack bytes. Execution stopped before entering the procedure body.",
+      line: 3,
+      column: 1,
+      byteOffset: 20,
+      spanLength: 4,
+      procedure: "main",
+      operationStage: "selected-entry-local-frame-setup",
+      relevantByteCount: 8,
+      relevantAddress: 9437184
+    }
+  ]);
+
+  assert.equal(
+    rendered,
+    "[runtime-error] stack-overflow line 3, column 1, byte offset 20, span length 4, procedure main, operation selected-entry-local-frame-setup, bytes 8, address 9437184: Automatic LOCAL frame setup could not reserve or write the required stack bytes. Execution stopped before entering the procedure body."
+  );
+});
+
+test("Phase 79 renders invalid LOCAL frame-state diagnostic exactly", () => {
+  const rendered = formatSimulatorMessages([
+    {
+      kind: "runtime-error",
+      code: "invalid-frame-state",
+      message: "Automatic LOCAL frame state is inconsistent. Execution stopped before continuing frame release or return-token handling.",
+      line: 6,
+      column: 5,
+      byteOffset: 72,
+      spanLength: 3,
+      procedure: "Helper",
+      operationStage: "helper-ret-local-frame-release",
+      relevantAddress: 9437180
+    }
+  ]);
+
+  assert.equal(
+    rendered,
+    "[runtime-error] invalid-frame-state line 6, column 5, byte offset 72, span length 3, procedure Helper, operation helper-ret-local-frame-release, address 9437180: Automatic LOCAL frame state is inconsistent. Execution stopped before continuing frame release or return-token handling."
+  );
+});
+
+test("Phase 79 renders unsupported LOCAL frame entry diagnostic exactly", () => {
+  const rendered = formatSimulatorMessages([
+    {
+      kind: "runtime-error",
+      code: "local-frame-entry-unsupported",
+      message: "The destination procedure requires an automatic LOCAL frame, but this entry path did not create one. Use selected END entry or direct CALL entry for procedures with LOCAL declarations.",
+      line: 7,
+      column: 5,
+      byteOffset: 80,
+      spanLength: 3,
+      procedure: "Helper",
+      operationStage: "local-frame-entry"
+    }
+  ]);
+
+  assert.equal(
+    rendered,
+    "[runtime-error] local-frame-entry-unsupported line 7, column 5, byte offset 80, span length 3, procedure Helper, operation local-frame-entry: The destination procedure requires an automatic LOCAL frame, but this entry path did not create one. Use selected END entry or direct CALL entry for procedures with LOCAL declarations."
   );
 });
 
@@ -2511,7 +2577,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2554,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2591,9 +2657,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2619,8 +2685,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2646,8 +2712,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2671,8 +2737,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2695,8 +2761,8 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -2721,8 +2787,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
 });
@@ -2738,8 +2804,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2765,8 +2831,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2792,8 +2858,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2819,8 +2885,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -2851,7 +2917,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2882,8 +2948,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2928,8 +2994,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -2955,7 +3021,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -2979,7 +3045,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3003,7 +3069,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3028,7 +3094,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3052,7 +3118,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3076,7 +3142,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3101,9 +3167,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3129,9 +3195,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3157,9 +3223,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3184,9 +3250,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3212,7 +3278,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3237,7 +3303,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3261,7 +3327,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3478,7 +3544,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 78);
+    assert.equal(json.phase, 79);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3491,7 +3557,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 78);
+  assert.equal(duplicateResult.json.phase, 79);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3993,7 +4059,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4014,7 +4080,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5452,9 +5518,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5514,9 +5580,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5574,9 +5640,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5611,9 +5677,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5662,9 +5728,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5703,9 +5769,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 78);
-  assert.equal(defaultResult.json.phaseSuffix, "A");
-  assert.equal(defaultResult.json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(defaultResult.json.phase, 79);
+  assert.equal(defaultResult.json.phaseSuffix, "");
+  assert.equal(defaultResult.json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5725,9 +5791,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 78);
-  assert.equal(stopResult.json.phaseSuffix, "A");
-  assert.equal(stopResult.json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(stopResult.json.phase, 79);
+  assert.equal(stopResult.json.phaseSuffix, "");
+  assert.equal(stopResult.json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5767,8 +5833,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
   const message = json.simulatorMessages[json.simulatorMessages.length - 1];
@@ -5803,7 +5869,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5830,9 +5896,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5864,9 +5930,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5954,9 +6020,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
-  assert.equal(json.phaseName, "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
+  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6951,8 +7017,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7179,7 +7245,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7204,7 +7270,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7228,7 +7294,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7258,7 +7324,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7268,9 +7334,12 @@ END main
     column: 5,
     byteOffset: 64,
     spanLength: 11,
-    procedure: "Helper"
+    procedure: "Helper",
+    operationStage: "direct-call-uses-frame-setup",
+    relevantByteCount: 12,
+    relevantAddress: 9371656
   });
-  assertRenderedEquals(name, source, rawJson, rendered, `[runtime-error] stack-overflow line 5, column 5, byte offset 64, span length 11, procedure Helper: Automatic PROC USES register save could not reserve or write the required stack slots. Execution stopped before entering the procedure.`);
+  assertRenderedEquals(name, source, rawJson, rendered, `[runtime-error] stack-overflow line 5, column 5, byte offset 64, span length 11, procedure Helper, operation direct-call-uses-frame-setup, bytes 12, address 9371656: Automatic PROC USES register save could not reserve or write the required stack slots. Execution stopped before entering the procedure.`);
 });
 
 test("Phase 77 renders PROC USES restore underflow diagnostic", () => {
@@ -7290,7 +7359,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7391,8 +7460,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
-  assert.equal(json.phaseSuffix, "A");
+  assert.equal(json.phase, 79);
+  assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.equal(json.registers.EBX.hex, "00000000h");
@@ -7884,7 +7953,7 @@ END main
     {
       kind: "simulator-notice",
       code: "compatibility-metadata-only",
-      message: ".stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
+      message: ".stack size is parser metadata for stack sizing; it supports source-level PUSH/POP stack transfers and Phase 79 LOCAL capacity checks, but does not create frames.",
       line: 3,
       column: 1,
       byteOffset: 26,
@@ -7926,7 +7995,7 @@ END main
   assertRenderedEquals("phase53d-compatibility-notices", source, rawJson, rendered, [
     "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
     "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
-    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is parser metadata for stack sizing; it supports source-level PUSH/POP stack transfers and Phase 79 LOCAL capacity checks, but does not create frames.",
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
@@ -7968,7 +8037,7 @@ END main
     "",
     "[simulator-notice] compatibility-no-op line 1, column 1, byte offset 0, span length 4: .686 is accepted for MASM compatibility but does not change the simulator CPU mode.",
     "[simulator-notice] compatibility-limited line 2, column 1, byte offset 5, span length 6: .model flat, stdcall is accepted for MASM32 textbook compatibility but does not enable real object-file, linker, Windows calling-convention, or WinAPI behavior.",
-    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred.",
+    "[simulator-notice] compatibility-metadata-only line 3, column 1, byte offset 26, span length 6: .stack size is parser metadata for stack sizing; it supports source-level PUSH/POP stack transfers and Phase 79 LOCAL capacity checks, but does not create frames.",
     "[simulator-notice] compatibility-limited line 4, column 1, byte offset 38, span length 7: INCLUDE Macros.inc is accepted as a virtual compatibility include; general MASM macro expansion remains unsupported until a later macro phase.",
     "[simulator-notice] compatibility-no-op line 5, column 1, byte offset 57, span length 5: TITLE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
     "[simulator-notice] compatibility-no-op line 6, column 1, byte offset 77, span length 4: PAGE is accepted as a listing/documentation directive for MASM compatibility but does not affect VM execution.",
@@ -8194,7 +8263,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 78);
+  assert.equal(json.phase, 79);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

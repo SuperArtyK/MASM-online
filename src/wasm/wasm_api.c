@@ -22,8 +22,9 @@
  * source-level PUSH/POP stack transfers, Phase 73 LEAVE frame teardown, Phase 74
  * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, Phase 76 PROC USES
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
- * Phase 78A limited OPTION NOKEYWORD parser behavior and Phase 78 LOCAL
- * diagnostics, and recovered unsupported-feature diagnostics, then reports a
+ * Phase 78A limited OPTION NOKEYWORD parser behavior, Phase 78 LOCAL
+ * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, and
+ * recovered unsupported-feature diagnostics, then reports a
  * compact JSON result for the UI.
  */
 
@@ -86,16 +87,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 78U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 79U
 
-/// Suffix for the current Phase 78A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX "A"
+/// Suffix for the current Phase 79 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 78A runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out"
+/// Full name of the current Phase 79 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 79 - LOCAL Stack Allocation and Lifetime"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 78A limited OPTION NOKEYWORD state.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-78a-nokeyword-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 79 LOCAL frame behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-79-local-frame-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -452,6 +453,8 @@ typedef struct Masm32SimWasmRunStorage {
     VmCodeLabel code_labels[MASM32_SIM_WASM_MAX_RUN_CODE_LABELS];
     /// Procedure ranges emitted by the parser for selected-entry runtime boundaries.
     VmProcedureRange procedure_ranges[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
+    /// Executor procedure-boundary records copied from parser procedure metadata; stored statically to avoid overflowing the browser Wasm stack.
+    VmExecProcedureBoundary exec_procedure_boundaries[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
     /// Declared-object map entries built from final selected-layout symbols.
     VmObjectMapEntry object_map_entries[MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES];
     /// Number of valid declared-object map entries.
@@ -1001,6 +1004,11 @@ static const char *masm32_sim_wasm_run_outcome_name(Masm32SimWasmRunOutcome outc
 /// @param span_length Source span length in bytes when @p has_source_span is true.
 /// @param has_source_span Whether byte-offset and span-length fields should be emitted.
 /// @param procedure_name Optional responsible procedure name to serialize.
+/// @param operation_stage Optional automatic operation stage to serialize.
+/// @param has_relevant_byte_count Whether @p relevant_byte_count should be emitted.
+/// @param relevant_byte_count Relevant byte count for automatic stack/frame diagnostics.
+/// @param has_relevant_address Whether @p relevant_address should be emitted.
+/// @param relevant_address Relevant address for automatic stack/frame diagnostics.
 /// @return true when the message fit without overflowing the buffer.
 static bool masm32_sim_json_append_message_with_span_and_procedure(
     Masm32SimJsonWriter *writer,
@@ -1012,7 +1020,12 @@ static bool masm32_sim_json_append_message_with_span_and_procedure(
     size_t byte_offset,
     size_t span_length,
     bool has_source_span,
-    const char *procedure_name
+    const char *procedure_name,
+    const char *operation_stage,
+    bool has_relevant_byte_count,
+    uint32_t relevant_byte_count,
+    bool has_relevant_address,
+    uint32_t relevant_address
 ) {
     if (!masm32_sim_json_append(writer, "{\"kind\":")) {
         return false;
@@ -1058,6 +1071,24 @@ static bool masm32_sim_json_append_message_with_span_and_procedure(
             return false;
         }
     }
+    if (operation_stage != NULL && operation_stage[0] != '\0') {
+        if (!masm32_sim_json_append(writer, ",\"operationStage\":")) {
+            return false;
+        }
+        if (!masm32_sim_json_append_string(writer, operation_stage)) {
+            return false;
+        }
+    }
+    if (has_relevant_byte_count) {
+        if (!masm32_sim_json_append(writer, ",\"relevantByteCount\":%u", (unsigned int)relevant_byte_count)) {
+            return false;
+        }
+    }
+    if (has_relevant_address) {
+        if (!masm32_sim_json_append(writer, ",\"relevantAddress\":%u", (unsigned int)relevant_address)) {
+            return false;
+        }
+    }
 
     return masm32_sim_json_append(writer, "}");
 }
@@ -1095,7 +1126,12 @@ static bool masm32_sim_json_append_message_with_span(
         byte_offset,
         span_length,
         has_source_span,
-        NULL
+        NULL,
+        NULL,
+        false,
+        0U,
+        false,
+        0U
     );
 }
 
@@ -6149,7 +6185,12 @@ static bool masm32_sim_json_append_code_fell_off_end_messages(
             byte_offset,
             span_length,
             has_source_span,
-            procedure_name
+            procedure_name,
+            NULL,
+            false,
+            0U,
+            false,
+            0U
         )) {
         return false;
     }
@@ -6168,7 +6209,12 @@ static bool masm32_sim_json_append_code_fell_off_end_messages(
             byte_offset,
             span_length,
             has_source_span,
-            procedure_name
+            procedure_name,
+            NULL,
+            false,
+            0U,
+            false,
+            0U
         );
     }
 
@@ -6537,7 +6583,12 @@ static bool masm32_sim_json_append_procedure_fallthrough_message(
         diagnostic != NULL ? diagnostic->byte_offset : 0U,
         diagnostic != NULL ? diagnostic->span_length : 0U,
         diagnostic != NULL && diagnostic->has_source_span,
-        diagnostic != NULL && diagnostic->has_from_procedure ? diagnostic->from_procedure : NULL
+        diagnostic != NULL && diagnostic->has_from_procedure ? diagnostic->from_procedure : NULL,
+        NULL,
+        false,
+        0U,
+        false,
+        0U
     );
 }
 
@@ -6647,6 +6698,8 @@ static bool masm32_sim_json_append_exec_message(
                    status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME ||
                    status == VM_EXEC_STATUS_STACK_OVERFLOW ||
                    status == VM_EXEC_STATUS_STACK_UNDERFLOW ||
+                   status == VM_EXEC_STATUS_INVALID_FRAME_STATE ||
+                   status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED ||
                    status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH ||
                    status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
@@ -6697,7 +6750,11 @@ static bool masm32_sim_json_append_exec_message(
         message_text = "PROC USES metadata requires direct CALL entry in this phase. Execution stopped before entering the procedure so the simulator does not silently ignore USES.";
     } else if (status == VM_EXEC_STATUS_STACK_OVERFLOW) {
         message_code = "stack-overflow";
-        message_text = "Automatic PROC USES register save could not reserve or write the required stack slots. Execution stopped before entering the procedure.";
+        if (diagnostic != NULL && diagnostic->has_operation_stage && strstr(diagnostic->operation_stage, "local") != NULL) {
+            message_text = "Automatic LOCAL frame setup could not reserve or write the required stack bytes. Execution stopped before entering the procedure body.";
+        } else {
+            message_text = "Automatic PROC USES register save could not reserve or write the required stack slots. Execution stopped before entering the procedure.";
+        }
     } else if (status == VM_EXEC_STATUS_STACK_UNDERFLOW) {
         message_code = "stack-underflow";
         message_text = "Automatic PROC USES register restore could not read the saved register slots. Execution stopped before restoring registers or popping the return token.";
@@ -6713,9 +6770,12 @@ static bool masm32_sim_json_append_exec_message(
     } else if (status == VM_EXEC_STATUS_INVALID_ROOT_TERMINATION_STATE) {
         message_code = "invalid-root-termination-state";
         message_text = "The VM detected inconsistent root/helper RET termination metadata. Execution stopped before mutating ESP or transferring control.";
-    } else if (status == VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED) {
-        message_code = "branch-runtime-deferred";
-        message_text = "A branch form was accepted for metadata, but runtime branch execution for that form is deferred to a later branch phase. Execution stopped before applying the branch.";
+    } else if (status == VM_EXEC_STATUS_INVALID_FRAME_STATE) {
+        message_code = "invalid-frame-state";
+        message_text = "Automatic LOCAL frame state is inconsistent. Execution stopped before continuing frame release or return-token handling.";
+    } else if (status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
+        message_code = "local-frame-entry-unsupported";
+        message_text = "The destination procedure requires an automatic LOCAL frame, but this entry path did not create one. Use selected END entry or direct CALL entry for procedures with LOCAL declarations.";
     }
 
     if (diagnostic != NULL && diagnostic->has_instruction) {
@@ -6726,7 +6786,8 @@ static bool masm32_sim_json_append_exec_message(
                 storage,
                 (size_t)diagnostic->instruction.destination.immediate
             );
-        } else if (status == VM_EXEC_STATUS_STACK_UNDERFLOW || status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME) {
+        } else if (status == VM_EXEC_STATUS_STACK_UNDERFLOW || status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME ||
+                   status == VM_EXEC_STATUS_INVALID_FRAME_STATE || status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
             procedure_range = masm32_sim_wasm_find_procedure_for_instruction(
                 parser_result,
                 storage,
@@ -6735,6 +6796,9 @@ static bool masm32_sim_json_append_exec_message(
         }
     }
     procedure_name = procedure_range != NULL ? procedure_range->name : NULL;
+    if (procedure_name == NULL && diagnostic != NULL && diagnostic->has_procedure_name) {
+        procedure_name = diagnostic->procedure_name;
+    }
 
     return masm32_sim_json_append_message_with_span_and_procedure(
         writer,
@@ -6746,7 +6810,12 @@ static bool masm32_sim_json_append_exec_message(
         byte_offset,
         span_length,
         has_source_span,
-        procedure_name
+        procedure_name,
+        diagnostic != NULL && diagnostic->has_operation_stage ? diagnostic->operation_stage : NULL,
+        diagnostic != NULL && diagnostic->has_relevant_byte_count,
+        diagnostic != NULL ? diagnostic->relevant_byte_count : 0U,
+        diagnostic != NULL && diagnostic->has_relevant_address,
+        diagnostic != NULL ? diagnostic->relevant_address : 0U
     );
 }
 
@@ -7758,9 +7827,9 @@ static VmExecStatus masm32_sim_wasm_validate_instruction_limit_before_step(
 static VmExecStatus masm32_sim_wasm_configure_exec_procedure_boundaries(
     Vm *vm,
     const VmParserResult *parser_result,
-    const Masm32SimWasmRunStorage *storage
+    Masm32SimWasmRunStorage *storage
 ) {
-    VmExecProcedureBoundary boundaries[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
+    VmExecProcedureBoundary *boundaries = NULL;
     size_t index = 0U;
 
     if (vm == NULL || parser_result == NULL || storage == NULL) {
@@ -7770,12 +7839,36 @@ static VmExecStatus masm32_sim_wasm_configure_exec_procedure_boundaries(
         return VM_EXEC_STATUS_INVALID_ARGUMENT;
     }
 
-    memset(boundaries, 0, sizeof(boundaries));
+    boundaries = storage->exec_procedure_boundaries;
+    memset(storage->exec_procedure_boundaries, 0, sizeof(storage->exec_procedure_boundaries));
     for (index = 0U; index < parser_result->procedure_range_count; index += 1U) {
         const VmProcedureRange *range = &storage->procedure_ranges[index];
         boundaries[index].start_instruction_index = range->start_instruction_index;
         boundaries[index].end_instruction_index = range->end_instruction_index;
         boundaries[index].has_executable_instruction = range->has_executable_instruction;
+        (void)snprintf(boundaries[index].procedure_name, sizeof(boundaries[index].procedure_name), "%s", range->name);
+        boundaries[index].source_line = range->source_location.line;
+        boundaries[index].source_column = range->source_location.column;
+        boundaries[index].source_byte_offset = range->source_location.offset;
+        boundaries[index].source_span_length = (uint32_t)range->source_span_length;
+        boundaries[index].local_count = range->local_count;
+        boundaries[index].local_frame_size_bytes = range->local_frame_size_bytes;
+        {
+            size_t local_index = 0U;
+            for (local_index = 0U; local_index < range->local_count && local_index < (size_t)VM_EXEC_PROCEDURE_LOCAL_CAPACITY; local_index += 1U) {
+                const VmProcedureLocalSymbol *source_local = &range->locals[local_index];
+                VmExecProcedureLocal *target_local = &boundaries[index].locals[local_index];
+                (void)snprintf(target_local->local_name, sizeof(target_local->local_name), "%s", source_local->name);
+                target_local->source_line = source_local->source_location.line;
+                target_local->source_column = source_local->source_location.column;
+                target_local->source_byte_offset = source_local->source_location.offset;
+                target_local->source_span_length = (uint32_t)source_local->source_span_length;
+                target_local->element_size_bytes = source_local->element_size_bytes;
+                target_local->element_count = source_local->element_count;
+                target_local->total_size_bytes = source_local->size_bytes;
+                target_local->ebp_offset = source_local->ebp_offset;
+            }
+        }
         boundaries[index].uses_register_count = range->uses_register_count;
         {
             size_t uses_index = 0U;

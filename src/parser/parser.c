@@ -13,8 +13,9 @@
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
  * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata are
- * supported; accepted PROC remains metadata-only, unsupported non-USES PROC
- * tails are rejected with targeted diagnostics, and ENTER, stack-frame creation,
+ * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
+ * automatic runtime frames, while accepted PROC remains metadata-only for
+ * unsupported non-USES PROC tails. ENTER, source-level LOCAL operands,
  * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
@@ -11003,7 +11004,7 @@ static bool vm_parser_parse_stack_directive(VmParserState *state) {
         state,
         VM_PARSER_DIAGNOSTIC_COMPATIBILITY_METADATA_ONLY,
         stack_token,
-        ".stack size is recorded as parser metadata, contributes to ESP startup in layout-policy runs, and supports Phase 72A source-level PUSH/POP stack transfers; procedure frames remain deferred."
+        ".stack size is parser metadata for stack sizing; it supports source-level PUSH/POP stack transfers and Phase 79 LOCAL capacity checks, but does not create frames."
     );
     if (!vm_parser_expect_line_end(state)) {
         vm_parser_recover_skip_line(state);

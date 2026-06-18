@@ -6,9 +6,9 @@ Static browser-based educational simulator for small MASM32/Irvine32-style conso
 
 | Field | Current value |
 |---|---|
-| Current milestone | Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out |
+| Current milestone | Phase 79 - LOCAL Stack Allocation and Lifetime |
 
-Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`, allowing those two words to be used as later user-defined symbols while preserving targeted diagnostics for malformed lists, unknown words, protected reserved words, and disabled keywords used in their old keyword roles. Phase 78 parser-only `LOCAL` metadata remains implemented; runtime stack allocation for locals and local operand resolution remain deferred.
+Phase 79 implements automatic runtime stack allocation and lifetime for parsed `LOCAL` declarations on selected-entry and direct-CALL procedure paths. The executor creates checked EBP/ESP-based LOCAL frames, initializes visible LOCAL bytes to deterministic zero, releases frames on `RET`, `RET imm16`, `LEAVE` + `RET`, and Irvine32 `exit`, rejects unsupported branch/fallthrough entry into LOCAL procedures, and keeps source-level LOCAL operands/addressing deferred to a later phase.
 
 For current accepted syntax, rejected forms, diagnostics, and future/deferred features, see [`docs/SUPPORTED_SYNTAX.md`](docs/SUPPORTED_SYNTAX.md). For build and artifact verification details, see [`docs/BUILDING_AND_DEVELOPMENT.md`](docs/BUILDING_AND_DEVELOPMENT.md). For milestone history, see [`docs/MILESTONE_HISTORY.md`](docs/MILESTONE_HISTORY.md).
 
@@ -47,7 +47,7 @@ At a high level, the current subset includes:
 - procedure-entry and call-target classification metadata for parser/tests;
 - `PROC USES` parsing metadata for `EAX`, `EBX`, `ECX`, `EDX`, `ESI`, and `EDI`, stored in declared order;
 - direct-CALL `PROC USES` runtime save/restore with checked automatic stack writes/reads, `stack-overflow` and `stack-underflow` diagnostics, listed-register preservation, modeled flag preservation, `EAX` return-value behavior when omitted, and `ESP` balance;
-- parser-only `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions;
+- `LOCAL` declaration metadata for supported scalar, array, and comma-separated procedure-local declarations before executable instructions, plus automatic runtime LOCAL frames on selected-entry and direct-CALL procedure paths;
 - instruction-count watchdog behavior;
 - modeled `CF`, `ZF`, `SF`, and `OF` behavior where implemented;
 - structured diagnostics and rendered Simulator Messages;
@@ -57,7 +57,7 @@ At a high level, the current subset includes:
 Future/deferred simulator features include:
 
 - `loop`;
-- runtime stack-frame creation for locals, local operand resolution/addressing, `PROTO`, `INVOKE`, and `ADDR`;
+- local operand resolution/addressing, procedure-frame features beyond Phase 79 automatic LOCAL frames, `PROTO`, `INVOKE`, and `ADDR`;
 - selected Irvine32 routine dispatch if an owning phase defines it;
 - active-time or wall-clock watchdog behavior;
 - debugger/editor branch behavior;

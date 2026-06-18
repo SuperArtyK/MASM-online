@@ -523,8 +523,10 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out")
-    assert_text_contains("README.md", "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`")
+    assert_text_contains("README.md", "Phase 79 - LOCAL Stack Allocation and Lifetime")
+    assert_text_contains("README.md", "Phase 79 implements automatic runtime stack allocation and lifetime for parsed `LOCAL` declarations")
+    assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
+    assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
     assert_text_contains("README.md", "selected-entry source-run startup from `END entryName`")
     assert_text_not_contains("README.md", "- `leave` and `ret imm16`;")
@@ -606,9 +608,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 78")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"A\"")
-    assert_text_contains("web/src/protocol.js", "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 79")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
+    assert_text_contains("web/src/protocol.js", "Phase 79 - LOCAL Stack Allocation and Lifetime")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -676,7 +678,14 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 78A limited OPTION NOKEYWORD behavior passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 79 LOCAL stack allocation and lifetime passed.")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "keep numeric phase 78")
+    assert_text_not_contains("tests/core/test_wasm_source_run.c", "suffix A")
+    assert_text_not_contains("src/wasm/wasm_api.c", "current Phase 78A runtime/source-run behavior phase")
+    assert_text_not_contains("src/wasm/wasm_api.c", "output-contract identifier for Phase 78A")
     assert_text_contains("src/wasm/wasm_api.h", "Masm32SimWasmSectionValidationPolicy")
     assert_text_contains("src/wasm/wasm_api.h", "masm32_sim_wasm_run_source_json_with_section_validation_modes")
     assert_text_contains("src/wasm/wasm_api.c", "section-capacity-violation")
@@ -1772,8 +1781,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
-            "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
+            "Phase 79 implements automatic runtime stack allocation and lifetime for parsed `LOCAL` declarations",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1841,10 +1850,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
-            "Phase 78A advances runtime/source-run behavior metadata",
-            "limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET` are now accepted",
-            "invalid NOKEYWORD lists use targeted structured diagnostics",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
+            "Phase 79 advances runtime/source-run behavior metadata",
+            "automatic LOCAL frame setup/release",
+            "invalid-frame-state diagnostics",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1890,9 +1899,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
-            "Phase 78A accepts the limited educational `OPTION NOKEYWORD` forms for `LOOP` and `OFFSET`",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
+            "Phase 79 implements automatic runtime stack allocation and lifetime for parsed `LOCAL` declarations",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
+            "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
             "direct near user-procedure `call ProcedureName`",
             "Direct `call ProcedureName` is executable only when `ProcedureName` resolves to a user `PROC` entry",
@@ -1929,6 +1939,7 @@ def assert_current_status_and_harness_documented() -> None:
         [
             
             "source-run execution may begin at the first lowered instruction",
+            "Phase 78 does not allocate runtime stack storage",
             "Latest output/message-ordering cleanup phase:",
             "Latest source-run output-contract phase:",
             "Latest protocol/artifact compatibility cleanup phase:",
@@ -1943,9 +1954,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2088,6 +2099,22 @@ def assert_current_status_and_harness_documented() -> None:
         ],
     )
     assert_all_text_not_contains(
+        "docs/MILESTONE_HISTORY.md",
+        [
+            "future-owned LOCAL runtime allocation/local operand behavior as deferred",
+            "Runtime local stack allocation, local operand resolution/addressing",
+        ],
+    )
+
+    assert_all_text_not_contains(
+        "docs/FULL_IMPLEMENTATION_SPEC.md",
+        [
+            "Phase 78 does not allocate runtime stack storage",
+            "runtime LOCAL allocation/addressing, PROTO",
+        ],
+    )
+
+    assert_all_text_not_contains(
         "docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md",
         [
             "### Optional easter egg",
@@ -2101,13 +2128,14 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
-            "Phase 78A adds tests for accepted limited `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, and whitespace-list forms",
-            "malformed forms",
-            "protected words",
+            "Phase 79 - LOCAL Stack Allocation and Lifetime",
+            "Phase 79 adds tests for automatic LOCAL frame setup and release",
+            "phase-79-local-frame-output-contract-v1",
+            "local-frame-entry-unsupported",
+            "invalid-frame-state",
             "stack-overflow",
-            "stack-underflow",
-            "regressions for Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, and Irvine32 `exit`",
+            "source-level LOCAL operands and LOCAL addressing",
+            "Phase 79 regression coverage also preserves accepted limited `OPTION NOKEYWORD` behavior",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2115,6 +2143,8 @@ def assert_current_status_and_harness_documented() -> None:
         "When this section changes",
         "replace the existing status lines in place",
         "Do not append output-contract tokens",
+        "For Phase 78A, the expected token is `phase-79",
+        "runtime local stack allocation, local operand resolution",
     ]:
         if forbidden in testing_status:
             raise TestFailure(f"TESTING_GUIDE opening status text contains maintainer-facing update guidance: {forbidden}")
@@ -2122,12 +2152,12 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 78A: Limited OPTION NOKEYWORD Reserved-Word Opt-Out",
+            "Milestone 79: LOCAL Stack Allocation and Lifetime",
             "INCLUDE Irvine32.inc",
-            "OPTION NOKEYWORD:<LOOP OFFSET>",
-            "OFFSET DWORD 42",
-            "mov eax, OFFSET",
-            "mov ebx, loop",
+            "LOCAL temp:DWORD",
+            "call Helper",
+            "LOCAL buf[4]:BYTE",
+            "mov ecx, 5",
             "exit",
             "final-registers",
             "Program Console",
@@ -2176,7 +2206,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 78",
+            "IMPLEMENTED_PHASE = 79",
         ],
     )
     assert_all_text_not_contains(
@@ -2781,7 +2811,7 @@ def assert_phase71f_fallthrough_fixture_migration_checks() -> None:
 
 
 def assert_wasm_source_run_vm_storage_off_stack() -> None:
-    """Verify browser source-run keeps the large VM object out of the Wasm call stack."""
+    """Verify browser source-run keeps large execution objects out of the Wasm call stack."""
 
     text = (ROOT / "src/wasm/wasm_api.c").read_text(encoding="utf-8")
     start_marker = "static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallthrough_policy"

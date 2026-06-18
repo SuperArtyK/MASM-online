@@ -16,16 +16,16 @@ import { normalizeDiagnosticSettings } from "./settings.js";
 /** @typedef {{runSource?: (source: string, backendSettings: import("./settings.js").BackendDiagnosticSettings) => unknown}} WorkerRuntime */
 
 /** Latest numeric MASM source-run phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE = 78;
+export const IMPLEMENTED_PHASE = 79;
 
 /** Latest suffixed runtime/source-run behavior phase announced through worker readiness. */
-export const IMPLEMENTED_PHASE_SUFFIX = "A";
+export const IMPLEMENTED_PHASE_SUFFIX = "";
 
 /** Full latest runtime/source-run behavior phase name announced through worker readiness. */
-export const IMPLEMENTED_PHASE_NAME = "Phase 78A - Limited OPTION NOKEYWORD Reserved-Word Opt-Out";
+export const IMPLEMENTED_PHASE_NAME = "Phase 79 - LOCAL Stack Allocation and Lifetime";
 
 /** Source-run JSON output-contract identifier expected by the current browser/protocol layer. */
-export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-78a-nokeyword-output-contract-v1";
+export const SOURCE_RUN_OUTPUT_CONTRACT = "phase-79-local-frame-output-contract-v1";
 
 /**
  * Creates the initial worker readiness response.

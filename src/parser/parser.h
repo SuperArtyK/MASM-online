@@ -711,7 +711,7 @@ typedef struct VmParserResult {
     size_t stack_directive_source_span_length;
     /// Whether a `.stack size` directive requested a specific stack size.
     bool has_requested_stack_size;
-    /// Requested stack size in bytes from `.stack size`; Phase 72A source-level PUSH/POP uses this metadata for stack sizing, while procedure frames remain deferred.
+    /// Requested stack size in bytes from `.stack size`; Phase 72A source-level PUSH/POP and Phase 79 automatic LOCAL frame capacity checks use this metadata, while `.stack` alone does not create a frame.
     uint32_t requested_stack_size;
     /// Whether `INCLUDE Irvine32.inc` registered the virtual Irvine32 symbol table.
     bool has_irvine32_virtual_include;

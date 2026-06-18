@@ -16,8 +16,10 @@
  * Unsigned relational conditional jumps are supported for direct labels.
  * Phase 68A initializes ESP from the active stack region at program startup;
  * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, and Phase 77
- * saves and restores PROC USES registers for direct CALL/RET paths. ENTER,
- * procedure-frame creation, far returns, and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * saves and restores PROC USES registers for direct CALL/RET paths. Phase 79
+ * creates and releases automatic LOCAL stack frames for selected-entry and
+ * direct-CALL procedure paths. ENTER, far returns, source-level LOCAL operands,
+ * and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and
@@ -52,6 +54,15 @@
 
 /// Maximum ordered registers stored for one Phase 77 PROC USES save/restore list.
 #define VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY 6U
+
+/// Maximum copied bytes retained for one procedure or LOCAL identifier.
+#define VM_EXEC_LOCAL_NAME_CAPACITY 64U
+
+/// Maximum Phase 78 LOCAL declarations retained for one procedure.
+#define VM_EXEC_PROCEDURE_LOCAL_CAPACITY 32U
+
+/// Maximum Phase 79 runtime LOCAL descriptors retained by the executor.
+#define VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY VM_MAX_CALL_DEPTH_LIMIT
 
 /// Default Phase 72 direct user-procedure CALL depth limit.
 #define VM_DEFAULT_CALL_DEPTH_LIMIT 64u
@@ -115,12 +126,47 @@ typedef enum VmExecStatus {
     VM_EXEC_STATUS_BRANCH_RUNTIME_DEFERRED,
     /// Execution attempted to enter a PROC USES procedure without a supported CALL-created USES frame.
     VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME,
-    /// Automatic PROC USES save could not reserve or write the required stack frame.
+    /// Automatic PROC USES or LOCAL save could not reserve or write the required stack frame.
     VM_EXEC_STATUS_STACK_OVERFLOW,
     /// Automatic PROC USES restore could not read the saved register frame.
-    VM_EXEC_STATUS_STACK_UNDERFLOW
+    VM_EXEC_STATUS_STACK_UNDERFLOW,
+    /// Automatic LOCAL frame state was inconsistent at entry, release, or return.
+    VM_EXEC_STATUS_INVALID_FRAME_STATE,
+    /// Execution attempted to enter a LOCAL procedure without a supported automatic frame.
+    VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED
 } VmExecStatus;
 
+/// Describes the lifetime state for one Phase 79 automatic LOCAL frame or descriptor.
+typedef enum VmExecLocalFrameState {
+    /// The frame or descriptor slot is not in use.
+    VM_EXEC_LOCAL_FRAME_STATE_NONE = 0,
+    /// The frame or descriptor is active for the currently executing procedure body.
+    VM_EXEC_LOCAL_FRAME_STATE_ACTIVE,
+    /// The frame or descriptor has been released and must not be released again.
+    VM_EXEC_LOCAL_FRAME_STATE_INACTIVE
+} VmExecLocalFrameState;
+
+/// Describes one lowered Phase 78 LOCAL declaration attached to a procedure boundary.
+typedef struct VmExecProcedureLocal {
+    /// Copied LOCAL identifier for diagnostics and descriptor metadata.
+    char local_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// One-based source line of the LOCAL declaration.
+    uint32_t source_line;
+    /// One-based source column of the LOCAL declaration.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the LOCAL declaration.
+    uint32_t source_byte_offset;
+    /// Source span length of the LOCAL declaration.
+    uint32_t source_span_length;
+    /// Declared element size in bytes.
+    uint32_t element_size_bytes;
+    /// Declared element count.
+    uint32_t element_count;
+    /// Total visible byte size before procedure-frame rounding.
+    uint32_t total_size_bytes;
+    /// Negative EBP-relative byte offset.
+    int32_t ebp_offset;
+} VmExecProcedureLocal;
 
 /// Describes one procedure boundary used by root RET, helper fallthrough, and code-falloff checks.
 typedef struct VmExecProcedureBoundary {
@@ -136,7 +182,73 @@ typedef struct VmExecProcedureBoundary {
     size_t uses_register_count;
     /// Ordered canonical Phase 77 PROC USES registers saved on CALL entry and restored on RET.
     VmRegister uses_registers[VM_EXEC_PROCEDURE_USES_REGISTER_CAPACITY];
+    /// Copied procedure identifier used in Phase 79 diagnostics and descriptors.
+    char procedure_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// One-based source line of the PROC declaration.
+    uint32_t source_line;
+    /// One-based source column of the PROC declaration.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the PROC declaration.
+    uint32_t source_byte_offset;
+    /// Source span length of the PROC declaration.
+    uint32_t source_span_length;
+    /// Number of Phase 78 LOCAL metadata entries attached to this procedure.
+    size_t local_count;
+    /// Rounded Phase 79 LOCAL storage byte count reserved below saved EBP.
+    uint32_t local_frame_size_bytes;
+    /// Ordered Phase 78 LOCAL metadata used to create runtime descriptors.
+    VmExecProcedureLocal locals[VM_EXEC_PROCEDURE_LOCAL_CAPACITY];
 } VmExecProcedureBoundary;
+
+/// Captures one active automatic Phase 79 LOCAL stack frame.
+typedef struct VmExecLocalFrame {
+    /// Procedure body start instruction index that owns this frame.
+    size_t procedure_start_instruction_index;
+    /// Monotonic nonzero frame identity assigned at setup.
+    uint32_t frame_id;
+    /// Stack address containing the saved caller EBP.
+    uint32_t saved_ebp_address;
+    /// Caller EBP value saved in the frame.
+    uint32_t saved_ebp_value;
+    /// EBP value installed for the active procedure body.
+    uint32_t frame_base_address;
+    /// ESP value after LOCAL bytes were reserved.
+    uint32_t frame_stack_pointer;
+    /// Rounded LOCAL storage byte count.
+    uint32_t local_frame_size_bytes;
+    /// Lifetime state for this frame.
+    VmExecLocalFrameState state;
+} VmExecLocalFrame;
+
+/// Describes one active or recently released runtime LOCAL object.
+typedef struct VmExecLocalDescriptor {
+    /// Copied procedure identifier that owns the LOCAL.
+    char procedure_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// Copied LOCAL identifier.
+    char local_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// One-based source line of the LOCAL declaration.
+    uint32_t source_line;
+    /// One-based source column of the LOCAL declaration.
+    uint32_t source_column;
+    /// Zero-based source byte offset of the LOCAL declaration.
+    uint32_t source_byte_offset;
+    /// Source span length of the LOCAL declaration.
+    uint32_t source_span_length;
+    /// Active frame identity that owns this object.
+    uint32_t frame_id;
+    /// Runtime address of the first byte of this LOCAL object.
+    uint32_t runtime_base_address;
+    /// Total visible byte size.
+    uint32_t byte_size;
+    /// Declared element size in bytes.
+    uint32_t element_size_bytes;
+    /// Declared element count.
+    uint32_t element_count;
+    /// Negative EBP-relative byte offset.
+    int32_t ebp_offset;
+    /// Lifetime state for this descriptor.
+    VmExecLocalFrameState state;
+} VmExecLocalDescriptor;
 
 /// Captures one active CALL-created Phase 77 PROC USES save/restore frame.
 typedef struct VmExecUsesFrame {
@@ -290,6 +402,22 @@ typedef struct VmExecDiagnostic {
     uint32_t attempted_call_depth;
     /// Configured direct user-procedure CALL depth limit for a rejected CALL.
     uint32_t call_depth_limit;
+    /// Whether @ref procedure_name contains a procedure identifier.
+    bool has_procedure_name;
+    /// Procedure identifier associated with a frame diagnostic.
+    char procedure_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// Whether @ref operation_stage contains a frame operation stage.
+    bool has_operation_stage;
+    /// Frame operation stage associated with a diagnostic.
+    char operation_stage[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// Whether @ref relevant_byte_count is meaningful.
+    bool has_relevant_byte_count;
+    /// Byte count associated with a frame diagnostic.
+    uint32_t relevant_byte_count;
+    /// Whether @ref relevant_address is meaningful.
+    bool has_relevant_address;
+    /// Address associated with a frame diagnostic.
+    uint32_t relevant_address;
 } VmExecDiagnostic;
 
 /// Captures the most recent Phase 71D procedure-fallthrough event.
@@ -358,6 +486,18 @@ typedef struct Vm {
     VmEntryProcedureEndMode entry_procedure_end_mode;
     /// Configured Phase 72 direct user-procedure CALL depth limit.
     uint32_t call_depth_limit;
+    /// Active Phase 79 automatic LOCAL frames.
+    VmExecLocalFrame active_local_frames[VM_MAX_CALL_DEPTH_LIMIT];
+    /// Number of active or LEAVE-released LOCAL frame slots.
+    size_t active_local_frame_count;
+    /// Phase 79 runtime LOCAL object descriptors.
+    VmExecLocalDescriptor local_descriptors[VM_EXEC_LOCAL_DESCRIPTOR_CAPACITY];
+    /// Number of LOCAL object descriptors currently retained.
+    size_t local_descriptor_count;
+    /// Next monotonic automatic LOCAL frame identity.
+    uint32_t next_local_frame_id;
+    /// Whether selected-entry automatic LOCAL frame setup has already been attempted.
+    bool selected_entry_local_frame_created;
 } Vm;
 
 /// Initializes a VM instance for the currently implemented execution subset.
