@@ -1,6 +1,6 @@
 /*
  * @file test_vm_exec.c
- * @brief Unit tests for the VM executor through Phase 79 LOCAL stack allocation and lifetime coverage.
+ * @brief Unit tests for the VM executor through Phase 80 LOCAL operand resolution and addressing coverage.
  *
  * These tests exercise the first vertical execution slice: hardcoded IR, VM
  * stepping, supported instruction semantics, CPU and memory integration, direct
@@ -8,7 +8,7 @@
  * last-step delta capture, Phase 71C code-end falloff, Phase 71D procedure-fallthrough policy, Phase 71E entry-procedure end-mode compatibility, Phase 71F explicit-exit fallthrough regression coverage, Phase 72
  * call-depth resource-limit coverage, Phase 72A source-level PUSH/POP,
  * Phase 73 LEAVE frame teardown, Phase 74 RET imm16 cleanup, and
- * Phase 77 PROC USES runtime save/restore, and Phase 79 automatic LOCAL stack allocation/lifetime. They intentionally avoid parser, Irvine32
+ * Phase 77 PROC USES runtime save/restore, Phase 79 automatic LOCAL stack allocation/lifetime, and Phase 80 LOCAL operand active-frame checks. They intentionally avoid parser, Irvine32
  * routine bodies, and browser UI behavior except for the Phase 42 virtual exit
  * terminator.
  */
@@ -4643,6 +4643,72 @@ static int test_phase79_local_descriptor_capacity_preflight_rolls_back(void) {
     return failures;
 }
 
+
+/// Verifies malformed LOCAL operand metadata without an active frame fails before mutation.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase80_local_operand_without_active_frame_reports_targeted_status(void) {
+    int failures = 0;
+    Vm vm;
+    uint32_t eax = 0U;
+    const VmExecDiagnostic *diagnostic = NULL;
+    const VmIrInstruction program[] = {
+        {
+            VM_IR_OPCODE_MOV,
+            {VM_IR_OPERAND_REGISTER, 32U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
+            {VM_IR_OPERAND_MEMORY_REGISTER, 32U, (uint32_t)(int32_t)-4, VM_REGISTER_COUNT, (uint32_t)(int32_t)-4, VM_IR_RELOCATION_LOCAL},
+            "main.asm",
+            4U,
+            "mov eax, temp",
+            0U
+        }
+    };
+    const VmExecProcedureBoundary boundaries[] = {
+        {
+            .start_instruction_index = 0U,
+            .end_instruction_index = 1U,
+            .is_selected_entry = true,
+            .has_executable_instruction = true,
+            .uses_register_count = 0U,
+            .uses_registers = {0},
+            .procedure_name = "main",
+            .source_line = 3U,
+            .source_column = 1U,
+            .source_byte_offset = 14U,
+            .source_span_length = 4U,
+            .local_count = 0U,
+            .local_frame_size_bytes = 0U
+        }
+    };
+
+    failures += expect_status(vm_init(&vm, NULL), VM_EXEC_STATUS_OK, "vm init should succeed for Phase 80 no-active-frame harness");
+    failures += expect_status(vm_load_program(&vm, program, sizeof(program) / sizeof(program[0])), VM_EXEC_STATUS_OK, "Phase 80 malformed LOCAL operand program should load");
+    failures += expect_status(vm_configure_procedure_boundaries(&vm, boundaries, sizeof(boundaries) / sizeof(boundaries[0])), VM_EXEC_STATUS_OK, "Phase 80 malformed LOCAL boundary metadata should configure");
+    failures += (vm_cpu_write_register(&vm.cpu, VM_REGISTER_EAX, 0x12345678U) ? 0 : record_failure("EAX seed write should succeed before no-active-frame LOCAL operand test"));
+
+    failures += expect_status(vm_step(&vm), VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME, "Phase 80 LOCAL operand without an active owning frame should use targeted status");
+    failures += (vm_cpu_read_register(&vm.cpu, VM_REGISTER_EAX, &eax) ? 0 : record_failure("EAX read after no-active-frame LOCAL operand should succeed"));
+    failures += expect_u32(eax, 0x12345678U, "no-active-frame LOCAL read should stop before register mutation");
+    failures += expect_u32((uint32_t)vm.instruction_pointer, 0U, "no-active-frame LOCAL read should stop before advancing the instruction pointer");
+    failures += expect_size(vm.active_local_frame_count, 0U, "no-active-frame LOCAL read should not synthesize a frame");
+    failures += expect_u32(strcmp(vm_exec_status_name(VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME), "local-operand-no-active-frame") == 0 ? 1U : 0U, 1U, "executor status helper should name local-operand-no-active-frame");
+
+    diagnostic = vm_last_diagnostic(&vm);
+    if (diagnostic == NULL) {
+        failures += record_failure("no-active-frame LOCAL operand should publish a diagnostic");
+    } else {
+        failures += expect_status(diagnostic->status, VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME, "no-active-frame diagnostic should preserve status");
+        failures += expect_u32(diagnostic->has_instruction ? 1U : 0U, 1U, "no-active-frame diagnostic should preserve instruction context");
+        failures += expect_u32(diagnostic->has_procedure_name ? 1U : 0U, 1U, "no-active-frame diagnostic should preserve procedure context when available");
+        failures += expect_u32(strcmp(diagnostic->procedure_name, "main") == 0 ? 1U : 0U, 1U, "no-active-frame diagnostic should name the current procedure");
+        failures += expect_u32(diagnostic->has_operation_stage ? 1U : 0U, 1U, "no-active-frame diagnostic should preserve operation stage");
+        failures += expect_u32(strcmp(diagnostic->operation_stage, "local-operand-address-resolution") == 0 ? 1U : 0U, 1U, "no-active-frame diagnostic should name address-resolution stage");
+    }
+
+    vm_deinit(&vm);
+    return failures;
+}
+
 /// Verifies Phase 70 RET reads a checked pseudo-EIP token and returns to the CALL successor.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -6545,6 +6611,7 @@ int main(void) {
     failures += test_phase77_proc_uses_error_paths();
     failures += test_phase79_selected_entry_local_frame_lifetime();
     failures += test_phase79_local_descriptor_capacity_preflight_rolls_back();
+    failures += test_phase80_local_operand_without_active_frame_reports_targeted_status();
     failures += test_phase70_ret_returns_to_call_successor();
     failures += test_phase70_ret_invalid_token_rolls_back();
     failures += test_phase74_ret_imm16_cleans_arguments();
@@ -6585,6 +6652,6 @@ int main(void) {
         return 1;
     }
 
-    puts("Executor tests through Phase 79 LOCAL stack allocation and lifetime coverage passed.");
+    puts("Executor tests through Phase 80 LOCAL operand resolution and addressing coverage passed.");
     return 0;
 }

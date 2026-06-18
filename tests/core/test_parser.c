@@ -3634,10 +3634,10 @@ static int test_phase78_local_diagnostics(void) {
     return failures;
 }
 
-/// Verifies Phase 78 LOCAL metadata does not resolve local operands before Phase 80.
+/// Verifies Phase 80 resolves supported LOCAL operands to frame-relative IR metadata.
 ///
 /// @return Zero on success, otherwise a positive failure count.
-static int test_phase78_local_operands_remain_deferred(void) {
+static int test_phase80_local_operands_resolve(void) {
     ParserTestBuffers buffers;
     VmParserResult result;
     int failures = 0;
@@ -3647,17 +3647,77 @@ static int test_phase78_local_operands_remain_deferred(void) {
         "main PROC\n"
         "    LOCAL temp:DWORD\n"
         "    mov eax, temp\n"
+        "    mov temp, eax\n"
+        "    lea ebx, temp\n"
         "main ENDP\n"
         "END main\n",
         &buffers,
         &result
-    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "LOCAL operands should remain unresolved before Phase 80");
-    failures += expect_size(result.diagnostic_count, 1U, "deferred LOCAL operand fixture should emit one diagnostic");
-    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNKNOWN_SYMBOL, "LOCAL operand should still use existing unknown-symbol path before Phase 80");
-    failures += expect_size(buffers.procedure_ranges[0].local_count, 1U, "LOCAL metadata should still be published before the operand diagnostic");
+    ), VM_PARSER_STATUS_OK, "Phase 80 LOCAL operands should parse without diagnostics");
+    failures += expect_size(result.diagnostic_count, 0U, "Phase 80 LOCAL operand fixture should not emit diagnostics");
+    failures += expect_size(result.instruction_count, 3U, "Phase 80 LOCAL operand fixture should emit three instructions");
+    failures += expect_size(buffers.procedure_ranges[0].local_count, 1U, "Phase 80 should preserve LOCAL metadata while resolving operands");
+    if (result.instruction_count >= 3U) {
+        failures += expect_u32(buffers.instructions[0].source.relocation, VM_IR_RELOCATION_LOCAL, "Phase 80 local read should carry LOCAL relocation metadata");
+        failures += expect_i32((int32_t)buffers.instructions[0].source.address, buffers.procedure_ranges[0].locals[0].ebp_offset, "Phase 80 local read should encode LOCAL object base offset");
+        failures += expect_i32((int32_t)buffers.instructions[0].source.immediate, buffers.procedure_ranges[0].locals[0].ebp_offset, "Phase 80 local read should encode effective EBP displacement");
+        failures += expect_u32(buffers.instructions[0].source.width_bits, 32U, "Phase 80 local DWORD read should infer width");
+        failures += expect_u32(buffers.instructions[1].destination.relocation, VM_IR_RELOCATION_LOCAL, "Phase 80 local write should carry LOCAL relocation metadata");
+        failures += expect_i32((int32_t)buffers.instructions[1].destination.address, buffers.procedure_ranges[0].locals[0].ebp_offset, "Phase 80 local write should encode LOCAL object base offset");
+        failures += expect_u32(buffers.instructions[2].source.relocation, VM_IR_RELOCATION_LOCAL, "Phase 80 LEA local source should carry LOCAL relocation metadata");
+        failures += expect_u32(buffers.instructions[2].source.width_bits, 0U, "Phase 80 LEA local source should be address-only metadata");
+    }
 
     return failures;
 }
+
+
+/// Verifies Phase 80 keeps future-owned LOCAL operand forms rejected.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase80_local_operand_rejected_future_forms(void) {
+    typedef struct LocalRejectedCase {
+        const char *source;
+        VmParserDiagnosticCode code;
+        const char *message_fragment;
+    } LocalRejectedCase;
+
+    static const LocalRejectedCase cases[] = {
+        {
+            ".code\nmain PROC\n    LOCAL temp:DWORD\n    mov eax, OFFSET temp\nmain ENDP\nEND main\n",
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX,
+            "OFFSET local operands"
+        },
+        {
+            ".code\nmain PROC\n    LOCAL temp:DWORD\n    mov eax, temp[eax*4]\nmain ENDP\nEND main\n",
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SCALED_INDEX,
+            "Scaled-index memory operands"
+        },
+        {
+            ".code\nmain PROC\n    LOCAL temp:DWORD\n    mov qword ptr temp, eax\nmain ENDP\nEND main\n",
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH,
+            "QWORD and SQWORD PTR execution"
+        }
+    };
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+    size_t index = 0U;
+
+    for (index = 0U; index < sizeof(cases) / sizeof(cases[0]); index += 1U) {
+        failures += expect_parser_status(parse_for_test(cases[index].source, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "Phase 80 future-owned LOCAL form should produce diagnostics");
+        failures += expect_size(result.diagnostic_count, 1U, "Phase 80 future-owned LOCAL form should emit one diagnostic");
+        failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, cases[index].code, "Phase 80 future-owned LOCAL form should use targeted diagnostic code");
+        failures += expect_parser_diagnostic_severity(buffers.diagnostics[0].severity, VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR, "Phase 80 future-owned LOCAL diagnostic should be an assembly error");
+        failures += expect_string_contains(buffers.diagnostics[0].message, cases[index].message_fragment, "Phase 80 future-owned LOCAL diagnostic should explain rejection");
+        if (buffers.diagnostics[0].location.line == 0U || buffers.diagnostics[0].lexeme_length == 0U) {
+            failures += record_failure("Phase 80 future-owned LOCAL diagnostic should preserve source location and span");
+        }
+    }
+
+    return failures;
+}
+
 
 
 /// Verifies Phase 78A accepted OPTION NOKEYWORD forms make LOOP and OFFSET available as later user symbols.
@@ -8079,7 +8139,8 @@ int main(void) {
     failures += test_phase78_local_declarations_parse_to_metadata();
     failures += test_phase78_local_scoping_and_shadowing();
     failures += test_phase78_local_diagnostics();
-    failures += test_phase78_local_operands_remain_deferred();
+    failures += test_phase80_local_operands_resolve();
+    failures += test_phase80_local_operand_rejected_future_forms();
     failures += test_phase78a_nokeyword_accepts_loop_and_offset_symbols();
     failures += test_phase78a_nokeyword_source_order_and_casemap();
     failures += test_phase78a_nokeyword_rejection_diagnostics();

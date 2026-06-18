@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 79: LOCAL Stack Allocation and Lifetime.
+  Milestone 80: LOCAL Operand Resolution and Addressing.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,22 +18,19 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 79: LOCAL Stack Allocation and Lifetime</p>
+        <p class="muted">Milestone 80: LOCAL Operand Resolution and Addressing</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
 .code
 main PROC
-    LOCAL temp:DWORD
-    call Helper
-    mov ebx, 7
+    LOCAL temp:DWORD, buf[2]:BYTE
+    mov temp, 42
+    mov BYTE PTR buf[0], 'A'
+    mov eax, temp
+    mov bl, BYTE PTR buf[0]
+    lea ecx, buf
     exit
 main ENDP
-
-Helper PROC
-    LOCAL buf[4]:BYTE
-    mov ecx, 5
-    ret
-Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 79 - LOCAL Stack Allocation and Lifetime. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 80 - LOCAL Operand Resolution and Addressing. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 79 - LOCAL Stack Allocation and Lifetime. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 80 - LOCAL Operand Resolution and Addressing. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2577,7 +2577,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2657,9 +2657,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2685,7 +2685,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2712,7 +2712,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2737,7 +2737,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2761,7 +2761,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2787,7 +2787,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2831,7 +2831,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2858,7 +2858,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2885,7 +2885,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2917,7 +2917,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2948,8 +2948,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phase, 80);
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2994,8 +2994,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phase, 80);
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3021,7 +3021,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3045,7 +3045,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,7 +3069,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,7 +3094,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3118,7 +3118,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3142,7 +3142,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3167,9 +3167,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3195,9 +3195,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3223,9 +3223,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3250,9 +3250,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3278,7 +3278,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3303,7 +3303,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3327,7 +3327,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3544,7 +3544,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 79);
+    assert.equal(json.phase, 80);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3557,7 +3557,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 79);
+  assert.equal(duplicateResult.json.phase, 80);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -4059,7 +4059,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4080,7 +4080,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5518,9 +5518,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5580,9 +5580,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5640,9 +5640,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5677,9 +5677,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5728,9 +5728,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5769,9 +5769,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 79);
+  assert.equal(defaultResult.json.phase, 80);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(defaultResult.json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5791,9 +5791,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 79);
+  assert.equal(stopResult.json.phase, 80);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(stopResult.json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5833,7 +5833,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5869,7 +5869,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5896,9 +5896,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5930,9 +5930,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6020,9 +6020,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 79 - LOCAL Stack Allocation and Lifetime");
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6262,6 +6262,118 @@ test("renders allocated-object warning followed by successful execution exactly"
     }
   ]);
   assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] object-bounds-warning line 6: Memory read at 00500040h for 4 bytes is inside a valid region but outside any declared data object.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 80 LOCAL object-bounds runtime error exactly", () => {
+  const name = "phase80LocalObjectBounds";
+  const source = `.code
+main PROC
+    LOCAL buf[2]:BYTE
+    mov DWORD PTR buf[1], 1234h
+    ret
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
+  });
+  assertRunStatus(json, false, "execution-error");
+  assert.equal(json.phase, 80);
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.instructionCount, 0);
+  assert.deepEqual(json.memoryChanges, []);
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "runtime-error",
+      code: "object-bounds-violation",
+      message: "Memory write escapes LOCAL main.buf at byte offset 1 for 4 bytes; LOCAL size is 2 bytes.",
+      line: 4,
+      column: 19,
+      byteOffset: 56,
+      spanLength: 3
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[runtime-error] object-bounds-violation line 4, column 19, byte offset 56, span length 3: Memory write escapes LOCAL main.buf at byte offset 1 for 4 bytes; LOCAL size is 2 bytes.");
+});
+
+test("renders Phase 80 LOCAL uninitialized-read warning exactly", () => {
+  const name = "phase80LocalUninitializedWarning";
+  const source = `.code
+main PROC
+    LOCAL temp:DWORD
+    mov eax, temp
+    ret
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source, {
+    MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
+  });
+  assertRunStatus(json, true, "ok");
+  assert.equal(json.phase, 80);
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.registers.EAX.hex, "00000000h");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "simulator-warning",
+      code: "uninitialized-read",
+      message: "Memory read uses 4 bytes from LOCAL temp + 0; 4 of those bytes still originated from uninitialized storage.",
+      line: 4,
+      column: 14,
+      byteOffset: 50,
+      spanLength: 4,
+      sourceLocation: {
+        line: 4,
+        column: 14,
+        byteOffset: 50,
+        spanLength: 4
+      },
+      symbolName: "temp",
+      accessStartAddress: "00000000h",
+      accessEndAddress: "00000003h",
+      accessSizeBytes: 4,
+      uninitializedByteCount: 4,
+      initializedByteCount: 0,
+      accessByteOffset: 0
+    },
+    {
+      kind: "info",
+      code: "execution-complete",
+      message: "Execution completed successfully."
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[simulator-warning] uninitialized-read line 4, column 14, byte offset 50, span length 4: Memory read uses 4 bytes from LOCAL temp + 0; 4 of those bytes still originated from uninitialized storage.\n\n[info] execution-complete: Execution completed successfully.");
+});
+
+test("renders Phase 80 out-of-scope LOCAL token as unknown symbol exactly", () => {
+  const name = "phase80OutOfScopeLocalToken";
+  const source = `.code
+main PROC
+    LOCAL temp:DWORD
+    ret
+main ENDP
+Other PROC
+    mov eax, temp
+    ret
+Other ENDP
+END Other
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.equal(json.phase, 80);
+  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "unknown-symbol",
+      message: "Unknown data symbol.",
+      line: 7,
+      column: 14,
+      byteOffset: 79,
+      spanLength: 4
+    }
+  ]);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] unknown-symbol line 7, column 14, byte offset 79, span length 4: Unknown data symbol.");
 });
 
 
@@ -7017,7 +7129,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7245,7 +7357,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7270,7 +7382,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7294,7 +7406,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7324,7 +7436,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7359,7 +7471,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7460,7 +7572,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -8263,7 +8375,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 79);
+  assert.equal(json.phase, 80);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

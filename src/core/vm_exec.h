@@ -18,7 +18,8 @@
  * source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported, and Phase 77
  * saves and restores PROC USES registers for direct CALL/RET paths. Phase 79
  * creates and releases automatic LOCAL stack frames for selected-entry and
- * direct-CALL procedure paths. ENTER, far returns, source-level LOCAL operands,
+ * direct-CALL procedure paths. Phase 80 resolves supported source-level LOCAL
+ * operands against active automatic frames. ENTER, far returns, ADDR, INVOKE,
  * and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
@@ -133,7 +134,9 @@ typedef enum VmExecStatus {
     /// Automatic LOCAL frame state was inconsistent at entry, release, or return.
     VM_EXEC_STATUS_INVALID_FRAME_STATE,
     /// Execution attempted to enter a LOCAL procedure without a supported automatic frame.
-    VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED
+    VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED,
+    /// A Phase 80 LOCAL operand executed without its owning active automatic frame.
+    VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME
 } VmExecStatus;
 
 /// Describes the lifetime state for one Phase 79 automatic LOCAL frame or descriptor.
@@ -418,6 +421,10 @@ typedef struct VmExecDiagnostic {
     bool has_relevant_address;
     /// Address associated with a frame diagnostic.
     uint32_t relevant_address;
+    /// Whether @ref local_name identifies a LOCAL operand.
+    bool has_local_name;
+    /// LOCAL identifier associated with a Phase 80 operand diagnostic.
+    char local_name[VM_EXEC_LOCAL_NAME_CAPACITY];
 } VmExecDiagnostic;
 
 /// Captures the most recent Phase 71D procedure-fallthrough event.

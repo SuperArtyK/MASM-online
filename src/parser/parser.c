@@ -14,9 +14,10 @@
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
  * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata are
  * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
- * automatic runtime frames, while accepted PROC remains metadata-only for
- * unsupported non-USES PROC tails. ENTER, source-level LOCAL operands,
- * scaled-index addressing, Irvine32 routine bodies, and full MASM expression
+ * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
+ * operands to frame-relative runtime addresses. Accepted PROC remains
+ * metadata-only for unsupported non-USES PROC tails. ENTER, ADDR/INVOKE
+ * local argument lowering, scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
@@ -5158,6 +5159,109 @@ static VmSymbolLookupStatus vm_parser_data_symbol_lookup_status(VmParserState *s
     return lookup_status;
 }
 
+/// Returns the currently open procedure range, if operand parsing is inside one.
+///
+/// @param state Parser state to inspect.
+/// @return Mutable current procedure range, or NULL outside a PROC body.
+static VmProcedureRange *vm_parser_current_procedure_range(VmParserState *state) {
+    if (state == NULL || state->config == NULL || state->result == NULL || state->config->procedure_ranges == NULL ||
+        !state->open_procedure.is_set || state->open_procedure.range_index >= state->result->procedure_range_count) {
+        return NULL;
+    }
+    return &state->config->procedure_ranges[state->open_procedure.range_index];
+}
+
+/// Finds a Phase 78 LOCAL symbol in the currently open procedure.
+///
+/// @param state Parser state to inspect.
+/// @param token Candidate LOCAL operand token.
+/// @param out_procedure Receives the owning procedure range when non-NULL.
+/// @return Matching LOCAL symbol, or NULL when the token is not a current local.
+static VmProcedureLocalSymbol *vm_parser_find_current_local_operand(
+    VmParserState *state,
+    const VmLexerToken *token,
+    VmProcedureRange **out_procedure
+) {
+    VmProcedureRange *procedure = NULL;
+    size_t index = 0U;
+
+    if (out_procedure != NULL) {
+        *out_procedure = NULL;
+    }
+    if (state == NULL || token == NULL || !vm_parser_token_can_name_data_symbol(token)) {
+        return NULL;
+    }
+    procedure = vm_parser_current_procedure_range(state);
+    if (procedure == NULL) {
+        return NULL;
+    }
+    for (index = 0U; index < procedure->local_count; index += 1U) {
+        VmLexerToken local_token;
+        memset(&local_token, 0, sizeof(local_token));
+        local_token.kind = VM_LEXER_TOKEN_IDENTIFIER;
+        local_token.lexeme = procedure->locals[index].name;
+        local_token.lexeme_length = strlen(procedure->locals[index].name);
+        if (vm_parser_user_symbol_tokens_equal(state, &local_token, token)) {
+            if (out_procedure != NULL) {
+                *out_procedure = procedure;
+            }
+            return &procedure->locals[index];
+        }
+    }
+    return NULL;
+}
+
+/// Builds a Phase 80 frame-relative memory operand for a current-procedure LOCAL.
+///
+/// @param state Parser state used for diagnostics.
+/// @param procedure Procedure owning the LOCAL.
+/// @param local LOCAL metadata to lower.
+/// @param local_token Source token naming the LOCAL.
+/// @param offset_token Token containing the offset, or NULL for direct LOCAL use.
+/// @param offset Signed byte offset from the LOCAL object base.
+/// @param explicit_width_bits Optional PTR override width in bits, or zero to infer from the LOCAL element width.
+/// @param width_token Optional PTR width-token used for diagnostics.
+/// @param out_operand Receives a LOCAL memory operand on success.
+/// @return true when the LOCAL operand was accepted.
+static bool vm_parser_build_local_memory_operand(
+    VmParserState *state,
+    const VmProcedureRange *procedure,
+    const VmProcedureLocalSymbol *local,
+    const VmLexerToken *local_token,
+    const VmLexerToken *offset_token,
+    int32_t offset,
+    uint8_t explicit_width_bits,
+    const VmLexerToken *width_token,
+    VmIrOperand *out_operand
+) {
+    uint8_t width_bits = explicit_width_bits;
+
+    if (state == NULL || procedure == NULL || local == NULL || local_token == NULL || out_operand == NULL) {
+        return false;
+    }
+
+    if (explicit_width_bits == 64U) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : local_token, "QWORD and SQWORD PTR execution is deferred until Extended 32-bit Mode.");
+        return false;
+    }
+    if (width_bits == 0U) {
+        if (local->element_size_bytes > 4U) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, local_token, "QWORD and SQWORD LOCAL memory operands are deferred until Extended 32-bit Mode.");
+            return false;
+        }
+        width_bits = (uint8_t)(local->element_size_bytes * 8U);
+    }
+    if (!vm_ir_width_is_supported(width_bits)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PTR_WIDTH, width_token != NULL ? width_token : local_token, "PTR width override is not executable in the current MASM32 subset.");
+        return false;
+    }
+
+    (void)procedure;
+    (void)offset_token;
+    *out_operand = vm_ir_operand_local_memory(local->ebp_offset, offset, width_bits);
+    return true;
+}
+
 /// Creates a memory operand for a symbol plus constant byte offset.
 ///
 /// The offset is validated only for representability in the simulator address
@@ -5191,6 +5295,14 @@ static bool vm_parser_build_symbol_offset_memory_operand(
 
     if (state == NULL || symbol_token == NULL || out_operand == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
         return false;
+    }
+
+    {
+        VmProcedureRange *local_procedure = NULL;
+        VmProcedureLocalSymbol *local = vm_parser_find_current_local_operand(state, symbol_token, &local_procedure);
+        if (local != NULL) {
+            return vm_parser_build_local_memory_operand(state, local_procedure, local, symbol_token, offset_token, offset, explicit_width_bits, width_token, out_operand);
+        }
     }
 
     symbol = vm_parser_resolve_symbol(state, symbol_token);
@@ -6090,6 +6202,16 @@ static bool vm_parser_build_lea_symbol_address_operand(VmParserState *state, con
         return false;
     }
 
+    {
+        VmProcedureRange *local_procedure = NULL;
+        VmProcedureLocalSymbol *local = vm_parser_find_current_local_operand(state, symbol_token, &local_procedure);
+        if (local != NULL) {
+            (void)local_procedure;
+            *out_operand = vm_ir_operand_local_memory(local->ebp_offset, offset, 0U);
+            return true;
+        }
+    }
+
     symbol = vm_parser_resolve_symbol(state, symbol_token);
     if (symbol == NULL) {
         return false;
@@ -6783,6 +6905,10 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         uint32_t encoded_address = 0U;
         if (symbol_token == NULL || !vm_parser_token_can_name_data_symbol(symbol_token)) {
             vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_EXPECTED_OPERAND, token, "OFFSET requires a following data symbol.");
+            return false;
+        }
+        if (vm_parser_find_current_local_operand(state, symbol_token, NULL) != NULL) {
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SYNTAX, symbol_token, "OFFSET local operands are reserved for ADDR/OFFSET-local work; use LEA to compute a LOCAL address in this phase.");
             return false;
         }
         if (vm_parser_add_unsupported_segment_symbol_diagnostic(state, symbol_token)) {
@@ -9915,20 +10041,6 @@ static bool vm_parser_expect_no_tokens_after_end(VmParserState *state) {
     return false;
 }
 
-
-/// Returns the currently open procedure metadata record when one is available.
-///
-/// @param state Parser state to inspect.
-/// @return Current procedure range, or NULL when no procedure metadata record is active.
-static VmProcedureRange *vm_parser_current_procedure_range(VmParserState *state) {
-    if (state == NULL || state->config == NULL || state->result == NULL ||
-        !state->open_procedure.is_set || state->config->procedure_ranges == NULL ||
-        state->open_procedure.range_index >= state->result->procedure_range_count) {
-        return NULL;
-    }
-
-    return &state->config->procedure_ranges[state->open_procedure.range_index];
-}
 
 /// Returns an unsigned local-object alignment for one local type.
 ///

@@ -16,7 +16,7 @@
  * last-step deltas by snapshotting CPU state and copying memory-module byte
  * changes after each successful step. Phase 68A initializes ESP from the active
  * stack region at startup; source-level PUSH/POP, LEAVE, and RET imm16 cleanup are supported,
- * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths. ENTER, source-level LOCAL operands, far returns, and non-exit
+ * and Phase 77 saves and restores PROC USES registers on supported direct CALL/RET paths. Phase 79 creates automatic LOCAL frames for selected-entry and direct-CALL procedure paths, and Phase 80 resolves supported source-level LOCAL operands through active frame-relative storage. ENTER, ADDR/INVOKE local argument lowering, far returns, and non-exit
  * Irvine32 routines remain later milestones. Phase 69
  * implements direct user-procedure CALL as a checked internal stack write,
  * Phase 70 implements helper RET as a checked internal stack read, and Phase 71
@@ -820,6 +820,26 @@ static void vm_exec_record_memory_access(
     vm->last_delta.memory_access_count += 1U;
 }
 
+/// Returns whether an operand is a Phase 80 LOCAL memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true when @p operand carries LOCAL relocation metadata.
+static bool vm_exec_operand_is_local_memory(const VmIrOperand *operand);
+
+/// Resolves a Phase 80 LOCAL operand to its current runtime stack address.
+///
+/// @param vm VM whose active frame stack should be inspected.
+/// @param instruction Instruction associated with diagnostics.
+/// @param operand LOCAL memory operand to resolve.
+/// @param out_address Receives the runtime address on success.
+/// @return OK when an active owning frame exists, otherwise a targeted LOCAL operand status.
+static VmExecStatus vm_exec_resolve_local_memory_address(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *operand,
+    uint32_t *out_address
+);
+
 /// Reads an operand value through CPU or memory helpers.
 ///
 /// @param vm VM instance to inspect.
@@ -859,7 +879,12 @@ static VmExecStatus vm_exec_read_operand(
         case VM_IR_OPERAND_MEMORY_ADDRESS:
         case VM_IR_OPERAND_MEMORY_REGISTER: {
             uint32_t effective_address = 0U;
-            if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
+            if (vm_exec_operand_is_local_memory(operand)) {
+                VmExecStatus local_status = vm_exec_resolve_local_memory_address(vm, instruction, operand, &effective_address);
+                if (local_status != VM_EXEC_STATUS_OK) {
+                    return local_status;
+                }
+            } else if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
             memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
@@ -919,7 +944,12 @@ static VmExecStatus vm_exec_write_operand(
         case VM_IR_OPERAND_MEMORY_ADDRESS:
         case VM_IR_OPERAND_MEMORY_REGISTER: {
             uint32_t effective_address = 0U;
-            if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
+            if (vm_exec_operand_is_local_memory(operand)) {
+                VmExecStatus local_status = vm_exec_resolve_local_memory_address(vm, instruction, operand, &effective_address);
+                if (local_status != VM_EXEC_STATUS_OK) {
+                    return local_status;
+                }
+            } else if (!vm_exec_resolve_memory_address(vm, operand, &effective_address)) {
                 return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
             }
             memset(&memory_diagnostic, 0, sizeof(memory_diagnostic));
@@ -941,12 +971,6 @@ static VmExecStatus vm_exec_write_operand(
             return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
 }
-
-/// Returns whether an operand can be used as a destination by the current execution subset.
-///
-/// @param operand Operand to inspect.
-/// @return true for register and memory-address operands.
-
 
 /// Reads a checked 32-bit value from an absolute simulated memory address.
 ///
@@ -1073,6 +1097,131 @@ static void vm_exec_set_local_frame_diagnostic(
         vm->last_diagnostic.has_relevant_address = true;
         vm->last_diagnostic.relevant_address = address;
     }
+}
+
+/// Returns the LOCAL declaration metadata associated with one lowered LOCAL operand.
+///
+/// @param boundary Current procedure boundary that owns the operand.
+/// @param operand LOCAL operand to match by EBP-relative object base.
+/// @return Matching LOCAL declaration, or NULL when metadata is unavailable.
+static const VmExecProcedureLocal *vm_exec_find_boundary_local_for_operand(
+    const VmExecProcedureBoundary *boundary,
+    const VmIrOperand *operand
+) {
+    size_t index = 0U;
+    int32_t local_ebp_offset = 0;
+
+    if (boundary == NULL || operand == NULL ||
+        operand->kind != VM_IR_OPERAND_MEMORY_REGISTER ||
+        operand->relocation != VM_IR_RELOCATION_LOCAL) {
+        return NULL;
+    }
+    local_ebp_offset = (int32_t)operand->address;
+    for (index = 0U; index < boundary->local_count; index += 1U) {
+        if (boundary->locals[index].ebp_offset == local_ebp_offset) {
+            return &boundary->locals[index];
+        }
+    }
+    return NULL;
+}
+
+/// Records a Phase 80 LOCAL operand diagnostic with procedure and local context.
+///
+/// @param vm VM whose diagnostic should be updated.
+/// @param status Executor status to record.
+/// @param instruction Instruction associated with the failure.
+/// @param operand LOCAL operand metadata associated with the failure.
+/// @param stage Operation stage to record.
+static void vm_exec_set_local_operand_diagnostic(
+    Vm *vm,
+    VmExecStatus status,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *operand,
+    const char *stage
+) {
+    const VmExecProcedureBoundary *boundary = NULL;
+    const VmExecProcedureLocal *local = NULL;
+
+    vm_exec_set_diagnostic(vm, status, instruction);
+    if (vm == NULL || operand == NULL) {
+        return;
+    }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    local = vm_exec_find_boundary_local_for_operand(boundary, operand);
+    if (boundary != NULL && boundary->procedure_name[0] != '\0') {
+        vm->last_diagnostic.has_procedure_name = true;
+        vm_exec_copy_short_string(vm->last_diagnostic.procedure_name, sizeof(vm->last_diagnostic.procedure_name), boundary->procedure_name);
+    }
+    if (local != NULL && local->local_name[0] != '\0') {
+        vm->last_diagnostic.has_local_name = true;
+        vm_exec_copy_short_string(vm->last_diagnostic.local_name, sizeof(vm->last_diagnostic.local_name), local->local_name);
+    }
+    if (stage != NULL && stage[0] != '\0') {
+        vm->last_diagnostic.has_operation_stage = true;
+        vm_exec_copy_short_string(vm->last_diagnostic.operation_stage, sizeof(vm->last_diagnostic.operation_stage), stage);
+    }
+}
+
+/// Returns whether an operand is a Phase 80 LOCAL memory operand.
+///
+/// @param operand Operand to inspect.
+/// @return true when @p operand carries LOCAL relocation metadata.
+static bool vm_exec_operand_is_local_memory(const VmIrOperand *operand) {
+    return operand != NULL && operand->kind == VM_IR_OPERAND_MEMORY_REGISTER && operand->relocation == VM_IR_RELOCATION_LOCAL;
+}
+
+/// Finds the top active automatic LOCAL frame required by one LOCAL operand.
+///
+/// @param vm VM containing active frame metadata.
+/// @param operand LOCAL operand whose current procedure frame should be matched.
+/// @return Matching active top frame, or NULL when the operand has no active frame.
+static const VmExecLocalFrame *vm_exec_active_local_frame_for_operand(const Vm *vm, const VmIrOperand *operand) {
+    const VmExecLocalFrame *frame = NULL;
+    const VmExecProcedureBoundary *boundary = NULL;
+
+    if (vm == NULL || operand == NULL || vm->active_local_frame_count == 0U || !vm_exec_operand_is_local_memory(operand)) {
+        return NULL;
+    }
+    boundary = vm_exec_find_procedure_boundary(vm, vm->instruction_pointer);
+    if (boundary == NULL || vm_exec_find_boundary_local_for_operand(boundary, operand) == NULL) {
+        return NULL;
+    }
+    frame = &vm->active_local_frames[vm->active_local_frame_count - 1U];
+    if (frame->state != VM_EXEC_LOCAL_FRAME_STATE_ACTIVE ||
+        frame->procedure_start_instruction_index != boundary->start_instruction_index) {
+        return NULL;
+    }
+    return frame;
+}
+
+/// Resolves a Phase 80 LOCAL operand to its current runtime stack address.
+///
+/// @param vm VM whose active frame stack should be inspected.
+/// @param instruction Instruction associated with diagnostics.
+/// @param operand LOCAL memory operand to resolve.
+/// @param out_address Receives the runtime address on success.
+/// @return OK when an active owning frame exists, otherwise a targeted LOCAL operand status.
+static VmExecStatus vm_exec_resolve_local_memory_address(
+    Vm *vm,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *operand,
+    uint32_t *out_address
+) {
+    const VmExecLocalFrame *frame = NULL;
+
+    if (out_address != NULL) {
+        *out_address = 0U;
+    }
+    if (vm == NULL || operand == NULL || out_address == NULL || !vm_exec_operand_is_local_memory(operand)) {
+        return VM_EXEC_STATUS_INVALID_ARGUMENT;
+    }
+    frame = vm_exec_active_local_frame_for_operand(vm, operand);
+    if (frame == NULL) {
+        vm_exec_set_local_operand_diagnostic(vm, VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME, instruction, operand, "local-operand-address-resolution");
+        return VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME;
+    }
+    *out_address = frame->frame_base_address + operand->immediate;
+    return VM_EXEC_STATUS_OK;
 }
 
 /// Returns whether a byte stack range can be reserved without crossing the active stack region.
@@ -4564,7 +4713,12 @@ static VmExecStatus vm_exec_execute_lea(Vm *vm, const VmIrInstruction *instructi
     if (instruction->destination.kind != VM_IR_OPERAND_REGISTER || vm_cpu_register_width_bits(instruction->destination.reg) != 32U) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
-    if (!vm_exec_resolve_effective_address(vm, &instruction->source, &address)) {
+    if (vm_exec_operand_is_local_memory(&instruction->source)) {
+        VmExecStatus local_status = vm_exec_resolve_local_memory_address(vm, instruction, &instruction->source, &address);
+        if (local_status != VM_EXEC_STATUS_OK) {
+            return local_status;
+        }
+    } else if (!vm_exec_resolve_effective_address(vm, &instruction->source, &address)) {
         return VM_EXEC_STATUS_UNSUPPORTED_OPERAND;
     }
     if (!vm_cpu_write_register(&vm->cpu, instruction->destination.reg, address)) {
@@ -5304,7 +5458,8 @@ VmExecStatus vm_step(Vm *vm) {
     if (status != VM_EXEC_STATUS_OK) {
         if (status != VM_EXEC_STATUS_MEMORY_ERROR && status != VM_EXEC_STATUS_CALL_DEPTH_EXCEEDED &&
             status != VM_EXEC_STATUS_STACK_OVERFLOW && status != VM_EXEC_STATUS_INVALID_FRAME_STATE &&
-            status != VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
+            status != VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED &&
+            status != VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME) {
             vm_exec_set_diagnostic(vm, status, instruction);
         }
         return status;
@@ -5414,6 +5569,8 @@ const char *vm_exec_status_name(VmExecStatus status) {
             return "invalid-frame-state";
         case VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED:
             return "local-frame-entry-unsupported";
+        case VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME:
+            return "local-operand-no-active-frame";
         default:
             return NULL;
     }
@@ -5426,8 +5583,8 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
     const VmIrInstruction program[] = {
         {
             VM_IR_OPCODE_MOV,
-            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
-            {VM_IR_OPERAND_IMMEDIATE, 32U, 20U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+            vm_ir_operand_register(VM_REGISTER_EAX, 32U),
+            vm_ir_operand_immediate(20U, 32U),
             "milestone4.asm",
             1U,
             "mov eax, 20",
@@ -5435,8 +5592,8 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         },
         {
             VM_IR_OPCODE_ADD,
-            {VM_IR_OPERAND_REGISTER, 0U, 0U, VM_REGISTER_EAX, 0U, VM_IR_RELOCATION_NONE},
-            {VM_IR_OPERAND_IMMEDIATE, 32U, 22U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+            vm_ir_operand_register(VM_REGISTER_EAX, 32U),
+            vm_ir_operand_immediate(22U, 32U),
             "milestone4.asm",
             2U,
             "add eax, 22",
@@ -5444,8 +5601,8 @@ VmExecStatus vm_run_milestone4_hardcoded_program(uint32_t *out_eax) {
         },
         {
             VM_IR_OPCODE_RET,
-            {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
-            {VM_IR_OPERAND_NONE, 0U, 0U, VM_REGISTER_COUNT, 0U, VM_IR_RELOCATION_NONE},
+            vm_ir_operand_none(),
+            vm_ir_operand_none(),
             "milestone4.asm",
             3U,
             "ret",

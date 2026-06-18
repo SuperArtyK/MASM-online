@@ -150,6 +150,7 @@ typedef enum VmIrOpcode {
     VM_IR_OPCODE_COUNT
 } VmIrOpcode;
 
+
 /// Identifies the representation used by one IR operand.
 typedef enum VmIrOperandKind {
     /// No operand is present.
@@ -174,7 +175,9 @@ typedef enum VmIrRelocationKind {
     /// Operand contains an address relative to the writable `.data` / `.DATA?` region.
     VM_IR_RELOCATION_DATA,
     /// Operand contains an address relative to the read-only `.CONST` region.
-    VM_IR_RELOCATION_CONST
+    VM_IR_RELOCATION_CONST,
+    /// Operand contains procedure-scoped Phase 80 LOCAL metadata and must resolve through an active automatic frame.
+    VM_IR_RELOCATION_LOCAL
 } VmIrRelocationKind;
 
 /// Describes one minimal IR operand.
@@ -189,7 +192,7 @@ typedef struct VmIrOperand {
     VmRegister reg;
     /// Absolute address for VM_IR_OPERAND_MEMORY_ADDRESS, or static base address for VM_IR_OPERAND_MEMORY_REGISTER.
     uint32_t address;
-    /// Relocation section for address-valued operands that came from data symbols or OFFSET.
+    /// Relocation section for address-valued operands that came from data symbols, OFFSET, or LOCAL metadata.
     VmIrRelocationKind relocation;
 } VmIrOperand;
 
@@ -251,6 +254,20 @@ VmIrOperand vm_ir_operand_memory(uint32_t address, uint8_t width_bits);
 /// @param width_bits Operand width in bits, or zero when parser validation will infer it.
 /// @return Register-indirect memory operand descriptor.
 VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t displacement, uint32_t static_address, uint8_t width_bits);
+
+/// Returns a Phase 80 procedure-scoped LOCAL memory operand.
+///
+/// The operand stores the LOCAL object's negative EBP-relative base offset in
+/// @ref VmIrOperand.address and the effective EBP-relative byte displacement in
+/// @ref VmIrOperand.immediate. Runtime execution resolves the value through the
+/// current active automatic LOCAL frame, so recursive calls receive distinct
+/// addresses while parser metadata remains frame-instance independent.
+///
+/// @param local_ebp_offset Negative EBP-relative object base offset.
+/// @param displacement Signed byte displacement from the LOCAL object base.
+/// @param width_bits Operand width in bits, or zero when later validation infers it.
+/// @return LOCAL memory operand descriptor.
+VmIrOperand vm_ir_operand_local_memory(int32_t local_ebp_offset, int32_t displacement, uint8_t width_bits);
 
 /// Returns a direct branch target operand.
 ///

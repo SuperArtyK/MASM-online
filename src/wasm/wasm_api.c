@@ -23,8 +23,8 @@
  * RET imm16 caller cleanup, Phase 75 PROC metadata diagnostics, Phase 76 PROC USES
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
  * Phase 78A limited OPTION NOKEYWORD parser behavior, Phase 78 LOCAL
- * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, and
- * recovered unsupported-feature diagnostics, then reports a
+ * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, Phase 80 LOCAL
+ * operand resolution and addressing, and recovered unsupported-feature diagnostics, then reports a
  * compact JSON result for the UI.
  */
 
@@ -87,16 +87,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 79U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 80U
 
-/// Suffix for the current Phase 79 runtime/source-run behavior phase.
+/// Suffix for the current Phase 80 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 79 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 79 - LOCAL Stack Allocation and Lifetime"
+/// Full name of the current Phase 80 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 80 - LOCAL Operand Resolution and Addressing"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 79 LOCAL frame behavior.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-79-local-frame-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 80 LOCAL operand behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-80-local-operand-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -148,6 +148,9 @@
 
 /// Maximum uninitialized-read diagnostics retained for one source run.
 #define MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS 64U
+
+/// Maximum initialized LOCAL bytes retained for one source run.
+#define MASM32_SIM_WASM_MAX_LOCAL_INITIALIZED_BYTES 8192U
 
 /// Maximum undefined shift/rotate flag diagnostics retained for one source run.
 #define MASM32_SIM_WASM_MAX_SHIFT_WARNINGS 64U
@@ -235,8 +238,24 @@ typedef struct Masm32SimWasmObjectBoundsDiagnostic {
     uint32_t start_address;
     /// Inclusive final simulated address in the validated memory access range.
     uint32_t end_address;
+    /// Whether @ref start_address and @ref end_address are runtime addresses.
+    bool has_runtime_address;
     /// Number of bytes requested by the access.
     uint32_t size_bytes;
+    /// Whether this diagnostic describes a Phase 80 LOCAL object.
+    bool has_local_name;
+    /// LOCAL name for Phase 80 stack-object diagnostics.
+    char local_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// Whether @ref procedure_name identifies the owning procedure.
+    bool has_procedure_name;
+    /// Procedure name that owns the LOCAL object.
+    char procedure_name[VM_EXEC_LOCAL_NAME_CAPACITY];
+    /// Byte offset from the LOCAL object base.
+    uint32_t local_byte_offset;
+    /// Total LOCAL object size in bytes.
+    uint32_t local_size_bytes;
+    /// Whether LOCAL byte-offset fields are meaningful.
+    bool has_local_byte_offset;
     /// Source line associated with the memory operand, or zero when unknown.
     uint32_t source_line;
     /// Source column associated with the memory operand, or zero when unknown.
@@ -248,6 +267,14 @@ typedef struct Masm32SimWasmObjectBoundsDiagnostic {
     /// Whether byte-offset and span-length fields identify a real source span.
     bool has_source_span;
 } Masm32SimWasmObjectBoundsDiagnostic;
+
+/// Tracks one initialized byte inside an active Phase 80 LOCAL object.
+typedef struct Masm32SimWasmLocalInitializedByte {
+    /// Active frame identity that owns the byte.
+    uint32_t frame_id;
+    /// Runtime simulated byte address.
+    uint32_t address;
+} Masm32SimWasmLocalInitializedByte;
 
 /// Identifies the Phase 53B section-boundary level that produced a diagnostic.
 typedef enum Masm32SimWasmSectionBoundaryLevel {
@@ -297,6 +324,8 @@ typedef struct Masm32SimWasmUninitializedReadDiagnostic {
     uint32_t start_address;
     /// Inclusive final simulated address in the read range.
     uint32_t end_address;
+    /// Whether @ref start_address and @ref end_address are runtime addresses.
+    bool has_runtime_address;
     /// Number of bytes read.
     uint32_t size_bytes;
     /// Number of bytes in the read range that remain uninitialized-origin.
@@ -360,6 +389,12 @@ typedef struct Masm32SimWasmPlannedMemoryAccess {
     /// Width of the planned access in bits.
     uint8_t width_bits;
 } Masm32SimWasmPlannedMemoryAccess;
+
+static size_t masm32_sim_wasm_collect_planned_object_accesses(
+    const VmIrInstruction *instruction,
+    Masm32SimWasmPlannedMemoryAccess *accesses,
+    size_t access_capacity
+);
 
 /// Describes one source-mapped layout failure message.
 typedef struct Masm32SimWasmLayoutMessage {
@@ -465,6 +500,12 @@ typedef struct Masm32SimWasmRunStorage {
     uint8_t data_initialized_mask[MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES];
     /// Number of `.data`/`.DATA?` bytes covered by @ref data_initialized_mask.
     size_t data_initialized_mask_size;
+    /// Runtime bytes initialized by source-level writes into active Phase 80 LOCAL objects.
+    Masm32SimWasmLocalInitializedByte local_initialized_bytes[MASM32_SIM_WASM_MAX_LOCAL_INITIALIZED_BYTES];
+    /// Number of valid initialized LOCAL bytes.
+    size_t local_initialized_byte_count;
+    /// Whether LOCAL initialized-byte tracking exceeded its fixed storage.
+    bool local_initialized_byte_overflowed;
     /// Constant image bytes emitted by the parser for `.CONST`.
     uint8_t const_image[MASM32_SIM_WASM_RUN_CONST_IMAGE_BYTES];
     /// Per-byte initialization mask for `.CONST` bytes.
@@ -2708,6 +2749,302 @@ static bool masm32_sim_wasm_validate_section_access(
 }
 
 
+
+/// Copies source-span metadata for a symbol memory operand.
+///
+/// @param instruction Instruction containing source text.
+/// @param source Full source buffer.
+/// @param symbol_name Symbol or LOCAL name to find.
+/// @param out_column Receives one-based source column.
+/// @param out_byte_offset Receives zero-based source byte offset.
+/// @param out_span_length Receives source span length.
+/// @param out_has_source_span Receives whether span metadata is available.
+static void masm32_sim_wasm_copy_symbol_memory_source_span(
+    const VmIrInstruction *instruction,
+    const char *source,
+    const char *symbol_name,
+    uint32_t *out_column,
+    size_t *out_byte_offset,
+    size_t *out_span_length,
+    bool *out_has_source_span
+);
+
+/// Returns whether an operand carries Phase 80 LOCAL memory metadata.
+///
+/// @param operand Operand to inspect.
+/// @return true for frame-relative LOCAL memory operands.
+static bool masm32_sim_wasm_operand_is_local_memory(const VmIrOperand *operand) {
+    return operand != NULL && operand->kind == VM_IR_OPERAND_MEMORY_REGISTER && operand->relocation == VM_IR_RELOCATION_LOCAL;
+}
+
+/// Finds the procedure boundary containing the VM's current instruction pointer.
+///
+/// @param vm VM containing configured procedure boundaries.
+/// @return Current procedure boundary, or NULL outside a procedure body.
+static const VmExecProcedureBoundary *masm32_sim_wasm_current_procedure_boundary_for_vm(const Vm *vm) {
+    size_t index = 0U;
+    size_t instruction_index = 0U;
+
+    if (vm == NULL) {
+        return NULL;
+    }
+    instruction_index = vm->instruction_pointer;
+    for (index = 0U; index < vm->procedure_boundary_count; index += 1U) {
+        const VmExecProcedureBoundary *boundary = &vm->procedure_boundaries[index];
+        if (instruction_index >= boundary->start_instruction_index && instruction_index < boundary->end_instruction_index) {
+            return boundary;
+        }
+    }
+    return NULL;
+}
+
+/// Finds LOCAL declaration metadata associated with one lowered LOCAL operand.
+///
+/// @param boundary Current procedure boundary that owns the LOCAL declaration.
+/// @param operand LOCAL operand to match by EBP-relative base offset.
+/// @return Matching LOCAL declaration, or NULL.
+static const VmExecProcedureLocal *masm32_sim_wasm_find_boundary_local_for_operand(
+    const VmExecProcedureBoundary *boundary,
+    const VmIrOperand *operand
+) {
+    size_t index = 0U;
+    int32_t local_ebp_offset = 0;
+
+    if (boundary == NULL || operand == NULL || !masm32_sim_wasm_operand_is_local_memory(operand)) {
+        return NULL;
+    }
+    local_ebp_offset = (int32_t)operand->address;
+    for (index = 0U; index < boundary->local_count; index += 1U) {
+        if (boundary->locals[index].ebp_offset == local_ebp_offset) {
+            return &boundary->locals[index];
+        }
+    }
+    return NULL;
+}
+
+/// Finds the active Phase 79 frame that owns a Phase 80 LOCAL operand.
+///
+/// @param vm VM containing active frame metadata.
+/// @param operand LOCAL operand to match.
+/// @return Matching active top frame, or NULL when no active frame owns it.
+static const VmExecLocalFrame *masm32_sim_wasm_active_local_frame_for_operand(const Vm *vm, const VmIrOperand *operand) {
+    const VmExecLocalFrame *frame = NULL;
+    const VmExecProcedureBoundary *boundary = NULL;
+
+    if (vm == NULL || operand == NULL || vm->active_local_frame_count == 0U || !masm32_sim_wasm_operand_is_local_memory(operand)) {
+        return NULL;
+    }
+    boundary = masm32_sim_wasm_current_procedure_boundary_for_vm(vm);
+    if (boundary == NULL || masm32_sim_wasm_find_boundary_local_for_operand(boundary, operand) == NULL) {
+        return NULL;
+    }
+    frame = &vm->active_local_frames[vm->active_local_frame_count - 1U];
+    if (frame->state != VM_EXEC_LOCAL_FRAME_STATE_ACTIVE ||
+        frame->procedure_start_instruction_index != boundary->start_instruction_index) {
+        return NULL;
+    }
+    return frame;
+}
+
+/// Resolves a Phase 80 LOCAL operand to its runtime stack address.
+///
+/// @param vm VM containing active frame metadata.
+/// @param operand LOCAL operand to resolve.
+/// @param out_address Receives the runtime address.
+/// @return true when a matching active frame exists.
+static bool masm32_sim_wasm_resolve_local_memory_operand_address(const Vm *vm, const VmIrOperand *operand, uint32_t *out_address) {
+    const VmExecLocalFrame *frame = NULL;
+    if (out_address != NULL) {
+        *out_address = 0U;
+    }
+    if (vm == NULL || operand == NULL || out_address == NULL || !masm32_sim_wasm_operand_is_local_memory(operand)) {
+        return false;
+    }
+    frame = masm32_sim_wasm_active_local_frame_for_operand(vm, operand);
+    if (frame == NULL) {
+        return false;
+    }
+    *out_address = frame->frame_base_address + operand->immediate;
+    return true;
+}
+
+/// Finds the active LOCAL descriptor named by one Phase 80 operand.
+///
+/// @param vm VM containing descriptor metadata.
+/// @param operand LOCAL operand to match.
+/// @return Active descriptor for the operand's LOCAL object, or NULL.
+static const VmExecLocalDescriptor *masm32_sim_wasm_find_local_descriptor_for_operand(const Vm *vm, const VmIrOperand *operand) {
+    const VmExecLocalFrame *frame = NULL;
+    size_t index = 0U;
+    int32_t local_ebp_offset = 0;
+
+    if (vm == NULL || operand == NULL || !masm32_sim_wasm_operand_is_local_memory(operand)) {
+        return NULL;
+    }
+    frame = masm32_sim_wasm_active_local_frame_for_operand(vm, operand);
+    if (frame == NULL) {
+        return NULL;
+    }
+    local_ebp_offset = (int32_t)operand->address;
+    for (index = 0U; index < vm->local_descriptor_count; index += 1U) {
+        const VmExecLocalDescriptor *descriptor = &vm->local_descriptors[index];
+        if (descriptor->state == VM_EXEC_LOCAL_FRAME_STATE_ACTIVE &&
+            descriptor->frame_id == frame->frame_id &&
+            descriptor->ebp_offset == local_ebp_offset) {
+            return descriptor;
+        }
+    }
+    return NULL;
+}
+
+/// Finds an active LOCAL descriptor that wholly contains one runtime range.
+///
+/// @param vm VM containing descriptor metadata.
+/// @param address First byte of the access range.
+/// @param size_bytes Number of bytes in the access range.
+/// @return Active descriptor containing the range, or NULL.
+static const VmExecLocalDescriptor *masm32_sim_wasm_find_local_descriptor_for_range(const Vm *vm, uint32_t address, uint32_t size_bytes) {
+    uint32_t end_address = 0U;
+    size_t index = 0U;
+    if (vm == NULL || size_bytes == 0U || !vm_object_map_inclusive_end(address, size_bytes, &end_address)) {
+        return NULL;
+    }
+    for (index = 0U; index < vm->local_descriptor_count; index += 1U) {
+        const VmExecLocalDescriptor *descriptor = &vm->local_descriptors[index];
+        uint32_t descriptor_end = 0U;
+        if (descriptor->state != VM_EXEC_LOCAL_FRAME_STATE_ACTIVE ||
+            !vm_object_map_inclusive_end(descriptor->runtime_base_address, descriptor->byte_size, &descriptor_end)) {
+            continue;
+        }
+        if (address >= descriptor->runtime_base_address && end_address <= descriptor_end) {
+            return descriptor;
+        }
+    }
+    return NULL;
+}
+
+/// Finds an active LOCAL descriptor whose object starts before or at one address.
+///
+/// @param vm VM containing descriptor metadata.
+/// @param address First byte of the access range.
+/// @return Active descriptor whose range contains @p address, or NULL.
+static const VmExecLocalDescriptor *masm32_sim_wasm_find_local_descriptor_for_start_address(const Vm *vm, uint32_t address) {
+    size_t index = 0U;
+    if (vm == NULL) {
+        return NULL;
+    }
+    for (index = 0U; index < vm->local_descriptor_count; index += 1U) {
+        const VmExecLocalDescriptor *descriptor = &vm->local_descriptors[index];
+        uint32_t descriptor_end = 0U;
+        if (descriptor->state != VM_EXEC_LOCAL_FRAME_STATE_ACTIVE ||
+            !vm_object_map_inclusive_end(descriptor->runtime_base_address, descriptor->byte_size, &descriptor_end)) {
+            continue;
+        }
+        if (address >= descriptor->runtime_base_address && address <= descriptor_end) {
+            return descriptor;
+        }
+    }
+    return NULL;
+}
+
+/// Returns whether a LOCAL runtime byte is already marked initialized.
+///
+/// @param storage Source-run storage containing the LOCAL initialized-byte table.
+/// @param frame_id Active LOCAL frame identity.
+/// @param address Runtime simulated byte address.
+/// @return true when the byte has been initialized by a source-level write.
+static bool masm32_sim_wasm_local_initialized_byte_is_marked(
+    const Masm32SimWasmRunStorage *storage,
+    uint32_t frame_id,
+    uint32_t address
+) {
+    size_t index = 0U;
+    if (storage == NULL) {
+        return false;
+    }
+    for (index = 0U; index < storage->local_initialized_byte_count; index += 1U) {
+        if (storage->local_initialized_bytes[index].frame_id == frame_id &&
+            storage->local_initialized_bytes[index].address == address) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Marks one LOCAL runtime byte initialized by a source-level write.
+///
+/// @param storage Source-run storage containing the LOCAL initialized-byte table.
+/// @param frame_id Active LOCAL frame identity.
+/// @param address Runtime simulated byte address.
+static void masm32_sim_wasm_mark_local_initialized_byte(
+    Masm32SimWasmRunStorage *storage,
+    uint32_t frame_id,
+    uint32_t address
+) {
+    if (storage == NULL || masm32_sim_wasm_local_initialized_byte_is_marked(storage, frame_id, address)) {
+        return;
+    }
+    if (storage->local_initialized_byte_count >= (size_t)MASM32_SIM_WASM_MAX_LOCAL_INITIALIZED_BYTES) {
+        storage->local_initialized_byte_overflowed = true;
+        return;
+    }
+    storage->local_initialized_bytes[storage->local_initialized_byte_count].frame_id = frame_id;
+    storage->local_initialized_bytes[storage->local_initialized_byte_count].address = address;
+    storage->local_initialized_byte_count += 1U;
+}
+
+/// Marks explicit source-level LOCAL write operands as initialized.
+///
+/// Automatic Phase 79 frame setup writes are VM housekeeping and must not mark
+/// LOCAL storage initialized for source-run diagnostics. This helper marks only
+/// the planned LOCAL write operands of a successfully stepped source
+/// instruction, after strict object-bounds validation has accepted the step.
+///
+/// @param storage Source-run storage containing the LOCAL initialized-byte table.
+/// @param vm VM containing active LOCAL descriptors.
+/// @param instruction Source instruction that completed successfully.
+static void masm32_sim_wasm_mark_local_initialized_for_instruction(
+    Masm32SimWasmRunStorage *storage,
+    const Vm *vm,
+    const VmIrInstruction *instruction
+) {
+    Masm32SimWasmPlannedMemoryAccess planned_accesses[VM_EXEC_MAX_MEMORY_ACCESSES];
+    size_t planned_count = 0U;
+    size_t planned_index = 0U;
+    uint32_t address = 0U;
+    uint32_t size_bytes = 0U;
+    uint32_t byte_index = 0U;
+
+    if (storage == NULL || vm == NULL || instruction == NULL) {
+        return;
+    }
+
+    planned_count = masm32_sim_wasm_collect_planned_object_accesses(
+        instruction,
+        planned_accesses,
+        sizeof(planned_accesses) / sizeof(planned_accesses[0])
+    );
+    for (planned_index = 0U; planned_index < planned_count; planned_index += 1U) {
+        const Masm32SimWasmPlannedMemoryAccess *planned = &planned_accesses[planned_index];
+        const VmExecLocalDescriptor *descriptor = NULL;
+        if (planned->kind != VM_EXEC_MEMORY_ACCESS_WRITE || !masm32_sim_wasm_operand_is_local_memory(&planned->operand) ||
+            planned->width_bits == 0U || (planned->width_bits % 8U) != 0U) {
+            continue;
+        }
+        size_bytes = (uint32_t)(planned->width_bits / 8U);
+        if (!masm32_sim_wasm_resolve_local_memory_operand_address(vm, &planned->operand, &address)) {
+            continue;
+        }
+        descriptor = masm32_sim_wasm_find_local_descriptor_for_range(vm, address, size_bytes);
+        if (descriptor == NULL) {
+            continue;
+        }
+        for (byte_index = 0U; byte_index < size_bytes; byte_index += 1U) {
+            masm32_sim_wasm_mark_local_initialized_byte(storage, descriptor->frame_id, address + byte_index);
+        }
+    }
+}
+
 /// Marks one successful write access as initialized in the Phase 39 data mask.
 ///
 /// @param storage Source-run storage containing the initialization mask.
@@ -2768,6 +3105,7 @@ static void masm32_sim_wasm_mark_initialized_writes(Masm32SimWasmRunStorage *sto
         return;
     }
 
+    masm32_sim_wasm_mark_local_initialized_for_instruction(storage, vm, &delta->instruction);
     for (index = 0U; index < delta->memory_access_count; index += 1U) {
         masm32_sim_wasm_mark_initialized_for_access(storage, &delta->memory_accesses[index], layout_policy);
     }
@@ -2805,6 +3143,44 @@ static bool masm32_sim_wasm_access_range_is_stack(
     return region == VM_LAYOUT_REGION_STACK && access_end < region_limit;
 }
 
+/// Fills a Phase 80 LOCAL allocated-object diagnostic.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param instruction Instruction whose operand caused the diagnostic.
+/// @param access Planned memory access that escaped the LOCAL object.
+/// @param descriptor Active LOCAL descriptor that owns the object base.
+/// @param size_bytes Number of bytes requested by the access.
+/// @param source Full source buffer used for source-span lookup.
+static void masm32_sim_wasm_fill_local_object_bounds_diagnostic(
+    Masm32SimWasmObjectBoundsDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    const VmExecMemoryAccess *access,
+    const VmExecLocalDescriptor *descriptor,
+    uint32_t size_bytes,
+    const char *source
+);
+
+/// Fills a Phase 80 LOCAL allocated-object diagnostic before a frame exists.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param instruction Instruction whose operand caused the diagnostic.
+/// @param access_kind Whether the planned access reads or writes memory.
+/// @param boundary Procedure boundary that owns the LOCAL.
+/// @param local Static LOCAL metadata that owns the object base.
+/// @param local_byte_offset Byte offset from the LOCAL object base.
+/// @param size_bytes Number of bytes requested by the access.
+/// @param source Full source buffer used for source-span lookup.
+static void masm32_sim_wasm_fill_static_local_object_bounds_diagnostic(
+    Masm32SimWasmObjectBoundsDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    VmExecMemoryAccessKind access_kind,
+    const VmExecProcedureBoundary *boundary,
+    const VmExecProcedureLocal *local,
+    uint32_t local_byte_offset,
+    uint32_t size_bytes,
+    const char *source
+);
+
 /// Applies allocated-object validation to all accesses from the last instruction.
 ///
 /// @param storage Source-run storage to mutate.
@@ -2838,7 +3214,31 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses(
             continue;
         }
         if (access->width_bits != 0U && (access->width_bits % 8U) == 0U) {
+            const VmExecLocalDescriptor *local_descriptor = NULL;
+            uint32_t access_end = 0U;
+            uint32_t local_end = 0U;
+            bool local_escape = false;
             size_bytes = (uint32_t)(access->width_bits / 8U);
+            local_descriptor = masm32_sim_wasm_find_local_descriptor_for_start_address(vm, access->address);
+            if (local_descriptor != NULL) {
+                if (!vm_object_map_inclusive_end(access->address, size_bytes, &access_end) ||
+                    !vm_object_map_inclusive_end(local_descriptor->runtime_base_address, local_descriptor->byte_size, &local_end) ||
+                    access_end > local_end) {
+                    local_escape = true;
+                }
+                if (local_escape) {
+                    if (validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT) {
+                        masm32_sim_wasm_fill_local_object_bounds_diagnostic(&storage->object_violation, &delta->instruction, access, local_descriptor, size_bytes, storage->source_text);
+                        storage->has_object_violation = true;
+                        return VM_EXEC_STATUS_MEMORY_ERROR;
+                    }
+                    if (storage->object_warning_count < (size_t)MASM32_SIM_WASM_MAX_OBJECT_WARNINGS) {
+                        masm32_sim_wasm_fill_local_object_bounds_diagnostic(&storage->object_warnings[storage->object_warning_count], &delta->instruction, access, local_descriptor, size_bytes, storage->source_text);
+                        storage->object_warning_count += 1U;
+                    }
+                }
+                continue;
+            }
             if (masm32_sim_wasm_access_range_is_stack(layout_policy, access->address, size_bytes)) {
                 continue;
             }
@@ -2973,6 +3373,9 @@ static bool masm32_sim_wasm_resolve_memory_operand_address(const Vm *vm, const V
     }
     if (operand->kind != VM_IR_OPERAND_MEMORY_REGISTER) {
         return false;
+    }
+    if (masm32_sim_wasm_operand_is_local_memory(operand)) {
+        return masm32_sim_wasm_resolve_local_memory_operand_address(vm, operand, out_address);
     }
     if (!vm_cpu_read_register(&vm->cpu, operand->reg, &base_value)) {
         return false;
@@ -3331,6 +3734,215 @@ static bool masm32_sim_wasm_planned_access_passes_level1(
     return false;
 }
 
+
+/// Fills a Phase 80 LOCAL allocated-object diagnostic.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param instruction Instruction whose operand caused the diagnostic.
+/// @param access Planned memory access that escaped the LOCAL object.
+/// @param descriptor Active LOCAL descriptor that owns the object base.
+/// @param size_bytes Number of bytes requested by the access.
+/// @param source Full source buffer used for source-span lookup.
+static void masm32_sim_wasm_fill_local_object_bounds_diagnostic(
+    Masm32SimWasmObjectBoundsDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    const VmExecMemoryAccess *access,
+    const VmExecLocalDescriptor *descriptor,
+    uint32_t size_bytes,
+    const char *source
+) {
+    uint32_t end_address = 0U;
+    if (diagnostic == NULL || instruction == NULL || access == NULL || descriptor == NULL) {
+        return;
+    }
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->range_class = VM_OBJECT_MAP_RANGE_CLASS_STARTS_IN_OBJECT;
+    diagnostic->access_kind = access->kind;
+    diagnostic->start_address = access->address;
+    diagnostic->has_runtime_address = true;
+    if (vm_object_map_inclusive_end(access->address, size_bytes, &end_address)) {
+        diagnostic->end_address = end_address;
+    } else {
+        diagnostic->end_address = access->address;
+    }
+    diagnostic->size_bytes = size_bytes;
+    diagnostic->has_local_name = true;
+    (void)snprintf(diagnostic->local_name, sizeof(diagnostic->local_name), "%s", descriptor->local_name);
+    diagnostic->has_procedure_name = descriptor->procedure_name[0] != '\0';
+    (void)snprintf(diagnostic->procedure_name, sizeof(diagnostic->procedure_name), "%s", descriptor->procedure_name);
+    diagnostic->local_byte_offset = access->address >= descriptor->runtime_base_address ? access->address - descriptor->runtime_base_address : 0U;
+    diagnostic->local_size_bytes = descriptor->byte_size;
+    diagnostic->has_local_byte_offset = true;
+    diagnostic->source_line = instruction->source_line;
+    masm32_sim_wasm_copy_symbol_memory_source_span(
+        instruction,
+        source,
+        descriptor->local_name,
+        &diagnostic->source_column,
+        &diagnostic->source_byte_offset,
+        &diagnostic->source_span_length,
+        &diagnostic->has_source_span
+    );
+    if (!diagnostic->has_source_span && descriptor->source_line != 0U) {
+        diagnostic->source_line = descriptor->source_line;
+        diagnostic->source_column = descriptor->source_column;
+        diagnostic->source_byte_offset = descriptor->source_byte_offset;
+        diagnostic->source_span_length = descriptor->source_span_length;
+        diagnostic->has_source_span = descriptor->source_span_length > 0U;
+    }
+}
+
+/// Fills a Phase 80 LOCAL allocated-object diagnostic before a frame exists.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param instruction Instruction whose operand caused the diagnostic.
+/// @param access_kind Whether the planned access reads or writes memory.
+/// @param boundary Procedure boundary that owns the LOCAL.
+/// @param local Static LOCAL metadata that owns the object base.
+/// @param local_byte_offset Byte offset from the LOCAL object base.
+/// @param size_bytes Number of bytes requested by the access.
+/// @param source Full source buffer used for source-span lookup.
+static void masm32_sim_wasm_fill_static_local_object_bounds_diagnostic(
+    Masm32SimWasmObjectBoundsDiagnostic *diagnostic,
+    const VmIrInstruction *instruction,
+    VmExecMemoryAccessKind access_kind,
+    const VmExecProcedureBoundary *boundary,
+    const VmExecProcedureLocal *local,
+    uint32_t local_byte_offset,
+    uint32_t size_bytes,
+    const char *source
+) {
+    if (diagnostic == NULL || instruction == NULL || local == NULL) {
+        return;
+    }
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->range_class = VM_OBJECT_MAP_RANGE_CLASS_STARTS_IN_OBJECT;
+    diagnostic->access_kind = access_kind;
+    diagnostic->size_bytes = size_bytes;
+    diagnostic->has_local_name = true;
+    (void)snprintf(diagnostic->local_name, sizeof(diagnostic->local_name), "%s", local->local_name);
+    diagnostic->has_procedure_name = boundary != NULL && boundary->procedure_name[0] != '\0';
+    if (diagnostic->has_procedure_name) {
+        (void)snprintf(diagnostic->procedure_name, sizeof(diagnostic->procedure_name), "%s", boundary->procedure_name);
+    }
+    diagnostic->local_byte_offset = local_byte_offset;
+    diagnostic->local_size_bytes = local->total_size_bytes;
+    diagnostic->has_local_byte_offset = true;
+    diagnostic->source_line = instruction->source_line;
+    masm32_sim_wasm_copy_symbol_memory_source_span(
+        instruction,
+        source,
+        local->local_name,
+        &diagnostic->source_column,
+        &diagnostic->source_byte_offset,
+        &diagnostic->source_span_length,
+        &diagnostic->has_source_span
+    );
+    if (!diagnostic->has_source_span && local->source_line != 0U) {
+        diagnostic->source_line = local->source_line;
+        diagnostic->source_column = local->source_column;
+        diagnostic->source_byte_offset = local->source_byte_offset;
+        diagnostic->source_span_length = local->source_span_length;
+        diagnostic->has_source_span = local->source_span_length > 0U;
+    }
+}
+
+/// Validates one planned Phase 80 LOCAL object access.
+///
+/// @param storage Source-run storage to mutate.
+/// @param instruction Instruction whose operand is being checked.
+/// @param operand LOCAL operand associated with the access.
+/// @param access_kind Whether the planned access reads or writes memory.
+/// @param width_bits Planned access width in bits.
+/// @param validation_mode Memory validation behavior selected for the run.
+/// @param vm VM containing active LOCAL descriptors.
+/// @return true when execution may continue.
+static bool masm32_sim_wasm_validate_local_object_access(
+    Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    const VmIrOperand *operand,
+    VmExecMemoryAccessKind access_kind,
+    uint8_t width_bits,
+    Masm32SimWasmMemoryValidationMode validation_mode,
+    const Vm *vm
+) {
+    const VmExecLocalDescriptor *descriptor = NULL;
+    const VmExecProcedureBoundary *boundary = NULL;
+    const VmExecProcedureLocal *local = NULL;
+    VmExecMemoryAccess access;
+    uint32_t runtime_address = 0U;
+    uint32_t size_bytes = 0U;
+    uint32_t access_end = 0U;
+    uint32_t descriptor_end = 0U;
+    int32_t signed_local_byte_offset = 0;
+    uint32_t local_byte_offset = 0U;
+    bool escapes = false;
+
+    if (storage == NULL || instruction == NULL || operand == NULL || vm == NULL ||
+        validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_REGION_ONLY || !masm32_sim_wasm_operand_is_local_memory(operand) ||
+        width_bits == 0U || (width_bits % 8U) != 0U) {
+        return true;
+    }
+
+    size_bytes = (uint32_t)(width_bits / 8U);
+    signed_local_byte_offset = (int32_t)operand->immediate - (int32_t)operand->address;
+    if (signed_local_byte_offset < 0) {
+        escapes = true;
+        local_byte_offset = 0U;
+    } else {
+        local_byte_offset = (uint32_t)signed_local_byte_offset;
+    }
+
+    descriptor = masm32_sim_wasm_find_local_descriptor_for_operand(vm, operand);
+    if (descriptor != NULL && masm32_sim_wasm_resolve_local_memory_operand_address(vm, operand, &runtime_address)) {
+        memset(&access, 0, sizeof(access));
+        access.kind = access_kind;
+        access.address = runtime_address;
+        access.width_bits = width_bits;
+        access.status = VM_MEMORY_STATUS_OK;
+        if (!vm_object_map_inclusive_end(access.address, size_bytes, &access_end) ||
+            !vm_object_map_inclusive_end(descriptor->runtime_base_address, descriptor->byte_size, &descriptor_end) ||
+            access.address < descriptor->runtime_base_address || access_end > descriptor_end) {
+            escapes = true;
+        }
+        if (!escapes) {
+            return true;
+        }
+        if (validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT) {
+            masm32_sim_wasm_fill_local_object_bounds_diagnostic(&storage->object_violation, instruction, &access, descriptor, size_bytes, storage->source_text);
+            storage->has_object_violation = true;
+            return false;
+        }
+        if (storage->object_warning_count < (size_t)MASM32_SIM_WASM_MAX_OBJECT_WARNINGS) {
+            masm32_sim_wasm_fill_local_object_bounds_diagnostic(&storage->object_warnings[storage->object_warning_count], instruction, &access, descriptor, size_bytes, storage->source_text);
+            storage->object_warning_count += 1U;
+        }
+        return true;
+    }
+
+    boundary = masm32_sim_wasm_current_procedure_boundary_for_vm(vm);
+    local = masm32_sim_wasm_find_boundary_local_for_operand(boundary, operand);
+    if (local == NULL) {
+        return true;
+    }
+    if (!escapes && ((uint64_t)local_byte_offset + (uint64_t)size_bytes > (uint64_t)local->total_size_bytes)) {
+        escapes = true;
+    }
+    if (!escapes) {
+        return true;
+    }
+    if (validation_mode == MASM32_SIM_WASM_MEMORY_VALIDATION_ALLOCATED_OBJECT_STRICT) {
+        masm32_sim_wasm_fill_static_local_object_bounds_diagnostic(&storage->object_violation, instruction, access_kind, boundary, local, local_byte_offset, size_bytes, storage->source_text);
+        storage->has_object_violation = true;
+        return false;
+    }
+    if (storage->object_warning_count < (size_t)MASM32_SIM_WASM_MAX_OBJECT_WARNINGS) {
+        masm32_sim_wasm_fill_static_local_object_bounds_diagnostic(&storage->object_warnings[storage->object_warning_count], instruction, access_kind, boundary, local, local_byte_offset, size_bytes, storage->source_text);
+        storage->object_warning_count += 1U;
+    }
+    return true;
+}
+
 /// Validates strict declared-object access policy before stepping an instruction.
 ///
 /// Planned accesses that would already fail mandatory Level 1 region or
@@ -3371,8 +3983,16 @@ static VmExecStatus masm32_sim_wasm_validate_object_accesses_before_step(
         if (instruction->opcode == VM_IR_OPCODE_CALL || instruction->opcode == VM_IR_OPCODE_RET) {
             continue;
         }
-        if (accesses[index].width_bits == 0U || (accesses[index].width_bits % 8U) != 0U ||
-            !masm32_sim_wasm_resolve_memory_operand_address(vm, &accesses[index].operand, &address)) {
+        if (accesses[index].width_bits == 0U || (accesses[index].width_bits % 8U) != 0U) {
+            continue;
+        }
+        if (masm32_sim_wasm_operand_is_local_memory(&accesses[index].operand)) {
+            if (!masm32_sim_wasm_validate_local_object_access(storage, instruction, &accesses[index].operand, accesses[index].kind, accesses[index].width_bits, validation_mode, vm)) {
+                return VM_EXEC_STATUS_MEMORY_ERROR;
+            }
+            continue;
+        }
+        if (!masm32_sim_wasm_resolve_memory_operand_address(vm, &accesses[index].operand, &address)) {
             continue;
         }
         size_bytes = (uint32_t)(accesses[index].width_bits / 8U);
@@ -4197,6 +4817,7 @@ static void masm32_sim_wasm_fill_uninitialized_read_diagnostic(
     (void)vm_object_map_inclusive_end(address, size_bytes, &end_address);
     diagnostic->start_address = address;
     diagnostic->end_address = end_address;
+    diagnostic->has_runtime_address = true;
     diagnostic->size_bytes = size_bytes;
     diagnostic->uninitialized_byte_count = uninitialized_count;
     diagnostic->initialized_byte_count = uninitialized_count <= size_bytes ? size_bytes - uninitialized_count : 0U;
@@ -4232,6 +4853,85 @@ static void masm32_sim_wasm_fill_uninitialized_read_diagnostic(
     }
 }
 
+
+/// Counts uninitialized bytes in a planned read from an active LOCAL object.
+///
+/// @param storage Source-run storage containing LOCAL initialization metadata.
+/// @param descriptor Active LOCAL descriptor containing the read.
+/// @param address First read byte.
+/// @param size_bytes Number of bytes read.
+/// @return Number of bytes that have not been initialized by a source-level write.
+static uint32_t masm32_sim_wasm_count_local_uninitialized_read_bytes(
+    const Masm32SimWasmRunStorage *storage,
+    const VmExecLocalDescriptor *descriptor,
+    uint32_t address,
+    uint32_t size_bytes
+) {
+    uint32_t index = 0U;
+    uint32_t count = 0U;
+    if (storage == NULL || descriptor == NULL) {
+        return 0U;
+    }
+    for (index = 0U; index < size_bytes; index += 1U) {
+        if (!masm32_sim_wasm_local_initialized_byte_is_marked(storage, descriptor->frame_id, address + index)) {
+            count += 1U;
+        }
+    }
+    return count;
+}
+
+/// Populates an uninitialized-read diagnostic for a Phase 80 LOCAL object.
+///
+/// @param diagnostic Diagnostic to populate.
+/// @param storage Source-run storage containing source text.
+/// @param instruction Instruction associated with the planned read.
+/// @param descriptor Active LOCAL descriptor containing the read.
+/// @param address First read byte.
+/// @param size_bytes Number of bytes read.
+/// @param uninitialized_count Number of uninitialized bytes in the read.
+static void masm32_sim_wasm_fill_local_uninitialized_read_diagnostic(
+    Masm32SimWasmUninitializedReadDiagnostic *diagnostic,
+    const Masm32SimWasmRunStorage *storage,
+    const VmIrInstruction *instruction,
+    const VmExecLocalDescriptor *descriptor,
+    uint32_t address,
+    uint32_t size_bytes,
+    uint32_t uninitialized_count
+) {
+    uint32_t end_address = address;
+    if (diagnostic == NULL || descriptor == NULL) {
+        return;
+    }
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    (void)vm_object_map_inclusive_end(address, size_bytes, &end_address);
+    diagnostic->start_address = address;
+    diagnostic->end_address = end_address;
+    diagnostic->has_runtime_address = descriptor->state == VM_EXEC_LOCAL_FRAME_STATE_ACTIVE;
+    diagnostic->size_bytes = size_bytes;
+    diagnostic->uninitialized_byte_count = uninitialized_count;
+    diagnostic->initialized_byte_count = uninitialized_count <= size_bytes ? size_bytes - uninitialized_count : 0U;
+    diagnostic->source_line = instruction != NULL ? instruction->source_line : descriptor->source_line;
+    diagnostic->has_symbol_name = true;
+    (void)snprintf(diagnostic->symbol_name, sizeof(diagnostic->symbol_name), "%s", descriptor->local_name);
+    diagnostic->symbol_byte_offset = address >= descriptor->runtime_base_address ? address - descriptor->runtime_base_address : 0U;
+    masm32_sim_wasm_copy_symbol_memory_source_span(
+        instruction,
+        storage != NULL ? storage->source_text : NULL,
+        descriptor->local_name,
+        &diagnostic->source_column,
+        &diagnostic->source_byte_offset,
+        &diagnostic->source_span_length,
+        &diagnostic->has_source_span
+    );
+    if (!diagnostic->has_source_span && descriptor->source_line != 0U) {
+        diagnostic->source_line = descriptor->source_line;
+        diagnostic->source_column = descriptor->source_column;
+        diagnostic->source_byte_offset = descriptor->source_byte_offset;
+        diagnostic->source_span_length = descriptor->source_span_length;
+        diagnostic->has_source_span = descriptor->source_span_length > 0U;
+    }
+}
+
 /// Validates one planned memory read against Phase 40 uninitialized-origin metadata.
 ///
 /// Warning mode records a non-fatal diagnostic. Strict mode records the first
@@ -4256,15 +4956,105 @@ static bool masm32_sim_wasm_validate_uninitialized_read(
     uint32_t address = 0U;
     uint32_t size_bytes = 0U;
     uint32_t uninitialized_count = 0U;
+    bool is_local_read = false;
 
     if (storage == NULL || instruction == NULL || vm == NULL || read == NULL ||
         !masm32_sim_wasm_validation_checks_uninitialized_reads(validation_mode) ||
-        read->width_bits == 0U || (read->width_bits % 8U) != 0U ||
-        !masm32_sim_wasm_resolve_memory_operand_address(vm, &read->operand, &address)) {
+        read->width_bits == 0U || (read->width_bits % 8U) != 0U) {
+        return true;
+    }
+
+    is_local_read = masm32_sim_wasm_operand_is_local_memory(&read->operand);
+    if (!is_local_read && !masm32_sim_wasm_resolve_memory_operand_address(vm, &read->operand, &address)) {
         return true;
     }
 
     size_bytes = (uint32_t)(read->width_bits / 8U);
+    if (is_local_read) {
+        const VmExecLocalDescriptor *descriptor = NULL;
+        descriptor = masm32_sim_wasm_find_local_descriptor_for_operand(vm, &read->operand);
+        if (descriptor != NULL && !masm32_sim_wasm_resolve_local_memory_operand_address(vm, &read->operand, &address)) {
+            return true;
+        }
+        if (descriptor == NULL) {
+            const VmExecProcedureBoundary *boundary = masm32_sim_wasm_current_procedure_boundary_for_vm(vm);
+            const VmExecProcedureLocal *local = masm32_sim_wasm_find_boundary_local_for_operand(boundary, &read->operand);
+            int32_t signed_local_byte_offset = (int32_t)read->operand.immediate - (int32_t)read->operand.address;
+            uint32_t local_byte_offset = signed_local_byte_offset < 0 ? 0U : (uint32_t)signed_local_byte_offset;
+            if (local != NULL && (uint64_t)local_byte_offset + (uint64_t)size_bytes <= (uint64_t)local->total_size_bytes) {
+                VmExecLocalDescriptor static_descriptor;
+                memset(&static_descriptor, 0, sizeof(static_descriptor));
+                static_descriptor.frame_id = 0U;
+                static_descriptor.runtime_base_address = 0U;
+                static_descriptor.byte_size = local->total_size_bytes;
+                static_descriptor.source_line = local->source_line;
+                static_descriptor.source_column = local->source_column;
+                static_descriptor.source_byte_offset = local->source_byte_offset;
+                static_descriptor.source_span_length = local->source_span_length;
+                (void)snprintf(static_descriptor.local_name, sizeof(static_descriptor.local_name), "%s", local->local_name);
+                if (boundary != NULL) {
+                    (void)snprintf(static_descriptor.procedure_name, sizeof(static_descriptor.procedure_name), "%s", boundary->procedure_name);
+                }
+                if (masm32_sim_wasm_validation_strict_uninitialized_reads(validation_mode)) {
+                    masm32_sim_wasm_fill_local_uninitialized_read_diagnostic(
+                        &storage->uninitialized_read_violation,
+                        storage,
+                        instruction,
+                        &static_descriptor,
+                        local_byte_offset,
+                        size_bytes,
+                        size_bytes
+                    );
+                    storage->has_uninitialized_read_violation = true;
+                    return false;
+                }
+                if (storage->uninitialized_read_warning_count < (size_t)MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS) {
+                    masm32_sim_wasm_fill_local_uninitialized_read_diagnostic(
+                        &storage->uninitialized_read_warnings[storage->uninitialized_read_warning_count],
+                        storage,
+                        instruction,
+                        &static_descriptor,
+                        local_byte_offset,
+                        size_bytes,
+                        size_bytes
+                    );
+                    storage->uninitialized_read_warning_count += 1U;
+                }
+            }
+            return true;
+        }
+        uninitialized_count = masm32_sim_wasm_count_local_uninitialized_read_bytes(storage, descriptor, address, size_bytes);
+        if (uninitialized_count == 0U) {
+            return true;
+        }
+        if (masm32_sim_wasm_validation_strict_uninitialized_reads(validation_mode)) {
+            masm32_sim_wasm_fill_local_uninitialized_read_diagnostic(
+                &storage->uninitialized_read_violation,
+                storage,
+                instruction,
+                descriptor,
+                address,
+                size_bytes,
+                uninitialized_count
+            );
+            storage->has_uninitialized_read_violation = true;
+            return false;
+        }
+        if (storage->uninitialized_read_warning_count < (size_t)MASM32_SIM_WASM_MAX_UNINITIALIZED_READ_WARNINGS) {
+            masm32_sim_wasm_fill_local_uninitialized_read_diagnostic(
+                &storage->uninitialized_read_warnings[storage->uninitialized_read_warning_count],
+                storage,
+                instruction,
+                descriptor,
+                address,
+                size_bytes,
+                uninitialized_count
+            );
+            storage->uninitialized_read_warning_count += 1U;
+        }
+        return true;
+    }
+
     uninitialized_count = masm32_sim_wasm_count_uninitialized_read_bytes(storage, address, size_bytes, layout_policy);
     if (uninitialized_count == 0U) {
         return true;
@@ -4335,6 +5125,7 @@ static VmExecStatus masm32_sim_wasm_validate_uninitialized_reads_before_step(
 
     return VM_EXEC_STATUS_OK;
 }
+
 
 /// Validates shift undefined modeled-flag behavior before stepping.
 ///
@@ -4632,6 +5423,54 @@ static void masm32_sim_wasm_format_object_bounds_message(
 
     if (diagnostic == NULL) {
         (void)snprintf(buffer, buffer_size, "Memory access escaped declared object bounds.");
+        return;
+    }
+    if (diagnostic->has_local_name) {
+        if (diagnostic->has_local_byte_offset && diagnostic->has_runtime_address) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh escapes LOCAL %s%s%s at byte offset %u for %u byte%s; LOCAL size is %u byte%s.",
+                access_name,
+                (unsigned int)diagnostic->start_address,
+                (unsigned int)diagnostic->end_address,
+                diagnostic->has_procedure_name ? diagnostic->procedure_name : "",
+                diagnostic->has_procedure_name ? "." : "",
+                diagnostic->local_name,
+                (unsigned int)diagnostic->local_byte_offset,
+                (unsigned int)diagnostic->size_bytes,
+                diagnostic->size_bytes == 1U ? "" : "s",
+                (unsigned int)diagnostic->local_size_bytes,
+                diagnostic->local_size_bytes == 1U ? "" : "s"
+            );
+        } else if (diagnostic->has_local_byte_offset) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s escapes LOCAL %s%s%s at byte offset %u for %u byte%s; LOCAL size is %u byte%s.",
+                access_name,
+                diagnostic->has_procedure_name ? diagnostic->procedure_name : "",
+                diagnostic->has_procedure_name ? "." : "",
+                diagnostic->local_name,
+                (unsigned int)diagnostic->local_byte_offset,
+                (unsigned int)diagnostic->size_bytes,
+                diagnostic->size_bytes == 1U ? "" : "s",
+                (unsigned int)diagnostic->local_size_bytes,
+                diagnostic->local_size_bytes == 1U ? "" : "s"
+            );
+        } else {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory %s range %08Xh..%08Xh escapes LOCAL %s%s%s.",
+                access_name,
+                (unsigned int)diagnostic->start_address,
+                (unsigned int)diagnostic->end_address,
+                diagnostic->has_procedure_name ? diagnostic->procedure_name : "",
+                diagnostic->has_procedure_name ? "." : "",
+                diagnostic->local_name
+            );
+        }
         return;
     }
 
@@ -4952,6 +5791,20 @@ static void masm32_sim_wasm_format_uninitialized_read_message(
     }
 
     if (diagnostic->has_symbol_name) {
+        if (!diagnostic->has_runtime_address) {
+            (void)snprintf(
+                buffer,
+                buffer_size,
+                "Memory read uses %u byte%s from LOCAL %s + %u; %u of those byte%s still originated from uninitialized storage.",
+                (unsigned int)diagnostic->size_bytes,
+                diagnostic->size_bytes == 1U ? "" : "s",
+                diagnostic->symbol_name,
+                (unsigned int)diagnostic->symbol_byte_offset,
+                (unsigned int)diagnostic->uninitialized_byte_count,
+                diagnostic->uninitialized_byte_count == 1U ? "" : "s"
+            );
+            return;
+        }
         (void)snprintf(
             buffer,
             buffer_size,
@@ -6659,6 +7512,7 @@ static bool masm32_sim_json_append_exec_message(
     char memory_message[512];
     char div_zero_message[384];
     char quotient_overflow_message[384];
+    char local_operand_message[384];
     const VmProcedureRange *procedure_range = NULL;
     const char *procedure_name = NULL;
     uint32_t line = 0U;
@@ -6700,6 +7554,7 @@ static bool masm32_sim_json_append_exec_message(
                    status == VM_EXEC_STATUS_STACK_UNDERFLOW ||
                    status == VM_EXEC_STATUS_INVALID_FRAME_STATE ||
                    status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED ||
+                   status == VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME ||
                    status == VM_EXEC_STATUS_PROCEDURE_FELL_THROUGH ||
                    status == VM_EXEC_STATUS_CODE_FELL_OFF_END ||
                    status == VM_EXEC_STATUS_ROOT_RET_DISALLOWED_BY_MODE ||
@@ -6776,6 +7631,28 @@ static bool masm32_sim_json_append_exec_message(
     } else if (status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
         message_code = "local-frame-entry-unsupported";
         message_text = "The destination procedure requires an automatic LOCAL frame, but this entry path did not create one. Use selected END entry or direct CALL entry for procedures with LOCAL declarations.";
+    } else if (status == VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME) {
+        message_code = "local-operand-no-active-frame";
+        if (diagnostic != NULL && diagnostic->has_local_name && diagnostic->has_procedure_name) {
+            (void)snprintf(
+                local_operand_message,
+                sizeof(local_operand_message),
+                "LOCAL operand %s.%s could not resolve because no active automatic LOCAL frame owns the current instruction. Execution stopped before memory access or register mutation.",
+                diagnostic->procedure_name,
+                diagnostic->local_name
+            );
+            message_text = local_operand_message;
+        } else if (diagnostic != NULL && diagnostic->has_local_name) {
+            (void)snprintf(
+                local_operand_message,
+                sizeof(local_operand_message),
+                "LOCAL operand %s could not resolve because no active automatic LOCAL frame owns the current instruction. Execution stopped before memory access or register mutation.",
+                diagnostic->local_name
+            );
+            message_text = local_operand_message;
+        } else {
+            message_text = "LOCAL operand could not resolve because no active automatic LOCAL frame owns the current instruction. Execution stopped before memory access or register mutation.";
+        }
     }
 
     if (diagnostic != NULL && diagnostic->has_instruction) {
@@ -6787,7 +7664,8 @@ static bool masm32_sim_json_append_exec_message(
                 (size_t)diagnostic->instruction.destination.immediate
             );
         } else if (status == VM_EXEC_STATUS_STACK_UNDERFLOW || status == VM_EXEC_STATUS_UNSUPPORTED_PROC_USES_RUNTIME ||
-                   status == VM_EXEC_STATUS_INVALID_FRAME_STATE || status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED) {
+                   status == VM_EXEC_STATUS_INVALID_FRAME_STATE || status == VM_EXEC_STATUS_LOCAL_FRAME_ENTRY_UNSUPPORTED ||
+                   status == VM_EXEC_STATUS_LOCAL_OPERAND_NO_ACTIVE_FRAME) {
             procedure_range = masm32_sim_wasm_find_procedure_for_instruction(
                 parser_result,
                 storage,
@@ -7640,7 +8518,7 @@ static bool masm32_sim_wasm_relocate_operand(VmIrOperand *operand, const VmLayou
         return false;
     }
 
-    if (operand->relocation == VM_IR_RELOCATION_NONE) {
+    if (operand->relocation == VM_IR_RELOCATION_NONE || operand->relocation == VM_IR_RELOCATION_LOCAL) {
         return true;
     }
 

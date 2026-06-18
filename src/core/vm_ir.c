@@ -9,15 +9,14 @@
 #include "vm_ir.h"
 
 #include <stddef.h>
+#include <string.h>
 
 VmIrOperand vm_ir_operand_none(void) {
     VmIrOperand operand;
 
+    memset(&operand, 0, sizeof(operand));
     operand.kind = VM_IR_OPERAND_NONE;
-    operand.width_bits = 0U;
-    operand.immediate = 0U;
     operand.reg = VM_REGISTER_COUNT;
-    operand.address = 0U;
     operand.relocation = VM_IR_RELOCATION_NONE;
 
     return operand;
@@ -61,6 +60,20 @@ VmIrOperand vm_ir_operand_memory_register(VmRegister base_register, int32_t disp
     operand.immediate = (uint32_t)displacement;
     operand.reg = base_register;
     operand.address = static_address;
+
+    return operand;
+}
+
+VmIrOperand vm_ir_operand_local_memory(int32_t local_ebp_offset, int32_t displacement, uint8_t width_bits) {
+    VmIrOperand operand = vm_ir_operand_none();
+    int64_t effective_displacement = (int64_t)local_ebp_offset + (int64_t)displacement;
+
+    operand.kind = VM_IR_OPERAND_MEMORY_REGISTER;
+    operand.width_bits = width_bits;
+    operand.immediate = (uint32_t)(int32_t)effective_displacement;
+    operand.reg = VM_REGISTER_COUNT;
+    operand.address = (uint32_t)local_ebp_offset;
+    operand.relocation = VM_IR_RELOCATION_LOCAL;
 
     return operand;
 }
