@@ -2,9 +2,9 @@
 
 Current milestone:
 
-- Phase 80 - LOCAL Operand Resolution and Addressing
+- Phase 81 - PROTO Metadata Parser
 
-This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 80 implements source-level LOCAL operand resolution and addressing for supported instructions on top of the automatic runtime LOCAL frames introduced by Phase 79. Phase 78A limited `OPTION NOKEYWORD` forms, Phase 78 LOCAL parser metadata, Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
+This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax. Phase 81 implements limited parser-owned `PROTO` metadata for same-file educational procedure prototypes with named `DWORD` and `SDWORD` parameters. Phase 80 supported source-level LOCAL operand resolution/addressing, Phase 79 automatic LOCAL frames, Phase 78A limited `OPTION NOKEYWORD` forms, Phase 78 LOCAL parser metadata, Phase 77 direct-CALL `PROC USES` runtime save/restore, Phase 76 `PROC USES` parsing metadata, and Phase 75 targeted `PROC` diagnostics remain implemented.
 
 Current direct control-transfer support includes direct `jmp label`, equality conditional jumps, signed relational conditional jumps, unsigned relational conditional jumps, direct near user-procedure `call ProcedureName`, plain near `ret`/`RET` with no operands, and near `ret imm16`/`RET imm16`.
 
@@ -32,6 +32,18 @@ Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`
 
 Targeted `LOCAL` diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`. Unsupported types such as `QWORD`, `SQWORD`, `REAL4`, and user-defined structure types are rejected with `unsupported-local-type`; malformed declarations, initializers, invalid array counts, duplicate locals, procedure-name collisions, and same-procedure label collisions receive targeted parser/source-run diagnostics.
 
+Current accepted `PROTO` metadata syntax:
+
+```asm
+MyProc PROTO
+MyProc PROTO arg1:DWORD
+MyProc PROTO arg1:DWORD, p:SDWORD
+```
+
+Phase 81 stores parser-owned prototype metadata separately from data symbols, labels, procedures, equates, and LOCAL declarations. Accepted prototypes preserve prototype name spelling, parameter names, parameter type identities, declaration order, parameter count, and source locations/spans for prototype and parameter tokens. Accepted `PROTO` declarations emit no executable IR, do not allocate stack frames, do not make `INVOKE` or `ADDR` executable, and do not model calling conventions or external linkage. The first implementation accepts only named `DWORD` and `SDWORD` parameters. Pointer forms such as `p:PTR BYTE`, unnamed parameters such as `:DWORD`, `VARARG`, language/distance metadata, structure types, floating-point types, 64-bit parameter types, and external/API prototypes remain rejected or non-goal behavior.
+
+Targeted `PROTO` diagnostics include `invalid-proto-declaration`, `unsupported-proto-type`, `unsupported-external-proto`, `duplicate-proto`, and `proto-proc-mismatch`. `ExitProcess PROTO :DWORD` and similar external/API prototype declarations are rejected as external/API non-goals rather than treated as import metadata.
+
 Implemented procedure and termination behavior for the active runtime/source-run MASM behavior phase:
 
 - `END entryName` selects the source-run entry procedure.
@@ -56,7 +68,7 @@ The selected-entry `ENDP` success rule from pre-71C accepted behavior is no long
 
 Phase 72 adds `callDepthLimit` as a source-run/protocol setting for direct user-procedure `CALL` chains. The setting defaults to `64`, accepts integer values from `1` through `4096`, and rejects invalid values with `invalid-call-depth-limit` before execution. The selected entry procedure itself is not counted as a call frame; committed direct helper calls increment the current call depth until a successfully validated ordinary helper `RET` returns. An over-limit direct `CALL` reports `call-depth-exceeded` before return-token stack writes, `ESP` mutation, IP transfer, flag changes, memory-change rows, Program Console output, or successful terminal status. Phase 72 emits no call trace metadata and no `call-trace-truncated` message.
 
-Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, near `RET imm16` caller-cleanup returns, `PROC USES` parsing metadata, direct-CALL `PROC USES` runtime save/restore, parser `LOCAL` declaration metadata, automatic runtime LOCAL stack allocation/lifetime, and Phase 80 supported source-level LOCAL operands are implemented. Procedures with parsed `LOCAL` declarations receive checked automatic frames on selected-entry startup and direct user-procedure `CALL`; those frames are released on root `RET`, helper `RET`, helper `RET imm16`, source-level `LEAVE` followed by `RET`, and virtual Irvine32 `exit`. `OFFSET local`, `ADDR`, `PROTO`, `INVOKE`, scaled-index LOCAL addressing, parameters, calling-convention behavior, QWORD/SQWORD executable LOCAL memory operands, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
+Source-level 32-bit `push`, source-level 32-bit `pop`, `LEAVE`, near `RET imm16` caller-cleanup returns, `PROC USES` parsing metadata, direct-CALL `PROC USES` runtime save/restore, parser `LOCAL` declaration metadata, automatic runtime LOCAL stack allocation/lifetime, Phase 80 supported source-level LOCAL operands, and Phase 81 limited `PROTO` metadata are implemented. Procedures with parsed `LOCAL` declarations receive checked automatic frames on selected-entry startup and direct user-procedure `CALL`; those frames are released on root `RET`, helper `RET`, helper `RET imm16`, source-level `LEAVE` followed by `RET`, and virtual Irvine32 `exit`. `OFFSET local`, `ADDR`, executable `PROTO`/`INVOKE` behavior, pointer or unnamed prototype parameters, `VARARG`, scaled-index LOCAL addressing, parameters, calling-convention behavior, QWORD/SQWORD executable LOCAL memory operands, and selected Irvine32 routine dispatch remain deferred unless a later accepted phase explicitly implements them. Simulator-owned rejected CALL target forms remain rejected unless a later accepted phase explicitly changes the specific simulator-owned form; they are not future work merely because they are currently rejected. External/API calls, WinAPI execution, PE loading, object-file linking, import-library behavior, host filesystem access, native x86 execution, and full x86 emulation remain non-goals rather than deferred simulator features. Detailed accepted and rejected forms are listed in the sections below.
 
 Implemented and planned fallthrough diagnostics and settings:
 
@@ -80,14 +92,14 @@ The implemented `code-fell-off-end` diagnostic is simulator-owned. It must not b
 
 ### Future stack/procedure syntax not implemented yet
 
-Consult the current instruction-support table in this document for implemented branch, control-flow, stack-transfer, and LOCAL operand forms. Direct near `call ProcedureName`, plain near `ret`/`RET` with no operands, near `ret imm16`/`RET imm16`, the documented 32-bit source-level `push`/`pop` subset, `leave`/`LEAVE`, automatic runtime LOCAL frames for procedures with parsed `LOCAL` declarations, and supported Phase 80 LOCAL operands are implemented. Do not infer unsupported CALL forms, `OFFSET local`, `ADDR`, scaled-index LOCAL addressing, far returns, Irvine32 routine dispatch, argument metadata, or calling-convention behavior from future roadmap examples.
+Consult the current instruction-support table in this document for implemented branch, control-flow, stack-transfer, LOCAL operand, and limited `PROTO` metadata forms. Direct near `call ProcedureName`, plain near `ret`/`RET` with no operands, near `ret imm16`/`RET imm16`, the documented 32-bit source-level `push`/`pop` subset, `leave`/`LEAVE`, automatic runtime LOCAL frames for procedures with parsed `LOCAL` declarations, supported Phase 80 LOCAL operands, and Phase 81 limited same-file `PROTO` metadata are implemented. Do not infer unsupported CALL forms, `OFFSET local`, executable `ADDR`/`INVOKE`, pointer or unnamed prototype parameters, scaled-index LOCAL addressing, far returns, Irvine32 routine dispatch, argument metadata, or calling-convention behavior from future roadmap examples.
 
 The following stack/procedure features remain future work only if a later accepted milestone explicitly implements them:
 
 - `OFFSET local` and `ADDR local`;
 - scaled-index LOCAL addressing and QWORD/SQWORD executable LOCAL memory access;
 - automatic procedure-frame features beyond Phase 80 LOCAL operand access and already implemented `PROC USES` preservation frames;
-- `PROTO`;
+- pointer or unnamed `PROTO` parameter metadata, `VARARG`, language/distance prototype metadata, and executable prototype/calling-convention behavior;
 - `INVOKE`;
 - `ADDR`;
 - selected Irvine32 routine calls beyond already implemented virtual terminator behavior.
@@ -538,7 +550,6 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 - `UNION`
 - `RECORD`
 - `INVOKE`
-- `PROTO`
 - `.IF`
 - `.WHILE`
 - `.REPEAT`
@@ -569,7 +580,7 @@ The parser should report `unsupported-feature` for these recognizable textbook c
 
 Phase 17 and later behavior can report multiple safely recoverable `unsupported-feature` diagnostics in one parse. The parser skips known unsupported line-level constructs, block-like constructs, and unsupported sections only far enough to resynchronize; programs with any diagnostics are not executed.
 
-Recovered line-level constructs include `INVOKE`, `PROTO`, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
+Recovered line-level constructs include `INVOKE`, unsupported or malformed `PROTO` forms, `TEXTEQU`, `INCLUDELIB`, `EXTERN`, `EXTERNDEF`, `EXTRN`, `PUBLIC`, `COMM`, `ASSUME`, `ALIGN`, `EVEN`, `LABEL`, `ORG`, `COMMENT`, and `ECHO`.
 
 Recovered block-like constructs include `STRUCT` / `ENDS`, `UNION` / `ENDS`, `MACRO` / `ENDM`, `.IF` / `.ENDIF`, `.WHILE` / `.ENDW`, and `.REPEAT` / `.UNTIL` or `.UNTILCXZ`.
 

@@ -458,7 +458,7 @@ The simulator must not execute instructions that appear before the selected entr
 
 Multiple procedures may be accepted as structural declarations without implying automatic execution before the selected entry point. Accepting multiple procedure declarations does not itself call them, return from them, create stack frames, or create hidden stops. A non-entry procedure executes when reached by ordinary VM code-stream fallthrough after the selected entry point or by an explicitly supported control-transfer feature, such as direct user-procedure CALL after Phase 69.
 
-`PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, `LOCAL` declaration metadata, automatic Phase 79 LOCAL frame behavior, parameters, `PROTO`, `INVOKE`, `ADDR`, additional stack-frame behavior, local operand behavior, and calling-convention metadata.
+`PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, `LOCAL` declaration metadata, automatic Phase 79 LOCAL frame behavior, Phase 80 local operand behavior, Phase 81 limited `PROTO` metadata, parameters, `INVOKE`, `ADDR`, additional stack-frame behavior, pointer or unnamed prototype parameters, executable prototype behavior, and calling-convention metadata.
 
 This distinction is mandatory:
 
@@ -490,7 +490,7 @@ Procedure-boundary fallthrough diagnostics and optional beginner compatibility s
 
 The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame features beyond accepted simulator-owned procedure phases, LOCAL operand addressing, `PROTO`, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns LOCAL declaration metadata, Phase 78A owns limited `OPTION NOKEYWORD` parser keyword opt-out for `LOOP` and `OFFSET`, and Phase 79 owns automatic LOCAL frame allocation/lifetime for selected-entry and direct-CALL procedure paths.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame features beyond accepted simulator-owned procedure phases, unsupported LOCAL operand forms, executable `PROTO` behavior, `INVOKE`, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns LOCAL declaration metadata, Phase 78A owns limited `OPTION NOKEYWORD` parser keyword opt-out for `LOOP` and `OFFSET`, Phase 79 owns automatic LOCAL frame allocation/lifetime for selected-entry and direct-CALL procedure paths, Phase 80 owns supported LOCAL operand resolution/addressing, and Phase 81 owns limited parser-only `PROTO` metadata.
 
 #### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
@@ -1097,7 +1097,7 @@ Recognized unsupported or deferred directives and directive families include:
 - `RECORD`
 - `TYPEDEF`
 - `INVOKE`
-- `PROTO`
+- unsupported or external `PROTO` forms
 - `INCLUDELIB`
 - `EXTERN`
 - `EXTERNDEF`
@@ -1751,7 +1751,7 @@ Extended loop helpers:
 Stack/procedure convenience:
 
 - `ENTER`/automatic frame setup
-- `LOCAL`, `PROTO`, `INVOKE`, and `ADDR`
+- executable procedure-frame conveniences beyond implemented LOCAL and limited `PROTO` metadata, including `INVOKE` and `ADDR`
 
 Conditional byte set:
 
@@ -1912,7 +1912,7 @@ Still unsupported or deferred in v1 unless a later guide phase explicitly implem
 - full MASM macro language;
 - full conditional assembly;
 - high-level MASM flow directives such as `.IF`, `.ELSE`, `.ENDIF`, `.WHILE`, `.REPEAT`, `.BREAK`, and `.CONTINUE` until their assigned lowering phases;
-- full `INVOKE`, `PROTO`, LOCAL operand addressing, parameter, and calling-convention modeling until their assigned procedure phases;
+- full `INVOKE`, executable `PROTO` behavior, pointer or unnamed prototype parameters, runtime parameter behavior, and calling-convention modeling until their assigned procedure phases;
 - text-substitution equates and full `TEXTEQU` behavior unless a later macro/text-equate phase implements them;
 - full scaled-index addressing until the staged memory-operand roadmap reaches it;
 - `STRUCT`, `UNION`, `RECORD`, fields, field initializers, and user-defined types until their assigned phases;
@@ -1952,7 +1952,7 @@ Important textbook/compatibility areas to track explicitly:
 - Nested `DUP` and initializer expressions: nested `DUP` plus expression-backed data initializers are staged v1 features and must not be listed as current unsupported behavior after their implementation phases are complete.
 - Native diagnostic rendering harness for exact Simulator Messages text.
 - Structure support: `STRUCT`, `UNION`, `RECORD`, field access, `TYPEDEF`, `WIDTH`, `MASK`, and structure initializers.
-- Procedure metadata and runtime procedure behavior: `USES`, `LOCAL` declarations, automatic Phase 79 LOCAL frames, `PROTO`, `INVOKE`, parameters, `ADDR`, calling-convention modeling, and root procedure termination.
+- Procedure metadata and runtime procedure behavior: `USES`, `LOCAL` declarations, automatic Phase 79 LOCAL frames, Phase 80 LOCAL operands, Phase 81 limited `PROTO` metadata, `INVOKE`, parameters, `ADDR`, calling-convention modeling, and root procedure termination.
 - High-level MASM flow: `.IF`, `.ELSE`, `.ELSEIF`, `.ENDIF`, `.WHILE`, `.ENDW`, `.REPEAT`, `.UNTIL`, `.UNTILCXZ`, `.BREAK`, `.CONTINUE`.
 - Anonymous labels: `@@`, `@B`, and `@F`.
 - Conditional assembly: `IFDEF`, `IFNDEF`, `IFE`, `IFB`, `IFNB`, `ELSE`, `ENDIF`, and related compile-time directives.
@@ -3669,7 +3669,7 @@ A separate call-depth watchdog may be provided for clearer recursion diagnostics
 
 ### 12.1 Post-30 Stack, Call, Frame, and Procedure Contract
 
-CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, near `RET imm16`, `PROC USES` parsing/runtime behavior, LOCAL metadata, automatic runtime LOCAL allocation, Phase 80 LOCAL operand addressing, PROTO, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
+CALL, RET, source-level `PUSH`, source-level `POP`, LEAVE, near `RET imm16`, `PROC USES` parsing/runtime behavior, LOCAL metadata, automatic runtime LOCAL allocation, Phase 80 LOCAL operand addressing, Phase 81 limited PROTO metadata, INVOKE, ADDR, and Irvine32 routine dispatch depend on a deliberately staged procedure and stack model.
 
 The required staging is:
 
@@ -3687,7 +3687,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, and direct-CALL `PROC USES` register save/restore are implemented in their owning phases. Remaining expanded features such as PROTO, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, Irvine32 stack effects, and procedure-frame behavior beyond Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, and supported source-level LOCAL operand addressing is implemented by Phase 80. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, direct-CALL `PROC USES` register save/restore, and limited parser-only `PROTO` metadata are implemented in their owning phases. Remaining expanded features such as executable PROTO behavior, pointer or unnamed prototype parameters, VARARG, INVOKE, ADDR, stack-frame display, Irvine32 routine dispatch, Irvine32 stack effects, and procedure-frame behavior beyond Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, supported source-level LOCAL operand addressing is implemented by Phase 80, and limited `PROTO` metadata is implemented by Phase 81. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3745,7 +3745,7 @@ The root terminal mechanism must not be exposed as:
 - a public source-run JSON `memoryChanges` row;
 - source-level PUSH/POP behavior;
 - stack-frame support;
-- LOCAL operand addressing, PROTO, INVOKE, ADDR, or calling-convention support;
+- unsupported LOCAL operand addressing, executable PROTO behavior, INVOKE, ADDR, or calling-convention support;
 - Irvine32 callable routine dispatch;
 - permission to return to arbitrary pseudo-EIP values;
 - permission to execute outside the selected source program.
@@ -3754,7 +3754,7 @@ Default MASM32 Educational Mode accepts root-code-stream RET. The accepted stric
 
 This pseudo-EIP return-token model is an educational control-flow model. It does not imply native instruction encoding, byte-accurate instruction lengths, executable memory, PE image mapping, linker relocation, import tables, code segment emulation, or full x86 instruction-address behavior.
 
-Phase 78 accepts `LOCAL` declarations as parser metadata inside procedure bodies before executable instructions. Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`; accepted forms include scalar declarations, array declarations with positive numeric literal counts or already-defined numeric equates that resolve to positive 32-bit constant values without registers or runtime operands, and comma-separated declarators. The parser stores procedure-scoped local symbols, source locations, declaration order, element counts, element sizes, alignment, negative `EBP`-relative offsets, and total local-frame size rounded to 4 bytes. The canonical accepted example `LOCAL ch:BYTE` is a narrow parser-only compatibility exception to the reserved-register-name rule because the lexer recognizes `CH` as a register alias; other register names remain rejected as local symbol names. Phase 79 uses this metadata to allocate automatic runtime LOCAL frames for selected-entry startup and direct-CALL helper entry, save and restore `EBP`, reserve rounded LOCAL bytes, initialize visible LOCAL bytes to deterministic zero while preserving uninitialized-origin metadata, and create runtime local-object descriptors. Phase 80 resolves supported source-level local names as active-frame LOCAL operands for accepted instruction forms. Supported examples include `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, `lea eax, temp`, and `lea eax, buf`. LOCAL operands resolve through the currently active procedure frame, use the parser-owned negative `EBP`-relative metadata, and route reads and writes through the central checked memory helpers. `LEA` computes the local runtime address without reading local bytes. `OFFSET local`, `ADDR`, `PROTO`, `INVOKE`, parameters, calling conventions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory access, and expanded LOCAL grammar remain future-owned. Targeted LOCAL diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`.
+Phase 78 accepts `LOCAL` declarations as parser metadata inside procedure bodies before executable instructions. Accepted local types are `BYTE`, `SBYTE`, `WORD`, `SWORD`, `DWORD`, and `SDWORD`; accepted forms include scalar declarations, array declarations with positive numeric literal counts or already-defined numeric equates that resolve to positive 32-bit constant values without registers or runtime operands, and comma-separated declarators. The parser stores procedure-scoped local symbols, source locations, declaration order, element counts, element sizes, alignment, negative `EBP`-relative offsets, and total local-frame size rounded to 4 bytes. The canonical accepted example `LOCAL ch:BYTE` is a narrow parser-only compatibility exception to the reserved-register-name rule because the lexer recognizes `CH` as a register alias; other register names remain rejected as local symbol names. Phase 79 uses this metadata to allocate automatic runtime LOCAL frames for selected-entry startup and direct-CALL helper entry, save and restore `EBP`, reserve rounded LOCAL bytes, initialize visible LOCAL bytes to deterministic zero while preserving uninitialized-origin metadata, and create runtime local-object descriptors. Phase 80 resolves supported source-level local names as active-frame LOCAL operands for accepted instruction forms. Supported examples include `mov temp, eax`, `mov eax, temp`, `mov BYTE PTR buf[0], 'A'`, `mov al, BYTE PTR buf[1]`, `lea eax, temp`, and `lea eax, buf`. LOCAL operands resolve through the currently active procedure frame, use the parser-owned negative `EBP`-relative metadata, and route reads and writes through the central checked memory helpers. `LEA` computes the local runtime address without reading local bytes. Phase 81 accepts limited parser-owned `PROTO` metadata for same-file educational prototypes using zero parameters or named `DWORD`/`SDWORD` parameters, preserving prototype/parameter source spans while emitting no executable IR and changing no runtime call behavior. `OFFSET local`, `ADDR`, executable `PROTO`/`INVOKE` behavior, pointer or unnamed prototype parameters, `VARARG`, parameters, calling conventions, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory access, and expanded LOCAL grammar remain future-owned. Targeted LOCAL diagnostics include `local-outside-procedure`, `local-after-instruction`, `unsupported-local-type`, `invalid-local-declaration`, `duplicate-local-symbol`, and `invalid-local-count`; targeted PROTO diagnostics include `invalid-proto-declaration`, `unsupported-proto-type`, `unsupported-external-proto`, `duplicate-proto`, and `proto-proc-mismatch`.
 
 For direct `CALL` entry into a procedure with accepted `PROC USES` metadata, the simulator saves the listed general-purpose registers on the checked simulated stack in declared order after the helper return token is written and before the procedure body executes. On `RET` from that CALL-created preservation frame, the simulator validates and restores the saved registers in reverse order before popping and validating the helper return token. Automatic save/restore must preserve modeled flags and must not expose simulator-internal save/restore stack transfers as public source-run `memoryChanges` rows. If `EAX` is listed in `USES`, `EAX` is restored like any other listed register; if `EAX` is omitted, helper code may use it as the conventional return-value register. A failed automatic save reports `stack-overflow` before partial CALL/USES mutation. A failed automatic restore reports `stack-underflow` before partial register restore, return-token pop, return transfer, or caller cleanup mutation. Selected-entry startup, direct branch transfer, and ordinary fallthrough into a `PROC USES` body remain unsupported until a later accepted phase defines a preservation model for those non-CALL entry paths.
 
@@ -6070,7 +6070,7 @@ The implementation guide assigns diagnostic recovery for known unsupported const
 - Never execute a program if any assembly diagnostic was produced.
 - Stop immediately on fatal capacity, lexer state, or internal parser errors.
 
-Recoverable unsupported constructs include common textbook/compiler forms only while those forms are still unimplemented or deliberately outside the simulator boundary in the current repository state. The example list for current recovery planning includes constructs such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `TEXTEQU`, `PROTO`, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`, subject to the current supported-syntax reference and the implementation guide. Supported Phase 78 `LOCAL` declarations are no longer generic unsupported-recovery constructs; invalid LOCAL forms use targeted LOCAL diagnostics.
+Recoverable unsupported constructs include common textbook/compiler forms only while those forms are still unimplemented or deliberately outside the simulator boundary in the current repository state. The example list for current recovery planning includes constructs such as `STRUCT`, `UNION`, `MACRO`, `INVOKE`, `.IF`, `.WHILE`, `.REPEAT`, `TEXTEQU`, unsupported or malformed `PROTO` forms, `INCLUDELIB`, `EXTERN`, `PUBLIC`, and `COMM`, subject to the current supported-syntax reference and the implementation guide. Supported Phase 78 `LOCAL` declarations are no longer generic unsupported-recovery constructs; invalid LOCAL forms use targeted LOCAL diagnostics. Supported Phase 81 `PROTO` declarations are no longer generic unsupported-recovery constructs; invalid or unsupported PROTO forms use targeted PROTO diagnostics.
 
 Do not keep a construct in this unsupported-recovery list after its owning phase has implemented and tested it. Already-implemented constructs such as `.DATA?`, `.CONST`, numeric `name = expression`, and numeric `name EQU expression` must follow their current implemented behavior and diagnostics, not the generic unsupported-feature recovery path.
 

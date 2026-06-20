@@ -523,8 +523,8 @@ def run_structure_tests() -> None:
     assert_text_contains("src/parser/parser.c", "Unsupported feature: STRUCT declarations are not supported yet.")
     assert_text_contains("src/parser/parser.c", "INVOKE syntax is not implemented in MASM32 Educational Mode")
     assert_text_contains("src/parser/parser.c", "Unsupported feature: MASM macro definitions are not supported yet.")
-    assert_text_contains("README.md", "Phase 80 - LOCAL Operand Resolution and Addressing")
-    assert_text_contains("README.md", "Phase 80 implements source-level LOCAL operand resolution and addressing")
+    assert_text_contains("README.md", "Phase 81 - PROTO Metadata Parser")
+    assert_text_contains("README.md", "Phase 81 implements limited parser-owned `PROTO` metadata")
     assert_text_not_contains("README.md", "parser-only `LOCAL` declaration metadata")
     assert_text_not_contains("README.md", "runtime stack-frame creation for locals")
     assert_text_contains("README.md", "callDepthLimit")
@@ -608,9 +608,9 @@ def run_structure_tests() -> None:
     assert_text_contains("tests/core/test_object_map.c", "/// Verifies Phase 39 object maps track per-object initialized and uninitialized byte counts")
     assert_text_contains("tests/core/test_wasm_source_run.c", "/// Verifies explicit region-only mode preserves Phase 39 zero-filled reads without warnings or metadata output")
     assert_text_contains("web/src/formatters.js", "/*\n * @file formatters.js")
-    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 80")
+    assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE = 81")
     assert_text_contains("web/src/protocol.js", "IMPLEMENTED_PHASE_SUFFIX = \"\"")
-    assert_text_contains("web/src/protocol.js", "Phase 80 - LOCAL Operand Resolution and Addressing")
+    assert_text_contains("web/src/protocol.js", "Phase 81 - PROTO Metadata Parser")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_INC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_DEC")
     assert_text_contains("src/core/vm_ir.h", "VM_IR_OPCODE_AND")
@@ -678,7 +678,7 @@ def run_structure_tests() -> None:
     assert_text_contains("src/core/vm_cpu.h", "vm_cpu_init_seeded_registers_and_flags")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_fixed_and_automatic_layout_smoke_harness")
     assert_text_contains("tests/core/test_wasm_source_run.c", "test_phase51_instruction_family_source_run_smoke_harness")
-    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 80 LOCAL operand resolution and addressing passed.")
+    assert_text_contains("tests/core/test_wasm_source_run.c", "Source execution tests through Phase 81 PROTO metadata parser passed.")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "through Phase 78A limited OPTION NOKEYWORD coverage")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "Phase 78A default source-run metadata")
     assert_text_not_contains("tests/core/test_wasm_source_run.c", "numeric Phase 78 metadata")
@@ -1781,8 +1781,8 @@ def assert_current_status_and_harness_documented() -> None:
         "README.md",
         [
             "Current milestone",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
-            "Phase 80 implements source-level LOCAL operand resolution and addressing",
+            "Phase 81 - PROTO Metadata Parser",
+            "Phase 81 implements limited parser-owned `PROTO` metadata",
             "stack-overflow",
             "stack-underflow",
             "source-level 32-bit `push` for registers, immediates, and DWORD memory sources",
@@ -1850,10 +1850,10 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/BUILDING_AND_DEVELOPMENT.md",
         [
             "Current milestone:",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
-            "Phase 80 advances runtime/source-run behavior metadata",
-            "automatic LOCAL frame setup/release",
-            "invalid-frame-state diagnostics",
+            "Phase 81 - PROTO Metadata Parser",
+            "Phase 81 advances runtime/source-run behavior metadata",
+            "Phase 80 supported LOCAL operand resolution/addressing",
+            "structured `PROTO` diagnostics",
             "Artifact verification versus rebuild verification",
             "Checked-in artifact-content verification",
             "stale-wasm-output-contract",
@@ -1899,8 +1899,8 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/SUPPORTED_SYNTAX.md",
         [
             "Current milestone:",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
-            "Phase 80 implements source-level LOCAL operand resolution and addressing",
+            "Phase 81 - PROTO Metadata Parser",
+            "Phase 81 implements limited parser-owned `PROTO` metadata",
             "This document describes the currently accepted MASM32 Educational Mode syntax, rejected forms, diagnostics, and future/deferred syntax.",
             "Phase 79 allocates runtime stack storage for accepted LOCAL metadata",
             "selected-entry `ENDP` is not an implicit successful terminator",
@@ -1954,9 +1954,9 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/MILESTONE_HISTORY.md",
         [
             "Latest recorded completed milestone in this history file:",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
+            "Phase 81 - PROTO Metadata Parser",
             "Latest recorded runtime/source-run MASM behavior phase in this history file:",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
+            "Phase 81 - PROTO Metadata Parser",
             "phase-71e-entry-procedure-end-mode-output-contract-v1",
             "This history file records completed milestones and audit evidence.",
             "It is not the phase-order authority",
@@ -2131,14 +2131,14 @@ def assert_current_status_and_harness_documented() -> None:
         "docs/TESTING_GUIDE.md",
         [
             "Current milestone:",
-            "Phase 80 - LOCAL Operand Resolution and Addressing",
+            "Phase 81 - PROTO Metadata Parser",
             "Phase 79 adds tests for automatic LOCAL frame setup and release",
-            "phase-80-local-operand-output-contract-v1",
+            "phase-81-proto-metadata-output-contract-v1",
             "local-frame-entry-unsupported",
             "invalid-frame-state",
             "stack-overflow",
             "future-owned deferral of `OFFSET local`",
-            "Phase 80 regression coverage also preserves accepted limited `OPTION NOKEYWORD` behavior",
+            "Phase 81 regression coverage also preserves Phase 80 LOCAL operand behavior",
         ],
     )
     testing_status = read_repo_text("docs/TESTING_GUIDE.md").split("## 1. Prerequisites", 1)[0]
@@ -2155,8 +2155,9 @@ def assert_current_status_and_harness_documented() -> None:
     assert_all_text_contains(
         "web/index.html",
         [
-            "Milestone 80: LOCAL Operand Resolution and Addressing",
+            "Milestone 81: PROTO Metadata Parser",
             "INCLUDE Irvine32.inc",
+            "MyProc PROTO arg1:DWORD, p:SDWORD",
             "LOCAL temp:DWORD",
             "mov temp, 42",
             "mov BYTE PTR buf[0], 'A'",
@@ -2209,7 +2210,7 @@ def assert_current_status_and_harness_documented() -> None:
             "sourceRunOutputContract",
             "createMismatchedRuntimePhaseDiagnostic",
             "Number.isInteger(runResult.phase)",
-            "IMPLEMENTED_PHASE = 80",
+            "IMPLEMENTED_PHASE = 81",
         ],
     )
     assert_all_text_not_contains(

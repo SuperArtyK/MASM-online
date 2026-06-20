@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 78A limited OPTION NOKEYWORD coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 81 PROTO metadata coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * INVOKE/ADDR external-routine diagnostics, and integration with the current executor
  * without adding future execution behavior.
  */
@@ -45,6 +45,9 @@
 /// Number of procedure ranges available to parser tests.
 #define TEST_PROCEDURE_RANGE_CAPACITY 16U
 
+/// Number of PROTO metadata records available to parser tests.
+#define TEST_PROTOTYPE_CAPACITY 16U
+
 /// Number of .data/.DATA? image bytes available to parser tests.
 #define TEST_DATA_IMAGE_CAPACITY 512U
 
@@ -71,6 +74,8 @@ typedef struct ParserTestBuffers {
     VmCodeLabel code_labels[TEST_CODE_LABEL_CAPACITY];
     /// Procedure ranges emitted from PROC/ENDP boundaries.
     VmProcedureRange procedure_ranges[TEST_PROCEDURE_RANGE_CAPACITY];
+    /// Prototype metadata emitted from Phase 81 PROTO declarations.
+    VmPrototype prototypes[TEST_PROTOTYPE_CAPACITY];
     /// Data image emitted from optional .data/.DATA? declarations.
     uint8_t data_image[TEST_DATA_IMAGE_CAPACITY];
     /// Constant image emitted from optional .CONST declarations.
@@ -326,6 +331,8 @@ static VmParserStatus parse_for_test(const char *source, ParserTestBuffers *buff
     config.code_label_capacity = TEST_CODE_LABEL_CAPACITY;
     config.procedure_ranges = buffers->procedure_ranges;
     config.procedure_range_capacity = TEST_PROCEDURE_RANGE_CAPACITY;
+    config.prototypes = buffers->prototypes;
+    config.prototype_capacity = TEST_PROTOTYPE_CAPACITY;
     config.data_image = buffers->data_image;
     config.data_image_capacity = TEST_DATA_IMAGE_CAPACITY;
     config.const_image = buffers->const_image;
@@ -1501,6 +1508,165 @@ static int test_phase58_label_casemap_policy(void) {
     return failures;
 }
 
+
+/// Verifies Phase 81 accepts PROTO metadata without emitting executable IR.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase81_proto_metadata_acceptance(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+    const char *source =
+        "MyProc PROTO arg1:DWORD, p:SDWORD\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, 1\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 81 named DWORD/SDWORD PROTO should parse");
+    failures += expect_size(result.diagnostic_count, 0U, "accepted PROTO metadata should not emit diagnostics");
+    failures += expect_size(result.prototype_count, 1U, "one prototype should be recorded");
+    failures += expect_size(result.instruction_count, 1U, "PROTO should not emit IR instructions");
+
+    failures += expect_string(buffers.prototypes[0].name, "MyProc", "prototype name should preserve source spelling");
+    failures += expect_size(buffers.prototypes[0].parameter_count, 2U, "prototype parameter count should match declaration");
+    failures += expect_u32(buffers.prototypes[0].source_location.line, 1U, "prototype name line should be preserved");
+    failures += expect_u32(buffers.prototypes[0].source_location.column, 1U, "prototype name column should be preserved");
+    failures += expect_size(buffers.prototypes[0].source_span_length, 6U, "prototype name span should be preserved");
+    failures += expect_string(buffers.prototypes[0].parameters[0].name, "arg1", "first parameter name should be preserved");
+    failures += expect_u32(buffers.prototypes[0].parameters[0].type, VM_PROTO_PARAMETER_TYPE_DWORD, "first parameter type should be DWORD");
+    failures += expect_u32(buffers.prototypes[0].parameters[0].name_source_location.column, 14U, "first parameter name column should be preserved");
+    failures += expect_u32(buffers.prototypes[0].parameters[0].type_source_location.column, 19U, "first parameter type column should be preserved");
+    failures += expect_size(buffers.prototypes[0].parameters[0].name_source_span_length, 4U, "first parameter name span should be preserved");
+    failures += expect_size(buffers.prototypes[0].parameters[0].type_source_span_length, 5U, "first parameter type span should be preserved");
+    failures += expect_string(buffers.prototypes[0].parameters[1].name, "p", "second parameter name should be preserved");
+    failures += expect_u32(buffers.prototypes[0].parameters[1].type, VM_PROTO_PARAMETER_TYPE_SDWORD, "second parameter type should be SDWORD");
+    failures += expect_u32(buffers.prototypes[0].parameters[1].name_source_location.column, 26U, "second parameter name column should be preserved");
+    failures += expect_u32(buffers.prototypes[0].parameters[1].type_source_location.column, 28U, "second parameter type column should be preserved");
+    failures += expect_string(vm_proto_parameter_type_name(VM_PROTO_PARAMETER_TYPE_DWORD), "dword", "DWORD PROTO type name should be stable");
+    failures += expect_string(vm_proto_parameter_type_name(VM_PROTO_PARAMETER_TYPE_SDWORD), "sdword", "SDWORD PROTO type name should be stable");
+
+    failures += expect_parser_status(parse_for_test(
+        "Helper PROTO\n.code\nmain PROC\n    ret\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "zero-argument PROTO should parse");
+    failures += expect_size(result.prototype_count, 1U, "zero-argument prototype should be recorded");
+    failures += expect_size(buffers.prototypes[0].parameter_count, 0U, "zero-argument prototype should have no parameters");
+    failures += expect_size(result.instruction_count, 1U, "zero-argument PROTO should not emit IR");
+
+    return failures;
+}
+
+/// Verifies Phase 81 links zero-argument PROTO metadata to same-name PROC records.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase81_proto_proc_linking(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "Helper PROTO\n"
+        ".code\n"
+        "Helper PROC\n"
+        "    ret\n"
+        "Helper ENDP\n"
+        "END Helper\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK, "zero-argument PROTO should link to same-name PROC");
+    failures += expect_size(result.prototype_count, 1U, "linked prototype should be recorded");
+    failures += expect_bool(buffers.prototypes[0].has_linked_procedure, "prototype should record linked procedure metadata");
+    failures += expect_size(buffers.prototypes[0].linked_procedure_range_index, 0U, "linked procedure index should point to Helper PROC");
+
+    failures += expect_parser_status(parse_for_test(
+        "Helper PROTO x:DWORD\n"
+        ".code\n"
+        "Helper PROC\n"
+        "    ret\n"
+        "Helper ENDP\n"
+        "END Helper\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "parameterized PROTO should mismatch current bare PROC metadata");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH, "PROTO/PROC mismatch diagnostic should be specific");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 3U, "PROTO/PROC mismatch should point at PROC name");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 1U, "PROTO/PROC mismatch should retain related PROTO location");
+
+    return failures;
+}
+
+/// Verifies Phase 81 PROTO diagnostics for unsupported and malformed declarations.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase81_proto_diagnostics(void) {
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    int failures = 0;
+
+    failures += expect_parser_status(parse_for_test(
+        "MyProc PROTO p:PTR BYTE\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "pointer PROTO parameter should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE, "pointer PROTO diagnostic should be unsupported-proto-type");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 1U, "pointer PROTO diagnostic should preserve line");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 16U, "pointer PROTO diagnostic should point at PTR token");
+    failures += expect_size(buffers.diagnostics[0].lexeme_length, 3U, "pointer PROTO diagnostic span should cover PTR");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "DWORD and SDWORD", "pointer PROTO diagnostic should describe accepted subset");
+
+    failures += expect_parser_status(parse_for_test(
+        "MyProc PROTO :DWORD\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "unnamed PROTO parameter should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION, "unnamed PROTO diagnostic should be invalid-proto-declaration");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 14U, "unnamed PROTO diagnostic should point at colon");
+
+    failures += expect_parser_status(parse_for_test(
+        "MyProc PROTO VARARG\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "VARARG PROTO should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE, "VARARG diagnostic should be unsupported-proto-type");
+
+    failures += expect_parser_status(parse_for_test(
+        "ExitProcess PROTO :DWORD\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "external/API PROTO target should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO, "external PROTO diagnostic should be unsupported-external-proto");
+    failures += expect_u32(buffers.diagnostics[0].location.column, 1U, "external PROTO diagnostic should point at target name");
+    failures += expect_string_contains(buffers.diagnostics[0].message, "External/API", "external PROTO diagnostic should describe boundary");
+
+    failures += expect_parser_status(parse_for_test(
+        "MyProc PROTO arg1:DWORD\nMyProc PROTO arg1:DWORD\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "duplicate PROTO should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO, "duplicate PROTO diagnostic should be duplicate-proto");
+    failures += expect_u32(buffers.diagnostics[0].location.line, 2U, "duplicate PROTO diagnostic should point at second declaration");
+    failures += expect_u32(buffers.diagnostics[0].related_location.line, 1U, "duplicate PROTO diagnostic should retain first declaration location");
+    failures += expect_size(result.prototype_count, 1U, "duplicate PROTO should not insert a second prototype");
+
+    failures += expect_parser_status(parse_for_test(
+        "MyProc PROTO arg1:DWORD,\n.code\nmain PROC\nmain ENDP\nEND main\n",
+        &buffers,
+        &result
+    ), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "trailing PROTO comma should be rejected");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION, "trailing comma diagnostic should be invalid-proto-declaration");
+
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION), "invalid-proto-declaration", "invalid PROTO code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE), "unsupported-proto-type", "unsupported PROTO type code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO), "unsupported-external-proto", "external PROTO code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO), "duplicate-proto", "duplicate PROTO code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH), "proto-proc-mismatch", "PROTO/PROC mismatch code name should be stable");
+
+    return failures;
+}
+
 /// Verifies Phase 58 duplicate and cross-symbol label conflict diagnostics.
 ///
 /// @return Zero on success, otherwise a positive failure count.
@@ -1642,7 +1808,6 @@ static int test_textbook_unsupported_keywords_are_stable(void) {
     failures += expect_unsupported_feature_source("Point STRUCT\nx DWORD ?\nPoint ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "STRUCT");
     failures += expect_unsupported_feature_source("Choice UNION\nx DWORD ?\nChoice ENDS\n.code\nmain PROC\nmain ENDP\nEND main\n", "UNION");
     failures += expect_unsupported_feature_source("Flags RECORD bit0:1\n.code\nmain PROC\nmain ENDP\nEND main\n", "RECORD");
-    failures += expect_unsupported_feature_source("ExitProcess PROTO\n.code\nmain PROC\nmain ENDP\nEND main\n", "PROTO");
     failures += expect_unsupported_feature_source("EXTERN ExitProcess:PROC\n.code\nmain PROC\nmain ENDP\nEND main\n", "EXTERN");
     failures += expect_unsupported_feature_source("PUBLIC main\n.code\nmain PROC\nmain ENDP\nEND main\n", "PUBLIC");
     failures += expect_unsupported_feature_source("COMM buffer:BYTE:16\n.code\nmain PROC\nmain ENDP\nEND main\n", "COMM");
@@ -1898,7 +2063,7 @@ static int test_recovery_diagnostic_capacity_failure_is_fatal(void) {
     memset(&buffers, 0, sizeof(buffers));
     memset(&config, 0, sizeof(config));
     memset(&result, 0, sizeof(result));
-    config.source = ".code\nmain PROC\nINVOKE A\nPROTO B\nGreeting TEXTEQU <Hello>\nmain ENDP\nEND main\n";
+    config.source = ".code\nmain PROC\nINVOKE A\nBadText TEXTEQU <Hello>\nGreeting TEXTEQU <Hello>\nmain ENDP\nEND main\n";
     config.source_file = "main.asm";
     config.tokens = buffers.tokens;
     config.token_capacity = TEST_TOKEN_CAPACITY;
@@ -8139,6 +8304,9 @@ int main(void) {
     failures += test_phase78_local_declarations_parse_to_metadata();
     failures += test_phase78_local_scoping_and_shadowing();
     failures += test_phase78_local_diagnostics();
+    failures += test_phase81_proto_metadata_acceptance();
+    failures += test_phase81_proto_proc_linking();
+    failures += test_phase81_proto_diagnostics();
     failures += test_phase80_local_operands_resolve();
     failures += test_phase80_local_operand_rejected_future_forms();
     failures += test_phase78a_nokeyword_accepts_loop_and_offset_symbols();
@@ -8255,6 +8423,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 78A limited OPTION NOKEYWORD coverage passed.\n");
+    printf("Parser tests through Phase 81 PROTO metadata coverage passed.\n");
     return 0;
 }

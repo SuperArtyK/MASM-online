@@ -19,7 +19,7 @@
  * plain near RET lowering, Phase 74 RET imm16 lowering, Phase 75
  * PROC metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78
  * LOCAL declaration parser metadata, and Phase 78A limited OPTION NOKEYWORD
- * parser keyword opt-out metadata.
+ * parser keyword opt-out metadata, and Phase 81 PROTO declaration metadata.
  */
 
 #ifndef MASM32_SIM_PARSER_H
@@ -57,7 +57,9 @@ typedef enum VmParserStatus {
     /// Parsing stopped because the caller-provided code-label table was full.
     VM_PARSER_STATUS_CODE_LABEL_CAPACITY_EXCEEDED,
     /// Parsing stopped because the caller-provided procedure-range table was full.
-    VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED
+    VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED,
+    /// Parsing stopped because the caller-provided PROTO metadata table was full.
+    VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED
 } VmParserStatus;
 
 /// Identifies one structured parser diagnostic code for the implemented grammar.
@@ -296,6 +298,18 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_CODE_LABEL_CAPACITY_EXCEEDED,
     /// The caller-provided procedure-range table was full.
     VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED,
+    /// A PROTO declaration was malformed or used a placement not accepted by Phase 81.
+    VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION,
+    /// A PROTO parameter used a type outside the Phase 81 accepted subset.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE,
+    /// A PROTO target named an external/API routine outside the simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO,
+    /// A PROTO declaration duplicated or conflicted with an earlier prototype.
+    VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO,
+    /// A PROTO declaration conflicts with same-name PROC metadata.
+    VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH,
+    /// The caller-provided PROTO metadata table was full.
+    VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED,
     /// Number of parser diagnostic codes.
     VM_PARSER_DIAGNOSTIC_CODE_COUNT
 } VmParserDiagnosticCode;
@@ -367,6 +381,9 @@ typedef struct VmCodeLabel {
 /// Maximum number of Phase 78 LOCAL declarations preserved on one procedure metadata record.
 #define VM_PROCEDURE_LOCAL_CAPACITY 32U
 
+/// Maximum number of Phase 81 PROTO parameters preserved on one prototype metadata record.
+#define VM_PROTO_PARAMETER_CAPACITY 16U
+
 /// Describes one accepted Phase 78 procedure-local declaration.
 typedef struct VmProcedureLocalSymbol {
     /// Null-terminated original source spelling of the local symbol name.
@@ -400,6 +417,51 @@ typedef struct VmProcedureUnsupportedAttribute {
     /// Source span length of the unsupported attribute or parameter token in bytes.
     size_t source_span_length;
 } VmProcedureUnsupportedAttribute;
+
+
+/// Identifies one Phase 81 accepted PROTO parameter type.
+typedef enum VmProtoParameterType {
+    /// `DWORD` stack argument metadata.
+    VM_PROTO_PARAMETER_TYPE_DWORD = 0,
+    /// `SDWORD` stack argument metadata.
+    VM_PROTO_PARAMETER_TYPE_SDWORD
+} VmProtoParameterType;
+
+/// Describes one accepted Phase 81 named PROTO parameter.
+typedef struct VmProtoParameter {
+    /// Null-terminated original source spelling of the parameter name.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Phase 81 accepted parameter type.
+    VmProtoParameterType type;
+    /// Source location of the parameter-name token.
+    VmLexerSourceLocation name_source_location;
+    /// Source span length of the parameter-name token in bytes.
+    size_t name_source_span_length;
+    /// Source location of the parameter-type token.
+    VmLexerSourceLocation type_source_location;
+    /// Source span length of the parameter-type token in bytes.
+    size_t type_source_span_length;
+} VmProtoParameter;
+
+/// Describes one accepted Phase 81 PROTO declaration.
+typedef struct VmPrototype {
+    /// Null-terminated original source spelling of the prototype name.
+    char name[VM_SYMBOL_NAME_CAPACITY];
+    /// Active CASEMAP policy at the prototype declaration location.
+    VmSymbolCasePolicy case_policy;
+    /// Source location of the prototype name token.
+    VmLexerSourceLocation source_location;
+    /// Source span length of the prototype name token in bytes.
+    size_t source_span_length;
+    /// Number of accepted named parameters stored in declaration order.
+    size_t parameter_count;
+    /// Parser-owned Phase 81 PROTO parameter metadata slots in declaration order.
+    VmProtoParameter parameters[VM_PROTO_PARAMETER_CAPACITY];
+    /// Procedure-range table index when the prototype has been linked to a same-name PROC.
+    size_t linked_procedure_range_index;
+    /// Whether @ref linked_procedure_range_index identifies a linked procedure range.
+    bool has_linked_procedure;
+} VmPrototype;
 
 /// Describes one accepted `PROC` / `ENDP` source procedure range.
 typedef struct VmProcedureRange {
@@ -631,6 +693,10 @@ typedef struct VmParserConfig {
     VmProcedureRange *procedure_ranges;
     /// Number of entries available in @ref procedure_ranges.
     size_t procedure_range_capacity;
+    /// Optional caller-owned output PROTO metadata table.
+    VmPrototype *prototypes;
+    /// Number of entries available in @ref prototypes.
+    size_t prototype_capacity;
     /// Caller-owned .data/.DATA? image bytes laid out from VM_MEMORY_DEFAULT_DATA_BASE.
     uint8_t *data_image;
     /// Number of bytes available in @ref data_image.
@@ -689,6 +755,8 @@ typedef struct VmParserResult {
     size_t code_label_count;
     /// Number of procedure ranges written to the configured procedure-range buffer.
     size_t procedure_range_count;
+    /// Number of PROTO metadata records written to the configured prototype buffer.
+    size_t prototype_count;
     /// Number of numeric equates written to the configured numeric-equate metadata buffer.
     size_t numeric_equate_count;
     /// Whether @ref selected_entry_procedure_index identifies the `END entryName` procedure.
@@ -771,6 +839,12 @@ const char *vm_parser_diagnostic_severity_name(VmParserDiagnosticSeverity severi
 /// @param diagnostic Diagnostic to inspect.
 /// @return true when @p diagnostic is non-NULL and has error severity.
 bool vm_parser_diagnostic_is_error(const VmParserDiagnostic *diagnostic);
+
+/// Returns a stable display name for one Phase 81 PROTO parameter type.
+///
+/// @param type Parameter type to inspect.
+/// @return Static parameter-type name, or NULL for invalid values.
+const char *vm_proto_parameter_type_name(VmProtoParameterType type);
 
 /// Classifies one Irvine32 routine or external name using the virtual registry.
 ///

@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 80: LOCAL Operand Resolution and Addressing.
+  Milestone 81: PROTO Metadata Parser.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,9 +18,10 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 80: LOCAL Operand Resolution and Addressing</p>
+        <p class="muted">Milestone 81: PROTO Metadata Parser</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
+MyProc PROTO arg1:DWORD, p:SDWORD
 .code
 main PROC
     LOCAL temp:DWORD, buf[2]:BYTE

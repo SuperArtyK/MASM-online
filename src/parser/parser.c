@@ -12,8 +12,8 @@
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
- * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata are
- * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
+ * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata and Phase 81 PROTO
+ * declaration metadata are supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
  * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
  * operands to frame-relative runtime addresses. Accepted PROC remains
  * metadata-only for unsupported non-USES PROC tails. ENTER, ADDR/INVOKE
@@ -1166,6 +1166,152 @@ static VmProcedureRange *vm_parser_find_procedure_range(VmParserState *state, co
     return NULL;
 }
 
+/// Finds an accepted PROTO declaration by applying the active user-symbol lookup policy.
+///
+/// @param state Parser state to inspect.
+/// @param name_token Source token containing the prototype name reference.
+/// @return Matching prototype metadata, or NULL when no accepted prototype matches.
+static VmPrototype *vm_parser_find_prototype(VmParserState *state, const VmLexerToken *name_token) {
+    size_t index = 0U;
+
+    if (state == NULL || state->config == NULL || state->config->prototypes == NULL || name_token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < state->result->prototype_count; index += 1U) {
+        VmPrototype *prototype = &state->config->prototypes[index];
+        if (vm_parser_user_symbol_name_matches(state, name_token, prototype->name)) {
+            return prototype;
+        }
+    }
+
+    return NULL;
+}
+
+/// Records one PROTO diagnostic and annotates it with prior-definition metadata.
+///
+/// @param state Parser state whose diagnostic buffer should receive the entry.
+/// @param code Diagnostic code.
+/// @param token Current rejected declaration token.
+/// @param related_location Prior definition location.
+/// @param related_span_length Prior definition span length in bytes.
+/// @param format printf-style diagnostic message.
+/// @return true when the diagnostic was recorded.
+static bool vm_parser_add_proto_related_diagnostic(
+    VmParserState *state,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    VmLexerSourceLocation related_location,
+    size_t related_span_length,
+    const char *format,
+    ...
+) {
+    VmParserDiagnostic *diagnostic = NULL;
+    va_list args;
+
+    if (state == NULL || state->config == NULL || state->result == NULL || format == NULL) {
+        return false;
+    }
+    if (state->result->diagnostic_count >= state->config->diagnostic_capacity || state->config->diagnostics == NULL) {
+        state->diagnostic_overflowed = true;
+        return false;
+    }
+
+    diagnostic = &state->config->diagnostics[state->result->diagnostic_count];
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+    diagnostic->related_location = related_location;
+    diagnostic->related_span_length = related_span_length;
+    diagnostic->has_related_location = related_location.line > 0U;
+
+    va_start(args, format);
+    (void)vsnprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), format, args);
+    va_end(args);
+    diagnostic->message = diagnostic->message_storage;
+
+    state->result->diagnostic_count += 1U;
+    return true;
+}
+
+/// Returns whether one accepted PROTO is compatible with the currently available PROC metadata.
+///
+/// Phase 81 has no accepted PROC parameter metadata. A same-name PROC therefore
+/// links cleanly only to a zero-argument prototype. Parameterized prototypes are
+/// preserved for future INVOKE work but remain incompatible with a current bare
+/// PROC declaration until a later PROC-parameter phase defines executable
+/// parameter metadata.
+///
+/// @param prototype Accepted prototype metadata to compare.
+/// @param procedure Accepted procedure metadata to compare.
+/// @return true when the current parser metadata can link the pair.
+static bool vm_parser_prototype_matches_procedure(const VmPrototype *prototype, const VmProcedureRange *procedure) {
+    if (prototype == NULL || procedure == NULL) {
+        return false;
+    }
+
+    return prototype->parameter_count == 0U;
+}
+
+/// Links an accepted PROTO to an existing same-name PROC when current metadata can represent the match.
+///
+/// @param state Parser state to mutate.
+/// @param prototype Prototype metadata to link.
+/// @param name_token Current declaration token for diagnostics.
+/// @return true when no mismatch was found.
+static bool vm_parser_link_prototype_to_existing_proc(VmParserState *state, VmPrototype *prototype, const VmLexerToken *name_token) {
+    VmProcedureRange *procedure = NULL;
+    size_t index = 0U;
+
+    if (state == NULL || prototype == NULL || name_token == NULL) {
+        return false;
+    }
+
+    procedure = vm_parser_find_procedure_range(state, name_token);
+    if (procedure == NULL) {
+        return true;
+    }
+
+    if (!vm_parser_prototype_matches_procedure(prototype, procedure)) {
+        const bool current_token_is_prototype =
+            name_token->location.offset == prototype->source_location.offset &&
+            name_token->lexeme_length == prototype->source_span_length;
+        const VmLexerSourceLocation related_location =
+            current_token_is_prototype ? procedure->source_location : prototype->source_location;
+        const size_t related_span_length =
+            current_token_is_prototype ? procedure->source_span_length : prototype->source_span_length;
+        (void)vm_parser_add_proto_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH,
+            name_token,
+            related_location,
+            related_span_length,
+            "PROTO `%.*s` declares %lu parameter(s), but the same-name PROC metadata has no accepted parameter list yet; PROC parameters and calling conventions remain deferred.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            (unsigned long)prototype->parameter_count
+        );
+        return false;
+    }
+
+    if (state->config != NULL && state->config->procedure_ranges != NULL) {
+        for (index = 0U; index < state->result->procedure_range_count; index += 1U) {
+            if (&state->config->procedure_ranges[index] == procedure) {
+                prototype->has_linked_procedure = true;
+                prototype->linked_procedure_range_index = index;
+                break;
+            }
+        }
+    }
+
+    return true;
+}
+
 /// Adds an accepted code-label declaration after duplicate/conflict checks.
 ///
 /// @param state Parser state to mutate.
@@ -2028,7 +2174,6 @@ static const char *vm_parser_unsupported_keyword_message(const VmLexerToken *tok
         {"struct", "Unsupported feature: STRUCT declarations are not supported yet."},
         {"union", "Unsupported feature: UNION declarations are not supported yet."},
         {"record", "Unsupported feature: RECORD declarations are not supported yet."},
-        {"proto", "Unsupported feature: PROTO procedure metadata is not supported yet."},
         {"macro", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"endm", "Unsupported feature: MASM macro definitions are not supported yet."},
         {"extern", "Unsupported feature: EXTERN declarations are not supported yet."},
@@ -9920,6 +10065,13 @@ static bool vm_parser_parse_proc_line(VmParserState *state) {
             }
         }
 
+        {
+            VmPrototype *prototype = vm_parser_find_prototype(state, name_token);
+            if (prototype != NULL && !vm_parser_link_prototype_to_existing_proc(state, prototype, name_token)) {
+                return false;
+            }
+        }
+
         state->open_procedure.lexeme = name_token->lexeme;
         state->open_procedure.length = name_token->lexeme_length;
         state->open_procedure.range_index = procedure_range_index;
@@ -10595,7 +10747,274 @@ static bool vm_parser_parse_label_prefix(VmParserState *state) {
     return true;
 }
 
-/// Parses one non-empty line inside the .code section.
+/// Returns whether a token can name a Phase 81 PROTO declaration or parameter.
+///
+/// @param token Token to inspect.
+/// @return true when the token is an identifier-shaped user symbol.
+static bool vm_parser_token_can_name_proto_symbol(const VmLexerToken *token) {
+    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER;
+}
+
+/// Converts one Phase 81 accepted PROTO type token to public metadata.
+///
+/// @param token Type token to inspect.
+/// @param out_type Receives the accepted parameter type.
+/// @return true for DWORD or SDWORD, otherwise false.
+static bool vm_parser_parse_proto_parameter_type_token(const VmLexerToken *token, VmProtoParameterType *out_type) {
+    if (token == NULL || out_type == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    if (vm_parser_token_equals(token, "DWORD")) {
+        *out_type = VM_PROTO_PARAMETER_TYPE_DWORD;
+        return true;
+    }
+    if (vm_parser_token_equals(token, "SDWORD")) {
+        *out_type = VM_PROTO_PARAMETER_TYPE_SDWORD;
+        return true;
+    }
+
+    return false;
+}
+
+/// Copies one token spelling into a PROTO metadata name slot.
+///
+/// @param destination Destination fixed-size name buffer.
+/// @param destination_size Destination capacity in bytes.
+/// @param token Source token to copy.
+/// @return true when the token text fit.
+static bool vm_parser_copy_proto_name(char *destination, size_t destination_size, const VmLexerToken *token) {
+    if (destination == NULL || destination_size == 0U || token == NULL || token->lexeme == NULL ||
+        token->lexeme_length == 0U || token->lexeme_length >= destination_size) {
+        return false;
+    }
+
+    memcpy(destination, token->lexeme, token->lexeme_length);
+    destination[token->lexeme_length] = '\0';
+    return true;
+}
+
+/// Returns whether a PROTO name is a recognized external/API non-goal target.
+///
+/// @param name_token Prototype-name token to classify.
+/// @return true when the virtual registry classifies the name as Windows/API/external.
+static bool vm_parser_proto_target_is_external_non_goal(const VmLexerToken *name_token) {
+    return name_token != NULL && name_token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
+        vm_parser_classify_irvine32_symbol(name_token->lexeme, name_token->lexeme_length) ==
+            VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL;
+}
+
+/// Parses one accepted or rejected Phase 81 PROTO declaration line.
+///
+/// Accepted PROTO declarations are parser-owned metadata only. They emit no IR,
+/// do not legalize INVOKE or ADDR, and do not model external/linker behavior.
+///
+/// @param state Parser state to mutate.
+/// @return true when a PROTO-shaped line was consumed or diagnosed.
+static bool vm_parser_parse_proto_line_if_recognized(VmParserState *state) {
+    const VmLexerToken *name_token = vm_parser_current_token(state);
+    const VmLexerToken *proto_token = vm_parser_peek_token(state, 1U);
+    VmPrototype parsed;
+    VmPrototype *existing = NULL;
+    VmPrototype *destination = NULL;
+    size_t parameter_count = 0U;
+
+    if (state == NULL || name_token == NULL || proto_token == NULL || !vm_parser_token_equals(proto_token, "PROTO")) {
+        return false;
+    }
+
+    memset(&parsed, 0, sizeof(parsed));
+
+    if (state->open_procedure.is_set) {
+        (void)vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION,
+            proto_token,
+            "PROTO declarations are metadata declarations and are not accepted inside an active PROC body. Place PROTO before executable procedure statements."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (!vm_parser_token_can_name_proto_symbol(name_token)) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION, name_token, "PROTO declaration requires an identifier name before PROTO.");
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (vm_parser_proto_target_is_external_non_goal(name_token)) {
+        (void)vm_parser_add_formatted_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO,
+            name_token,
+            "External/API PROTO target `%.*s` is outside MASM32 Educational Mode; the simulator does not link imports, load PE metadata, or execute WinAPI/external routines.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (vm_parser_reject_reserved_symbol_declaration(state, name_token, "PROTO name")) {
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    existing = vm_parser_find_prototype(state, name_token);
+    if (existing != NULL) {
+        (void)vm_parser_add_proto_related_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO,
+            name_token,
+            existing->source_location,
+            existing->source_span_length,
+            "Duplicate PROTO declaration `%.*s`; first prototype was declared at line %u, column %u.",
+            (int)name_token->lexeme_length,
+            name_token->lexeme,
+            existing->source_location.line,
+            existing->source_location.column
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (!vm_parser_copy_proto_name(parsed.name, sizeof(parsed.name), name_token)) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED, name_token, "PROTO name is too long for the current fixed prototype table.");
+        state->stop_status = VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED;
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+    parsed.case_policy = vm_parser_symbol_case_policy(state->user_symbol_case_policy);
+    parsed.source_location = name_token->location;
+    parsed.source_span_length = name_token->lexeme_length;
+
+    vm_parser_advance_many(state, 2U);
+
+    while (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        const VmLexerToken *parameter_name = vm_parser_current_token(state);
+        const VmLexerToken *colon_token = vm_parser_peek_token(state, 1U);
+        const VmLexerToken *type_token = vm_parser_peek_token(state, 2U);
+        VmProtoParameter *parameter = NULL;
+        VmProtoParameterType parameter_type = VM_PROTO_PARAMETER_TYPE_DWORD;
+
+        if (parameter_name != NULL && vm_parser_token_equals(parameter_name, "VARARG")) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE,
+                parameter_name,
+                "PROTO VARARG metadata is not supported yet; the current PROTO metadata parser accepts only named DWORD and SDWORD parameters."
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        if (parameter_name == NULL || parameter_name->kind != VM_LEXER_TOKEN_IDENTIFIER ||
+            colon_token == NULL || colon_token->kind != VM_LEXER_TOKEN_COLON ||
+            type_token == NULL || vm_parser_is_line_end_token(type_token)) {
+            const VmLexerToken *diagnostic_token = parameter_name != NULL ? parameter_name : proto_token;
+            if (parameter_name != NULL && parameter_name->kind == VM_LEXER_TOKEN_COLON) {
+                diagnostic_token = parameter_name;
+            } else if (colon_token != NULL && vm_parser_is_line_end_token(type_token)) {
+                diagnostic_token = colon_token;
+            }
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION,
+                diagnostic_token,
+                "Invalid PROTO parameter declaration; the current PROTO metadata parser accepts named parameters as `paramName:DWORD` or `paramName:SDWORD`."
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        if (!vm_parser_parse_proto_parameter_type_token(type_token, &parameter_type)) {
+            (void)vm_parser_add_formatted_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE,
+                type_token,
+                "Unsupported PROTO parameter type `%.*s`; the current PROTO metadata parser accepts only DWORD and SDWORD named parameters. Pointer, VARARG, language, distance, structure, floating-point, and 64-bit parameter metadata remain deferred.",
+                (int)type_token->lexeme_length,
+                type_token->lexeme
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        if (parameter_count >= VM_PROTO_PARAMETER_CAPACITY) {
+            (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED, parameter_name, "PROTO parameter metadata capacity exceeded for this prototype.");
+            state->stop_status = VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED;
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        parameter = &parsed.parameters[parameter_count];
+        memset(parameter, 0, sizeof(*parameter));
+        if (!vm_parser_copy_proto_name(parameter->name, sizeof(parameter->name), parameter_name)) {
+            (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED, parameter_name, "PROTO parameter name is too long for the current fixed prototype table.");
+            state->stop_status = VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED;
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+        parameter->type = parameter_type;
+        parameter->name_source_location = parameter_name->location;
+        parameter->name_source_span_length = parameter_name->lexeme_length;
+        parameter->type_source_location = type_token->location;
+        parameter->type_source_span_length = type_token->lexeme_length;
+        parameter_count += 1U;
+
+        vm_parser_advance_many(state, 3U);
+        if (vm_parser_current_token(state) != NULL && vm_parser_current_token(state)->kind == VM_LEXER_TOKEN_COMMA) {
+            const VmLexerToken *comma_token = vm_parser_current_token(state);
+            vm_parser_advance(state);
+            if (vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+                (void)vm_parser_add_diagnostic(
+                    state,
+                    VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION,
+                    comma_token,
+                    "Invalid PROTO declaration; a trailing comma must be followed by another named parameter."
+                );
+                vm_parser_recover_skip_line(state);
+                return true;
+            }
+            continue;
+        }
+        if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+            (void)vm_parser_add_diagnostic(
+                state,
+                VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION,
+                vm_parser_current_token(state),
+                "Invalid PROTO declaration; parameters must be separated by commas."
+            );
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+    }
+
+    parsed.parameter_count = parameter_count;
+
+    if (state->config->prototype_capacity == 0U) {
+        return vm_parser_expect_line_end(state);
+    }
+    if (state->config->prototypes == NULL || state->result->prototype_count >= state->config->prototype_capacity) {
+        (void)vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED, name_token, "PROTO metadata capacity exceeded.");
+        state->stop_status = VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED;
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    destination = &state->config->prototypes[state->result->prototype_count];
+    memset(destination, 0, sizeof(*destination));
+    *destination = parsed;
+    state->result->prototype_count += 1U;
+
+    if (!vm_parser_link_prototype_to_existing_proc(state, destination, name_token)) {
+        return true;
+    }
+
+    return vm_parser_expect_line_end(state);
+}
+
+/// Parses one .code-section line.
 ///
 /// @param state Parser state to mutate.
 /// @return true when the line was accepted.
@@ -10613,6 +11032,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "option")) {
         return vm_parser_parse_option_directive(state) && !state->diagnostic_overflowed;
+    }
+
+    if (vm_parser_parse_proto_line_if_recognized(state)) {
+        return !state->diagnostic_overflowed;
     }
 
     if (vm_parser_recover_unsupported_segment_symbol_if_recognized(state)) {
@@ -11685,6 +12108,13 @@ static bool vm_parser_parse_data_sections(VmParserState *state) {
             continue;
         }
 
+        if (vm_parser_parse_proto_line_if_recognized(state)) {
+            if (state->diagnostic_overflowed) {
+                return false;
+            }
+            continue;
+        }
+
         if (vm_parser_recover_unsupported_segment_symbol_if_recognized(state)) {
             if (state->diagnostic_overflowed) {
                 return false;
@@ -11767,6 +12197,7 @@ static bool vm_parser_config_is_valid(const VmParserConfig *config, VmParserResu
         (config->numeric_equates == NULL && config->numeric_equate_capacity > 0U) ||
         (config->code_labels == NULL && config->code_label_capacity > 0U) ||
         (config->procedure_ranges == NULL && config->procedure_range_capacity > 0U) ||
+        (config->prototypes == NULL && config->prototype_capacity > 0U) ||
         (config->data_image == NULL && config->data_image_capacity > 0U) ||
         (config->data_initialized_mask == NULL && config->data_initialized_mask_capacity > 0U) ||
         (config->const_image == NULL && config->const_image_capacity > 0U) ||
@@ -11812,6 +12243,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
     }
     if (config->procedure_ranges != NULL && config->procedure_range_capacity > 0U) {
         memset(config->procedure_ranges, 0, sizeof(config->procedure_ranges[0]) * config->procedure_range_capacity);
+    }
+    if (config->prototypes != NULL && config->prototype_capacity > 0U) {
+        memset(config->prototypes, 0, sizeof(config->prototypes[0]) * config->prototype_capacity);
     }
     if (config->data_image != NULL && config->data_image_capacity > 0U) {
         memset(config->data_image, 0, config->data_image_capacity);
@@ -11872,6 +12306,9 @@ VmParserStatus vm_parser_parse_program(const VmParserConfig *config, VmParserRes
         consumed_preamble_line = vm_parser_parse_equate_line_if_recognized(&state);
         if (!consumed_preamble_line) {
             consumed_preamble_line = vm_parser_parse_header_line_if_recognized(&state);
+        }
+        if (!consumed_preamble_line) {
+            consumed_preamble_line = vm_parser_parse_proto_line_if_recognized(&state);
         }
         if (!consumed_preamble_line) {
             consumed_preamble_line = vm_parser_recover_unsupported_segment_symbol_if_recognized(&state);
@@ -11994,6 +12431,17 @@ const char *vm_code_label_target_kind_name(VmCodeLabelTargetKind kind) {
             return "procedure-entry-target";
         case VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET:
             return "no-executable-target";
+        default:
+            return NULL;
+    }
+}
+
+const char *vm_proto_parameter_type_name(VmProtoParameterType type) {
+    switch (type) {
+        case VM_PROTO_PARAMETER_TYPE_DWORD:
+            return "dword";
+        case VM_PROTO_PARAMETER_TYPE_SDWORD:
+            return "sdword";
         default:
             return NULL;
     }
@@ -12348,6 +12796,8 @@ const char *vm_parser_status_name(VmParserStatus status) {
             return "code-label-capacity-exceeded";
         case VM_PARSER_STATUS_PROCEDURE_CAPACITY_EXCEEDED:
             return "procedure-capacity-exceeded";
+        case VM_PARSER_STATUS_PROTO_CAPACITY_EXCEEDED:
+            return "proto-capacity-exceeded";
         default:
             return NULL;
     }
@@ -12589,6 +13039,18 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "code-label-capacity-exceeded";
         case VM_PARSER_DIAGNOSTIC_PROCEDURE_CAPACITY_EXCEEDED:
             return "procedure-capacity-exceeded";
+        case VM_PARSER_DIAGNOSTIC_INVALID_PROTO_DECLARATION:
+            return "invalid-proto-declaration";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE:
+            return "unsupported-proto-type";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO:
+            return "unsupported-external-proto";
+        case VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO:
+            return "duplicate-proto";
+        case VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH:
+            return "proto-proc-mismatch";
+        case VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED:
+            return "proto-capacity-exceeded";
         default:
             return NULL;
     }

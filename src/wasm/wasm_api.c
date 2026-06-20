@@ -24,7 +24,8 @@
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
  * Phase 78A limited OPTION NOKEYWORD parser behavior, Phase 78 LOCAL
  * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, Phase 80 LOCAL
- * operand resolution and addressing, and recovered unsupported-feature diagnostics, then reports a
+ * operand resolution and addressing, Phase 81 parser-owned PROTO metadata
+ * diagnostics, and recovered unsupported-feature diagnostics, then reports a
  * compact JSON result for the UI.
  */
 
@@ -77,6 +78,9 @@
 /// Maximum procedure ranges retained by the source-run API.
 #define MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES 128U
 
+/// Maximum PROTO metadata records retained by the source-run API.
+#define MASM32_SIM_WASM_MAX_RUN_PROTOTYPES 128U
+
 /// Maximum declared-object map entries retained by one source run.
 #define MASM32_SIM_WASM_MAX_OBJECT_MAP_ENTRIES MASM32_SIM_WASM_MAX_RUN_SYMBOLS
 
@@ -87,16 +91,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 80U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 81U
 
-/// Suffix for the current Phase 80 runtime/source-run behavior phase.
+/// Suffix for the current Phase 81 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 80 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 80 - LOCAL Operand Resolution and Addressing"
+/// Full name of the current Phase 81 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 81 - PROTO Metadata Parser"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 80 LOCAL operand behavior.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-80-local-operand-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 81 PROTO metadata behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-81-proto-metadata-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -488,6 +492,8 @@ typedef struct Masm32SimWasmRunStorage {
     VmCodeLabel code_labels[MASM32_SIM_WASM_MAX_RUN_CODE_LABELS];
     /// Procedure ranges emitted by the parser for selected-entry runtime boundaries.
     VmProcedureRange procedure_ranges[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
+    /// PROTO metadata records emitted by the parser.
+    VmPrototype prototypes[MASM32_SIM_WASM_MAX_RUN_PROTOTYPES];
     /// Executor procedure-boundary records copied from parser procedure metadata; stored statically to avoid overflowing the browser Wasm stack.
     VmExecProcedureBoundary exec_procedure_boundaries[MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES];
     /// Declared-object map entries built from final selected-layout symbols.
@@ -6596,7 +6602,9 @@ static const char *masm32_sim_wasm_parser_diagnostic_kind(const VmParserDiagnost
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_FLOW ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_REGISTER_INDIRECT_BASE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_SEGMENT_SYMBOL ||
-        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE) {
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE32_ROUTINE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_PROTO_TYPE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_PROTO) {
         return "unsupported-feature";
     }
 
@@ -8890,6 +8898,8 @@ static const char *masm32_sim_wasm_run_source_json_internal_with_procedure_fallt
     config.code_label_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_CODE_LABELS;
     config.procedure_ranges = g_masm32_sim_wasm_run_storage.procedure_ranges;
     config.procedure_range_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PROCEDURE_RANGES;
+    config.prototypes = g_masm32_sim_wasm_run_storage.prototypes;
+    config.prototype_capacity = (size_t)MASM32_SIM_WASM_MAX_RUN_PROTOTYPES;
     config.data_image = g_masm32_sim_wasm_run_storage.data_image;
     config.data_image_capacity = (size_t)MASM32_SIM_WASM_RUN_DATA_IMAGE_BYTES;
     config.data_initialized_mask = g_masm32_sim_wasm_run_storage.data_initialized_mask;

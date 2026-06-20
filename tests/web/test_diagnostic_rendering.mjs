@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 80 - LOCAL Operand Resolution and Addressing. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 81 - PROTO Metadata Parser. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 80 - LOCAL Operand Resolution and Addressing. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 81 - PROTO Metadata Parser. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2577,7 +2577,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2657,9 +2657,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2685,7 +2685,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2712,7 +2712,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2737,7 +2737,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2761,7 +2761,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2787,7 +2787,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2831,7 +2831,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2858,7 +2858,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2885,7 +2885,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2917,7 +2917,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2948,8 +2948,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phase, 81);
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2994,8 +2994,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phase, 81);
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3021,7 +3021,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3045,7 +3045,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,7 +3069,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,7 +3094,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3118,7 +3118,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3142,7 +3142,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3167,9 +3167,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3195,9 +3195,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3223,9 +3223,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3250,9 +3250,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3278,7 +3278,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3303,7 +3303,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3327,7 +3327,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3544,7 +3544,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 80);
+    assert.equal(json.phase, 81);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3557,7 +3557,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 80);
+  assert.equal(duplicateResult.json.phase, 81);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3876,6 +3876,97 @@ END main
   }
 });
 
+
+test("renders Phase 81 unsupported PROTO type diagnostic exactly", () => {
+  const name = "phase81UnsupportedProtoType";
+  const source = "MyProc PROTO p:PTR BYTE\n.code\nmain PROC\nmain ENDP\nEND main\n";
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-proto-type",
+    message: "Unsupported PROTO parameter type `PTR`; the current PROTO metadata parser accepts only DWORD and SDWORD named parameters. Pointer, VARARG, language, distance, structure, floating-point, and 64-bit parameter metadata remain deferred.",
+    line: 1,
+    column: 16,
+    byteOffset: 15,
+    spanLength: 3
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-proto-type line 1, column 16, byte offset 15, span length 3: Unsupported PROTO parameter type `PTR`; the current PROTO metadata parser accepts only DWORD and SDWORD named parameters. Pointer, VARARG, language, distance, structure, floating-point, and 64-bit parameter metadata remain deferred.");
+});
+
+test("renders Phase 81 duplicate PROTO diagnostic exactly", () => {
+  const name = "phase81DuplicateProto";
+  const source = "MyProc PROTO\nMyProc PROTO\n.code\nmain PROC\nmain ENDP\nEND main\n";
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "duplicate-proto",
+    message: "Duplicate PROTO declaration `MyProc`; first prototype was declared at line 1, column 1.",
+    line: 2,
+    column: 1,
+    byteOffset: 13,
+    spanLength: 6
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] duplicate-proto line 2, column 1, byte offset 13, span length 6: Duplicate PROTO declaration `MyProc`; first prototype was declared at line 1, column 1.");
+});
+
+test("renders Phase 81 PROTO PROC mismatch diagnostic exactly", () => {
+  const name = "phase81ProtoProcMismatch";
+  const source = "MyProc PROTO arg1:DWORD\n.code\nMyProc PROC\nMyProc ENDP\nEND MyProc\n";
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "proto-proc-mismatch",
+    message: "PROTO `MyProc` declares 1 parameter(s), but the same-name PROC metadata has no accepted parameter list yet; PROC parameters and calling conventions remain deferred.",
+    line: 3,
+    column: 1,
+    byteOffset: 30,
+    spanLength: 6
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] proto-proc-mismatch line 3, column 1, byte offset 30, span length 6: PROTO `MyProc` declares 1 parameter(s), but the same-name PROC metadata has no accepted parameter list yet; PROC parameters and calling conventions remain deferred.");
+});
+
+test("renders Phase 81 external PROTO target diagnostic exactly", () => {
+  const name = "phase81ExternalProto";
+  const source = "ExitProcess PROTO :DWORD\n.code\nmain PROC\nmain ENDP\nEND main\n";
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "unsupported-feature",
+    code: "unsupported-external-proto",
+    message: "External/API PROTO target `ExitProcess` is outside MASM32 Educational Mode; the simulator does not link imports, load PE metadata, or execute WinAPI/external routines.",
+    line: 1,
+    column: 1,
+    byteOffset: 0,
+    spanLength: 11
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-external-proto line 1, column 1, byte offset 0, span length 11: External/API PROTO target `ExitProcess` is outside MASM32 Educational Mode; the simulator does not link imports, load PE metadata, or execute WinAPI/external routines.");
+});
+
+test("renders Phase 81 invalid PROTO declaration diagnostic exactly", () => {
+  const name = "phase81InvalidProto";
+  const source = "MyProc PROTO :DWORD\n.code\nmain PROC\nmain ENDP\nEND main\n";
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assertMessageEquals(json.simulatorMessages[0], {
+    kind: "assembly-error",
+    code: "invalid-proto-declaration",
+    message: "Invalid PROTO parameter declaration; the current PROTO metadata parser accepts named parameters as `paramName:DWORD` or `paramName:SDWORD`.",
+    line: 1,
+    column: 14,
+    byteOffset: 13,
+    spanLength: 1
+  });
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-proto-declaration line 1, column 14, byte offset 13, span length 1: Invalid PROTO parameter declaration; the current PROTO metadata parser accepts named parameters as `paramName:DWORD` or `paramName:SDWORD`.");
+});
+
 test("renders unsupported INVOKE diagnostic exactly", () => {
   const name = "unsupportedFeature";
   const source = fixtureSource("unsupportedFeature");
@@ -4059,7 +4150,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4080,7 +4171,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5518,9 +5609,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5580,9 +5671,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5640,9 +5731,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5677,9 +5768,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5728,9 +5819,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5769,9 +5860,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 80);
+  assert.equal(defaultResult.json.phase, 81);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(defaultResult.json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5791,9 +5882,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 80);
+  assert.equal(stopResult.json.phase, 81);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(stopResult.json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5833,7 +5924,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5869,7 +5960,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5896,9 +5987,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -5930,9 +6021,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6020,9 +6111,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6278,8 +6369,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phase, 81);
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.instructionCount, 0);
   assert.deepEqual(json.memoryChanges, []);
   assert.deepEqual(json.simulatorMessages, [
@@ -6310,8 +6401,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 80);
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phase, 81);
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6360,8 +6451,8 @@ END Other
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
-  assert.equal(json.phaseName, "Phase 80 - LOCAL Operand Resolution and Addressing");
+  assert.equal(json.phase, 81);
+  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7129,7 +7220,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7357,7 +7448,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7382,7 +7473,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7406,7 +7497,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7436,7 +7527,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7471,7 +7562,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7572,7 +7663,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -8375,7 +8466,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 80);
+  assert.equal(json.phase, 81);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

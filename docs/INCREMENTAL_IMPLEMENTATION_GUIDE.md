@@ -24910,25 +24910,25 @@ This phase must not implement INVOKE lowering, external linking, Windows API cal
 
 ```asm
 MyProc PROTO
-MyProc PROTO :DWORD
+MyProc PROTO arg1:DWORD
 MyProc PROTO arg1:DWORD, arg2:DWORD
-MyProc PROTO pStr:PTR BYTE
+MyProc PROTO arg1:DWORD, p:SDWORD
 ```
 
 Initial supported parameter types:
 
 ```text
-BYTE WORD DWORD SBYTE SWORD SDWORD PTR BYTE PTR WORD PTR DWORD
+DWORD SDWORD
 ```
 
-All parameters are treated as 32-bit stack argument slots for initial INVOKE lowering unless a later phase documents smaller coercion behavior.
-
-Parameter names are required for parameter entries in the first implementation. Supported first-form parameter syntax is `paramName:DWORD` or `paramName:SDWORD`; unnamed parameters, VARARG, pointer types, structures, and non-DWORD types are rejected until later phases.
+Parameter names are required for parameter entries in the first implementation. Supported first-form parameter syntax is `paramName:DWORD` or `paramName:SDWORD`; unnamed parameters, VARARG, pointer types, structures, and non-DWORD types are rejected until later phases. Phase 81 records metadata only; it does not lower INVOKE arguments, assign runtime stack slots, implement runtime parameters, or model calling conventions.
 
 ### Rejected syntax
 
 ```asm
 ExitProcess PROTO :DWORD       ; external/API target rejected or marked non-goal
+MyProc PROTO :DWORD            ; unnamed parameters deferred
+MyProc PROTO pStr:PTR BYTE     ; pointer parameter metadata deferred
 MyProc PROTO VARARG            ; deferred
 MyProc PROTO :REAL4            ; deferred
 MyProc PROTO :QWORD            ; executable 64-bit deferred
