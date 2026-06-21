@@ -12,12 +12,13 @@
  * executor's helper/root semantics. Phase 72A source-level PUSH/POP stack transfers, Phase 73 LEAVE
  * frame teardown, Phase 74 RET imm16 cleanup, Phase 75 PROC
  * metadata diagnostics, Phase 76 PROC USES parsing metadata, Phase 78 LOCAL
- * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata and Phase 81 PROTO
- * declaration metadata are supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
+ * declaration metadata, and Phase 78A limited OPTION NOKEYWORD metadata, Phase 81 PROTO
+ * declaration metadata, and Phase 82 zero-argument INVOKE lowering are
+ * supported; the Phase 79 executor uses parser-owned LOCAL metadata to create
  * automatic runtime frames, and Phase 80 lowers supported source-level LOCAL
  * operands to frame-relative runtime addresses. Accepted PROC remains
  * metadata-only for unsupported non-USES PROC tails. ENTER, ADDR/INVOKE
- * local argument lowering, scaled-index addressing, Irvine32 routine bodies, and full MASM expression
+ * argument lowering, scaled-index addressing, Irvine32 routine bodies, and full MASM expression
  * parsing remain later milestones. The parser records
  * virtual Irvine32 include metadata plus INCLUDELIB diagnostics without loading
  * host files or linking external libraries. Recognizable textbook
@@ -46,7 +47,7 @@
 /// Maximum direct branch fixups retained during one parse operation.
 #define VM_PARSER_BRANCH_FIXUP_CAPACITY 128U
 
-/// Maximum direct CALL fixups retained during one parse operation.
+/// Maximum CALL/INVOKE-lowered CALL fixups retained during one parse operation.
 #define VM_PARSER_CALL_FIXUP_CAPACITY 128U
 
 
@@ -176,9 +177,9 @@ typedef struct VmParserBranchFixup {
     bool nokeyword_offset_disabled;
 } VmParserBranchFixup;
 
-/// Describes one lowered direct CALL target that must be resolved after procedures are known.
+/// Describes one lowered CALL or INVOKE-lowered CALL target that must be resolved after procedures are known.
 typedef struct VmParserCallFixup {
-    /// Emitted direct CALL instruction index to patch with the resolved procedure entry.
+    /// Emitted CALL instruction index to patch with the resolved procedure entry.
     size_t instruction_index;
     /// Copied source token naming the CALL target operand.
     VmLexerToken target_token;
@@ -188,6 +189,8 @@ typedef struct VmParserCallFixup {
     bool nokeyword_loop_disabled;
     /// Whether OFFSET had been disabled by OPTION NOKEYWORD at the reference.
     bool nokeyword_offset_disabled;
+    /// Whether the lowered CALL opcode originated from Phase 82 INVOKE syntax.
+    bool originated_from_invoke;
 } VmParserCallFixup;
 
 /// Owns mutable parser state for one parse operation.
@@ -364,6 +367,9 @@ static bool vm_parser_parse_constant_expression(VmParserState *state, VmParserCo
 
 /// Parses near RET with optional Phase 74 imm16 cleanup before generic operand validation.
 static bool vm_parser_parse_ret_instruction(VmParserState *state, VmIrOpcode opcode, const VmLexerToken *mnemonic_token);
+
+/// Parses Phase 82 zero-argument INVOKE syntax or reports targeted INVOKE diagnostics.
+static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLexerToken *mnemonic_token);
 
 static bool vm_parser_expect_comma(VmParserState *state);
 
@@ -2307,14 +2313,6 @@ static bool vm_parser_token_is_invoke(const VmLexerToken *token) {
     return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "invoke");
 }
 
-/// Returns whether a token is an ADDR operator in an unsupported INVOKE line.
-///
-/// @param token Token to inspect.
-/// @return true when @p token spells ADDR case-insensitively.
-static bool vm_parser_token_is_addr_operator(const VmLexerToken *token) {
-    return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "addr");
-}
-
 /// Returns whether an INVOKE target is a known external MASM32 runtime routine.
 ///
 /// @param token Candidate routine token.
@@ -2331,99 +2329,22 @@ static bool vm_parser_invoke_target_is_crt(const VmLexerToken *token) {
     return token != NULL && token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "crt_printf");
 }
 
-/// Returns whether an INVOKE target is the Phase 57R-recognized WinAPI process terminator.
+/// Routes an INVOKE line into the Phase 82 targeted INVOKE parser.
 ///
-/// The check uses the virtual Irvine32 registry classification to avoid creating
-/// a contradictory taxonomy for `ExitProcess`, but remains scoped to the target
-/// milestone's explicitly named WinAPI routine.
-///
-/// @param token Candidate routine token.
-/// @return true when @p token names `ExitProcess` and the registry classifies it
-/// as Windows/API/external.
-static bool vm_parser_invoke_target_is_exitprocess(const VmLexerToken *token) {
-    return token != NULL &&
-           token->kind == VM_LEXER_TOKEN_IDENTIFIER &&
-           vm_parser_token_equals(token, "exitprocess") &&
-           vm_parser_classify_irvine32_symbol(token->lexeme, token->lexeme_length) ==
-               VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL;
-}
-
-/// Emits Phase 57R diagnostics for one recognized unsupported INVOKE line.
-///
-/// The routine deliberately performs only line-oriented classification. It does
-/// not parse INVOKE arguments, lower ADDR, set up a stack frame, or call any
-/// external routine.
+/// Older recovery paths used this hook for blanket unsupported INVOKE diagnostics.
+/// Phase 82 owns INVOKE parsing, so any remaining recovery entry point delegates
+/// to targeted INVOKE parsing instead of emitting legacy diagnostics.
 ///
 /// @param state Parser state to mutate.
-/// @return true when the INVOKE line was classified and skipped.
+/// @return true when the current line began with INVOKE and was parsed/skipped.
 static bool vm_parser_recover_invoke_diagnostics_if_recognized(VmParserState *state) {
     const VmLexerToken *token = vm_parser_current_token(state);
-    const VmLexerToken *scan = NULL;
-    const VmLexerToken *target = NULL;
-    bool saw_addr = false;
 
     if (!vm_parser_token_is_invoke(token)) {
         return false;
     }
 
-    (void)vm_parser_add_diagnostic(
-        state,
-        VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE,
-        token,
-        "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines."
-    );
-
-    vm_parser_advance(state);
-    scan = vm_parser_current_token(state);
-    while (scan != NULL && scan->kind != VM_LEXER_TOKEN_EOF && scan->kind != VM_LEXER_TOKEN_NEWLINE) {
-        if (scan->kind == VM_LEXER_TOKEN_IDENTIFIER) {
-            if (vm_parser_token_is_addr_operator(scan)) {
-                if (!saw_addr) {
-                    (void)vm_parser_add_diagnostic(
-                        state,
-                        VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR,
-                        scan,
-                        "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support."
-                    );
-                    saw_addr = true;
-                }
-            } else if (target == NULL) {
-                target = scan;
-            }
-        }
-        vm_parser_advance(state);
-        scan = vm_parser_current_token(state);
-    }
-
-    if (target != NULL) {
-        if (vm_parser_invoke_target_is_masm32_runtime(target)) {
-            (void)vm_parser_add_diagnostic(
-                state,
-                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE,
-                target,
-                "StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines."
-            );
-        } else if (vm_parser_invoke_target_is_crt(target)) {
-            (void)vm_parser_add_diagnostic(
-                state,
-                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE,
-                target,
-                "crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines."
-            );
-        } else if (vm_parser_invoke_target_is_exitprocess(target)) {
-            (void)vm_parser_add_diagnostic(
-                state,
-                VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION,
-                target,
-                "ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator."
-            );
-        }
-    }
-
-    if (scan != NULL && scan->kind == VM_LEXER_TOKEN_NEWLINE) {
-        vm_parser_advance(state);
-    }
-    return true;
+    return vm_parser_parse_invoke_instruction(state, token);
 }
 
 /// Returns an unsupported-feature message for a deferred data type.
@@ -8511,17 +8432,89 @@ static bool vm_parser_parse_direct_branch_instruction(VmParserState *state, VmIr
 }
 
 
-/// Records one Phase 69 direct-CALL target fixup.
+/// Finds the first source token that belongs to an INVOKE argument tail.
+///
+/// @param state Parser state positioned after the INVOKE target token.
+/// @return First argument token after an optional comma, or NULL at line end.
+static const VmLexerToken *vm_parser_invoke_first_argument_token(VmParserState *state) {
+    const VmLexerToken *token = vm_parser_current_token(state);
+
+    if (token != NULL && token->kind == VM_LEXER_TOKEN_COMMA) {
+        const VmLexerToken *next = vm_parser_peek_token(state, 1U);
+        if (next != NULL && !vm_parser_is_line_end_token(next)) {
+            return next;
+        }
+        return token;
+    }
+
+    if (token != NULL && !vm_parser_is_line_end_token(token)) {
+        return token;
+    }
+
+    return NULL;
+}
+
+/// Classifies an INVOKE target that must report a non-goal diagnostic before argument diagnostics.
+///
+/// @param target_token Target token from the INVOKE line.
+/// @param out_code Receives the diagnostic code when classified.
+/// @param out_message Receives the diagnostic message when classified.
+/// @return true when a target-specific non-goal diagnostic should be emitted.
+static bool vm_parser_classify_immediate_invoke_non_goal(
+    const VmLexerToken *target_token,
+    VmParserDiagnosticCode *out_code,
+    const char **out_message
+) {
+    VmIrvine32SymbolClass irvine_class;
+
+    if (target_token == NULL || target_token->kind != VM_LEXER_TOKEN_IDENTIFIER || out_code == NULL || out_message == NULL) {
+        return false;
+    }
+
+    if (vm_parser_invoke_target_is_masm32_runtime(target_token)) {
+        *out_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE;
+        *out_message = "INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.";
+        return true;
+    }
+
+    if (vm_parser_invoke_target_is_crt(target_token)) {
+        *out_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE;
+        *out_message = "INVOKE target names a C runtime routine. MASM32 Educational Mode does not link or execute CRT routines.";
+        return true;
+    }
+
+    irvine_class = vm_parser_classify_irvine32_symbol(target_token->lexeme, target_token->lexeme_length);
+    if (irvine_class == VM_IRVINE32_SYMBOL_CLASS_WINDOWS_API_OR_EXTERNAL) {
+        *out_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE;
+        *out_message = "INVOKE target names Windows/API or external behavior outside MASM32 Educational Mode; the simulator does not execute WinAPI or imported routines.";
+        return true;
+    }
+
+    if (irvine_class == VM_IRVINE32_SYMBOL_CLASS_SUPPORTED_VIRTUAL_INTRINSIC ||
+        irvine_class == VM_IRVINE32_SYMBOL_CLASS_PLANNED_ROUTINE ||
+        irvine_class == VM_IRVINE32_SYMBOL_CLASS_UNSUPPORTED_ROUTINE) {
+        *out_code = VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE;
+        *out_message = "INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.";
+        return true;
+    }
+
+    return false;
+}
+
+/// Records one direct-CALL target fixup.
 ///
 /// The target may be declared later in source, so final procedure-entry
 /// classification and IR target patching happen after all code labels and
-/// procedure ranges have been seen.
+/// procedure ranges have been seen. Phase 82 INVOKE uses the same CALL opcode
+/// and records its origin here so unresolved or rejected targets can retain
+/// INVOKE-specific diagnostics.
 ///
 /// @param state Parser state to mutate.
 /// @param instruction_index Emitted CALL instruction index.
-/// @param target_token Source token naming the CALL target.
+/// @param target_token Source token naming the CALL or INVOKE target.
+/// @param originated_from_invoke true when the CALL opcode was lowered from INVOKE syntax.
 /// @return true when the fixup was stored.
-static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_index, const VmLexerToken *target_token) {
+static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_index, const VmLexerToken *target_token, bool originated_from_invoke) {
     VmParserCallFixup *fixup = NULL;
 
     if (state == NULL || target_token == NULL) {
@@ -8538,6 +8531,7 @@ static bool vm_parser_add_call_fixup(VmParserState *state, size_t instruction_in
     fixup->case_policy = state->user_symbol_case_policy;
     fixup->nokeyword_loop_disabled = state->nokeyword_loop_disabled;
     fixup->nokeyword_offset_disabled = state->nokeyword_offset_disabled;
+    fixup->originated_from_invoke = originated_from_invoke;
     state->call_fixup_count += 1U;
     return true;
 }
@@ -8646,7 +8640,7 @@ static bool vm_parser_parse_direct_call_instruction(VmParserState *state, const 
         return false;
     }
 
-    return vm_parser_add_call_fixup(state, instruction_index, target_token);
+    return vm_parser_add_call_fixup(state, instruction_index, target_token, false);
 }
 
 /// Parses one IMUL instruction, including Phase 54 and Phase 55 forms.
@@ -9120,6 +9114,82 @@ static bool vm_parser_diagnose_irvine32_symbol_use_if_known(VmParserState *state
     return true;
 }
 
+/// Parses Phase 82 zero-argument INVOKE and lowers accepted forms to CALL IR.
+///
+/// The parser accepts only `INVOKE Helper` / `invoke Helper` for same-file user
+/// procedures that are validated during the CALL-fixup resolution pass. Any
+/// argument tail remains future-owned and is diagnosed before lowering.
+///
+/// @param state Parser state to mutate.
+/// @param mnemonic_token INVOKE mnemonic token.
+/// @return true when parsing can continue.
+static bool vm_parser_parse_invoke_instruction(VmParserState *state, const VmLexerToken *mnemonic_token) {
+    VmIrOperand target_operand;
+    const VmLexerToken *target_token = NULL;
+    size_t instruction_index = 0U;
+
+    if (state == NULL || mnemonic_token == NULL) {
+        return false;
+    }
+
+    vm_parser_advance(state);
+    target_token = vm_parser_current_token(state);
+    if (target_token == NULL || target_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET,
+            target_token != NULL ? target_token : mnemonic_token,
+            "INVOKE requires a plain procedure-name target."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    target_operand = vm_ir_operand_branch_target(0U);
+    if (target_operand.kind == VM_IR_OPERAND_NONE) {
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET,
+            target_token,
+            "INVOKE target is too long to preserve as a user procedure name."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    vm_parser_advance(state);
+    if (!vm_parser_is_line_end_token(vm_parser_current_token(state))) {
+        VmParserDiagnosticCode non_goal_code = VM_PARSER_DIAGNOSTIC_NONE;
+        const char *non_goal_message = NULL;
+        const VmLexerToken *argument_token = vm_parser_invoke_first_argument_token(state);
+
+        if (vm_parser_classify_immediate_invoke_non_goal(target_token, &non_goal_code, &non_goal_message)) {
+            vm_parser_add_diagnostic(state, non_goal_code, target_token, non_goal_message);
+            vm_parser_recover_skip_line(state);
+            return true;
+        }
+
+        vm_parser_add_diagnostic(
+            state,
+            VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET,
+            argument_token != NULL ? argument_token : target_token,
+            "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures."
+        );
+        vm_parser_recover_skip_line(state);
+        return true;
+    }
+
+    if (!vm_parser_expect_line_end(state)) {
+        return false;
+    }
+
+    instruction_index = state->result->instruction_count;
+    if (!vm_parser_emit_instruction(state, VM_IR_OPCODE_CALL, target_operand, vm_ir_operand_none(), mnemonic_token)) {
+        return false;
+    }
+    return vm_parser_add_call_fixup(state, instruction_index, target_token, true);
+}
+
 /// Parses one implemented instruction.
 ///
 /// @param state Parser state to mutate.
@@ -9131,6 +9201,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
     VmIrOperand source = vm_ir_operand_none();
     const VmLexerToken *destination_token = NULL;
     const VmLexerToken *source_token = NULL;
+
+    if (vm_parser_token_is_invoke(mnemonic_token)) {
+        return vm_parser_parse_invoke_instruction(state, mnemonic_token);
+    }
 
     if (!vm_parser_parse_opcode(mnemonic_token, &opcode)) {
         if (vm_parser_token_is_exit_terminator(mnemonic_token)) {
@@ -9667,7 +9741,61 @@ static size_t vm_parser_phase70_call_return_target_index(
     return instruction_index + 1U < instruction_count ? instruction_index + 1U : default_boundary;
 }
 
-/// Resolves one retained direct CALL fixup to a procedure-entry instruction index.
+/// Emits the Phase 82 INVOKE diagnostic for one rejected target classification.
+///
+/// @param state Parser state to mutate.
+/// @param target_token Source token naming the rejected target.
+/// @param classification Target classification produced by shared CALL metadata.
+/// @return false after emitting the diagnostic.
+static bool vm_parser_reject_classified_invoke_target(
+    VmParserState *state,
+    const VmLexerToken *target_token,
+    const VmParserCallTargetClassification *classification
+) {
+    VmParserCallTargetClass target_class = classification != NULL ? classification->target_class : VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL;
+
+    if (target_token != NULL && vm_parser_invoke_target_is_masm32_runtime(target_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE, target_token, "INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.");
+        return false;
+    }
+    if (target_token != NULL && vm_parser_invoke_target_is_crt(target_token)) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE, target_token, "INVOKE target names a C runtime routine. MASM32 Educational Mode does not link or execute CRT routines.");
+        return false;
+    }
+
+    switch (target_class) {
+        case VM_PARSER_CALL_TARGET_EXTERNAL_NON_GOAL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE, target_token, "INVOKE target names Windows/API, external, linker, import-library, or host-environment behavior outside MASM32 Educational Mode.");
+            return false;
+        case VM_PARSER_CALL_TARGET_IRVINE32_SUPPORTED:
+        case VM_PARSER_CALL_TARGET_IRVINE32_PLANNED:
+        case VM_PARSER_CALL_TARGET_IRVINE32_UNSUPPORTED:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE, target_token, "INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.");
+            return false;
+        case VM_PARSER_CALL_TARGET_CODE_LABEL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target cannot be an ordinary code label. The current INVOKE subset accepts only same-file user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_DATA_SYMBOL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target cannot be a data symbol. The current INVOKE subset accepts only same-file user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_NUMERIC_EQUATE:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target cannot be a numeric equate. The current INVOKE subset accepts only same-file user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_RESERVED_WORD:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target cannot be a reserved MASM or simulator word. The current INVOKE subset accepts only same-file user procedure entries.");
+            return false;
+        case VM_PARSER_CALL_TARGET_MALFORMED_EXPRESSION:
+        case VM_PARSER_CALL_TARGET_LOCAL_SYMBOL:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target form is not implemented. The current INVOKE subset accepts only a plain same-file user procedure name.");
+            return false;
+        case VM_PARSER_CALL_TARGET_UNKNOWN_SYMBOL:
+        default:
+            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET, target_token, "INVOKE target is not a known same-file user procedure entry.");
+            return false;
+    }
+}
+
+/// Resolves one retained direct CALL or INVOKE-lowered CALL fixup to a procedure-entry instruction index.
 ///
 /// @param state Parser state to mutate.
 /// @param fixup CALL fixup to classify and apply.
@@ -9686,30 +9814,33 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
     }
 
     if (fixup->instruction_index >= state->result->instruction_count || state->config->instructions == NULL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL target metadata is invalid.");
+        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE target metadata is invalid." : "Internal direct CALL target metadata is invalid.");
         return false;
     }
 
     instruction = &state->config->instructions[fixup->instruction_index];
     if (instruction->opcode != VM_IR_OPCODE_CALL) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL fixup references a non-CALL instruction.");
+        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE fixup references a non-CALL instruction." : "Internal direct CALL fixup references a non-CALL instruction.");
         return false;
     }
 
     if (!vm_parser_build_call_target_context(state, fixup->case_policy, &context)) {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL classifier metadata is unavailable.");
+        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE classifier metadata is unavailable." : "Internal direct CALL classifier metadata is unavailable.");
         return false;
     }
 
     classification = vm_parser_classify_call_target_token(&context, target_token);
     if (classification.target_class != VM_PARSER_CALL_TARGET_USER_PROCEDURE_ENTRY || !classification.has_metadata_index) {
+        if (fixup->originated_from_invoke) {
+            return vm_parser_reject_classified_invoke_target(state, target_token, &classification);
+        }
         return vm_parser_reject_classified_call_target(state, target_token, &classification);
     }
 
     if (context.procedure_ranges != NULL && classification.metadata_index < context.procedure_range_count) {
         range = &context.procedure_ranges[classification.metadata_index];
         if (!range->has_executable_instruction || range->start_instruction_index >= state->result->instruction_count) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target procedure has no executable instruction target in the currently lowered program.");
+            vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "INVOKE target procedure has no executable instruction target in the currently lowered program." : "CALL target procedure has no executable instruction target in the currently lowered program.");
             return false;
         }
         target_instruction_index = range->start_instruction_index;
@@ -9717,12 +9848,12 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
         label = &context.code_labels[classification.metadata_index];
         if (label->declaration_kind != VM_CODE_LABEL_DECLARATION_PROCEDURE_ENTRY || !label->has_target_instruction_index ||
             label->target_kind == VM_CODE_LABEL_TARGET_NO_EXECUTABLE_TARGET || label->target_instruction_index >= state->result->instruction_count) {
-            vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "CALL target procedure has no executable instruction target in the currently lowered program.");
+            vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "INVOKE target procedure has no executable instruction target in the currently lowered program." : "CALL target procedure has no executable instruction target in the currently lowered program.");
             return false;
         }
         target_instruction_index = label->target_instruction_index;
     } else {
-        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, "Internal direct CALL procedure metadata is invalid.");
+        vm_parser_add_diagnostic(state, fixup->originated_from_invoke ? VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET : VM_PARSER_DIAGNOSTIC_INVALID_CALL_TARGET, target_token, fixup->originated_from_invoke ? "Internal INVOKE procedure metadata is invalid." : "Internal direct CALL procedure metadata is invalid.");
         return false;
     }
 
@@ -9735,7 +9866,7 @@ static bool vm_parser_resolve_one_call_fixup(VmParserState *state, const VmParse
     return true;
 }
 
-/// Resolves every retained direct CALL fixup.
+/// Resolves every retained CALL or INVOKE-lowered CALL fixup.
 ///
 /// @param state Parser state to mutate.
 /// @return true when all fixups resolved successfully.
@@ -11044,6 +11175,10 @@ static bool vm_parser_parse_code_line(VmParserState *state) {
 
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "LOCAL")) {
         return vm_parser_parse_local_line(state) && !state->diagnostic_overflowed;
+    }
+
+    if (vm_parser_token_is_invoke(token)) {
+        return vm_parser_parse_invoke_instruction(state, token) && !state->diagnostic_overflowed;
     }
 
     if (vm_parser_recover_unsupported_feature_if_recognized(state)) {
@@ -12921,6 +13056,16 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-masm32-library";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE:
             return "unsupported-invoke";
+        case VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET:
+            return "invalid-invoke-target";
+        case VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET:
+            return "invoke-arguments-not-supported-yet";
+        case VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH:
+            return "invoke-argument-count-mismatch";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE:
+            return "unsupported-external-invoke";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE:
+            return "unsupported-irvine-invoke";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR:
             return "unsupported-addr";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE:

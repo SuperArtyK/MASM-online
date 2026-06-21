@@ -18,22 +18,40 @@ Recent milestone detail in this file may be listed most-recent-first for handoff
 The canonical implementation order, phase numbering, phase tasks, required tests, and acceptance criteria remain in `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`. Future assistants must not infer phase dependencies or next implementation work from the order of recent-history paragraphs in this file when the guide states a different order.
 
 Latest recorded completed milestone in this history file:
-Phase 81 - PROTO Metadata Parser
+Phase 82 - INVOKE Zero-Argument User Procedure Calls
 
 Latest recorded runtime/source-run MASM behavior phase in this history file:
-Phase 81 - PROTO Metadata Parser
+Phase 82 - INVOKE Zero-Argument User Procedure Calls
 
 This history file records completed milestones and audit evidence. It is not the phase-order authority and not a replacement for `docs/FULL_IMPLEMENTATION_SPEC.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, `docs/SUPPORTED_SYNTAX.md`, current repository code, or current tests. If this history file is not updated during a later milestone, its `latest recorded` lines may be older than the active repository state. Use the implementation guide and latest accepted milestone evidence to determine the next canonical implementation phase.
 
-Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 81 had been implemented as limited parser-owned `PROTO` metadata on top of the Phase 80 LOCAL operand behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
+Forward-looking phase navigation is guide-owned. At the time this history entry was updated, Phase 82 had been implemented as zero-argument `INVOKE` for same-file user procedures on top of the Phase 81 limited parser-owned `PROTO` metadata behavior. That statement is historical navigation for this history entry, not an implementation permission by itself and not a substitute for reading the current implementation guide.
 
 Corrective artifact-evidence note for Phase 71B: the latest Phase 71B repository archive's checked-in `web/dist/masm32_sim_core.wasm` contains `phase-71b-source-run-output-contract-v1`. This corrects the stale artifact-token warning preserved in `docs/history/reports/Milestone 71B report.md`, which stated that the checked-in Wasm still contained the earlier Phase 71A output-contract token. The historical report should remain period evidence unless the project owner explicitly requests historical report correction, but future audits should treat the archive's artifact-content scan as the stronger evidence for the checked-in Wasm token.
+
+## Phase 82 - INVOKE Zero-Argument User Procedure Calls
+
+Phase 82 implements executable zero-argument `INVOKE Helper` / `invoke Helper` for same-file user procedures that require zero arguments. Accepted Phase 82 `INVOKE` lowers to the same checked internal behavior as direct user-procedure `call Helper`, including existing pseudo-EIP return-token transfer, `RET`, `RET imm16`, `LEAVE`, `PROC USES`, and automatic `LOCAL` frame behavior. Compatible zero-argument Phase 81 `PROTO` metadata may be used only to permit the zero-argument user-procedure target; `PROTO` declarations remain metadata and do not allocate stack arguments or implement calling conventions.
+
+Phase 82 adds targeted INVOKE diagnostics: `invalid-invoke-target`, `invoke-arguments-not-supported-yet`, `invoke-argument-count-mismatch`, `unsupported-external-invoke`, and `unsupported-irvine-invoke`. INVOKE arguments, `ADDR`, `OFFSET` as an INVOKE argument, runtime parameters, PROC parameter access, calling-convention modeling, external/API execution, MASM32 runtime calls, C runtime calls, Irvine32 routine dispatch through `INVOKE`, imports, linking, PE loading, native x86 execution, and full MASM INVOKE remain deferred or non-goal behavior unless a later accepted phase explicitly implements them.
 
 ## Phase 81 - PROTO Metadata Parser
 
 Phase 81 implements limited parser-owned `PROTO` metadata for same-file educational procedure prototypes. The accepted first-implementation forms are zero-parameter prototypes and named `DWORD`/`SDWORD` parameter lists, such as `MyProc PROTO`, `MyProc PROTO arg1:DWORD`, and `MyProc PROTO arg1:DWORD, p:SDWORD`. The parser records prototype name spelling, parameter names, parameter types, declaration order, parameter count, and source locations/spans for prototype and parameter tokens. Accepted prototypes emit no executable IR, do not alter VM runtime behavior, and do not make `INVOKE`, `ADDR`, external/API calls, stack argument behavior, or calling conventions executable.
 
 Targeted Phase 81 diagnostics include `invalid-proto-declaration`, `unsupported-proto-type`, `unsupported-external-proto`, `duplicate-proto`, and `proto-proc-mismatch`. Pointer forms such as `p:PTR BYTE`, unnamed parameters such as `:DWORD`, `VARARG`, language/distance prototype metadata, non-`DWORD`/`SDWORD` types, external/API prototypes such as `ExitProcess PROTO :DWORD`, `INVOKE`, `ADDR`, external linking, WinAPI execution, parameters, and calling conventions remain deferred or non-goal behavior unless a later accepted phase explicitly implements them.
+
+### Corrective roadmap note after Phase 81: INVOKE before ADDR-for-INVOKE
+
+After Phase 81, the roadmap was reviewed for dependency order. The review found that scheduling `ADDR` for INVOKE arguments before executable `INVOKE` would be misleading because the Phase 81 repository still treats source-level `INVOKE` as unsupported. The corrected future order is:
+
+1. Phase 82 - zero-argument `INVOKE` for same-file user procedures;
+2. Phase 83 - helper-level `ADDR` preparation for future INVOKE arguments, while source-level INVOKE-with-arguments remains unsupported;
+3. Phase 84 - limited DWORD `INVOKE` argument lowering and cleanup.
+
+This note is a forward roadmap correction. It does not claim that Phase 81 implemented `INVOKE`, `ADDR`, runtime parameters, argument passing, external calls, Irvine32 routine dispatch through `INVOKE`, WinAPI behavior, import/linker behavior, PE loading, or calling conventions.
+
+Future milestone reports must state clearly when each part of this corrected sequence becomes implemented. Until then, supported syntax must continue to describe `INVOKE` and source-level `ADDR` as unsupported in the current repository state.
 
 ## Phase 80 - LOCAL Operand Resolution and Addressing
 

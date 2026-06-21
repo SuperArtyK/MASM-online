@@ -11,7 +11,8 @@
  * operands, constant symbol-offset memory operands, signed and unsigned PTR
  * width overrides, register-indirect memory operands, TYPE, LENGTHOF, SIZEOF,
  * packed character literals, implemented instruction groups, INCLUDELIB
- * diagnostics, INVOKE/ADDR external-routine diagnostics, high-level-flow
+ * diagnostics, Phase 82 zero-argument INVOKE lowering, targeted INVOKE
+ * diagnostics for unsupported arguments and non-goal targets, high-level-flow
  * diagnostics, explicit unsupported-feature diagnostics, safe recovery for
  * recognized MASM textbook constructs, specific surfaced lexer diagnostics,
  * virtual Irvine32 registry metadata, Phase 68 call-target classification
@@ -178,17 +179,17 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINDOWS_API_LIBRARY,
     /// An INCLUDELIB directive referenced an external MASM32 library outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_LIBRARY,
-    /// An INVOKE line used MASM procedure-call syntax that is not implemented.
+    /// Legacy diagnostic for pre-Phase 82 blanket INVOKE rejections retained for stable code-name mapping.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INVOKE,
     /// An ADDR argument was used before procedure-argument lowering exists.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR,
-    /// An INVOKE target names an external routine outside executable simulator scope.
+    /// Legacy diagnostic for external routine syntax outside executable simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE,
-    /// An INVOKE target names Windows API behavior outside simulator scope.
+    /// Legacy diagnostic for Windows API behavior outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION,
-    /// An INVOKE target names an external MASM32 runtime routine outside simulator scope.
+    /// Legacy diagnostic for external MASM32 runtime routine syntax outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE,
-    /// An INVOKE target names C runtime behavior outside simulator scope.
+    /// Legacy diagnostic for C runtime syntax outside simulator scope.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE,
     /// A `.IF` or `.ELSEIF` directive used unsupported high-level MASM flow.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF,
@@ -308,6 +309,16 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_DUPLICATE_PROTO,
     /// A PROTO declaration conflicts with same-name PROC metadata.
     VM_PARSER_DIAGNOSTIC_PROTO_PROC_MISMATCH,
+    /// An INVOKE target was missing, malformed, unknown, or not a user procedure.
+    VM_PARSER_DIAGNOSTIC_INVALID_INVOKE_TARGET,
+    /// An INVOKE line supplied arguments before argument lowering is implemented.
+    VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET,
+    /// A zero-argument INVOKE targeted metadata that requires one or more arguments.
+    VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENT_COUNT_MISMATCH,
+    /// An INVOKE target names external/API/runtime behavior outside simulator scope.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE,
+    /// An INVOKE target names a recognized Irvine32 routine not callable through INVOKE yet.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE,
     /// The caller-provided PROTO metadata table was full.
     VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED,
     /// Number of parser diagnostic codes.

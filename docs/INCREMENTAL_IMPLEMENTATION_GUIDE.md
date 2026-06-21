@@ -24923,15 +24923,24 @@ DWORD SDWORD
 
 Parameter names are required for parameter entries in the first implementation. Supported first-form parameter syntax is `paramName:DWORD` or `paramName:SDWORD`; unnamed parameters, VARARG, pointer types, structures, and non-DWORD types are rejected until later phases. Phase 81 records metadata only; it does not lower INVOKE arguments, assign runtime stack slots, implement runtime parameters, or model calling conventions.
 
+Phase 81 compatibility rule for same-name PROTO and PROC metadata:
+
+- `MyProc PROTO` may link to `MyProc PROC` as a zero-argument prototype and bare procedure metadata pair.
+- `MyProc PROTO arg1:DWORD` followed by bare `MyProc PROC` is currently incompatible because accepted PROC parameter metadata does not exist yet.
+- The incompatible case must emit `proto-proc-mismatch`.
+- The diagnostic must point at the current conflicting declaration and retain a related location for the earlier declaration when available.
+- Do not infer runtime parameters, stack argument slots, calling conventions, executable `INVOKE`, executable `ADDR`, external linkage, WinAPI behavior, or import/linker behavior from PROTO metadata.
+- A future phase may revise this compatibility rule only if that phase explicitly owns PROC parameter metadata and updates parser tests, structured diagnostics, rendered Simulator Messages tests, source-run behavior, supported syntax, and the milestone report.
+
 ### Rejected syntax
 
 ```asm
-ExitProcess PROTO :DWORD       ; external/API target rejected or marked non-goal
+ExitProcess PROTO :DWORD       ; external/API target rejected with unsupported-external-proto
 MyProc PROTO :DWORD            ; unnamed parameters deferred
 MyProc PROTO pStr:PTR BYTE     ; pointer parameter metadata deferred
-MyProc PROTO VARARG            ; deferred
-MyProc PROTO :REAL4            ; deferred
-MyProc PROTO :QWORD            ; executable 64-bit deferred
+MyProc PROTO VARARG            ; VARARG metadata deferred
+MyProc PROTO :REAL4            ; floating-point prototype parameter metadata deferred
+MyProc PROTO arg1:QWORD        ; 64-bit prototype parameter metadata deferred
 MyProc PROTO NEAR C, x:WORD    ; language/distance metadata deferred unless explicitly supported
 ```
 
@@ -24955,14 +24964,24 @@ MyProc PROTO NEAR C, x:WORD    ; language/distance metadata deferred unless expl
 
 Parser tests:
 
-- Zero-arg and multi-arg prototypes parse.
+- Zero-argument and multi-argument prototypes parse.
+- Accepted prototypes preserve prototype name spelling, parameter names, parameter type identities, declaration order, parameter count, and source locations/spans.
 - Parameter names are required for parameter entries in the first implementation. Missing parameter names are rejected with `invalid-proto-declaration`.
-- Unsupported types and VARARG reject clearly.
-- Windows/API prototype target produces non-goal diagnostic.
+- Unsupported parameter types, pointer forms, `VARARG`, malformed trailing commas, and language/distance metadata reject clearly.
+- Windows/API prototype targets such as `ExitProcess PROTO :DWORD` produce `unsupported-external-proto` and are not treated as import metadata.
+- Duplicate prototypes produce `duplicate-proto`.
+- `MyProc PROTO` followed by bare `MyProc PROC` links as zero-argument metadata.
+- `MyProc PROTO arg1:DWORD` followed by bare `MyProc PROC` produces `proto-proc-mismatch` because PROC parameter metadata is not accepted yet.
 
-Rendered Simulator Messages tests:
+Structured diagnostic and rendered Simulator Messages tests:
 
-- Unsupported PROTO type points at the type token.
+- `invalid-proto-declaration` for missing parameter names and malformed trailing commas.
+- `unsupported-proto-type` for unsupported parameter types and pointer forms.
+- `unsupported-external-proto` for external/API targets such as `ExitProcess`.
+- `duplicate-proto` for same-name duplicate prototypes.
+- `proto-proc-mismatch` for incompatible same-name PROTO/PROC metadata.
+
+Each user-visible PROTO diagnostic test must assert diagnostic kind/severity, code, message text, source line, column, byte offset, span length, and related location where applicable. At least one browser/Node rendered Simulator Messages test must assert the exact final rendered text for each diagnostic family added or changed by Phase 81.
 
 ### Acceptance criteria
 
@@ -24970,89 +24989,19 @@ A parser test can inspect `MyProc PROTO arg1:DWORD, p:SDWORD` and see parameter 
 
 ---
 
-## 86. Phase 82 - ADDR Operator for INVOKE Arguments
+## 86. Phase 82 - INVOKE Zero-Argument User Procedure Calls
+
+### Corrective sequencing note
+
+This phase deliberately comes before any `ADDR` or INVOKE-argument phase. Phase 81 left `INVOKE` unsupported. Implementing `ADDR` for INVOKE arguments before executable INVOKE exists is a roadmap sequencing defect. The first user-visible INVOKE milestone must prove that the simulator can parse, classify, lower, execute, and diagnose the simplest INVOKE form without arguments.
+
+This is a future phase. Do not describe Phase 82 behavior as implemented until the repository code, tests, supported syntax reference, runtime/source-run behavior metadata, source-run output contract, and milestone report have all advanced to this phase.
 
 ### Goal
 
-Support `ADDR` as a limited INVOKE-argument address operator.
+Support exactly the simplest executable INVOKE form: zero-argument calls to same-file user procedures.
 
-This phase must not make ADDR a general instruction operand unless explicitly decided here. It must not implement full INVOKE lowering.
-
-### Accepted syntax
-
-Inside INVOKE argument parsing:
-
-```asm
-INVOKE MyProc, ADDR globalVar
-INVOKE MyProc, ADDR buffer
-INVOKE MyProc, ADDR localVar
-```
-
-### Address behavior
-
-- `ADDR globalDataSymbol` produces the symbol address, equivalent to `OFFSET` in flat educational mode.
-- `ADDR constSymbol` produces the `.CONST` symbol address for reads or by-reference arguments; write protection remains enforced if later code writes through it.
-- `ADDR localSymbol` produces the current frame-relative address of the local.
-- ADDR returns a 32-bit address value.
-
-### Rejected syntax
-
-```asm
-ADDR eax
-ADDR 123
-ADDR COUNT
-ADDR [eax]
-ADDR globalVar + 4        ; defer until general ADDR expression support
-mov eax, ADDR globalVar   ; reject unless general ADDR operands are explicitly supported
-```
-
-### Tasks
-
-1. Extend argument parser to recognize ADDR operands.
-2. Resolve data, const, data?, and local symbols.
-3. Preserve source span for ADDR and the operand.
-4. Reject unsupported ADDR targets with specific diagnostics.
-5. `ADDR localVar` requires local symbol operand resolution and frame-relative addressing from **Phase 80 - LOCAL Operand Resolution and Addressing**. Before Phase 80 exists, it must either be helper-tested without runtime execution or rejected with `addr-local-not-available`. Do not implement LOCAL operand resolution or LOCAL frame addressing in Phase 82.
-
-Phase-boundary note:
-
-`ADDR globalVar` and `ADDR constSymbol` may use global symbol addresses already available through existing data/const metadata. `ADDR localVar` is different: it depends on an active stack frame and local-symbol addressing. A future assistant must not implement Phase 80 local addressing merely to make Phase 82 tests pass.
-6. Add tests independent of full INVOKE lowering if necessary by testing argument-lowering helpers.
-
-### Diagnostics
-
-- `invalid-addr-target`
-- `addr-outside-invoke`
-- `unknown-addr-symbol`
-- `unsupported-addr-expression`
-
-### Tests
-
-Parser/helper tests:
-
-- ADDR global data resolves to address.
-- ADDR local resolves to EBP-relative runtime address in helper context.
-- ADDR const resolves but does not bypass write protection.
-- ADDR register/immediate/equate rejected.
-- ADDR outside INVOKE rejected or unsupported according to chosen scope.
-
-Rendered Simulator Messages tests:
-
-- ADDR diagnostics point to the invalid target operand.
-
-### Acceptance criteria
-
-An INVOKE argument parser can lower `ADDR msg` to a 32-bit address argument with correct source metadata.
-
----
-
-## 87. Phase 83 - INVOKE Zero-Argument User Procedure Calls
-
-### Goal
-
-Support the simplest INVOKE form: zero-argument calls to user procedures.
-
-This phase must not implement argument pushes, ADDR arguments, PROC parameter validation, external calls, or Windows APIs.
+Phase 82 must not implement argument pushes, argument expressions, `ADDR` arguments, `OFFSET` as an INVOKE argument, PROC parameter access, runtime parameters, stack cleanup for arguments, external calls, Irvine32 routine calls through INVOKE, Windows APIs, import metadata, object linking, PE loading, native x86 execution, or calling-convention inference.
 
 ### Accepted syntax
 
@@ -25061,40 +25010,69 @@ INVOKE Helper
 invoke Helper
 ```
 
-Target must classify as a user procedure entry with zero parameters or no prototype requiring parameters.
+The target must classify as a same-file user `PROC` entry and must not require arguments according to currently accepted metadata. Accepted target cases:
+
+- a same-file bare `Helper PROC` with no same-name parameterized PROTO;
+- a same-file `Helper PROTO` followed by `Helper PROC`;
+- a same-file zero-argument prototype/procedure pair whose metadata is compatible under the Phase 81 rule.
 
 ### Rejected syntax
 
 ```asm
 INVOKE Helper, 1
+INVOKE Helper, ADDR msg
+INVOKE Helper, OFFSET msg
+INVOKE Helper, eax
 INVOKE WriteString
 INVOKE ExitProcess, 0
 INVOKE value
 INVOKE Unknown
 ```
 
+Rejected target categories:
+
+- unknown symbols;
+- data symbols, constants, equates, ordinary code labels, registers, immediates, and memory expressions;
+- Irvine32 names unless an explicit later Irvine32 INVOKE phase owns that routine;
+- external/API names and WinAPI-style names;
+- C runtime and MASM32 runtime routine names;
+- a same-name parameterized PROTO requiring one or more arguments.
+
 ### Runtime semantics
 
-`INVOKE Helper` lowers to the same runtime behavior as `call Helper`.
+`INVOKE Helper` lowers to the same checked runtime behavior as direct user-procedure `call Helper`.
 
-### Tasks
+Required behavior:
 
-1. Parse zero-argument INVOKE.
-2. Reuse call target classification.
-3. Lower to direct CALL IR or equivalent internal operation.
-4. Preserve INVOKE source text for diagnostics and debugger display.
-5. Do not implement argument cleanup.
+- reuse direct-CALL procedure target classification where possible;
+- reuse the same checked return-token push behavior used by direct user-procedure `CALL`;
+- reuse existing helper `RET`, helper `RET imm16`, `LEAVE` plus `RET`, PROC USES save/restore, and LOCAL frame setup/release behavior already owned by earlier phases;
+- preserve modeled register/flag behavior exactly as the equivalent direct `CALL` path preserves it;
+- do not push any source-level arguments;
+- do not apply any argument cleanup;
+- do not inspect or execute PROTO parameter lists beyond determining whether the zero-argument INVOKE form is allowed or must reject because arguments are required.
 
 ### Diagnostics
 
 - `invalid-invoke-target`
 - `invoke-arguments-not-supported-yet`
+- `invoke-argument-count-mismatch`
 - `unsupported-external-invoke`
-- `unsupported-irvine-invoke` if Irvine INVOKE is not supported.
+- `unsupported-irvine-invoke`
+
+Diagnostic precedence must be explicit in tests:
+
+1. malformed INVOKE syntax reports the parser-owned invalid INVOKE diagnostic;
+2. unknown or wrong-kind targets report target diagnostics;
+3. external/API targets report non-goal external diagnostics, not unknown-symbol diagnostics;
+4. C runtime and MASM32 runtime routine targets report non-goal runtime diagnostics, not unknown-symbol diagnostics;
+5. Irvine32 routine targets report the existing Irvine32-aware unsupported diagnostic unless this phase explicitly owns the routine;
+6. syntactically valid INVOKE with any argument reports `invoke-arguments-not-supported-yet` unless the target is a more specific non-goal category that should take precedence;
+7. zero-argument INVOKE to a target whose accepted PROTO metadata requires arguments reports `invoke-argument-count-mismatch`.
 
 ### Tests
 
-Source-run acceptance program:
+Parser/source-run acceptance program:
 
 ```asm
 .code
@@ -25110,31 +25088,185 @@ Helper ENDP
 END main
 ```
 
-Expected:
+Expected final register display must include:
 
 ```text
 EAX = 00000037h / 55
 ```
 
+Additional success tests:
+
+- lower-case `invoke Helper` works the same as `INVOKE Helper` under the current case policy;
+- `INVOKE Helper` works without a PROTO for same-file zero-argument user procedures;
+- `Helper PROTO` plus `Helper PROC` allows zero-argument INVOKE;
+- direct `call Helper` still works and keeps the same observable behavior;
+- PROC USES behavior remains identical to direct CALL when the target has accepted `PROC USES` metadata;
+- automatic LOCAL frame setup/release remains identical to direct CALL when the target has accepted LOCAL metadata.
+
 Regression tests:
 
-- `call Helper` still works.
-- INVOKE does not require PROTO for same-file zero-argument user procedures in this phase. Unknown, external/API, data, equate, or Irvine targets are rejected unless explicitly supported.
-- INVOKE with args produces targeted diagnostic.
+- `INVOKE Helper, 1` rejects and does not execute Helper;
+- `INVOKE Helper, ADDR msg` rejects and does not execute Helper;
+- `INVOKE Helper, OFFSET msg` rejects and does not execute Helper;
+- `INVOKE WriteString` rejects as unsupported Irvine32 routine INVOKE unless this phase explicitly owns that routine;
+- `INVOKE ExitProcess, 0` rejects as external/API non-goal;
+- `INVOKE value` rejects because data symbols are not callable;
+- `INVOKE Unknown` rejects without creating an implicit external symbol;
+- `NeedsArg PROTO x:DWORD` plus `NeedsArg PROC` followed by `INVOKE NeedsArg` rejects with argument-count or PROTO/PROC metadata mismatch behavior owned by this phase;
+- no source-level ADDR form becomes executable in Phase 82;
+- the default browser editor program remains free of source-level INVOKE-with-arguments.
 
 Rendered Simulator Messages tests:
 
-- External/API INVOKE renders as explicit non-goal.
+- unsupported INVOKE arguments render a stable diagnostic with source line, column, byte offset, and span length;
+- external/API INVOKE renders as explicit non-goal behavior;
+- Irvine32 routine INVOKE renders as recognized but unsupported unless this phase explicitly owns the routine;
+- wrong-kind targets render as target diagnostics rather than crashing or falling through to execution.
+
+### Acceptance criteria
+
+A source-run test can execute `INVOKE Helper` for a same-file zero-argument user procedure and observe the same behavior as `call Helper`. A separate source-run test proves `INVOKE Helper, ADDR msg` remains unsupported in Phase 82.
+
+---
+
+## 87. Phase 83 - ADDR Preparation for Future INVOKE Arguments
+
+### Corrective sequencing note
+
+This phase comes after zero-argument `INVOKE`. It prepares address-valued future INVOKE arguments, but it does not yet make source-level INVOKE-with-arguments executable.
+
+This is a future helper/preparation phase. Do not describe Phase 83 behavior as implemented until the repository code, helper tests, source-run regression tests, supported syntax reference, runtime/source-run behavior metadata, source-run output contract, and milestone report have all advanced to this phase.
+
+### Goal
+
+Prepare a limited `ADDR` argument representation for future `INVOKE` argument lowering.
+
+Phase 83 must not make `ADDR` a general source-level instruction operand. Phase 83 must not execute any `INVOKE` with arguments. Phase 83 must not push arguments, clean arguments, read or write through passed addresses, implement PROC parameter access, infer calling conventions, or call external/API/Irvine32 routines through `INVOKE`.
+
+### Helper-level accepted forms
+
+The following forms may be accepted only inside the Phase 83 parser/helper path used for future INVOKE-argument records:
+
+```asm
+ADDR globalVar
+ADDR buffer
+ADDR uninitializedBuffer
+ADDR constSymbol
+ADDR localVar
+```
+
+These examples are not complete source-level programs and are not current accepted syntax by themselves. In Phase 83, the following complete source-level statements still refuse execution:
+
+```asm
+INVOKE Helper, ADDR globalVar
+INVOKE Helper, ADDR buffer
+INVOKE Helper, ADDR localVar
+```
+
+### Address behavior for helper-level records
+
+- `ADDR globalDataSymbol` produces the symbol address, equivalent to `OFFSET` in flat educational mode.
+- `ADDR dataQuestionSymbol` produces the symbol address in the `.DATA?` region; deterministic zero-fill and uninitialized-origin metadata remain unchanged.
+- `ADDR constSymbol` produces the `.CONST` symbol address for future by-reference reads; it must not bypass `.CONST` write protection.
+- `ADDR localSymbol` produces the current frame-relative address of the local only when the helper/test context has an explicitly active procedure frame created by earlier accepted LOCAL-frame behavior.
+- ADDR helper records carry a 32-bit address value.
+- ADDR helper records preserve source spans for the `ADDR` token and the operand token.
+
+### Rejected syntax
+
+```asm
+ADDR eax
+ADDR 123
+ADDR COUNT
+ADDR [eax]
+ADDR globalVar + 4
+mov eax, ADDR globalVar
+INVOKE Helper, ADDR eax
+INVOKE Helper, ADDR 123
+```
+
+Rejected target categories:
+
+- registers and register aliases;
+- immediates and numeric constants;
+- equates that do not denote addressable storage;
+- memory expressions;
+- computed address expressions such as `symbol + 4`;
+- unknown symbols;
+- any source-level general operand use outside the explicitly owned future INVOKE-argument helper path.
+
+### Tasks
+
+1. Add a parser/helper representation for future INVOKE arguments that can classify `ADDR symbol` without executing an INVOKE call.
+2. Resolve data, `.DATA?`, `.CONST`, and active-frame LOCAL symbols using existing symbol metadata and checked address helpers.
+3. Preserve source spans for both the `ADDR` keyword and the address target token.
+4. Reject unsupported ADDR targets with specific diagnostics.
+5. Reuse Phase 80 LOCAL metadata and active-frame address helpers for `ADDR localVar`; do not expand LOCAL declaration grammar, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL operands, LOCAL lifetime behavior, or non-CALL/non-selected-entry frame behavior.
+6. Keep source-level INVOKE-with-arguments non-executable until Phase 84 or a later explicitly accepted phase.
+7. Keep all memory reads and writes through checked VM memory helpers if a helper test needs to inspect memory state. The ADDR helper itself computes an address and must not read pointed-to bytes.
+
+### Diagnostics
+
+- `invalid-addr-target`
+- `addr-outside-invoke`
+- `unknown-addr-symbol`
+- `unsupported-addr-expression`
+- `invoke-arguments-not-supported-yet` for source-level INVOKE-with-arguments that this phase still refuses to execute
+
+Diagnostic precedence must be specified in tests:
+
+1. standalone or general-operand `ADDR` reports `addr-outside-invoke` or the exact phase-owned general-operand diagnostic;
+2. `ADDR` with a wrong-kind target reports `invalid-addr-target` when parsed through the helper path;
+3. `ADDR` with an unknown symbol reports `unknown-addr-symbol` when parsed through the helper path;
+4. computed expressions such as `ADDR symbol + 4` report `unsupported-addr-expression`;
+5. complete source-level `INVOKE Helper, ADDR msg` still refuses execution with the phase-owned unsupported INVOKE-arguments diagnostic.
+
+### Tests
+
+Parser/helper tests:
+
+- `ADDR globalData` resolves to a 32-bit address record.
+- `ADDR dataQuestionSymbol` resolves to a 32-bit address record without changing `.DATA?` initialization or uninitialized-origin metadata.
+- `ADDR constSymbol` resolves to a 32-bit address record and does not bypass `.CONST` write protection in any later write-through path.
+- `ADDR localVar` resolves to an active EBP-relative runtime address in a helper/test context with an existing Phase 80-style active local frame.
+- `ADDR register`, `ADDR immediate`, `ADDR equate`, `ADDR [eax]`, and `ADDR symbol + 4` reject with targeted diagnostics.
+- `ADDR` outside the future INVOKE-argument helper context is rejected.
+
+Source-run regression tests:
+
+- `INVOKE Helper, ADDR msg` does not execute Helper in Phase 83.
+- `INVOKE Helper, ADDR localVar` does not execute Helper in Phase 83.
+- `INVOKE Helper` from Phase 82 still executes.
+- Direct `call Helper` still executes.
+- The default browser editor program remains free of source-level INVOKE-with-arguments until Phase 84 or later explicitly supports it.
+
+Rendered Simulator Messages tests:
+
+- ADDR diagnostics point to the invalid target operand when applicable.
+- Source-level INVOKE-with-ADDR refusal renders as unsupported arguments or as the exact Phase 83-owned diagnostic, but never as successful Program Console output or silent execution.
+
+### Acceptance criteria
+
+A helper/parser test can lower `ADDR msg` to a 32-bit address argument record with correct source metadata. A source-run test proves `INVOKE Helper, ADDR msg` still refuses execution in Phase 83.
 
 ---
 
 ## 88. Phase 84 - INVOKE DWORD Argument Lowering and Cleanup
 
+### Preconditions
+
+Phase 84 may begin only after:
+
+1. Phase 82 zero-argument INVOKE is implemented and tested;
+2. Phase 83 ADDR argument preparation is implemented and tested;
+3. the supported syntax reference explicitly says which INVOKE argument forms are still unsupported;
+4. the implementation guide defines argument lowering, validation, cleanup, diagnostics, and rendered-message requirements for this phase.
+
 ### Goal
 
-Support a limited educational subset of INVOKE arguments for user procedures.
+Support a limited educational subset of INVOKE arguments for same-file user procedures.
 
-This phase must not implement Windows API calls, varargs, register calling conventions, 64-bit args, structures, floating point, or full MASM coercion.
+This phase must not implement Windows API calls, external calls, import metadata, object linking, PE loading, host callbacks, varargs, register calling conventions, 64-bit executable arguments, structures, floating point, full MASM coercion, or Irvine32 routine INVOKE unless a specific Irvine32 routine is explicitly included in this phase.
 
 ### Accepted syntax
 
@@ -25147,18 +25279,29 @@ INVOKE Helper, ADDR msg
 INVOKE Helper, ADDR localVar
 ```
 
+Accepted targets are same-file user procedures only. External/API, WinAPI-style, C runtime, MASM32 runtime, host, PE/import, and unsupported Irvine32 targets remain rejected.
+
 ### Argument rules
 
 - Initial arguments are 32-bit stack slots.
 - Arguments are pushed right-to-left.
 - Immediate and constant-expression arguments must fit 32-bit signed or unsigned context according to existing immediate rules.
-- Register arguments read the full 32-bit register only for the first implementation. 8-bit/16-bit aliases require explicit extension before INVOKE and are rejected as direct arguments unless implemented explicitly.
-- Data symbol arguments load the 32-bit value at the symbol if the symbol width is DWORD/SDWORD. Passing addresses requires OFFSET or ADDR.
-- ADDR local/global produces a 32-bit address.
+- Register arguments read the full 32-bit register only for the first implementation. 8-bit and 16-bit aliases require explicit extension before INVOKE and are rejected as direct arguments unless implemented explicitly.
+- Data symbol arguments load the 32-bit value at the symbol if the symbol width is `DWORD` or `SDWORD`.
+- Passing addresses requires `OFFSET` or `ADDR`.
+- `ADDR` for global, `.DATA?`, `.CONST`, and active-frame LOCAL symbols produces a 32-bit address.
+- Argument validation must complete before stack mutation when required to prevent partial stack mutation on failed argument validation.
+- All memory reads and writes must go through checked VM memory helpers.
 
 ### Cleanup policy
 
 Initial cleanup policy is deterministic: INVOKE with DWORD arguments uses stdcall-style callee cleanup and is accepted only when PROTO/PROC metadata proves the callee returns with `ret imm16` matching the pushed argument byte count. If the callee returns with plain `ret`, or if matching cleanup metadata is unavailable, source-run reports `invoke-cleanup-mismatch`. Silent stack leaks are not allowed.
+
+### Parameter access boundary
+
+Phase 84 owns INVOKE argument push/lowering and cleanup validation. It does not automatically own source-level named PROC parameter access unless this phase is deliberately expanded to define that behavior.
+
+If named parameter access is still deferred, Phase 84 acceptance tests must verify argument layout using already-supported stack/register/memory mechanisms or lower-level VM assertions. They must not use source-level parameter names unless this phase explicitly defines accepted parameter declarations, parameter lookup, frame offsets, diagnostics, and rendered Simulator Messages tests.
 
 ### Diagnostics
 
@@ -25174,11 +25317,15 @@ Initial cleanup policy is deterministic: INVOKE with DWORD arguments uses stdcal
 Parser/source-run tests:
 
 - Push order is right-to-left.
-- `INVOKE Helper, 1, 2` results in first parameter at the documented stack/frame location.
-- ADDR data passes address, not pointed-to value.
-- Register argument reads source before any pushes mutate ESP.
-- Argument count mismatch against PROTO reports diagnostic.
-- External/API target reports non-goal diagnostic.
+- `INVOKE Helper, 1, 2` results in the documented stack layout or helper-asserted argument layout.
+- ADDR data passes an address, not the pointed-to value.
+- ADDR const passes an address without bypassing `.CONST` write protection.
+- ADDR local passes the active-frame local address and fails clearly when no active local frame exists.
+- Register arguments read source registers before any pushes mutate ESP.
+- Argument count mismatch against PROTO reports a targeted diagnostic.
+- Cleanup mismatch reports a targeted diagnostic and does not silently leak stack bytes.
+- External/API targets report explicit non-goal diagnostics.
+- Irvine32 targets remain rejected unless this phase explicitly owns the routine.
 
 Acceptance program using explicit `ret 8` cleanup:
 
@@ -25190,20 +25337,25 @@ main PROC
 main ENDP
 
 AddTwo PROC
-    ; exact parameter access depends on the selected frame/argument policy
-    ; test should assert EAX becomes 5
+    ; The exact parameter access mechanism must be defined by this phase
+    ; before this source-level program may read named parameters.
+    ; If named parameter access is not implemented, use a lower-level
+    ; stack-layout assertion instead of source-level parameter names.
     ret 8
 AddTwo ENDP
 END main
 ```
 
-If parameter-name access is not yet implemented, use a lower-level stack access test and document it.
-
 Rendered Simulator Messages tests:
 
-- Cleanup mismatch and unsupported argument forms render stable diagnostics with argument source spans.
+- Cleanup mismatch renders a stable diagnostic with source line, column, byte offset, and span length.
+- Unsupported argument forms render stable diagnostics with argument source spans.
+- Invalid ADDR target diagnostics point at the invalid ADDR operand.
+- External/API INVOKE diagnostics state that host/API execution is outside the simulator boundary.
 
----
+### Acceptance criteria
+
+A source-run or lower-level VM test proves right-to-left DWORD argument lowering, correct checked stack mutation, and exact cleanup validation for a same-file user procedure. If named parameter access is not implemented in Phase 84, the phase report must explicitly say so and must not include source programs that read named parameters as accepted behavior.
 
 ## 89. Phase 85 - Program Console Buffer and Stream Separation
 

@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 81 - PROTO Metadata Parser. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 82 - INVOKE Zero-Argument User Procedure Calls. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 81 - PROTO Metadata Parser. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 82 - INVOKE Zero-Argument User Procedure Calls. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -868,11 +868,11 @@ END main
   unsupportedFeature: {
     source: `.code
 main PROC
-    INVOKE SomeProc
+    INVOKE SomeProc, 1
 main ENDP
 END main
 `,
-    reason: "Recognized deferred feature diagnostic fixture."
+    reason: "Phase 82 rejected INVOKE-argument diagnostic fixture."
   },
   ambiguousMemoryWidth: {
     source: `.data
@@ -1910,7 +1910,7 @@ MyStruct ENDS
 
 .code
 main PROC
-    INVOKE SomeProc
+    INVOKE SomeProc, 1
     .IF eax == 0
         mov ebx, 1
     .ENDIF
@@ -2577,7 +2577,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2657,9 +2657,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2685,7 +2685,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2712,7 +2712,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2737,7 +2737,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2761,7 +2761,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2787,7 +2787,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2831,7 +2831,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2858,7 +2858,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2885,7 +2885,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2917,7 +2917,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2948,8 +2948,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phase, 82);
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2994,8 +2994,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phase, 82);
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3021,7 +3021,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3045,7 +3045,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,7 +3069,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,7 +3094,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3118,7 +3118,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3142,7 +3142,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3167,9 +3167,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3195,9 +3195,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3223,9 +3223,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3250,9 +3250,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3278,7 +3278,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3303,7 +3303,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3327,7 +3327,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3544,7 +3544,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 81);
+    assert.equal(json.phase, 82);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3557,7 +3557,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 81);
+  assert.equal(duplicateResult.json.phase, 82);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3967,26 +3967,26 @@ test("renders Phase 81 invalid PROTO declaration diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-proto-declaration line 1, column 14, byte offset 13, span length 1: Invalid PROTO parameter declaration; the current PROTO metadata parser accepts named parameters as `paramName:DWORD` or `paramName:SDWORD`.");
 });
 
-test("renders unsupported INVOKE diagnostic exactly", () => {
+test("renders Phase 82 unsupported INVOKE arguments diagnostic exactly", () => {
   const name = "unsupportedFeature";
   const source = fixtureSource("unsupportedFeature");
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "unsupported-feature",
-    code: "unsupported-invoke",
-    message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
+    code: "invoke-arguments-not-supported-yet",
+    message: "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.",
     line: 3,
-    column: 5,
-    byteOffset: 20,
-    spanLength: 6
+    column: 22,
+    byteOffset: 37,
+    spanLength: 1
   });
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 3, column 5, byte offset 20, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] invoke-arguments-not-supported-yet line 3, column 22, byte offset 37, span length 1: INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.");
 });
 
-test("Phase 57R renders INVOKE, ADDR, and MASM32 runtime diagnostics exactly", () => {
-  const name = "phase57r-invoke-stdout";
+test("Phase 82 renders INVOKE, ADDR, and MASM32 runtime diagnostics exactly", () => {
+  const name = "phase82-invoke-stdout";
   const source = `.data
 titleMsg BYTE "Hello", 0
 .code
@@ -4000,26 +4000,8 @@ END main
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "unsupported-feature",
-      code: "unsupported-invoke",
-      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
-      line: 5,
-      column: 5,
-      byteOffset: 51,
-      spanLength: 6
-    },
-    {
-      kind: "unsupported-feature",
-      code: "unsupported-addr",
-      message: "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.",
-      line: 5,
-      column: 20,
-      byteOffset: 66,
-      spanLength: 4
-    },
-    {
-      kind: "unsupported-feature",
-      code: "unsupported-masm32-runtime-routine",
-      message: "StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.",
+      code: "unsupported-external-invoke",
+      message: "INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.",
       line: 5,
       column: 12,
       byteOffset: 58,
@@ -4027,11 +4009,11 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 5, column 5, byte offset 51, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-addr line 5, column 20, byte offset 66, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.\n[unsupported-feature] unsupported-masm32-runtime-routine line 5, column 12, byte offset 58, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-external-invoke line 5, column 12, byte offset 58, span length 6: INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.");
 });
 
-test("Phase 57R renders CRT routine diagnostic exactly", () => {
-  const name = "phase57r-invoke-crt";
+test("Phase 82 renders CRT INVOKE diagnostic exactly", () => {
+  const name = "phase82-invoke-crt";
   const source = `.code
 main PROC
     invoke crt_printf, addr numberFmt, counter
@@ -4043,26 +4025,8 @@ END main
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "unsupported-feature",
-      code: "unsupported-invoke",
-      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
-      line: 3,
-      column: 5,
-      byteOffset: 20,
-      spanLength: 6
-    },
-    {
-      kind: "unsupported-feature",
-      code: "unsupported-addr",
-      message: "ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.",
-      line: 3,
-      column: 24,
-      byteOffset: 39,
-      spanLength: 4
-    },
-    {
-      kind: "unsupported-feature",
-      code: "unsupported-crt-routine",
-      message: "crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.",
+      code: "unsupported-external-invoke",
+      message: "INVOKE target names a C runtime routine. MASM32 Educational Mode does not link or execute CRT routines.",
       line: 3,
       column: 12,
       byteOffset: 27,
@@ -4070,11 +4034,11 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 3, column 5, byte offset 20, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-addr line 3, column 24, byte offset 39, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.\n[unsupported-feature] unsupported-crt-routine line 3, column 12, byte offset 27, span length 10: crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-external-invoke line 3, column 12, byte offset 27, span length 10: INVOKE target names a C runtime routine. MASM32 Educational Mode does not link or execute CRT routines.");
 });
 
-test("Phase 57R renders WinAPI ExitProcess diagnostic exactly", () => {
-  const name = "phase57r-invoke-exitprocess";
+test("Phase 82 renders WinAPI ExitProcess INVOKE diagnostic exactly", () => {
+  const name = "phase82-invoke-exitprocess";
   const source = `INCLUDE Irvine32.inc
 .code
 main PROC
@@ -4087,17 +4051,8 @@ END main
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "unsupported-feature",
-      code: "unsupported-invoke",
-      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
-      line: 4,
-      column: 5,
-      byteOffset: 41,
-      spanLength: 6
-    },
-    {
-      kind: "unsupported-feature",
-      code: "unsupported-winapi-execution",
-      message: "ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.",
+      code: "unsupported-external-invoke",
+      message: "INVOKE target names Windows/API or external behavior outside MASM32 Educational Mode; the simulator does not execute WinAPI or imported routines.",
       line: 4,
       column: 12,
       byteOffset: 48,
@@ -4105,7 +4060,60 @@ END main
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
-  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-invoke line 4, column 5, byte offset 41, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-winapi-execution line 4, column 12, byte offset 48, span length 11: ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.");
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-external-invoke line 4, column 12, byte offset 48, span length 11: INVOKE target names Windows/API or external behavior outside MASM32 Educational Mode; the simulator does not execute WinAPI or imported routines.");
+});
+
+test("Phase 82 renders Irvine32 INVOKE diagnostic exactly", () => {
+  const name = "phase82-invoke-irvine";
+  const source = `INCLUDE Irvine32.inc
+.code
+main PROC
+    INVOKE WriteString
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "unsupported-irvine-invoke",
+      message: "INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.",
+      line: 4,
+      column: 12,
+      byteOffset: 48,
+      spanLength: 11
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] unsupported-irvine-invoke line 4, column 12, byte offset 48, span length 11: INVOKE target names a recognized Irvine32 routine, but Irvine32 routine dispatch through INVOKE is deferred to a later phase.");
+});
+
+test("Phase 82 renders invalid INVOKE target diagnostic exactly", () => {
+  const name = "phase82-invoke-data-target";
+  const source = `.data
+value DWORD 0
+.code
+main PROC
+    INVOKE value
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "invalid-invoke-target",
+      message: "INVOKE target cannot be a data symbol. The current INVOKE subset accepts only same-file user procedure entries.",
+      line: 5,
+      column: 12,
+      byteOffset: 47,
+      spanLength: 5
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] invalid-invoke-target line 5, column 12, byte offset 47, span length 5: INVOKE target cannot be a data symbol. The current INVOKE subset accepts only same-file user procedure entries.");
 });
 
 test("renders ambiguous memory width diagnostic exactly", () => {
@@ -4150,7 +4158,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4171,7 +4179,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5609,9 +5617,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5671,9 +5679,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5731,9 +5739,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5768,9 +5776,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5819,9 +5827,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5860,9 +5868,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 81);
+  assert.equal(defaultResult.json.phase, 82);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(defaultResult.json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5882,9 +5890,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 81);
+  assert.equal(stopResult.json.phase, 82);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(stopResult.json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5924,7 +5932,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5960,7 +5968,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5987,9 +5995,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6021,9 +6029,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6111,9 +6119,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6369,8 +6377,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phase, 82);
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.instructionCount, 0);
   assert.deepEqual(json.memoryChanges, []);
   assert.deepEqual(json.simulatorMessages, [
@@ -6401,8 +6409,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 81);
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phase, 82);
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6451,8 +6459,8 @@ END Other
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
-  assert.equal(json.phaseName, "Phase 81 - PROTO Metadata Parser");
+  assert.equal(json.phase, 82);
+  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7098,12 +7106,12 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
     },
     {
       kind: "unsupported-feature",
-      code: "unsupported-invoke",
-      message: "INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.",
+      code: "invoke-arguments-not-supported-yet",
+      message: "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.",
       line: 10,
-      column: 5,
-      byteOffset: 82,
-      spanLength: 6
+      column: 22,
+      byteOffset: 99,
+      spanLength: 1
     },
     {
       kind: "unsupported-feature",
@@ -7111,7 +7119,7 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
       message: ".IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.",
       line: 11,
       column: 5,
-      byteOffset: 102,
+      byteOffset: 105,
       spanLength: 3
     },
     {
@@ -7120,16 +7128,16 @@ test("renders multi-diagnostic ordering exactly without execution-complete", () 
       message: ".ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.",
       line: 13,
       column: 5,
-      byteOffset: 138,
+      byteOffset: 141,
       spanLength: 6
     }
   ]);
   assertNoExecutionComplete(json.simulatorMessages);
   assert.equal(rendered.includes("mov ebx"), false);
   assertRenderedEquals(name, source, rawJson, rendered, `[unsupported-feature] unsupported-feature line 4, column 10, byte offset 26, span length 6: Unsupported feature: STRUCT declarations are not supported yet.
-[unsupported-feature] unsupported-invoke line 10, column 5, byte offset 82, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
-[unsupported-feature] unsupported-high-level-if line 11, column 5, byte offset 102, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
-[unsupported-feature] unsupported-high-level-endif line 13, column 5, byte offset 138, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.`);
+[unsupported-feature] invoke-arguments-not-supported-yet line 10, column 22, byte offset 99, span length 1: INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.
+[unsupported-feature] unsupported-high-level-if line 11, column 5, byte offset 105, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
+[unsupported-feature] unsupported-high-level-endif line 13, column 5, byte offset 141, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.`);
 });
 
 
@@ -7193,15 +7201,9 @@ test("Phase 57T renders realistic playground diagnostics exactly", () => {
 [unsupported-feature] unsupported-windows-api-include line 6, column 9, byte offset 90, span length 28: Windows API include path '\\masm32\\include\\kernel32.inc' is not supported. Windows API execution is outside this simulator; PE loading, imports, and WinAPI calls are not performed.
 [unsupported-feature] unsupported-masm32-library line 8, column 12, byte offset 131, span length 22: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. MASM32 library '\\masm32\\lib\\masm32.lib' requires external library linking.
 [unsupported-feature] unsupported-windows-api-library line 9, column 12, byte offset 165, span length 24: INCLUDELIB is not supported in MASM32 Educational Mode; the simulator does not link objects, load .lib files, process PE imports, or execute external routines. Windows import library '\\masm32\\lib\\kernel32.lib' requires PE imports and WinAPI execution.
-[unsupported-feature] unsupported-invoke line 22, column 5, byte offset 487, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
-[unsupported-feature] unsupported-addr line 22, column 20, byte offset 502, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
-[unsupported-feature] unsupported-masm32-runtime-routine line 22, column 12, byte offset 494, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
-[unsupported-feature] unsupported-invoke line 23, column 5, byte offset 520, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
-[unsupported-feature] unsupported-addr line 23, column 20, byte offset 535, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
-[unsupported-feature] unsupported-masm32-runtime-routine line 23, column 12, byte offset 527, span length 6: StdOut is an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
-[unsupported-feature] unsupported-invoke line 24, column 5, byte offset 553, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.
-[unsupported-feature] unsupported-addr line 24, column 24, byte offset 572, span length 4: ADDR operands are not implemented; ADDR depends on INVOKE/procedure argument lowering and future calling-convention support.
-[unsupported-feature] unsupported-crt-routine line 24, column 12, byte offset 560, span length 10: crt_printf is a C runtime formatted-output routine. MASM32 Educational Mode does not link or execute CRT routines.
+[unsupported-feature] unsupported-external-invoke line 22, column 12, byte offset 494, span length 6: INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
+[unsupported-feature] unsupported-external-invoke line 23, column 12, byte offset 527, span length 6: INVOKE target names an external MASM32 runtime-style routine. MASM32 Educational Mode does not link MASM32 runtime libraries or execute external routines.
+[unsupported-feature] unsupported-external-invoke line 24, column 12, byte offset 560, span length 10: INVOKE target names a C runtime routine. MASM32 Educational Mode does not link or execute CRT routines.
 [unsupported-feature] unsupported-high-level-if line 29, column 5, byte offset 638, span length 3: .IF high-level MASM flow is not implemented; the simulator does not lower high-level conditions into labels or branches.
 [unsupported-feature] unsupported-high-level-else line 31, column 5, byte offset 691, span length 5: .ELSE high-level MASM flow is not implemented; the simulator does not lower high-level alternatives into labels or branches.
 [unsupported-feature] unsupported-high-level-endif line 33, column 5, byte offset 736, span length 6: .ENDIF closes unsupported high-level MASM flow; the simulator does not lower high-level conditions into labels or branches.
@@ -7220,7 +7222,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7448,7 +7450,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7473,7 +7475,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7497,7 +7499,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7527,7 +7529,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7562,7 +7564,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7663,7 +7665,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -7804,7 +7806,7 @@ END main
   const exitProcessResult = runFixture(exitProcessName, exitProcessSource);
   assertRunStatus(exitProcessResult.json, false, "parse-error");
   assertNoExecutionComplete(exitProcessResult.json.simulatorMessages);
-  assertRenderedEquals(exitProcessName, exitProcessSource, exitProcessResult.rawJson, exitProcessResult.rendered, "[unsupported-feature] unsupported-invoke line 4, column 5, byte offset 41, span length 6: INVOKE syntax is not implemented in MASM32 Educational Mode; the simulator does not lower procedure arguments, set up calling conventions, or call routines.\n[unsupported-feature] unsupported-winapi-execution line 4, column 12, byte offset 48, span length 11: ExitProcess is WinAPI/external process termination behavior. MASM32 Educational Mode does not execute Windows API calls; this is not the virtual Irvine32 exit terminator.");
+  assertRenderedEquals(exitProcessName, exitProcessSource, exitProcessResult.rawJson, exitProcessResult.rendered, "[unsupported-feature] unsupported-external-invoke line 4, column 12, byte offset 48, span length 11: INVOKE target names Windows/API or external behavior outside MASM32 Educational Mode; the simulator does not execute WinAPI or imported routines.");
 });
 
 test("Phase 70 renders invalid-return-address diagnostic exactly", () => {
@@ -8466,7 +8468,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 81);
+  assert.equal(json.phase, 82);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

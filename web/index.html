@@ -3,7 +3,7 @@
   @file index.html
   @brief Browser shell for the MASM32 educational simulator.
 
-  Milestone 81: PROTO Metadata Parser.
+  Milestone 82: INVOKE Zero-Argument User Procedure Calls.
   The UI sends source to the worker/Wasm path and displays final registers,
   memory changes, Simulator Messages, and Program Console output.
 -->
@@ -18,20 +18,20 @@
     <main class="app-shell">
       <section class="panel">
         <h1>MASM32 Educational Simulator</h1>
-        <p class="muted">Milestone 81: PROTO Metadata Parser</p>
+        <p class="muted">Milestone 82: INVOKE Zero-Argument User Procedure Calls</p>
         <label for="editor">Editor</label>
         <textarea id="editor" spellcheck="false">INCLUDE Irvine32.inc
-MyProc PROTO arg1:DWORD, p:SDWORD
+Helper PROTO
 .code
 main PROC
-    LOCAL temp:DWORD, buf[2]:BYTE
-    mov temp, 42
-    mov BYTE PTR buf[0], 'A'
-    mov eax, temp
-    mov bl, BYTE PTR buf[0]
-    lea ecx, buf
+    INVOKE Helper
     exit
 main ENDP
+
+Helper PROC
+    mov eax, 55
+    ret
+Helper ENDP
 END main</textarea>
         <section class="settings-panel" aria-labelledby="diagnostic-settings-title">
           <button

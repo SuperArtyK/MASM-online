@@ -24,8 +24,8 @@
  * parsing metadata, Phase 77 direct-CALL PROC USES runtime save/restore,
  * Phase 78A limited OPTION NOKEYWORD parser behavior, Phase 78 LOCAL
  * diagnostics, Phase 79 automatic LOCAL frame runtime behavior, Phase 80 LOCAL
- * operand resolution and addressing, Phase 81 parser-owned PROTO metadata
- * diagnostics, and recovered unsupported-feature diagnostics, then reports a
+ * operand resolution and addressing, Phase 81 parser-owned PROTO metadata, Phase 82 zero-argument
+ * user-procedure INVOKE lowering and diagnostics, and recovered unsupported-feature diagnostics, then reports a
  * compact JSON result for the UI.
  */
 
@@ -91,16 +91,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 81U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 82U
 
-/// Suffix for the current Phase 81 runtime/source-run behavior phase.
+/// Suffix for the current Phase 82 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 81 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 81 - PROTO Metadata Parser"
+/// Full name of the current Phase 82 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 82 - INVOKE Zero-Argument User Procedure Calls"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 81 PROTO metadata behavior.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-81-proto-metadata-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 82 INVOKE behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-82-invoke-zero-argument-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
@@ -6594,6 +6594,9 @@ static const char *masm32_sim_wasm_parser_diagnostic_kind(const VmParserDiagnost
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_WINAPI_EXECUTION ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_MASM32_RUNTIME_ROUTINE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_CRT_ROUTINE ||
+        code == VM_PARSER_DIAGNOSTIC_INVOKE_ARGUMENTS_NOT_SUPPORTED_YET ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE ||
+        code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_IF ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ELSE ||
         code == VM_PARSER_DIAGNOSTIC_UNSUPPORTED_HIGH_LEVEL_ENDIF ||

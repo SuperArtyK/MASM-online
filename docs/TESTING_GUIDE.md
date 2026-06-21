@@ -6,11 +6,11 @@ The examples assume commands are run from the repository root.
 
 Current milestone:
 
-- Phase 81 - PROTO Metadata Parser
+- Phase 82 - INVOKE Zero-Argument User Procedure Calls
 
 Phase 79 adds tests for automatic LOCAL frame setup and release on selected-entry procedures and direct-CALL helper procedures, including root `RET`, helper `RET`, helper `RET imm16`, virtual Irvine32 `exit`, source-level `LEAVE` plus `RET`, deterministic visible byte initialization, local-object descriptor lifetime, branch/fallthrough rejection with `local-frame-entry-unsupported`, frame-state failures with `invalid-frame-state`, LOCAL stack-capacity failures with `stack-overflow`, rendered Simulator Messages, output-contract metadata, and no public `memoryChanges` rows for automatic LOCAL stack housekeeping.
 
-Phase 81 regression coverage also preserves Phase 80 LOCAL operand behavior, accepted limited `OPTION NOKEYWORD` behavior, Phase 79 automatic LOCAL frame setup/release, Phase 78 parser LOCAL metadata, Phase 77 `PROC USES` runtime behavior, Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, Irvine32 `exit`, accepted limited `PROTO` metadata, and future-owned deferral of `OFFSET local`, `ADDR`, executable `PROTO`/`INVOKE` behavior, pointer or unnamed prototype parameters, `VARARG`, scaled-index LOCAL addressing, runtime parameters, calling conventions, and QWORD/SQWORD executable LOCAL memory operands.
+Phase 82 regression coverage preserves Phase 81 limited `PROTO` metadata, Phase 80 LOCAL operand behavior, accepted limited `OPTION NOKEYWORD` behavior, Phase 79 automatic LOCAL frame setup/release, Phase 78 parser LOCAL metadata, Phase 77 `PROC USES` runtime behavior, Phase 74 `RET imm16`, Phase 73 `LEAVE`, Phase 72A `PUSH`/`POP`, helper `CALL`/plain `RET`, root `RET`, call-depth limits, procedure fallthrough, entry-end compatibility, Irvine32 `exit`, accepted zero-argument same-file user-procedure `INVOKE`, and future-owned deferral of `OFFSET local`, `ADDR`, `INVOKE` arguments, executable `PROTO` behavior, pointer or unnamed prototype parameters, `VARARG`, scaled-index LOCAL addressing, runtime parameters, calling conventions, and QWORD/SQWORD executable LOCAL memory operands.
 
 
 Static documentation checks for active source-of-truth text should reject stale milestone-context phrases unless they appear in historical reports, changelogs, quoted forbidden-pattern examples, or allowlist entries used by the check itself. The minimum phrases to scan are:
@@ -25,6 +25,98 @@ Static documentation checks for active source-of-truth text should reject stale 
 The check must not reject the active status field label `Current milestone:` when it appears in the compact active-status payload format defined by the implementation guide. The check must not reject historical milestone reports under `docs/history/`.
 
 When a guide phase describes behavior it will replace, the preferred wording is `pre-<phase> accepted behavior` or `behavior replaced by this phase`.
+
+### Browser default editor source-run smoke test
+
+Any milestone that changes `web/index.html`, the default editor program, source-run syntax support, source-run output metadata, unsupported-feature diagnostics, `INVOKE`, `ADDR`, `PROTO`, `LOCAL`, Irvine32 virtual includes, or the `exit` terminator must include a default-editor source-run smoke test.
+
+The test must:
+
+1. extract the exact text content of the default editor textarea from `web/index.html`;
+2. HTML-decode the text exactly as the browser would expose it to the editor;
+3. run that source through the same native source-run path used by the diagnostic JSON producer or source-run fixture tests;
+4. assert successful source-run completion;
+5. assert that the runtime/source-run behavior metadata and source-run output contract match the current milestone;
+6. assert that no `unsupported-feature`, `unsupported-invoke`, parser error, runtime error, or terminal diagnostic appears in Simulator Messages;
+7. assert that Program Console and Simulator Messages remain separate streams.
+
+Static substring checks are not enough for the default editor program. The exact default source shown to the user must parse and run successfully unless a milestone deliberately changes the product to show an error-focused teaching example and documents that decision in the spec, guide, supported syntax reference, and milestone report.
+
+### INVOKE/ADDR sequencing regression tests
+
+When a future phase touches `INVOKE`, `ADDR`, `PROTO`, procedure metadata, procedure calls, procedure arguments, source-run output metadata, or the browser default editor program, tests must prove the roadmap boundary explicitly.
+
+For the zero-argument INVOKE phase:
+
+- `INVOKE Helper` succeeds for a same-file zero-argument user procedure.
+- The same program using `call Helper` still succeeds and has equivalent observable control-flow behavior.
+- `INVOKE Helper, 1` fails with the phase-owned unsupported-arguments diagnostic.
+- `INVOKE Helper, ADDR msg` fails and does not treat ADDR as executable.
+- `INVOKE Helper, OFFSET msg` fails and does not treat INVOKE arguments as executable.
+- `INVOKE ExitProcess, 0` fails as an external/API non-goal.
+- Irvine32 routine INVOKE fails as recognized but not executable unless the phase explicitly owns the routine.
+- Wrong-kind targets such as data symbols, equates, registers, immediates, and labels reject without execution.
+
+For the ADDR-preparation phase:
+
+- helper/parser tests may prove `ADDR msg`, `ADDR constSymbol`, `ADDR dataQuestionSymbol`, and `ADDR localVar` can become address-valued future argument records;
+- source-run tests must prove `INVOKE Helper, ADDR msg` still refuses execution;
+- source-run tests must prove `INVOKE Helper, ADDR localVar` still refuses execution;
+- `ADDR` outside the owned helper/future-argument context remains rejected;
+- invalid ADDR targets preserve source line, column, byte offset, and span length;
+- `.CONST`, `.DATA?`, object-bounds, and uninitialized-origin policy are not bypassed by address preparation.
+
+For the INVOKE-argument phase:
+
+- tests must prove right-to-left argument lowering;
+- tests must prove checked stack writes and no partial mutation on failed validation;
+- tests must prove argument-count mismatch against PROTO/PROC metadata;
+- tests must prove cleanup mismatch is diagnosed instead of silently leaking stack bytes;
+- tests must prove ADDR passes an address and does not bypass `.CONST`, `.DATA?`, object-bound, or uninitialized-origin policy;
+- tests must prove source-level named PROC parameter access remains unsupported unless the phase explicitly implements it;
+- tests must include rendered Simulator Messages for every new or changed user-visible diagnostic family.
+
+### PROTO, INVOKE, and ADDR diagnostic coverage matrix
+
+For every phase that adds or changes a PROTO, INVOKE, or ADDR diagnostic, the milestone tests must include both structured diagnostic coverage and rendered Simulator Messages coverage unless the phase report explicitly justifies why a diagnostic is internal-only.
+
+Structured diagnostic coverage must assert:
+
+- diagnostic code;
+- severity/kind;
+- human-readable message text or stable message substring;
+- source line;
+- source column;
+- byte offset;
+- span length;
+- related location, when the diagnostic depends on a previous declaration or paired metadata item.
+
+Rendered Simulator Messages coverage must assert:
+
+- final UI-visible text for each diagnostic family added or changed by the phase;
+- no Program Console output for refused-execution diagnostics;
+- separation between Program Console and Simulator Messages;
+- no cascading token-level noise when one unsupported feature line has already been classified clearly.
+
+At minimum, the following families must be covered when introduced or changed:
+
+- `invalid-proto-declaration`;
+- `unsupported-proto-type`;
+- `unsupported-external-proto`;
+- `duplicate-proto`;
+- `proto-proc-mismatch`;
+- `invalid-invoke-target`;
+- `invoke-arguments-not-supported-yet`;
+- `invoke-argument-count-mismatch`;
+- `unsupported-external-invoke`;
+- `unsupported-irvine-invoke`;
+- `invalid-addr-target`;
+- `addr-outside-invoke`;
+- `unknown-addr-symbol`;
+- `unsupported-addr-expression`;
+- `unsupported-invoke-argument`;
+- `invoke-cleanup-mismatch`;
+- `invoke-argument-width-unsupported`.
 
 ## 1. Prerequisites
 
@@ -1248,7 +1340,7 @@ For Phase 71A root RET mode, Phase 71C code-stream fallthrough, Phase 71D proced
 - rendered Simulator Messages show root RET completion exactly once;
 - rendered Simulator Messages for non-entry fallthrough include `procedure-fell-through`;
 - static documentation checks assert selected-entry root RET default success, optional strict root RET rejection, and called non-entry procedure fallthrough are implemented after Phase 71A is accepted;
-- static documentation checks continue to list RETF, `OFFSET local`, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, general procedure-frame features beyond Phase 80 LOCAL operand access, executable `PROTO`/`INVOKE` behavior, pointer or unnamed prototype parameters, VARARG, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them, while verifying that Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 76 `PROC USES` parsing metadata, Phase 77 `PROC USES` runtime save/restore, Phase 78 `LOCAL` declaration metadata, Phase 79 automatic LOCAL frame allocation/lifetime, Phase 80 supported LOCAL operand resolution/addressing, and Phase 81 limited `PROTO` metadata are documented as implemented. The same checks should reject stale active fixed-layout examples that cite stack top `0x00800000` instead of the current fixed-layout stack top `0x00900000`, except inside historical files, explicit stale-value allowlists, or audit-only draft text.
+- static documentation checks continue to list RETF, `OFFSET local`, scaled-index LOCAL addressing, QWORD/SQWORD executable LOCAL memory operands, general procedure-frame features beyond Phase 82 zero-argument INVOKE and Phase 80 LOCAL operand access, executable `PROTO` behavior, `INVOKE` arguments, pointer or unnamed prototype parameters, VARARG, ADDR, calling-convention behavior, and Irvine32 callable routine dispatch as deferred unless later phases implement them, while verifying that Phase 73 `LEAVE`, Phase 74 `RET imm16`, Phase 76 `PROC USES` parsing metadata, Phase 77 `PROC USES` runtime save/restore, Phase 78 `LOCAL` declaration metadata, Phase 79 automatic LOCAL frame allocation/lifetime, Phase 80 supported LOCAL operand resolution/addressing, Phase 81 limited `PROTO` metadata, and Phase 82 zero-argument same-file user-procedure `INVOKE` are documented as implemented. The same checks should reject stale active fixed-layout examples that cite stack top `0x00800000` instead of the current fixed-layout stack top `0x00900000`, except inside historical files, explicit stale-value allowlists, or audit-only draft text.
 
 ## Current-status documentation clutter checks
 
@@ -1297,7 +1389,7 @@ Recommended checks:
 19. Active source-of-truth text must not require a root-return sentinel such as `VM_RETURN_TOKEN_ROOT` or `0xFFFFFFFFu` unless an accepted owning guide phase defines the sentinel, validation rules, collision-proofing, user-memory exposure rules, JSON behavior, structured tests, and rendered Simulator Messages tests.
 20. Active supported-syntax text must not contain an isolated statement that the simulator “does not implement RET” after the project has accepted plain near helper `RET` and selected-entry root `RET`. Any Irvine32 include limitation must distinguish between “Irvine32.inc does not add Irvine32 routine-call behavior or additional RET forms” and “plain near RET is implemented separately.”
 21. Active milestone-history navigation must not preserve stale limitation lists that contradict later accepted phases. If historical context is necessary, replace stale lists with a short note that points readers back to `docs/SUPPORTED_SYNTAX.md`, `docs/INCREMENTAL_IMPLEMENTATION_GUIDE.md`, the README current-status section, and the latest accepted milestone report.
-22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72A, the expected token is `phase-72a-push-pop-stack-output-contract-v1` because the phase changes accepted syntax, runtime stack semantics, structured JSON memory-change rows, rendered Simulator Messages, and protocol interpretation for source-level PUSH/POP stack transfers. For Phase 73, the expected token is `phase-73-leave-output-contract-v1` because the phase changes accepted syntax, runtime stack-read semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for source-level LEAVE frame teardown. For Phase 74, the expected token is `phase-74-ret-imm16-output-contract-v1` because the phase changes accepted syntax, runtime return-cleanup semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for near `RET imm16` caller cleanup. For Phase 75, the expected token is `phase-75-proc-metadata-output-contract-v1` because the phase changes structured parser/source-run diagnostics, rendered Simulator Messages, and protocol interpretation for `PROC` declaration diagnostics. For Phase 76, the expected token is `phase-76-proc-uses-metadata-output-contract-v1` because the phase changes accepted `PROC USES` parsing metadata, structured diagnostics, rendered Simulator Messages, and protocol interpretation for runtime deferral when execution enters a `USES` procedure. For Phase 77, the expected token is `phase-77-proc-uses-runtime-output-contract-v1` because the phase changes runtime `PROC USES` save/restore semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for automatic USES stack failures. For Phase 78, the expected token is `phase-78-local-metadata-output-contract-v1` because the phase changes accepted `LOCAL` parser metadata, structured diagnostics, rendered Simulator Messages, and protocol interpretation for LOCAL declaration errors while leaving runtime local allocation and local operand resolution deferred. For Phase 78A, the expected token is `phase-78a-nokeyword-output-contract-v1` because the phase changes accepted limited `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, and `OPTION NOKEYWORD:<LOOP OFFSET>` syntax, parser keyword classification, structured diagnostics, rendered Simulator Messages, and user-symbol table behavior while leaving runtime VM behavior unchanged. For Phase 79, the expected token is `phase-79-local-frame-output-contract-v1` because the phase changes automatic LOCAL frame allocation/release, structured frame diagnostics, rendered Simulator Messages, runtime metadata, and source-run behavior for procedures with accepted LOCAL metadata while leaving source-level LOCAL operands deferred. For Phase 80, the expected token is `phase-80-local-operand-output-contract-v1` because the phase changes accepted source-level LOCAL operand execution, frame-relative LOCAL addressing, `LEA` local-address behavior, runtime metadata, source-run behavior, and protocol interpretation. For Phase 81, the expected token is `phase-81-proto-metadata-output-contract-v1` because the phase changes accepted `PROTO` metadata, structured `PROTO` diagnostics, rendered Simulator Messages, runtime metadata, source-run behavior, and protocol interpretation.
+22. If a corrective diagnostic-copy phase changes exact source-run-visible diagnostic wording, source-run tests must verify the corresponding output-contract token. For Phase 71B, the expected token is `phase-71b-source-run-output-contract-v1` unless the phase report explicitly documents a different accepted token. For Phase 71E, the expected token is `phase-71e-entry-procedure-end-mode-output-contract-v1` because the phase changes the public source-run settings contract and selected-entry terminal behavior. For Phase 72A, the expected token is `phase-72a-push-pop-stack-output-contract-v1` because the phase changes accepted syntax, runtime stack semantics, structured JSON memory-change rows, rendered Simulator Messages, and protocol interpretation for source-level PUSH/POP stack transfers. For Phase 73, the expected token is `phase-73-leave-output-contract-v1` because the phase changes accepted syntax, runtime stack-read semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for source-level LEAVE frame teardown. For Phase 74, the expected token is `phase-74-ret-imm16-output-contract-v1` because the phase changes accepted syntax, runtime return-cleanup semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for near `RET imm16` caller cleanup. For Phase 75, the expected token is `phase-75-proc-metadata-output-contract-v1` because the phase changes structured parser/source-run diagnostics, rendered Simulator Messages, and protocol interpretation for `PROC` declaration diagnostics. For Phase 76, the expected token is `phase-76-proc-uses-metadata-output-contract-v1` because the phase changes accepted `PROC USES` parsing metadata, structured diagnostics, rendered Simulator Messages, and protocol interpretation for runtime deferral when execution enters a `USES` procedure. For Phase 77, the expected token is `phase-77-proc-uses-runtime-output-contract-v1` because the phase changes runtime `PROC USES` save/restore semantics, structured diagnostics, rendered Simulator Messages, and protocol interpretation for automatic USES stack failures. For Phase 78, the expected token is `phase-78-local-metadata-output-contract-v1` because the phase changes accepted `LOCAL` parser metadata, structured diagnostics, rendered Simulator Messages, and protocol interpretation for LOCAL declaration errors while leaving runtime local allocation and local operand resolution deferred. For Phase 78A, the expected token is `phase-78a-nokeyword-output-contract-v1` because the phase changes accepted limited `OPTION NOKEYWORD:<LOOP>`, `OPTION NOKEYWORD:<OFFSET>`, and `OPTION NOKEYWORD:<LOOP OFFSET>` syntax, parser keyword classification, structured diagnostics, rendered Simulator Messages, and user-symbol table behavior while leaving runtime VM behavior unchanged. For Phase 79, the expected token is `phase-79-local-frame-output-contract-v1` because the phase changes automatic LOCAL frame allocation/release, structured frame diagnostics, rendered Simulator Messages, runtime metadata, and source-run behavior for procedures with accepted LOCAL metadata while leaving source-level LOCAL operands deferred. For Phase 80, the expected token is `phase-80-local-operand-output-contract-v1` because the phase changes accepted source-level LOCAL operand execution, frame-relative LOCAL addressing, `LEA` local-address behavior, runtime metadata, source-run behavior, and protocol interpretation. For Phase 81, the expected token is `phase-81-proto-metadata-output-contract-v1` because the phase changes accepted `PROTO` metadata, structured `PROTO` diagnostics, rendered Simulator Messages, runtime metadata, source-run behavior, and protocol interpretation. For Phase 82, the expected token is `phase-82-invoke-zero-argument-output-contract-v1` because the phase changes accepted zero-argument `INVOKE` syntax, INVOKE target diagnostics, rendered Simulator Messages, runtime metadata, source-run behavior, and protocol interpretation.
 
 These checks should not forbid normal references to phase numbers in canonical guide sections, milestone history, milestone reports, or explicitly historical audit notes.
 
