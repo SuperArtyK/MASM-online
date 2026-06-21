@@ -319,6 +319,14 @@ typedef enum VmParserDiagnosticCode {
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_INVOKE,
     /// An INVOKE target names a recognized Irvine32 routine not callable through INVOKE yet.
     VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE,
+    /// A helper-level ADDR argument target used a non-addressable form.
+    VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+    /// ADDR appeared outside the future INVOKE-argument helper context.
+    VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE,
+    /// A helper-level ADDR argument named no known addressable symbol.
+    VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL,
+    /// A helper-level ADDR argument used arithmetic or another unsupported expression tail.
+    VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION,
     /// The caller-provided PROTO metadata table was full.
     VM_PARSER_DIAGNOSTIC_PROTO_CAPACITY_EXCEEDED,
     /// Number of parser diagnostic codes.
@@ -520,6 +528,48 @@ typedef struct VmNumericEquate {
     size_t source_span_length;
 } VmNumericEquate;
 
+/// Supplies metadata for Phase 83 helper-level ADDR argument record construction.
+typedef struct VmParserAddrArgumentContext {
+    /// Accepted data, .DATA?, and .CONST symbol table.
+    const VmSymbol *symbols;
+    /// Number of accepted entries in @ref symbols.
+    size_t symbol_count;
+    /// Accepted numeric-equate metadata table used to reject non-storage names.
+    const VmNumericEquate *numeric_equates;
+    /// Number of accepted entries in @ref numeric_equates.
+    size_t numeric_equate_count;
+    /// Optional procedure whose LOCAL metadata is active for helper-level ADDR resolution.
+    const VmProcedureRange *active_procedure;
+    /// Runtime frame-base address for @ref active_procedure when @ref has_active_local_frame is true.
+    uint32_t active_local_frame_base_address;
+    /// Whether LOCAL symbols in @ref active_procedure may resolve to runtime frame-relative addresses.
+    bool has_active_local_frame;
+    /// User-symbol CASEMAP policy active at the future INVOKE-argument reference.
+    VmSymbolCasePolicy case_policy;
+} VmParserAddrArgumentContext;
+
+/// Describes one Phase 83 helper-level address-valued future INVOKE argument.
+typedef struct VmParserAddrArgumentRecord {
+    /// Computed 32-bit address value for the symbol or active-frame LOCAL.
+    uint32_t address;
+    /// Source location of the ADDR keyword token.
+    VmLexerSourceLocation addr_source_location;
+    /// Source span length of the ADDR keyword token in bytes.
+    size_t addr_source_span_length;
+    /// Source location of the operand token named by ADDR.
+    VmLexerSourceLocation operand_source_location;
+    /// Source span length of the operand token in bytes.
+    size_t operand_source_span_length;
+    /// Whether the address names read-only .CONST storage.
+    bool is_const_storage;
+    /// Whether the address names deterministic zero-filled .DATA? storage.
+    bool is_uninitialized_storage;
+    /// Whether the address names an active-frame LOCAL.
+    bool is_local_storage;
+    /// EBP-relative offset of the LOCAL when @ref is_local_storage is true.
+    int32_t local_ebp_offset;
+} VmParserAddrArgumentRecord;
+
 /// Identifies one Phase 68/69 CALL/INVOKE target classification.
 typedef enum VmParserCallTargetClass {
     /// Target syntax is absent or uses a non-identifier expression form.
@@ -669,6 +719,29 @@ typedef struct VmParserDiagnostic {
     /// Caller-owned storage used when a diagnostic needs parse-specific values.
     char message_storage[VM_PARSER_DIAGNOSTIC_MESSAGE_CAPACITY];
 } VmParserDiagnostic;
+
+/// Builds one Phase 83 helper-level ADDR argument record without executing INVOKE.
+///
+/// The helper accepts only the future INVOKE-argument form `ADDR symbol` from a
+/// caller-controlled helper path. Complete source-level INVOKE argument
+/// execution remains unsupported. On failure, @p out_diagnostic receives one
+/// targeted parser diagnostic when supplied.
+///
+/// @param context Metadata tables and optional active LOCAL frame context.
+/// @param addr_token Token that must spell ADDR.
+/// @param operand_token Token that should name an addressable symbol.
+/// @param tail_token First token after @p operand_token, or NULL when no tail exists.
+/// @param out_record Receives the lowered address record on success.
+/// @param out_diagnostic Optional diagnostic receiver for rejected helper forms.
+/// @return true when @p out_record was populated.
+bool vm_parser_build_addr_argument_record(
+    const VmParserAddrArgumentContext *context,
+    const VmLexerToken *addr_token,
+    const VmLexerToken *operand_token,
+    const VmLexerToken *tail_token,
+    VmParserAddrArgumentRecord *out_record,
+    VmParserDiagnostic *out_diagnostic
+);
 
 /// Configures one parse operation and all caller-owned output storage.
 typedef struct VmParserConfig {

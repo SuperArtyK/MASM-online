@@ -396,13 +396,13 @@ test("Phase 70A renders stale runtime artifact warning exactly", () => {
     {
       kind: "internal-simulator-error",
       code: "stale-wasm-artifact",
-      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 82 - INVOKE Zero-Argument User Procedure Calls. Rebuild web/dist with the Emscripten build script."
+      message: "The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 83 - ADDR Preparation for Future INVOKE Arguments. Rebuild web/dist with the Emscripten build script."
     }
   ]);
 
   assert.equal(
     rendered,
-    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 82 - INVOKE Zero-Argument User Procedure Calls. Rebuild web/dist with the Emscripten build script."
+    "[internal-simulator-error] stale-wasm-artifact: The loaded Wasm artifact reports runtime/source-run MASM behavior Phase 71, but the UI/source files expect Phase 83 - ADDR Preparation for Future INVOKE Arguments. Rebuild web/dist with the Emscripten build script."
   );
 });
 
@@ -2577,7 +2577,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "2" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.instructionCount, 2);
   assert.equal(json.instructionLimit, 2);
   assert.equal(json.executedInstructionCount, 2);
@@ -2620,7 +2620,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "5" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.instructionCount, 5);
   assert.equal(json.instructionLimit, 5);
   assert.equal(json.executedInstructionCount, 5);
@@ -2657,9 +2657,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2685,7 +2685,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.instructionCount, 0);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -2712,7 +2712,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2737,7 +2737,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2761,7 +2761,7 @@ END loop
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
@@ -2787,7 +2787,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoMessageWithCode(json.simulatorMessages, "unsupported-option");
   assertRenderedEquals(name, source, rawJson, rendered, "[info] execution-complete: Execution completed successfully.");
@@ -2804,7 +2804,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2831,7 +2831,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2858,7 +2858,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2885,7 +2885,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assertNoExecutionComplete(json.simulatorMessages);
   assert.deepEqual(json.simulatorMessages, [
@@ -2917,7 +2917,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.instructionCount, 4);
   assert.equal(json.executedInstructionCount, 4);
   assert.equal(json.attemptedNextInstructionIndex, null);
@@ -2948,8 +2948,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_INSTRUCTION_LIMIT: "4" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phase, 83);
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 4);
   assert.equal(json.instructionLimit, 4);
   assert.equal(json.executedInstructionCount, 4);
@@ -2994,8 +2994,8 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phase, 83);
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 5);
   assert.equal(json.executedInstructionCount, 5);
   assert.equal(json.registers.EBX.hex, "00000002h");
@@ -3021,7 +3021,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3045,7 +3045,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3069,7 +3069,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3094,7 +3094,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3118,7 +3118,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3142,7 +3142,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3167,9 +3167,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3195,9 +3195,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3223,9 +3223,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3250,9 +3250,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3278,7 +3278,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "invalid-branch-target",
@@ -3303,7 +3303,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "unsupported-branch-target-form",
@@ -3327,7 +3327,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "expected-operand",
@@ -3544,7 +3544,7 @@ END main
   for (const item of cases) {
     const { json, rawJson, rendered } = runFixture(item.name, item.source);
     assertRunStatus(json, false, "parse-error");
-    assert.equal(json.phase, 82);
+    assert.equal(json.phase, 83);
     assertMessageEquals(json.simulatorMessages[0], item.expected);
     assertNoExecutionComplete(json.simulatorMessages);
     assertRenderedEquals(item.name, item.source, rawJson, rendered, item.rendered);
@@ -3557,7 +3557,7 @@ test("renders Phase 58 duplicate and conflicting code-label diagnostics exactly"
   const duplicateSource = fixtureSource(duplicateName);
   const duplicateResult = runFixture(duplicateName, duplicateSource);
   assertRunStatus(duplicateResult.json, false, "parse-error");
-  assert.equal(duplicateResult.json.phase, 82);
+  assert.equal(duplicateResult.json.phase, 83);
   assertMessageEquals(duplicateResult.json.simulatorMessages[0], {
     kind: "assembly-error",
     code: "duplicate-label",
@@ -3985,6 +3985,67 @@ test("renders Phase 82 unsupported INVOKE arguments diagnostic exactly", () => {
   assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] invoke-arguments-not-supported-yet line 3, column 22, byte offset 37, span length 1: INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.");
 });
 
+
+test("Phase 83 renders source-level INVOKE with ADDR argument refusal exactly", () => {
+  const name = "phase83-invoke-addr-argument-refusal";
+  const source = `.data
+msg BYTE "Hi", 0
+.code
+main PROC
+    INVOKE Helper, ADDR msg
+    ret
+main ENDP
+Helper PROC
+    mov eax, 77
+    ret
+Helper ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "unsupported-feature",
+      code: "invoke-arguments-not-supported-yet",
+      message: "INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.",
+      line: 5,
+      column: 20,
+      byteOffset: 58,
+      spanLength: 4
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assert.equal(rawJson.includes("0000004Dh"), false);
+  assertRenderedEquals(name, source, rawJson, rendered, "[unsupported-feature] invoke-arguments-not-supported-yet line 5, column 20, byte offset 58, span length 4: INVOKE arguments are not implemented yet; the current INVOKE subset accepts only zero-argument INVOKE to same-file user procedures.");
+});
+
+test("Phase 83 renders standalone ADDR outside INVOKE diagnostic exactly", () => {
+  const name = "phase83-addr-outside-invoke";
+  const source = `.data
+msg DWORD 1
+.code
+main PROC
+    ADDR msg
+main ENDP
+END main
+`;
+  const { json, rawJson, rendered } = runFixture(name, source);
+  assertRunStatus(json, false, "parse-error");
+  assert.deepEqual(json.simulatorMessages, [
+    {
+      kind: "assembly-error",
+      code: "addr-outside-invoke",
+      message: "ADDR is reserved for future INVOKE argument handling and is not a standalone source-level instruction or general operand.",
+      line: 5,
+      column: 5,
+      byteOffset: 38,
+      spanLength: 4
+    }
+  ]);
+  assertNoExecutionComplete(json.simulatorMessages);
+  assertRenderedEquals(name, source, rawJson, rendered, "[assembly-error] addr-outside-invoke line 5, column 5, byte offset 38, span length 4: ADDR is reserved for future INVOKE argument handling and is not a standalone source-level instruction or general operand.");
+});
+
 test("Phase 82 renders INVOKE, ADDR, and MASM32 runtime diagnostics exactly", () => {
   const name = "phase82-invoke-stdout";
   const source = `.data
@@ -4158,7 +4219,7 @@ test("renders Phase 57-CORR1 cross-region CONST overlap diagnostic exactly", () 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.instructionCount, 3);
   assert.deepEqual(json.memoryChanges, []);
   assert.equal(json.registers.EAX.hex, "005FFFFEh");
@@ -4179,7 +4240,7 @@ test("renders Phase 57-CORR1 cross-region CONST read diagnostic exactly", () => 
   const source = fixtureSource(name);
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.deepEqual(json.memoryChanges, []);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -5617,9 +5678,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5679,9 +5740,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "warn"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 6);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5739,9 +5800,9 @@ END main
     MASM32_DIAGNOSTIC_UNDEFINED_FLAG_USE: "error"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 2);
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -5776,9 +5837,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 2);
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.currentInstructionIndex, 1);
@@ -5827,9 +5888,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
@@ -5868,9 +5929,9 @@ END main
 
   const defaultResult = runFixture("phase71fExitTerminatesBeforeFallthroughDefault", source);
   assertRunStatus(defaultResult.json, true, "ok");
-  assert.equal(defaultResult.json.phase, 82);
+  assert.equal(defaultResult.json.phase, 83);
   assert.equal(defaultResult.json.phaseSuffix, "");
-  assert.equal(defaultResult.json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(defaultResult.json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(defaultResult.json.entryProcedureEndMode, "code-stream");
   assert.equal(defaultResult.json.instructionCount, 2);
   assert.equal(defaultResult.json.executedInstructionCount, 2);
@@ -5890,9 +5951,9 @@ END main
     MASM32_DIAGNOSTIC_ENTRY_PROCEDURE_END_MODE: "stop-at-entry-end"
   });
   assertRunStatus(stopResult.json, true, "ok");
-  assert.equal(stopResult.json.phase, 82);
+  assert.equal(stopResult.json.phase, 83);
   assert.equal(stopResult.json.phaseSuffix, "");
-  assert.equal(stopResult.json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(stopResult.json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(stopResult.json.entryProcedureEndMode, "stop-at-entry-end");
   assert.equal(stopResult.json.instructionCount, 2);
   assert.equal(stopResult.json.executedInstructionCount, 2);
@@ -5932,7 +5993,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "1" });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.callDepthLimit, 1);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5968,7 +6029,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source, { MASM32_DIAGNOSTIC_CALL_DEPTH_LIMIT: "0" });
   assertRunStatus(json, false, "invalid-argument");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.callDepthLimit, 0);
   assert.deepEqual(json.memoryChanges, []);
   assertNoExecutionComplete(json.simulatorMessages);
@@ -5995,9 +6056,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6029,9 +6090,9 @@ END front
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 1);
   assert.equal(json.executedInstructionCount, 1);
   assert.equal(json.currentInstructionIndex, 0);
@@ -6119,9 +6180,9 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.executedInstructionCount, 2);
   assert.equal(json.registers.ECX.hex, "00000000h");
   assert.equal(json.registers.EDX.hex, "00000000h");
@@ -6377,8 +6438,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "allocated-object-strict"
   });
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phase, 83);
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.instructionCount, 0);
   assert.deepEqual(json.memoryChanges, []);
   assert.deepEqual(json.simulatorMessages, [
@@ -6409,8 +6470,8 @@ END main
     MASM32_DIAGNOSTIC_MEMORY_VALIDATION: "uninitialized-read-warnings"
   });
   assertRunStatus(json, true, "ok");
-  assert.equal(json.phase, 82);
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phase, 83);
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.equal(json.registers.EAX.hex, "00000000h");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -6459,8 +6520,8 @@ END Other
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
-  assert.equal(json.phaseName, "Phase 82 - INVOKE Zero-Argument User Procedure Calls");
+  assert.equal(json.phase, 83);
+  assert.equal(json.phaseName, "Phase 83 - ADDR Preparation for Future INVOKE Arguments");
   assert.deepEqual(json.simulatorMessages, [
     {
       kind: "assembly-error",
@@ -7222,7 +7283,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assert.deepEqual(json.simulatorMessages, [
     {
@@ -7450,7 +7511,7 @@ END MyProc
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7475,7 +7536,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7499,7 +7560,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "parse-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "assembly-error",
@@ -7529,7 +7590,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7564,7 +7625,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assertNoExecutionComplete(json.simulatorMessages);
   assertMessageEquals(json.simulatorMessages[0], {
     kind: "runtime-error",
@@ -7665,7 +7726,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.phaseSuffix, "");
   assert.equal(json.registers.ESP.hex, "00000000h");
   assert.equal(json.registers.EAX.hex, "00000000h");
@@ -8468,7 +8529,7 @@ END main
 `;
   const { json, rawJson, rendered } = runFixture(name, source);
   assertRunStatus(json, false, "execution-error");
-  assert.equal(json.phase, 82);
+  assert.equal(json.phase, 83);
   assert.equal(json.memoryChanges.length, 0, rawJson);
   assert.deepEqual(json.simulatorMessages, [
     {

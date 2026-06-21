@@ -458,7 +458,7 @@ The simulator must not execute instructions that appear before the selected entr
 
 Multiple procedures may be accepted as structural declarations without implying automatic execution before the selected entry point. Accepting multiple procedure declarations does not itself call them, return from them, create stack frames, or create hidden stops. A non-entry procedure executes when reached by ordinary VM code-stream fallthrough after the selected entry point or by an explicitly supported control-transfer feature, such as direct user-procedure CALL after Phase 69.
 
-`PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later completed procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, `LOCAL` declaration metadata, automatic Phase 79 LOCAL frame behavior, Phase 80 local operand behavior, Phase 81 limited `PROTO` metadata, and Phase 82 zero-argument `INVOKE` to same-file user procedures. Parameters, `INVOKE` arguments, `ADDR`, additional stack-frame behavior, pointer or unnamed prototype parameters, executable prototype behavior, and calling-convention metadata remain assigned only to future accepted phases.
+`PROC` starts with limited structural and entry-boundary behavior. Direct user-procedure `CALL` is added by Phase 69. Later completed procedure phases add `RET`, root-return behavior, any additional simulator-owned CALL target forms only where explicitly assigned, `USES`, `LOCAL` declaration metadata, automatic Phase 79 LOCAL frame behavior, Phase 80 local operand behavior, Phase 81 limited `PROTO` metadata, Phase 82 zero-argument `INVOKE` to same-file user procedures, and Phase 83 helper-level `ADDR symbol` preparation for future INVOKE arguments. Parameters, executable `INVOKE` arguments, source-level executable `ADDR`, general `ADDR` operands, additional stack-frame behavior, pointer or unnamed prototype parameters, executable prototype behavior, and calling-convention metadata remain assigned only to future accepted phases.
 
 This distinction is mandatory:
 
@@ -490,7 +490,7 @@ Procedure-boundary fallthrough diagnostics and optional beginner compatibility s
 
 The optional Phase 71E entry-procedure auto-stop compatibility setting preserves selected-entry `ENDP` auto-success for beginner examples only when explicitly enabled. The setting is limited to ordinary fallthrough at the selected entry procedure's `ENDP` boundary and must not legalize helper-procedure fallthrough.
 
-None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame features beyond accepted simulator-owned procedure phases, unsupported LOCAL operand forms, executable `PROTO` behavior, `INVOKE` arguments, `ADDR`, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns LOCAL declaration metadata, Phase 78A owns limited `OPTION NOKEYWORD` parser keyword opt-out for `LOOP` and `OFFSET`, Phase 79 owns automatic LOCAL frame allocation/lifetime for selected-entry and direct-CALL procedure paths, Phase 80 owns supported LOCAL operand resolution/addressing, Phase 81 owns limited parser-only `PROTO` metadata, and Phase 82 owns zero-argument `INVOKE` to same-file user procedures.
+None of these rules implement native x86 byte execution, PE loading, Windows process teardown, WinAPI calls, stack-frame features beyond accepted simulator-owned procedure phases, unsupported LOCAL operand forms, executable `PROTO` behavior, `INVOKE` arguments, source-level executable `ADDR`, general `ADDR` operands, or additional Irvine32 routine dispatch unless a separate accepted phase owns those features. Phase 78 owns LOCAL declaration metadata, Phase 78A owns limited `OPTION NOKEYWORD` parser keyword opt-out for `LOOP` and `OFFSET`, Phase 79 owns automatic LOCAL frame allocation/lifetime for selected-entry and direct-CALL procedure paths, Phase 80 owns supported LOCAL operand resolution/addressing, Phase 81 owns limited parser-only `PROTO` metadata, Phase 82 owns zero-argument `INVOKE` to same-file user procedures, and Phase 83 owns helper-level `ADDR symbol` preparation for future INVOKE arguments.
 
 #### 8.1.1B Procedure-Fallthrough Diagnostic Policy
 
@@ -1751,7 +1751,7 @@ Extended loop helpers:
 Stack/procedure convenience:
 
 - `ENTER`/automatic frame setup
-- executable procedure-frame conveniences beyond implemented LOCAL, limited `PROTO` metadata, and Phase 82 zero-argument same-file user-procedure `INVOKE`, including `INVOKE` arguments and `ADDR`
+- executable procedure-frame conveniences beyond implemented LOCAL, limited `PROTO` metadata, Phase 82 zero-argument same-file user-procedure `INVOKE`, and Phase 83 helper-level `ADDR symbol` preparation, including executable `INVOKE` arguments, source-level executable `ADDR`, and general `ADDR` operands
 
 Conditional byte set:
 
@@ -3687,7 +3687,7 @@ The required staging is:
 
 7. **Root procedure termination.** Entry-procedure root RET and non-entry procedure fallthrough diagnostics are finalized after CALL and RET make those paths meaningful. Earlier phases must not add temporary root-return or helper-procedure termination behavior merely to make their own tests easier.
 
-8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, direct-CALL `PROC USES` register save/restore, limited parser-only `PROTO` metadata, and zero-argument same-file user-procedure `INVOKE` are implemented in their owning phases. Remaining expanded features such as executable PROTO behavior, pointer or unnamed prototype parameters, VARARG, INVOKE arguments, ADDR, stack-frame display, Irvine32 routine dispatch, Irvine32 stack effects, and procedure-frame behavior beyond Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, supported source-level LOCAL operand addressing is implemented by Phase 80, limited `PROTO` metadata is implemented by Phase 81, and zero-argument same-file user-procedure `INVOKE` is implemented by Phase 82. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
+8. **Expanded procedure and stack features.** Source-level `PUSH`, source-level `POP`, call-depth diagnostics, LEAVE, near `RET imm16`, direct-CALL `PROC USES` register save/restore, limited parser-only `PROTO` metadata, zero-argument same-file user-procedure `INVOKE`, and helper-level `ADDR symbol` preparation are implemented in their owning phases. Remaining expanded features such as executable PROTO behavior, pointer or unnamed prototype parameters, VARARG, executable INVOKE arguments, source-level executable ADDR and general ADDR operands, stack-frame display, Irvine32 routine dispatch, Irvine32 stack effects, and procedure-frame behavior beyond Phase 83 helper-level ADDR preparation, Phase 82 zero-argument INVOKE, Phase 81 PROTO metadata, and Phase 80 LOCAL operand access must remain deferred until their owning phases. LOCAL declaration metadata is implemented by Phase 78, automatic runtime LOCAL frame allocation/lifetime is implemented by Phase 79, supported source-level LOCAL operand addressing is implemented by Phase 80, limited `PROTO` metadata is implemented by Phase 81, zero-argument same-file user-procedure `INVOKE` is implemented by Phase 82, and helper-level `ADDR symbol` preparation is implemented by Phase 83. Future phases must preserve the already accepted phase numbering unless the guide is deliberately renumbered.
 
 Each stage must preserve the C99 core boundary, central checked memory helpers, planned-read/planned-write validation where memory is accessed, structured diagnostics, rendered Simulator Messages tests, and no-partial-mutation guarantees for fatal runtime failures.
 
@@ -3745,7 +3745,7 @@ The root terminal mechanism must not be exposed as:
 - a public source-run JSON `memoryChanges` row;
 - source-level PUSH/POP behavior;
 - stack-frame support;
-- unsupported LOCAL operand addressing, executable PROTO behavior, INVOKE arguments, ADDR, or calling-convention support;
+- unsupported LOCAL operand addressing, executable PROTO behavior, INVOKE arguments, source-level executable ADDR, general ADDR operands, or calling-convention support;
 - Irvine32 callable routine dispatch;
 - permission to return to arbitrary pseudo-EIP values;
 - permission to execute outside the selected source program.
@@ -3813,7 +3813,7 @@ The educational frame model is explicit:
 
 Phase 82 educational `INVOKE` behavior is deterministic and staged. The first executable `INVOKE` phase supports only zero-argument calls to same-file user procedures and lowers them to the same checked internal control-transfer behavior as direct user-procedure `CALL`. Phase 82 does not parse, evaluate, push, or clean up arguments.
 
-A later `ADDR`-preparation phase may define helper-level metadata for `ADDR dataSymbol`, `ADDR dataQuestionSymbol`, `ADDR constSymbol`, and `ADDR localSymbol` as future `INVOKE` arguments. That phase must not make `ADDR` a general source-level operand and must not make any source-level `INVOKE`-with-arguments program execute.
+Phase 83 defines helper-level metadata for `ADDR dataSymbol`, `ADDR dataQuestionSymbol`, `ADDR constSymbol`, and `ADDR localSymbol` as future `INVOKE` arguments. This helper-level preparation does not make `ADDR` a general source-level operand and does not make any source-level `INVOKE`-with-arguments program execute.
 
 A later `INVOKE`-argument phase may support a limited educational DWORD stack-argument subset. That phase must explicitly define push order, accepted argument forms, argument-count checks against PROTO/PROC metadata, stack cleanup validation, source-span diagnostics, rollback or no-partial-mutation behavior for failed validation, and rendered Simulator Messages. Full MASM calling-convention inference, external procedure invocation, Windows ABI behavior, WinAPI calls, import libraries, PE loading, object linking, C runtime calls, host callbacks, and native x86 execution remain outside the simulator boundary.
 

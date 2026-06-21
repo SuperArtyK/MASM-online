@@ -1,6 +1,6 @@
 /*
  * @file test_parser.c
- * @brief Unit and integration tests for parser behavior through Phase 82 zero-argument INVOKE coverage.
+ * @brief Unit and integration tests for parser behavior through Phase 83 ADDR preparation coverage.
  *
  * These tests verify parsing of tiny .code programs into the existing IR,
  * Phase 58 code-label metadata and diagnostics, Phase 60 direct JMP
@@ -8,7 +8,7 @@
  * Phase 67A procedure-range metadata, Phase 68 call-target classification
  * metadata, Phase 68B EIP source-operand restrictions, Phase 69 direct CALL,
  * Phase 70 plain near RET, Phase 72A source-level PUSH/POP, Phase 73
- * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, unsupported syntax, INCLUDELIB non-goal diagnostics,
+ * LEAVE syntax, Phase 74 RET imm16, Phase 75 PROC diagnostics, Phase 76 PROC USES metadata, Phase 78 LOCAL parser metadata, Phase 78A limited OPTION NOKEYWORD support, Phase 81 PROTO metadata, Phase 82 zero-argument INVOKE parsing and targeted INVOKE diagnostics, Phase 83 helper-level ADDR record preparation, unsupported syntax, INCLUDELIB non-goal diagnostics,
  * and integration with the current executor
  * without adding future execution behavior.
  */
@@ -369,6 +369,245 @@ static VmParserCallTargetContext call_target_context_for_test(
     context.numeric_equate_count = result->numeric_equate_count;
     context.case_policy = policy;
     return context;
+}
+
+
+/// Builds a Phase 83 ADDR helper context from parser test buffers.
+///
+/// @param buffers Parser buffers containing metadata tables.
+/// @param result Parser result containing table counts.
+/// @param policy Reference-time CASEMAP policy for the query.
+/// @return ADDR helper context for direct helper calls.
+static VmParserAddrArgumentContext addr_argument_context_for_test(
+    const ParserTestBuffers *buffers,
+    const VmParserResult *result,
+    VmSymbolCasePolicy policy
+) {
+    VmParserAddrArgumentContext context;
+
+    memset(&context, 0, sizeof(context));
+    context.symbols = buffers->symbols;
+    context.symbol_count = result->symbol_count;
+    context.numeric_equates = buffers->numeric_equates;
+    context.numeric_equate_count = result->numeric_equate_count;
+    context.case_policy = policy;
+    return context;
+}
+
+/// Lexes a one-line ADDR helper snippet for Phase 83 direct helper tests.
+///
+/// @param source Source snippet to tokenize.
+/// @param tokens Caller-owned token buffer.
+/// @param token_capacity Number of token entries available.
+/// @param out_result Receives lexer counts.
+/// @return Lexer status.
+static VmLexerStatus lex_addr_helper_snippet(
+    const char *source,
+    VmLexerToken *tokens,
+    size_t token_capacity,
+    VmLexerResult *out_result
+) {
+    VmLexerDiagnostic diagnostics[4];
+
+    memset(tokens, 0, sizeof(tokens[0]) * token_capacity);
+    memset(diagnostics, 0, sizeof(diagnostics));
+    return vm_lexer_tokenize(source, tokens, token_capacity, diagnostics, 4U, out_result);
+}
+
+/// Finds a parsed symbol by exact source spelling in parser test buffers.
+///
+/// @param buffers Parser buffers containing the symbol table.
+/// @param result Parser result with the valid symbol count.
+/// @param name Exact source spelling to find.
+/// @return Matching symbol, or NULL when no exact match exists.
+static const VmSymbol *find_symbol_for_test(
+    const ParserTestBuffers *buffers,
+    const VmParserResult *result,
+    const char *name
+) {
+    size_t index = 0U;
+
+    for (index = 0U; index < result->symbol_count; index += 1U) {
+        if (strcmp(buffers->symbols[index].name, name) == 0) {
+            return &buffers->symbols[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Verifies Phase 83 helper-level ADDR records for data, .DATA?, .CONST, and LOCAL symbols.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase83_addr_argument_helper_records(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserAddrArgumentContext context;
+    VmParserAddrArgumentRecord record;
+    VmParserDiagnostic diagnostic;
+    VmLexerToken tokens[8];
+    VmLexerResult lexer_result;
+    const VmSymbol *msg_symbol = NULL;
+    const VmSymbol *uninit_symbol = NULL;
+    const VmSymbol *const_symbol = NULL;
+    const VmProcedureLocalSymbol *local = NULL;
+    const uint32_t frame_base = 0x10000U;
+    const char *source =
+        ".data\n"
+        "msg BYTE \"A\", 0\n"
+        ".DATA?\n"
+        "uninit DWORD ?\n"
+        ".CONST\n"
+        "fixed DWORD 123\n"
+        ".code\n"
+        "main PROC\n"
+        "    LOCAL temp:DWORD\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 83 ADDR helper metadata fixture should parse");
+    msg_symbol = find_symbol_for_test(&buffers, &result, "msg");
+    uninit_symbol = find_symbol_for_test(&buffers, &result, "uninit");
+    const_symbol = find_symbol_for_test(&buffers, &result, "fixed");
+    failures += expect_bool(msg_symbol != NULL, "msg symbol should exist for ADDR helper test");
+    failures += expect_bool(uninit_symbol != NULL, "uninit symbol should exist for ADDR helper test");
+    failures += expect_bool(const_symbol != NULL, "fixed .CONST symbol should exist for ADDR helper test");
+    failures += expect_bool(result.procedure_range_count > 0U, "procedure metadata should exist for LOCAL ADDR helper test");
+    if (failures != 0) {
+        return failures;
+    }
+
+    context = addr_argument_context_for_test(&buffers, &result, VM_SYMBOL_CASE_POLICY_ALL);
+
+    failures += expect_parser_status(
+        lex_addr_helper_snippet("ADDR msg", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK ? VM_PARSER_STATUS_OK : VM_PARSER_STATUS_LEXER_FAILED,
+        VM_PARSER_STATUS_OK,
+        "ADDR msg helper snippet should lex"
+    );
+    failures += expect_bool(vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR msg should build a helper record");
+    failures += expect_u32(record.address, msg_symbol->address, "ADDR msg should preserve the data symbol address");
+    failures += expect_size(record.addr_source_location.column, 1U, "ADDR keyword span should preserve column");
+    failures += expect_size(record.addr_source_span_length, 4U, "ADDR keyword span should preserve length");
+    failures += expect_size(record.operand_source_location.column, 6U, "ADDR operand span should preserve column");
+    failures += expect_size(record.operand_source_span_length, 3U, "ADDR operand span should preserve length");
+    failures += expect_bool(!record.is_const_storage, "ADDR msg should not be marked const");
+    failures += expect_bool(!record.is_uninitialized_storage, "ADDR msg should not be marked .DATA?");
+
+    failures += expect_parser_status(
+        lex_addr_helper_snippet("addr uninit", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK ? VM_PARSER_STATUS_OK : VM_PARSER_STATUS_LEXER_FAILED,
+        VM_PARSER_STATUS_OK,
+        "lowercase addr helper snippet should lex"
+    );
+    failures += expect_bool(vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR uninit should build a helper record");
+    failures += expect_u32(record.address, uninit_symbol->address, "ADDR .DATA? symbol should preserve the data-region address");
+    failures += expect_bool(record.is_uninitialized_storage, "ADDR .DATA? symbol should retain uninitialized-origin metadata");
+
+    failures += expect_parser_status(
+        lex_addr_helper_snippet("ADDR fixed", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK ? VM_PARSER_STATUS_OK : VM_PARSER_STATUS_LEXER_FAILED,
+        VM_PARSER_STATUS_OK,
+        "ADDR fixed helper snippet should lex"
+    );
+    failures += expect_bool(vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR fixed should build a helper record");
+    failures += expect_u32(record.address, const_symbol->address, "ADDR .CONST symbol should preserve the const address");
+    failures += expect_bool(record.is_const_storage, "ADDR .CONST symbol should be marked const without implying write access");
+
+    context.active_procedure = &buffers.procedure_ranges[0];
+    context.active_local_frame_base_address = frame_base;
+    context.has_active_local_frame = true;
+    local = &buffers.procedure_ranges[0].locals[0];
+    failures += expect_parser_status(
+        lex_addr_helper_snippet("ADDR temp", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK ? VM_PARSER_STATUS_OK : VM_PARSER_STATUS_LEXER_FAILED,
+        VM_PARSER_STATUS_OK,
+        "ADDR local helper snippet should lex"
+    );
+    failures += expect_bool(vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR temp should build with an explicit active local frame");
+    failures += expect_u32(record.address, (uint32_t)((int64_t)frame_base + (int64_t)local->ebp_offset), "ADDR local should compute the active frame-relative address");
+    failures += expect_bool(record.is_local_storage, "ADDR local should mark the helper record as local storage");
+    failures += expect_i32(record.local_ebp_offset, local->ebp_offset, "ADDR local should preserve the LOCAL EBP offset");
+
+    return failures;
+}
+
+/// Verifies Phase 83 helper-level ADDR diagnostics and source-level ADDR rejection.
+///
+/// @return Zero on success, otherwise a positive failure count.
+static int test_phase83_addr_argument_diagnostics(void) {
+    int failures = 0;
+    ParserTestBuffers buffers;
+    VmParserResult result;
+    VmParserAddrArgumentContext context;
+    VmParserAddrArgumentRecord record;
+    VmParserDiagnostic diagnostic;
+    VmLexerToken tokens[8];
+    VmLexerResult lexer_result;
+    const char *metadata_source =
+        ".data\n"
+        "msg DWORD 1\n"
+        "COUNT EQU 4\n"
+        ".code\n"
+        "main PROC\n"
+        "    ret\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *standalone_addr =
+        ".data\n"
+        "msg DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    ADDR msg\n"
+        "main ENDP\n"
+        "END main\n";
+    const char *source_operand_addr =
+        ".data\n"
+        "msg DWORD 1\n"
+        ".code\n"
+        "main PROC\n"
+        "    mov eax, ADDR msg\n"
+        "main ENDP\n"
+        "END main\n";
+
+    failures += expect_parser_status(parse_for_test(metadata_source, &buffers, &result), VM_PARSER_STATUS_OK, "Phase 83 ADDR diagnostic metadata fixture should parse");
+    context = addr_argument_context_for_test(&buffers, &result, VM_SYMBOL_CASE_POLICY_ALL);
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR eax", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR register snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR register should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, "ADDR register should report invalid-addr-target");
+    failures += expect_size(diagnostic.location.column, 6U, "ADDR register diagnostic should point to operand");
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR 123", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR immediate snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR immediate should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, "ADDR immediate should report invalid-addr-target");
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR COUNT", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR equate snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR numeric equate should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, "ADDR numeric equate should report invalid-addr-target");
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR [eax]", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR memory-expression snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[4], &record, &diagnostic), "ADDR memory expression should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET, "ADDR memory expression should report invalid-addr-target");
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR Unknown", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR unknown snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR unknown symbol should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL, "ADDR unknown symbol should report unknown-addr-symbol");
+
+    failures += expect_bool(lex_addr_helper_snippet("ADDR msg + 4", tokens, 8U, &lexer_result) == VM_LEXER_STATUS_OK, "ADDR computed expression snippet should lex");
+    failures += expect_bool(!vm_parser_build_addr_argument_record(&context, &tokens[0], &tokens[1], &tokens[2], &record, &diagnostic), "ADDR computed expression should reject");
+    failures += expect_parser_diagnostic_code(diagnostic.code, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION, "ADDR computed expression should report unsupported-addr-expression");
+
+    failures += expect_parser_status(parse_for_test(standalone_addr, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "source-level standalone ADDR should reject");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, "standalone ADDR should report addr-outside-invoke");
+
+    failures += expect_parser_status(parse_for_test(source_operand_addr, &buffers, &result), VM_PARSER_STATUS_OK_WITH_DIAGNOSTICS, "source-level ADDR source operand should reject");
+    failures += expect_parser_diagnostic_code(buffers.diagnostics[0].code, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, "general source operand ADDR should report addr-outside-invoke");
+
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET), "invalid-addr-target", "invalid ADDR target code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE), "addr-outside-invoke", "ADDR outside INVOKE code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL), "unknown-addr-symbol", "unknown ADDR symbol code name should be stable");
+    failures += expect_string(vm_parser_diagnostic_code_name(VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION), "unsupported-addr-expression", "unsupported ADDR expression code name should be stable");
+
+    return failures;
 }
 
 /// Verifies one source sample reports the generic unsupported-feature diagnostic.
@@ -8462,6 +8701,8 @@ int main(void) {
     failures += test_phase57p_host_include_path_diagnostics();
     failures += test_phase57q_includelib_diagnostics();
     failures += test_phase82_invoke_addr_external_routine_diagnostics();
+    failures += test_phase83_addr_argument_helper_records();
+    failures += test_phase83_addr_argument_diagnostics();
     failures += test_phase41_irvine32_routine_diagnostics();
     failures += test_phase42_irvine32_exit_terminator_parser_paths();
     failures += test_phase43_inc_dec_parse_to_ir();
@@ -8508,6 +8749,6 @@ int main(void) {
         return 1;
     }
 
-    printf("Parser tests through Phase 82 INVOKE zero-argument coverage passed.\n");
+    printf("Parser tests through Phase 83 ADDR preparation coverage passed.\n");
     return 0;
 }

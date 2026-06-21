@@ -19,8 +19,9 @@
  * saves and restores PROC USES registers for direct CALL/RET paths. Phase 79
  * creates and releases automatic LOCAL stack frames for selected-entry and
  * direct-CALL procedure paths. Phase 80 resolves supported source-level LOCAL
- * operands against active automatic frames. ENTER, far returns, ADDR, INVOKE,
- * and non-exit Irvine32 routines remain later milestones; Phase 69 direct user-procedure CALL
+ * operands against active automatic frames. ENTER, far returns, executable
+ * source-level ADDR, INVOKE argument lowering, and non-exit Irvine32 routines
+ * remain later milestones; Phase 69 direct user-procedure CALL
  * performs its internal checked return-token stack write, Phase 70 helper RET
  * performs its internal checked return-token stack read, and Phase 71 treats a
  * root-code-stream RET as successful program termination by default, and

@@ -613,6 +613,326 @@ static VmSymbolCasePolicy vm_parser_symbol_case_policy(VmParserUserSymbolCasePol
     return policy == VM_PARSER_USER_SYMBOL_CASEMAP_NONE ? VM_SYMBOL_CASE_POLICY_NONE : VM_SYMBOL_CASE_POLICY_ALL;
 }
 
+
+/// Returns whether a token can terminate a helper-level ADDR argument record.
+///
+/// @param token Token after the ADDR operand, or NULL when the caller has no tail token.
+/// @return true when @p token is absent, EOF, or a line end.
+static bool vm_parser_addr_tail_is_empty(const VmLexerToken *token) {
+    return token == NULL || token->kind == VM_LEXER_TOKEN_EOF || token->kind == VM_LEXER_TOKEN_NEWLINE;
+}
+
+/// Copies one token-scoped diagnostic into a caller-owned public diagnostic slot.
+///
+/// @param diagnostic Destination diagnostic, or NULL when the caller does not need it.
+/// @param code Parser diagnostic code to store.
+/// @param token Token associated with the diagnostic.
+/// @param message Diagnostic message.
+static void vm_parser_fill_public_diagnostic(
+    VmParserDiagnostic *diagnostic,
+    VmParserDiagnosticCode code,
+    const VmLexerToken *token,
+    const char *message
+) {
+    if (diagnostic == NULL) {
+        return;
+    }
+
+    memset(diagnostic, 0, sizeof(*diagnostic));
+    diagnostic->code = code;
+    diagnostic->severity = VM_PARSER_DIAGNOSTIC_SEVERITY_ERROR;
+    if (token != NULL) {
+        diagnostic->location = token->location;
+        diagnostic->lexeme = token->lexeme;
+        diagnostic->lexeme_length = token->lexeme_length;
+    }
+    if (message != NULL) {
+        (void)snprintf(diagnostic->message_storage, sizeof(diagnostic->message_storage), "%s", message);
+        diagnostic->message = diagnostic->message_storage;
+    }
+}
+
+/// Returns whether a public numeric-equate metadata entry matches a token.
+///
+/// @param equate Numeric-equate metadata entry.
+/// @param token Candidate reference token.
+/// @param policy Active CASEMAP policy.
+/// @return true when @p token names @p equate under @p policy.
+static bool vm_parser_numeric_equate_name_matches(
+    const VmNumericEquate *equate,
+    const VmLexerToken *token,
+    VmSymbolCasePolicy policy
+) {
+    VmSymbol symbol_like;
+
+    if (equate == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    memset(&symbol_like, 0, sizeof(symbol_like));
+    if (!vm_symbol_set_name(&symbol_like, equate->name, strlen(equate->name))) {
+        return false;
+    }
+    return vm_symbol_name_equals_with_policy(&symbol_like, token->lexeme, token->lexeme_length, policy);
+}
+
+/// Finds a public numeric-equate metadata entry by token spelling.
+///
+/// @param equates Numeric-equate metadata table.
+/// @param equate_count Number of valid entries in @p equates.
+/// @param token Candidate reference token.
+/// @param policy Active CASEMAP policy.
+/// @return Matching equate, or NULL when none matched.
+static const VmNumericEquate *vm_parser_find_numeric_equate_metadata(
+    const VmNumericEquate *equates,
+    size_t equate_count,
+    const VmLexerToken *token,
+    VmSymbolCasePolicy policy
+) {
+    size_t index = 0U;
+
+    if (equates == NULL || token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < equate_count; index += 1U) {
+        if (vm_parser_numeric_equate_name_matches(&equates[index], token, policy)) {
+            return &equates[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Returns whether a procedure-local metadata entry matches a token.
+///
+/// @param local Procedure-local metadata entry.
+/// @param token Candidate reference token.
+/// @param policy Active CASEMAP policy.
+/// @return true when @p token names @p local under @p policy.
+static bool vm_parser_public_local_name_matches(
+    const VmProcedureLocalSymbol *local,
+    const VmLexerToken *token,
+    VmSymbolCasePolicy policy
+) {
+    VmSymbol symbol_like;
+
+    if (local == NULL || token == NULL || token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        return false;
+    }
+
+    memset(&symbol_like, 0, sizeof(symbol_like));
+    if (!vm_symbol_set_name(&symbol_like, local->name, strlen(local->name))) {
+        return false;
+    }
+    return vm_symbol_name_equals_with_policy(&symbol_like, token->lexeme, token->lexeme_length, policy);
+}
+
+/// Finds an active-procedure LOCAL metadata entry by token spelling.
+///
+/// @param procedure Procedure metadata to inspect.
+/// @param token Candidate reference token.
+/// @param policy Active CASEMAP policy.
+/// @return Matching LOCAL entry, or NULL when none matched.
+static const VmProcedureLocalSymbol *vm_parser_find_active_local_metadata(
+    const VmProcedureRange *procedure,
+    const VmLexerToken *token,
+    VmSymbolCasePolicy policy
+) {
+    size_t index = 0U;
+
+    if (procedure == NULL || token == NULL) {
+        return NULL;
+    }
+
+    for (index = 0U; index < procedure->local_count; index += 1U) {
+        if (vm_parser_public_local_name_matches(&procedure->locals[index], token, policy)) {
+            return &procedure->locals[index];
+        }
+    }
+
+    return NULL;
+}
+
+/// Populates an ADDR argument record from a data or .CONST symbol.
+///
+/// @param addr_token Source ADDR token.
+/// @param operand_token Source symbol token.
+/// @param symbol Matched data/.DATA?/.CONST symbol.
+/// @param out_record Destination record.
+static void vm_parser_fill_symbol_addr_argument_record(
+    const VmLexerToken *addr_token,
+    const VmLexerToken *operand_token,
+    const VmSymbol *symbol,
+    VmParserAddrArgumentRecord *out_record
+) {
+    memset(out_record, 0, sizeof(*out_record));
+    out_record->address = symbol->address;
+    out_record->addr_source_location = addr_token->location;
+    out_record->addr_source_span_length = addr_token->lexeme_length;
+    out_record->operand_source_location = operand_token->location;
+    out_record->operand_source_span_length = operand_token->lexeme_length;
+    out_record->is_const_storage = vm_symbol_is_read_only(symbol);
+    out_record->is_uninitialized_storage = vm_symbol_is_uninitialized_storage(symbol);
+}
+
+/// Populates an ADDR argument record from an active-frame LOCAL symbol.
+///
+/// @param context ADDR helper context containing the active frame base.
+/// @param addr_token Source ADDR token.
+/// @param operand_token Source LOCAL token.
+/// @param local Matched LOCAL metadata entry.
+/// @param out_record Destination record.
+static void vm_parser_fill_local_addr_argument_record(
+    const VmParserAddrArgumentContext *context,
+    const VmLexerToken *addr_token,
+    const VmLexerToken *operand_token,
+    const VmProcedureLocalSymbol *local,
+    VmParserAddrArgumentRecord *out_record
+) {
+    int64_t address = (int64_t)context->active_local_frame_base_address + (int64_t)local->ebp_offset;
+
+    memset(out_record, 0, sizeof(*out_record));
+    out_record->address = (uint32_t)address;
+    out_record->addr_source_location = addr_token->location;
+    out_record->addr_source_span_length = addr_token->lexeme_length;
+    out_record->operand_source_location = operand_token->location;
+    out_record->operand_source_span_length = operand_token->lexeme_length;
+    out_record->is_local_storage = true;
+    out_record->local_ebp_offset = local->ebp_offset;
+}
+
+bool vm_parser_build_addr_argument_record(
+    const VmParserAddrArgumentContext *context,
+    const VmLexerToken *addr_token,
+    const VmLexerToken *operand_token,
+    const VmLexerToken *tail_token,
+    VmParserAddrArgumentRecord *out_record,
+    VmParserDiagnostic *out_diagnostic
+) {
+    const VmSymbol *symbol = NULL;
+    VmSymbolLookupStatus symbol_lookup_status = VM_SYMBOL_LOOKUP_NOT_FOUND;
+    const VmProcedureLocalSymbol *local = NULL;
+    VmSymbolCasePolicy policy = VM_SYMBOL_CASE_POLICY_ALL;
+
+    if (out_record != NULL) {
+        memset(out_record, 0, sizeof(*out_record));
+    }
+    if (out_diagnostic != NULL) {
+        memset(out_diagnostic, 0, sizeof(*out_diagnostic));
+    }
+
+    if (context == NULL || addr_token == NULL || out_record == NULL ||
+        addr_token->kind != VM_LEXER_TOKEN_IDENTIFIER || !vm_parser_token_equals(addr_token, "ADDR")) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE,
+            addr_token,
+            "ADDR argument records can be built only by the future INVOKE-argument helper path."
+        );
+        return false;
+    }
+
+    policy = context->case_policy;
+
+    if (operand_token == NULL || operand_token->kind == VM_LEXER_TOKEN_EOF || operand_token->kind == VM_LEXER_TOKEN_NEWLINE) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+            addr_token,
+            "ADDR requires a following addressable data, .CONST, .DATA?, or active-frame LOCAL symbol."
+        );
+        return false;
+    }
+
+    if (operand_token->kind != VM_LEXER_TOKEN_IDENTIFIER) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+            operand_token,
+            "ADDR target must be an addressable data, .CONST, .DATA?, or active-frame LOCAL symbol."
+        );
+        return false;
+    }
+
+    if (!vm_parser_addr_tail_is_empty(tail_token)) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION,
+            tail_token,
+            "ADDR supports only a plain symbol in the helper path; computed address expressions are deferred to a future INVOKE-argument milestone."
+        );
+        return false;
+    }
+
+    symbol = vm_symbol_find_by_name_with_policy(
+        context->symbols,
+        context->symbol_count,
+        operand_token->lexeme,
+        operand_token->lexeme_length,
+        policy,
+        &symbol_lookup_status
+    );
+    if (symbol != NULL) {
+        vm_parser_fill_symbol_addr_argument_record(addr_token, operand_token, symbol, out_record);
+        return true;
+    }
+
+    local = vm_parser_find_active_local_metadata(context->active_procedure, operand_token, policy);
+    if (local != NULL) {
+        int64_t address = 0;
+        if (!context->has_active_local_frame) {
+            vm_parser_fill_public_diagnostic(
+                out_diagnostic,
+                VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+                operand_token,
+                "ADDR local targets require an explicitly active procedure frame in the helper context."
+            );
+            return false;
+        }
+        address = (int64_t)context->active_local_frame_base_address + (int64_t)local->ebp_offset;
+        if (address < 0 || address > (int64_t)UINT32_MAX) {
+            vm_parser_fill_public_diagnostic(
+                out_diagnostic,
+                VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+                operand_token,
+                "ADDR local target address is outside the supported 32-bit address range."
+            );
+            return false;
+        }
+        vm_parser_fill_local_addr_argument_record(context, addr_token, operand_token, local, out_record);
+        return true;
+    }
+
+    if (symbol_lookup_status == VM_SYMBOL_LOOKUP_AMBIGUOUS) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_AMBIGUOUS_SYMBOL,
+            operand_token,
+            "Multiple data symbols match this ADDR target under CASEMAP:ALL because their names differ only by letter case."
+        );
+        return false;
+    }
+
+    if (vm_parser_find_numeric_equate_metadata(context->numeric_equates, context->numeric_equate_count, operand_token, policy) != NULL) {
+        vm_parser_fill_public_diagnostic(
+            out_diagnostic,
+            VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET,
+            operand_token,
+            "ADDR requires addressable storage, not a numeric equate."
+        );
+        return false;
+    }
+
+    vm_parser_fill_public_diagnostic(
+        out_diagnostic,
+        VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL,
+        operand_token,
+        "ADDR references an unknown addressable data, .CONST, .DATA?, or active-frame LOCAL symbol."
+    );
+    return false;
+}
+
 /// Compares a source token to an accepted user-symbol spelling using active CASEMAP policy.
 ///
 /// @param state Parser state containing the active user-symbol policy.
@@ -6895,6 +7215,11 @@ static bool vm_parser_parse_source_operand(VmParserState *state, VmIrOperand *ou
         return vm_parser_reject_disabled_keyword_role_use(state, token, VM_PARSER_NOKEYWORD_WORD_OFFSET);
     }
 
+    if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "ADDR")) {
+        vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, token, "ADDR is reserved for future INVOKE argument handling and is not a general source operand.");
+        return false;
+    }
+
     if (token->kind == VM_LEXER_TOKEN_IDENTIFIER && vm_parser_token_equals(token, "TYPE")) {
         return vm_parser_parse_type_source_operand(state, out_operand);
     }
@@ -9214,6 +9539,10 @@ static bool vm_parser_parse_instruction(VmParserState *state) {
             }
             opcode = VM_IR_OPCODE_EXIT;
         } else {
+            if (vm_parser_token_equals(mnemonic_token, "ADDR")) {
+                vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE, mnemonic_token, "ADDR is reserved for future INVOKE argument handling and is not a standalone source-level instruction or general operand.");
+                return false;
+            }
             if (vm_parser_token_equals(mnemonic_token, "retf")) {
                 vm_parser_add_diagnostic(state, VM_PARSER_DIAGNOSTIC_UNSUPPORTED_INSTRUCTION_FORM, mnemonic_token, "Far RET forms are not implemented. This simulator accepts only near RET with no operand or an unsigned 16-bit immediate byte count.");
                 return false;
@@ -13066,6 +13395,14 @@ const char *vm_parser_diagnostic_code_name(VmParserDiagnosticCode code) {
             return "unsupported-external-invoke";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_IRVINE_INVOKE:
             return "unsupported-irvine-invoke";
+        case VM_PARSER_DIAGNOSTIC_INVALID_ADDR_TARGET:
+            return "invalid-addr-target";
+        case VM_PARSER_DIAGNOSTIC_ADDR_OUTSIDE_INVOKE:
+            return "addr-outside-invoke";
+        case VM_PARSER_DIAGNOSTIC_UNKNOWN_ADDR_SYMBOL:
+            return "unknown-addr-symbol";
+        case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR_EXPRESSION:
+            return "unsupported-addr-expression";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_ADDR:
             return "unsupported-addr";
         case VM_PARSER_DIAGNOSTIC_UNSUPPORTED_EXTERNAL_ROUTINE:

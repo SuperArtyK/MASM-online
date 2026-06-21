@@ -91,16 +91,16 @@
 #define MASM32_SIM_WASM_DATA_BYTE_UNINITIALIZED 0U
 
 /// Numeric runtime/source-run behavior phase reported to JSON consumers.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 82U
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NUMBER 83U
 
-/// Suffix for the current Phase 82 runtime/source-run behavior phase.
+/// Suffix for the current Phase 83 runtime/source-run behavior phase.
 #define MASM32_SIM_WASM_RUNTIME_PHASE_SUFFIX ""
 
-/// Full name of the current Phase 82 runtime/source-run behavior phase.
-#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 82 - INVOKE Zero-Argument User Procedure Calls"
+/// Full name of the current Phase 83 runtime/source-run behavior phase.
+#define MASM32_SIM_WASM_RUNTIME_PHASE_NAME "Phase 83 - ADDR Preparation for Future INVOKE Arguments"
 
-/// Browser/Wasm source-run JSON output-contract identifier for Phase 82 INVOKE behavior.
-#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-82-invoke-zero-argument-output-contract-v1"
+/// Browser/Wasm source-run JSON output-contract identifier for Phase 83 ADDR preparation behavior.
+#define MASM32_SIM_WASM_SOURCE_RUN_OUTPUT_CONTRACT "phase-83-addr-preparation-output-contract-v1"
 
 /// Default maximum number of VM instructions a source-run request may execute.
 #define MASM32_SIM_WASM_DEFAULT_INSTRUCTION_LIMIT 1000000U
